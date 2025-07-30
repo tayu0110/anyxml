@@ -1,4 +1,6 @@
-use std::ops::RangeInclusive;
+use std::fmt::Debug;
+
+use crate::Atom;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ASTNodeType {
@@ -12,29 +14,31 @@ pub enum ASTNodeType {
     RepeatExact,
 }
 
-pub enum ASTNode {
+pub enum ASTNode<A: Atom> {
     Charcters {
-        range: RangeInclusive<char>,
+        start: A,
+        end: A,
         negation: bool,
     },
-    Catenation(Box<ASTNode>, Box<ASTNode>),
-    Alternation(Box<ASTNode>, Box<ASTNode>),
-    ZeroOrOne(Box<ASTNode>),
-    ZeroOrMore(Box<ASTNode>),
-    OneOrMore(Box<ASTNode>),
+    Catenation(Box<ASTNode<A>>, Box<ASTNode<A>>),
+    Alternation(Box<ASTNode<A>>, Box<ASTNode<A>>),
+    ZeroOrOne(Box<ASTNode<A>>),
+    ZeroOrMore(Box<ASTNode<A>>),
+    OneOrMore(Box<ASTNode<A>>),
     Repeat {
-        node: Box<ASTNode>,
+        node: Box<ASTNode<A>>,
         at_least: usize,
         at_most: Option<usize>,
     },
-    RepeatExact(Box<ASTNode>, usize),
+    RepeatExact(Box<ASTNode<A>>, usize),
 }
 
-impl ASTNode {
+impl<A: Atom> ASTNode<A> {
     pub fn node_type(&self) -> ASTNodeType {
         match self {
             Self::Charcters {
-                range: _,
+                start: _,
+                end: _,
                 negation: _,
             } => ASTNodeType::Charcters,
             Self::Catenation(_, _) => ASTNodeType::Catenation,
@@ -52,25 +56,27 @@ impl ASTNode {
     }
 }
 
-impl std::fmt::Debug for ASTNode {
+impl<A: Atom + Debug> std::fmt::Debug for ASTNode<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use ASTNodeType::*;
 
         match self {
-            Self::Charcters { range, negation } => {
-                if !range.is_empty() {
-                    let &start = range.start();
-                    let &end = range.end();
+            &Self::Charcters {
+                start,
+                end,
+                negation,
+            } => {
+                if start <= end {
                     if start == end {
-                        if *negation {
-                            write!(f, "[^{start}]")?;
+                        if negation {
+                            write!(f, "[^{start:?}]")?;
                         } else {
-                            write!(f, "{start}")?;
+                            write!(f, "{start:?}")?;
                         }
-                    } else if *negation {
-                        write!(f, "[^{start}-{end}]")?;
+                    } else if negation {
+                        write!(f, "[^{start:?}-{end:?}]")?;
                     } else {
-                        write!(f, "[{start}-{end}]")?;
+                        write!(f, "[{start:?}-{end:?}]")?;
                     }
                 }
                 Ok(())

@@ -10,3 +10,27 @@
 pub mod ast;
 pub mod content_model;
 pub mod fa;
+
+pub trait Atom: Clone + Copy + PartialOrd + Ord + PartialEq + Eq + Default {
+    const MIN: Self;
+    const MAX: Self;
+    const EPSILON: Self;
+
+    fn previous(&self) -> Option<Self>;
+    fn next(&self) -> Option<Self>;
+}
+
+impl Atom for char {
+    const MIN: Self = char::MIN;
+    const MAX: Self = char::MAX;
+    // Since NULL characters are not used in XML, it should be fine for internal use...
+    const EPSILON: Self = char::MIN;
+
+    fn previous(&self) -> Option<Self> {
+        (char::MIN..*self).next_back()
+    }
+
+    fn next(&self) -> Option<Self> {
+        (*self..).next()
+    }
+}

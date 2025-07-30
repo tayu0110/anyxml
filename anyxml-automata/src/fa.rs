@@ -1,41 +1,38 @@
 use std::{
     collections::{HashMap, HashSet},
     hash::{BuildHasher, Hash, RandomState},
-    ops::RangeInclusive,
+    marker::PhantomData,
     sync::atomic::AtomicUsize,
 };
 
-use crate::ast::ASTNode;
-
-// Since NULL characters are not used in XML, it should be fine for internal use...
-const EPSILON: char = char::MIN;
-const EPSILON_RANGE: RangeInclusive<char> = EPSILON..=EPSILON;
+use crate::{Atom, ast::ASTNode};
 
 #[derive(Debug, PartialEq, Eq, Default)]
-struct FAFragment {
+struct FAFragment<A: Atom> {
     is_accepted: bool,
-    rule_map: Vec<(RangeInclusive<char>, usize)>,
+    // (start, end, to)
+    rule_map: Vec<(A, A, usize)>,
 }
 
-impl PartialOrd for FAFragment {
+impl<A: Atom> PartialOrd for FAFragment<A> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for FAFragment {
+impl<A: Atom> Ord for FAFragment<A> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if self.is_accepted != other.is_accepted {
             self.is_accepted.cmp(&other.is_accepted)
         } else {
             self.rule_map
                 .iter()
-                .map(|(key, to)| (key.start(), key.end(), to))
+                .map(|(start, end, to)| (start, end, to))
                 .cmp(
                     other
                         .rule_map
                         .iter()
-                        .map(|(key, to)| (key.start(), key.end(), to)),
+                        .map(|(start, end, to)| (start, end, to)),
                 )
         }
     }
@@ -44,15 +41,16 @@ impl Ord for FAFragment {
 static AUTOMATON_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct State {
+pub struct State<A: Atom> {
     index: usize,
     // Identify which automaton generated this state.
     fa_id: usize,
+    _phantom: PhantomData<fn() -> A>,
 }
 
-impl State {
+impl<A: Atom> State<A> {
     /// Check whether this state is generated from the given DFA.
-    pub fn generated_by(&self, dfa: &DFA) -> bool {
+    pub fn generated_by(&self, dfa: &DFA<A>) -> bool {
         self.fa_id == dfa.id
     }
 }
@@ -74,17 +72,17 @@ impl std::fmt::Display for TransitionError {
 impl std::error::Error for TransitionError {}
 
 #[allow(clippy::upper_case_acronyms)]
-struct NFA {
+struct NFA<A: Atom> {
     id: usize,
     initial_state: usize,
-    states: Vec<FAFragment>,
+    states: Vec<FAFragment<A>>,
 }
 
-impl NFA {
-    fn convert_to_dfa(mut self) -> DFA {
+impl<A: Atom> NFA<A> {
+    fn convert_to_dfa(mut self) -> DFA<A> {
         self.states.iter_mut().for_each(|frag| {
             frag.rule_map
-                .sort_unstable_by_key(|(k, v)| (*k.start(), *v));
+                .sort_unstable_by_key(|(start, _, v)| (*start, *v));
             frag.rule_map.dedup();
         });
 
@@ -92,10 +90,10 @@ impl NFA {
         let mut cur = HashSet::from([self.initial_state]);
         let mut stack = vec![self.initial_state];
         while let Some(now) = stack.pop() {
-            for &(_, to) in self.states[now]
+            for &(_, _, to) in self.states[now]
                 .rule_map
                 .iter()
-                .take_while(|v| v.0.start() == &EPSILON)
+                .take_while(|v| v.0 == A::EPSILON)
             {
                 if cur.insert(to) {
                     stack.push(to);
@@ -112,12 +110,12 @@ impl NFA {
                 .fold(0, |s, v| s ^ v)
         }
 
-        fn build_states(
+        fn build_states<A: Atom>(
             hash: u64,
             cur: &HashSet<usize>,
             hash_state: &RandomState,
-            old_states: &[FAFragment],
-            states: &mut Vec<FAFragment>,
+            old_states: &[FAFragment<A>],
+            states: &mut Vec<FAFragment<A>>,
             memo: &mut HashMap<u64, usize>,
         ) -> usize {
             let state_index = states.len();
@@ -134,20 +132,20 @@ impl NFA {
                     old_states[c]
                         .rule_map
                         .iter()
-                        .filter(|&v| v.0 != EPSILON_RANGE)
+                        .filter(|&v| v.0 != A::EPSILON)
                         .cloned(),
                 );
             }
-            rules.sort_unstable_by_key(|v| (*v.0.start(), v.1));
+            rules.sort_unstable_by_key(|v| (v.0, v.2));
             rules.dedup();
 
             if rules.is_empty() {
                 return state_index;
             }
-            let mut rule = rules[0].0.clone();
+            let mut rule = (rules[0].0, rules[0].1);
             let mut buf = vec![];
             let mut set = HashSet::new();
-            let mut push_state = |rule: RangeInclusive<char>, buf: &mut Vec<usize>| {
+            let mut push_state = |rule: (A, A), buf: &mut Vec<usize>| {
                 set.clear();
                 set.extend(buf.iter().copied());
                 // `buf` contains a set of states that can be reached from the current state with a single transition based on a given rule.
@@ -156,25 +154,25 @@ impl NFA {
                     for to in old_states[now]
                         .rule_map
                         .iter()
-                        .take_while(|v| v.0 == EPSILON_RANGE)
+                        .take_while(|v| v.0 == A::EPSILON)
                     {
-                        if set.insert(to.1) {
-                            buf.push(to.1);
+                        if set.insert(to.2) {
+                            buf.push(to.2);
                         }
                     }
                 }
                 let hash = generate_hash(&set, hash_state);
                 if let Some(to) = memo.get(&hash) {
                     // If the listed set has already been created, add the rule to the existing set.
-                    states[state_index].rule_map.push((rule, *to));
+                    states[state_index].rule_map.push((rule.0, rule.1, *to));
                 } else {
                     // Otherwise, continue searching as it is a newly discovered set.
                     let index = build_states(hash, &set, hash_state, old_states, states, memo);
-                    states[state_index].rule_map.push((rule, index));
+                    states[state_index].rule_map.push((rule.0, rule.1, index));
                 }
             };
-            for (r, to) in rules {
-                if rule == r {
+            for (start, end, to) in rules {
+                if rule == (start, end) {
                     buf.push(to);
                     continue;
                 }
@@ -186,7 +184,7 @@ impl NFA {
                     debug_assert!(buf.is_empty());
                 }
 
-                rule = r;
+                rule = (start, end);
                 buf.push(to);
             }
 
@@ -212,14 +210,14 @@ impl NFA {
     }
 }
 
-pub struct DFA {
+pub struct DFA<A: Atom> {
     id: usize,
     // The rule_map for each fragment must be sorted.
     // This constraint allows us to search for the transition destination using binary search.
-    states: Vec<FAFragment>,
+    states: Vec<FAFragment<A>>,
 }
 
-impl DFA {
+impl<A: Atom> DFA<A> {
     fn empty() -> Self {
         let id = AUTOMATON_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Self {
@@ -232,10 +230,11 @@ impl DFA {
     }
 
     /// Returns the initial state.
-    pub fn initial_state(&self) -> State {
+    pub fn initial_state(&self) -> State<A> {
         State {
             index: 0,
             fa_id: self.id,
+            _phantom: PhantomData,
         }
     }
 
@@ -245,9 +244,9 @@ impl DFA {
     /// For example, you can use this when you want to enter a chunked string little by little.
     pub fn transition(
         &self,
-        initial_state: State,
-        input: impl Iterator<Item = char>,
-    ) -> Result<State, TransitionError> {
+        initial_state: State<A>,
+        input: impl Iterator<Item = A>,
+    ) -> Result<State<A>, TransitionError> {
         if initial_state.fa_id != self.id {
             return Err(TransitionError::InvalidState);
         }
@@ -262,14 +261,14 @@ impl DFA {
                 self.states[state]
                     .rule_map
                     .windows(2)
-                    .all(|v| v[0].0.end() < v[1].0.start())
+                    .all(|v| v[0].1 < v[1].0)
             );
             state = self.states[state]
                 .rule_map
-                .binary_search_by(|(rule, _)| {
-                    if &c < rule.start() {
+                .binary_search_by(|(start, end, _)| {
+                    if &c < start {
                         std::cmp::Ordering::Greater
-                    } else if rule.end() < &c {
+                    } else if end < &c {
                         std::cmp::Ordering::Less
                     } else {
                         std::cmp::Ordering::Equal
@@ -281,18 +280,19 @@ impl DFA {
         Ok(State {
             index: state,
             fa_id: self.id,
+            _phantom: PhantomData,
         })
     }
 
     /// Check whether the entered string is accepted.
-    pub fn is_match(&self, input: impl Iterator<Item = char>) -> bool {
+    pub fn is_match(&self, input: impl Iterator<Item = A>) -> bool {
         self.is_accepted(self.transition(self.initial_state(), input).unwrap())
     }
 
     /// Check if the given state is an accepted state.
     ///
     /// If the given state is not generated from this DFA, always return false.
-    pub fn is_accepted(&self, state: State) -> bool {
+    pub fn is_accepted(&self, state: State<A>) -> bool {
         state.fa_id == self.id && self.states[state.index].is_accepted
     }
 
@@ -320,7 +320,7 @@ impl DFA {
 
             for &index in &index {
                 if index == replace_to[index] {
-                    for (_, to) in self.states[index].rule_map.iter_mut() {
+                    for (_, _, to) in self.states[index].rule_map.iter_mut() {
                         *to = replace_to[*to];
                     }
                 }
@@ -335,7 +335,7 @@ impl DFA {
         }
         self.states.truncate(index.len());
         for state in self.states.iter_mut() {
-            for (_, to) in state.rule_map.iter_mut() {
+            for (_, _, to) in state.rule_map.iter_mut() {
                 *to = replace_to[*to];
             }
         }
@@ -360,7 +360,7 @@ impl std::error::Error for FAAssembleError {}
 /// If `None` is entered, this function always returns `Ok`.  
 /// In this case, the DFA has only one state that is both the input state and the accepting state.  
 /// For example, it is likely that the regular expression converted to AST would be an empty string.
-pub fn assemble(ast: Option<&ASTNode>) -> Result<DFA, FAAssembleError> {
+pub fn assemble<A: Atom>(ast: Option<&ASTNode<A>>) -> Result<DFA<A>, FAAssembleError> {
     let Some(ast) = ast else {
         return Ok(DFA::empty());
     };
@@ -371,13 +371,17 @@ pub fn assemble(ast: Option<&ASTNode>) -> Result<DFA, FAAssembleError> {
     Ok(dfa)
 }
 
-fn build_nfa(ast: &ASTNode) -> Result<NFA, FAAssembleError> {
+fn build_nfa<A: Atom>(ast: &ASTNode<A>) -> Result<NFA<A>, FAAssembleError> {
     // ranges: (point, is_end)
-    fn collect_character_ranges(ast: &ASTNode, ranges: &mut Vec<(char, bool)>) {
+    fn collect_character_ranges<A: Atom>(ast: &ASTNode<A>, ranges: &mut Vec<(A, bool)>) {
         match ast {
-            ASTNode::Charcters { range, negation: _ } => {
-                ranges.push((*range.start(), false));
-                ranges.push((*range.end(), true));
+            ASTNode::Charcters {
+                start,
+                end,
+                negation: _,
+            } => {
+                ranges.push((*start, false));
+                ranges.push((*end, true));
             }
             ASTNode::Catenation(front, back) => {
                 collect_character_ranges(front, ranges);
@@ -409,7 +413,7 @@ fn build_nfa(ast: &ASTNode) -> Result<NFA, FAAssembleError> {
         }
     }
 
-    let mut ranges = vec![(char::MIN, false), (char::MAX, true)];
+    let mut ranges = vec![(A::MIN, false), (A::MAX, true)];
     collect_character_ranges(ast, &mut ranges);
     ranges.sort_unstable();
     ranges.dedup();
@@ -422,45 +426,47 @@ fn build_nfa(ast: &ASTNode) -> Result<NFA, FAAssembleError> {
                 Some((start, end))
             } else {
                 if f {
-                    start = (start..).next()?;
+                    start = start.next()?;
                 }
                 if !g {
-                    end = ('\0'..end).next_back()?;
+                    end = end.previous()?;
                 }
                 (start <= end).then_some((start, end))
             }
         })
         .collect::<Vec<_>>();
 
-    fn build_states(
-        ast: &ASTNode,
-        ranges: &[(char, char)],
-        states: &mut Vec<FAFragment>,
+    fn build_states<A: Atom>(
+        ast: &ASTNode<A>,
+        ranges: &[(A, A)],
+        states: &mut Vec<FAFragment<A>>,
     ) -> Result<(usize, usize), FAAssembleError> {
         match ast {
-            ASTNode::Charcters { range, negation } => {
-                let &start = range.start();
-                let &end = range.end();
+            &ASTNode::Charcters {
+                start,
+                end,
+                negation,
+            } => {
                 let mut pos = ranges.partition_point(|p| p.0 < start);
                 let mut from = FAFragment::default();
                 let to = FAFragment {
                     is_accepted: true,
                     ..Default::default()
                 };
-                if *negation {
+                if negation {
                     for &(f, t) in ranges.iter().take(pos) {
-                        from.rule_map.push((f..=t, states.len()));
+                        from.rule_map.push((f, t, states.len()));
                     }
                     while pos < ranges.len() && ranges[pos].1 <= end {
                         pos += 1;
                     }
                     for &(f, t) in ranges.iter().skip(pos) {
-                        from.rule_map.push((f..=t, states.len()));
+                        from.rule_map.push((f, t, states.len()));
                     }
                 } else {
                     while pos < ranges.len() && ranges[pos].1 <= end {
                         let (s, e) = ranges[pos];
-                        from.rule_map.push((s..=e, states.len()));
+                        from.rule_map.push((s, e, states.len()));
                         pos += 1;
                     }
                 }
@@ -472,7 +478,7 @@ fn build_nfa(ast: &ASTNode) -> Result<NFA, FAAssembleError> {
                 // [sf -> ... -> ef] -> [sb -> ... -> eb]
                 let (sf, ef) = build_states(front, ranges, states)?;
                 let (sb, eb) = build_states(back, ranges, states)?;
-                states[ef].rule_map.push((EPSILON_RANGE, sb));
+                states[ef].rule_map.push((A::EPSILON, A::EPSILON, sb));
                 Ok((sf, eb))
             }
             ASTNode::Alternation(left, right) => {
@@ -482,14 +488,14 @@ fn build_nfa(ast: &ASTNode) -> Result<NFA, FAAssembleError> {
                 let (sl, el) = build_states(left, ranges, states)?;
                 let (sr, er) = build_states(right, ranges, states)?;
                 let mut start = FAFragment::default();
-                start.rule_map.push((EPSILON_RANGE, sl));
-                start.rule_map.push((EPSILON_RANGE, sr));
+                start.rule_map.push((A::EPSILON, A::EPSILON, sl));
+                start.rule_map.push((A::EPSILON, A::EPSILON, sr));
                 states.push(start);
                 let mut end = FAFragment::default();
                 let len = states.len();
-                states[el].rule_map.push((EPSILON_RANGE, len));
+                states[el].rule_map.push((A::EPSILON, A::EPSILON, len));
                 states[el].is_accepted = false;
-                states[er].rule_map.push((EPSILON_RANGE, len));
+                states[er].rule_map.push((A::EPSILON, A::EPSILON, len));
                 states[er].is_accepted = false;
                 end.is_accepted = true;
                 states.push(end);
@@ -500,7 +506,7 @@ fn build_nfa(ast: &ASTNode) -> Result<NFA, FAAssembleError> {
                 //   │               ^
                 //   └───────────────┘
                 let (start, end) = build_states(node, ranges, states)?;
-                states[start].rule_map.push((EPSILON_RANGE, end));
+                states[start].rule_map.push((A::EPSILON, A::EPSILON, end));
                 Ok((start, end))
             }
             ASTNode::ZeroOrMore(node) => {
@@ -513,9 +519,9 @@ fn build_nfa(ast: &ASTNode) -> Result<NFA, FAAssembleError> {
                 states[end].is_accepted = false;
                 new_end.is_accepted = true;
                 let len = states.len();
-                states[start].rule_map.push((EPSILON_RANGE, len));
-                states[end].rule_map.push((EPSILON_RANGE, len));
-                states[end].rule_map.push((EPSILON_RANGE, start));
+                states[start].rule_map.push((A::EPSILON, A::EPSILON, len));
+                states[end].rule_map.push((A::EPSILON, A::EPSILON, len));
+                states[end].rule_map.push((A::EPSILON, A::EPSILON, start));
                 states.push(new_end);
                 Ok((start, states.len() - 1))
             }
@@ -528,15 +534,15 @@ fn build_nfa(ast: &ASTNode) -> Result<NFA, FAAssembleError> {
                 let (start2, end2) = build_states(node, ranges, states)?;
                 states[end].is_accepted = false;
                 states[end2].is_accepted = false;
-                states[end].rule_map.push((EPSILON_RANGE, start2));
+                states[end].rule_map.push((A::EPSILON, A::EPSILON, start2));
                 let new_end = FAFragment {
                     is_accepted: true,
                     ..Default::default()
                 };
                 let len = states.len();
-                states[start2].rule_map.push((EPSILON_RANGE, len));
-                states[end2].rule_map.push((EPSILON_RANGE, len));
-                states[end2].rule_map.push((EPSILON_RANGE, start2));
+                states[start2].rule_map.push((A::EPSILON, A::EPSILON, len));
+                states[end2].rule_map.push((A::EPSILON, A::EPSILON, len));
+                states[end2].rule_map.push((A::EPSILON, A::EPSILON, start2));
                 states.push(new_end);
                 Ok((start, states.len() - 1))
             }
@@ -558,7 +564,9 @@ fn build_nfa(ast: &ASTNode) -> Result<NFA, FAAssembleError> {
                 let mut start = new_start;
                 for _ in 0..*at_least {
                     let (new_start, new_end) = build_states(node, ranges, states)?;
-                    states[start].rule_map.push((EPSILON_RANGE, new_start));
+                    states[start]
+                        .rule_map
+                        .push((A::EPSILON, A::EPSILON, new_start));
                     states[new_end].is_accepted = false;
                     start = new_end;
                 }
@@ -568,18 +576,30 @@ fn build_nfa(ast: &ASTNode) -> Result<NFA, FAAssembleError> {
                     }
                     for _ in *at_least..at_most {
                         let (new_start, end) = build_states(node, ranges, states)?;
-                        states[start].rule_map.push((EPSILON_RANGE, new_start));
-                        states[start].rule_map.push((EPSILON_RANGE, new_end));
+                        states[start]
+                            .rule_map
+                            .push((A::EPSILON, A::EPSILON, new_start));
+                        states[start]
+                            .rule_map
+                            .push((A::EPSILON, A::EPSILON, new_end));
                         states[end].is_accepted = false;
                         start = end;
                     }
-                    states[start].rule_map.push((EPSILON_RANGE, new_end));
+                    states[start]
+                        .rule_map
+                        .push((A::EPSILON, A::EPSILON, new_end));
                 } else {
                     let (new_start, end) = build_states(node, ranges, states)?;
-                    states[start].rule_map.push((EPSILON_RANGE, new_start));
-                    states[start].rule_map.push((EPSILON_RANGE, new_end));
-                    states[end].rule_map.push((EPSILON_RANGE, new_end));
-                    states[end].rule_map.push((EPSILON_RANGE, new_start));
+                    states[start]
+                        .rule_map
+                        .push((A::EPSILON, A::EPSILON, new_start));
+                    states[start]
+                        .rule_map
+                        .push((A::EPSILON, A::EPSILON, new_end));
+                    states[end].rule_map.push((A::EPSILON, A::EPSILON, new_end));
+                    states[end]
+                        .rule_map
+                        .push((A::EPSILON, A::EPSILON, new_start));
                     states[end].is_accepted = false;
                 }
 
@@ -599,12 +619,16 @@ fn build_nfa(ast: &ASTNode) -> Result<NFA, FAAssembleError> {
                 let mut start = new_start;
                 for _ in 0..*n {
                     let (new_start, end) = build_states(node, ranges, states)?;
-                    states[start].rule_map.push((EPSILON_RANGE, new_start));
+                    states[start]
+                        .rule_map
+                        .push((A::EPSILON, A::EPSILON, new_start));
                     states[end].is_accepted = false;
                     start = end;
                 }
 
-                states[start].rule_map.push((EPSILON_RANGE, new_end));
+                states[start]
+                    .rule_map
+                    .push((A::EPSILON, A::EPSILON, new_end));
 
                 Ok((new_start, new_end))
             }
