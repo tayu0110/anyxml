@@ -34,6 +34,50 @@ pub enum ASTNode<A: Atom> {
 }
 
 impl<A: Atom> ASTNode<A> {
+    pub(crate) fn alternate_all(mut iter: impl Iterator<Item = (A, A)>) -> Option<Self> {
+        let (start, end) = iter.next()?;
+        let mut ret = ASTNode::Charcters {
+            start,
+            end,
+            negation: false,
+        };
+        for (start, end) in iter {
+            assert!(start <= end);
+            let alt = ASTNode::Charcters {
+                start,
+                end,
+                negation: false,
+            };
+            ret = ASTNode::Alternation(Box::new(ret), Box::new(alt));
+        }
+        Some(ret)
+    }
+
+    pub(crate) fn negate_all(iter: impl Iterator<Item = (A, A)>) -> Option<Self> {
+        let mut s = A::MIN;
+        let mut ret = None::<Self>;
+        for (start, end) in iter {
+            assert!(s <= start);
+            if let Some(end) = start.previous() {
+                assert!(s <= end);
+                let alt = ASTNode::Charcters {
+                    start: s,
+                    end,
+                    negation: false,
+                };
+                if let Some(left) = ret {
+                    ret = Some(ASTNode::Alternation(Box::new(left), Box::new(alt)));
+                } else {
+                    ret = Some(alt);
+                }
+            }
+            if let Some(next) = end.next() {
+                s = next;
+            }
+        }
+        ret
+    }
+
     pub fn node_type(&self) -> ASTNodeType {
         match self {
             Self::Charcters {

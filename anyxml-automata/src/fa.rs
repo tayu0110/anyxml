@@ -342,7 +342,7 @@ impl<A: Atom> DFA<A> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FAAssembleError {
     InvalidQuantifier,
 }

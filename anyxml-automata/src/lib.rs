@@ -10,6 +10,9 @@
 pub mod ast;
 pub mod content_model;
 pub mod fa;
+pub mod unicode;
+pub mod util;
+pub mod xsregexp;
 
 pub trait Atom: Clone + Copy + PartialOrd + Ord + PartialEq + Eq + Default {
     const MIN: Self;
@@ -21,7 +24,7 @@ pub trait Atom: Clone + Copy + PartialOrd + Ord + PartialEq + Eq + Default {
 }
 
 impl Atom for char {
-    const MIN: Self = char::MIN;
+    const MIN: Self = '\x01';
     const MAX: Self = char::MAX;
     // Since NULL characters are not used in XML, it should be fine for internal use...
     const EPSILON: Self = char::MIN;
