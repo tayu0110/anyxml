@@ -87,7 +87,7 @@ fn parse_regexp(regexp: &mut &str, inner: bool) -> Result<Option<ASTNode<char>>,
 /// [2] branch ::= piece*
 fn parse_branch(regexp: &mut &str) -> Result<Option<ASTNode<char>>, RegexpError> {
     let mut ret = None;
-    while !regexp.starts_with('|') && !regexp.is_empty() {
+    while !regexp.starts_with([')', '|']) && !regexp.is_empty() {
         if let Some(right) = parse_piece(regexp)? {
             if let Some(left) = ret {
                 ret = Some(ASTNode::Catenation(Box::new(left), Box::new(right)));
@@ -685,6 +685,13 @@ mod tests {
 
         let ast = parse_regexp(&mut "aa", false).unwrap().unwrap();
         assert_eq!(format!("{ast}"), "aa");
+
+        // TODO: It is difficult to output correctly without adding `Group` to AST.
+        // let mut test = "a+(c|b?)c";
+        // let ast = parse_regexp(&mut test, false);
+        // assert_eq!(test, "");
+        // let ast = ast.unwrap().unwrap();
+        // assert_eq!(format!("{ast}"), "a+(c|b?)c");
     }
 
     #[test]
@@ -752,5 +759,90 @@ mod tests {
         assert!(!re.is_match(" aaa"));
         assert!(!re.is_match("aaa "));
         assert!(!re.is_match("aaA"));
+
+        let re = XSRegexp::compile("a|b").unwrap();
+        assert!(re.is_match("a"));
+        assert!(re.is_match("b"));
+        assert!(!re.is_match(""));
+        assert!(!re.is_match("aa"));
+        assert!(!re.is_match("aaa"));
+        assert!(!re.is_match("ab"));
+        assert!(!re.is_match(" aaa"));
+        assert!(!re.is_match("aaa "));
+        assert!(!re.is_match("A"));
+        assert!(!re.is_match("B"));
+
+        let re = XSRegexp::compile("a+|b?").unwrap();
+        assert!(re.is_match(""));
+        assert!(re.is_match("a"));
+        assert!(re.is_match("aa"));
+        assert!(re.is_match("aaa"));
+        assert!(re.is_match("b"));
+        assert!(!re.is_match("bb"));
+        assert!(!re.is_match("ab"));
+        assert!(!re.is_match(" aaa"));
+        assert!(!re.is_match("aaa "));
+        assert!(!re.is_match("A"));
+        assert!(!re.is_match("B"));
+
+        let re = XSRegexp::compile("a+c|b?c").unwrap();
+        assert!(re.is_match("ac"));
+        assert!(re.is_match("aac"));
+        assert!(re.is_match("bc"));
+        assert!(re.is_match("c"));
+        assert!(!re.is_match(""));
+        assert!(!re.is_match("a"));
+        assert!(!re.is_match("aa"));
+        assert!(!re.is_match("aaa"));
+        assert!(!re.is_match("b"));
+        assert!(!re.is_match("bb"));
+        assert!(!re.is_match("bbc"));
+        assert!(!re.is_match("ab"));
+        assert!(!re.is_match("abc"));
+        assert!(!re.is_match(" aaa"));
+        assert!(!re.is_match("aaa "));
+        assert!(!re.is_match("A"));
+        assert!(!re.is_match("B"));
+        assert!(!re.is_match("C"));
+
+        let re = XSRegexp::compile("a+(c|b?)c").unwrap();
+        assert!(re.is_match("ac"));
+        assert!(re.is_match("aac"));
+        assert!(re.is_match("abc"));
+        assert!(!re.is_match("bc"));
+        assert!(!re.is_match("c"));
+        assert!(!re.is_match(""));
+        assert!(!re.is_match("a"));
+        assert!(!re.is_match("aa"));
+        assert!(!re.is_match("aaa"));
+        assert!(!re.is_match("b"));
+        assert!(!re.is_match("bb"));
+        assert!(!re.is_match("bbc"));
+        assert!(!re.is_match("ab"));
+        assert!(!re.is_match(" aaa"));
+        assert!(!re.is_match("aaa "));
+        assert!(!re.is_match("A"));
+        assert!(!re.is_match("B"));
+        assert!(!re.is_match("C"));
+
+        let re = XSRegexp::compile("[abde]").unwrap();
+        assert!(re.is_match("a"));
+        assert!(re.is_match("b"));
+        assert!(re.is_match("d"));
+        assert!(re.is_match("e"));
+        assert!(!re.is_match(""));
+        assert!(!re.is_match("c"));
+        assert!(!re.is_match("ab"));
+        assert!(!re.is_match("f"));
+
+        let re = XSRegexp::compile("[^abde]").unwrap();
+        assert!(re.is_match("c"));
+        assert!(re.is_match("f"));
+        assert!(!re.is_match(""));
+        assert!(!re.is_match("a"));
+        assert!(!re.is_match("b"));
+        assert!(!re.is_match("d"));
+        assert!(!re.is_match("e"));
+        assert!(!re.is_match("ab"));
     }
 }

@@ -10,7 +10,7 @@ pub fn normalize_ranges<A: Atom>(
     for (start, end) in buf {
         assert!(start <= end);
         match ret.last_mut() {
-            Some((_, e)) if start <= *e => {
+            Some((_, e)) if start <= *e || Some(start) == e.next() => {
                 *e = end;
             }
             _ => ret.push((start, end)),
@@ -35,14 +35,14 @@ pub fn complement_ranges<A: Atom>(
     let mut iter = normalize_ranges(iter);
     let mut prev = Some(A::MIN);
     std::iter::from_fn(move || {
-        let start = prev?;
         for (end, next) in iter.by_ref() {
+            let start = prev?;
             prev = next.next();
             if let Some(end) = end.previous().filter(|end| &start <= end) {
                 return Some((start, end));
             }
         }
-        None
+        prev.take().map(|start| (start, A::MAX))
     })
 }
 
