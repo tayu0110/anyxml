@@ -872,5 +872,53 @@ mod tests {
         assert!(!re.is_match("b"));
         assert!(!re.is_match("c"));
         assert!(!re.is_match("f"));
+
+        let re = XSRegexp::compile("[a-g-[d]]").unwrap();
+        assert!(re.is_match("a"));
+        assert!(re.is_match("b"));
+        assert!(re.is_match("c"));
+        assert!(re.is_match("e"));
+        assert!(re.is_match("f"));
+        assert!(re.is_match("g"));
+        assert!(!re.is_match("d"));
+        assert!(!re.is_match("h"));
+
+        let re = XSRegexp::compile("[a-g-[i]]").unwrap();
+        assert!(re.is_match("a"));
+        assert!(re.is_match("b"));
+        assert!(re.is_match("c"));
+        assert!(re.is_match("d"));
+        assert!(re.is_match("e"));
+        assert!(re.is_match("f"));
+        assert!(re.is_match("g"));
+        assert!(!re.is_match("h"));
+        assert!(!re.is_match("i"));
+
+        let re = XSRegexp::compile("[^a-g-[i]]").unwrap();
+        assert!(!re.is_match("a"));
+        assert!(!re.is_match("b"));
+        assert!(!re.is_match("c"));
+        assert!(!re.is_match("d"));
+        assert!(!re.is_match("e"));
+        assert!(!re.is_match("f"));
+        assert!(!re.is_match("g"));
+        assert!(re.is_match("h"));
+        assert!(!re.is_match("i"));
+        assert!(re.is_match("j"));
+
+        let re = XSRegexp::compile("[a-gik-m-[c-el]]").unwrap();
+        assert!(re.is_match("a"));
+        assert!(re.is_match("b"));
+        assert!(!re.is_match("c"));
+        assert!(!re.is_match("d"));
+        assert!(!re.is_match("e"));
+        assert!(re.is_match("f"));
+        assert!(re.is_match("g"));
+        assert!(!re.is_match("h"));
+        assert!(re.is_match("i"));
+        assert!(!re.is_match("j"));
+        assert!(re.is_match("k"));
+        assert!(!re.is_match("l"));
+        assert!(re.is_match("m"));
     }
 }
