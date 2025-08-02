@@ -57,9 +57,8 @@ pub fn difference_ranges<A: Atom>(
     let mut next = iter.next();
     let mut bad = other.next();
     std::iter::from_fn(move || {
-        let (mut start, mut end) = next?;
-
         while let Some((bs, be)) = bad {
+            let (start, end) = next?;
             if be < start {
                 bad = other.next();
             } else if end < bs {
@@ -69,10 +68,9 @@ pub fn difference_ranges<A: Atom>(
                 if end <= be {
                     // bs - start - end - be
                     next = iter.next();
-                    (start, end) = next?;
                 } else {
                     // bs - start - be - end
-                    start = be.next().unwrap();
+                    next = Some((be.next().unwrap(), end));
                     bad = other.next();
                 }
             } else if end <= be {
@@ -86,6 +84,8 @@ pub fn difference_ranges<A: Atom>(
                 return Some((start, bs.previous().unwrap()));
             }
         }
+        let (start, end) = next?;
+        next = iter.next();
         Some((start, end))
     })
 }

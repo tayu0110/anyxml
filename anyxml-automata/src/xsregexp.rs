@@ -844,5 +844,33 @@ mod tests {
         assert!(!re.is_match("d"));
         assert!(!re.is_match("e"));
         assert!(!re.is_match("ab"));
+
+        let re = XSRegexp::compile("[a-ce-g]").unwrap();
+        assert!(re.is_match("a"));
+        assert!(re.is_match("b"));
+        assert!(re.is_match("c"));
+        assert!(re.is_match("e"));
+        assert!(re.is_match("f"));
+        assert!(re.is_match("g"));
+        assert!(!re.is_match("d"));
+        assert!(!re.is_match("h"));
+
+        let re = XSRegexp::compile("[^a-ce-g]").unwrap();
+        assert!(re.is_match("d"));
+        assert!(re.is_match("h"));
+        assert!(!re.is_match("a"));
+        assert!(!re.is_match("b"));
+        assert!(!re.is_match("c"));
+        assert!(!re.is_match("e"));
+        assert!(!re.is_match("f"));
+        assert!(!re.is_match("g"));
+
+        let re = XSRegexp::compile("[abde-[a-b]]").unwrap();
+        assert!(re.is_match("d"));
+        assert!(re.is_match("e"));
+        assert!(!re.is_match("a"));
+        assert!(!re.is_match("b"));
+        assert!(!re.is_match("c"));
+        assert!(!re.is_match("f"));
     }
 }
