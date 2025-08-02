@@ -43,6 +43,7 @@ impl std::fmt::Display for RegexpError {
 
 impl std::error::Error for RegexpError {}
 
+#[derive(Debug)]
 pub struct XSRegexp {
     fa: LazyLock<DFA<char>, Box<dyn Fn() -> DFA<char>>>,
 }
@@ -53,6 +54,10 @@ impl XSRegexp {
         Ok(Self {
             fa: LazyLock::new(Box::new(move || assemble(ast.as_ref()).unwrap())),
         })
+    }
+
+    pub fn is_match(&self, input: &str) -> bool {
+        self.fa.is_match(input.chars())
     }
 }
 
@@ -82,10 +87,10 @@ fn parse_regexp(regexp: &mut &str, inner: bool) -> Result<Option<ASTNode<char>>,
 /// [2] branch ::= piece*
 fn parse_branch(regexp: &mut &str) -> Result<Option<ASTNode<char>>, RegexpError> {
     let mut ret = None;
-    while !regexp.starts_with('|') {
+    while !regexp.starts_with('|') && !regexp.is_empty() {
         if let Some(right) = parse_piece(regexp)? {
             if let Some(left) = ret {
-                ret = Some(ASTNode::Alternation(Box::new(left), Box::new(right)));
+                ret = Some(ASTNode::Catenation(Box::new(left), Box::new(right)));
             } else {
                 ret = Some(right)
             }
@@ -667,4 +672,85 @@ fn parse_multi_char_esc(
         *regexp = &regexp[1..];
     }
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn regex_parse_tests() {
+        let ast = parse_regexp(&mut "a", false).unwrap().unwrap();
+        assert_eq!(format!("{ast}"), "a");
+
+        let ast = parse_regexp(&mut "aa", false).unwrap().unwrap();
+        assert_eq!(format!("{ast}"), "aa");
+    }
+
+    #[test]
+    fn regex_matching_tests() {
+        let re = XSRegexp::compile("").unwrap();
+        assert!(re.is_match(""));
+        assert!(!re.is_match("   "));
+        assert!(!re.is_match("a"));
+
+        let re = XSRegexp::compile("a").unwrap();
+        assert!(re.is_match("a"));
+        assert!(!re.is_match(""));
+        assert!(!re.is_match("   "));
+        assert!(!re.is_match("aa"));
+        assert!(!re.is_match("A"));
+        assert!(!re.is_match("b"));
+
+        let re = XSRegexp::compile("aa").unwrap();
+        assert!(re.is_match("aa"));
+        assert!(!re.is_match("a"));
+        assert!(!re.is_match("aaa"));
+        assert!(!re.is_match(""));
+        assert!(!re.is_match("   "));
+        assert!(!re.is_match("AA"));
+        assert!(!re.is_match("b"));
+
+        let re = XSRegexp::compile("ab").unwrap();
+        assert!(re.is_match("ab"));
+        assert!(!re.is_match("aa"));
+        assert!(!re.is_match("a"));
+        assert!(!re.is_match("b"));
+        assert!(!re.is_match(""));
+        assert!(!re.is_match(" ab "));
+        assert!(!re.is_match("AB"));
+
+        let re = XSRegexp::compile("a*").unwrap();
+        assert!(re.is_match(""));
+        assert!(re.is_match("a"));
+        assert!(re.is_match("aa"));
+        assert!(re.is_match("aaa"));
+        assert!(!re.is_match("ab"));
+        assert!(!re.is_match("b"));
+        assert!(!re.is_match(" aaa"));
+        assert!(!re.is_match("aaa "));
+        assert!(!re.is_match("aaA"));
+
+        let re = XSRegexp::compile("a+").unwrap();
+        assert!(re.is_match("a"));
+        assert!(re.is_match("aa"));
+        assert!(re.is_match("aaa"));
+        assert!(!re.is_match(""));
+        assert!(!re.is_match("ab"));
+        assert!(!re.is_match("b"));
+        assert!(!re.is_match(" aaa"));
+        assert!(!re.is_match("aaa "));
+        assert!(!re.is_match("aaA"));
+
+        let re = XSRegexp::compile("a?").unwrap();
+        assert!(re.is_match(""));
+        assert!(re.is_match("a"));
+        assert!(!re.is_match("aa"));
+        assert!(!re.is_match("aaa"));
+        assert!(!re.is_match("ab"));
+        assert!(!re.is_match("b"));
+        assert!(!re.is_match(" aaa"));
+        assert!(!re.is_match("aaa "));
+        assert!(!re.is_match("aaA"));
+    }
 }

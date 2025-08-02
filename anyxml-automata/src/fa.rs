@@ -210,6 +210,7 @@ impl<A: Atom> NFA<A> {
     }
 }
 
+#[derive(Debug)]
 pub struct DFA<A: Atom> {
     id: usize,
     // The rule_map for each fragment must be sorted.
@@ -274,6 +275,7 @@ impl<A: Atom> DFA<A> {
                         std::cmp::Ordering::Equal
                     }
                 })
+                .map(|index| self.states[state].rule_map[index].2)
                 .map_err(|_| TransitionError::InputIsRejected)?;
         }
 
@@ -286,7 +288,8 @@ impl<A: Atom> DFA<A> {
 
     /// Check whether the entered string is accepted.
     pub fn is_match(&self, input: impl Iterator<Item = A>) -> bool {
-        self.is_accepted(self.transition(self.initial_state(), input).unwrap())
+        self.transition(self.initial_state(), input)
+            .is_ok_and(|state| self.is_accepted(state))
     }
 
     /// Check if the given state is an accepted state.
@@ -455,18 +458,18 @@ fn build_nfa<A: Atom>(ast: &ASTNode<A>) -> Result<NFA<A>, FAAssembleError> {
                 };
                 if negation {
                     for &(f, t) in ranges.iter().take(pos) {
-                        from.rule_map.push((f, t, states.len()));
+                        from.rule_map.push((f, t, states.len() + 1));
                     }
                     while pos < ranges.len() && ranges[pos].1 <= end {
                         pos += 1;
                     }
                     for &(f, t) in ranges.iter().skip(pos) {
-                        from.rule_map.push((f, t, states.len()));
+                        from.rule_map.push((f, t, states.len() + 1));
                     }
                 } else {
                     while pos < ranges.len() && ranges[pos].1 <= end {
                         let (s, e) = ranges[pos];
-                        from.rule_map.push((s, e, states.len()));
+                        from.rule_map.push((s, e, states.len() + 1));
                         pos += 1;
                     }
                 }
@@ -479,6 +482,7 @@ fn build_nfa<A: Atom>(ast: &ASTNode<A>) -> Result<NFA<A>, FAAssembleError> {
                 let (sf, ef) = build_states(front, ranges, states)?;
                 let (sb, eb) = build_states(back, ranges, states)?;
                 states[ef].rule_map.push((A::EPSILON, A::EPSILON, sb));
+                states[ef].is_accepted = false;
                 Ok((sf, eb))
             }
             ASTNode::Alternation(left, right) => {

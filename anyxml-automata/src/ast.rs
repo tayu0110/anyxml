@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use crate::Atom;
 
@@ -172,6 +172,84 @@ impl<A: Atom + Debug> std::fmt::Debug for ASTNode<A> {
                     write!(f, "{node:?}{{{n}}}")
                 } else {
                     write!(f, "({node:?}){{{n}}}")
+                }
+            }
+        }
+    }
+}
+
+impl<A: Atom + Display> std::fmt::Display for ASTNode<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ASTNodeType::*;
+
+        match self {
+            &Self::Charcters {
+                start,
+                end,
+                negation,
+            } => {
+                if start <= end {
+                    if start == end {
+                        if negation {
+                            write!(f, "[^{start}]")?;
+                        } else {
+                            write!(f, "{start}")?;
+                        }
+                    } else if negation {
+                        write!(f, "[^{start}-{end}]")?;
+                    } else {
+                        write!(f, "[{start}-{end}]")?;
+                    }
+                }
+                Ok(())
+            }
+            Self::Catenation(front, back) => {
+                write!(f, "{front}{back}")
+            }
+            Self::Alternation(left, right) => {
+                write!(f, "{left}|{right}")
+            }
+            Self::ZeroOrOne(node) => {
+                if matches!(node.node_type(), Charcters) {
+                    write!(f, "{node}?")
+                } else {
+                    write!(f, "({node})?")
+                }
+            }
+            Self::ZeroOrMore(node) => {
+                if matches!(node.node_type(), Charcters) {
+                    write!(f, "{node}*")
+                } else {
+                    write!(f, "({node})*")
+                }
+            }
+            Self::OneOrMore(node) => {
+                if matches!(node.node_type(), Charcters) {
+                    write!(f, "{node}+")
+                } else {
+                    write!(f, "({node})+")
+                }
+            }
+            Self::Repeat {
+                node,
+                at_least,
+                at_most,
+            } => {
+                if matches!(node.node_type(), Charcters) {
+                    write!(f, "{node}{{{at_least},")?;
+                } else {
+                    write!(f, "({node}){{{at_least},")?;
+                }
+                if let Some(at_most) = at_most {
+                    write!(f, "{at_most}")?;
+                }
+                write!(f, "}}")
+            }
+            Self::RepeatExact(node, n) => {
+                if matches!(node.node_type(), Charcters) {
+                    write!(f, "{node}{{{n}}}")
+                } else {
+                    write!(f, "({node}){{{n}}}")
                 }
             }
         }
