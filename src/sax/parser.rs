@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::{io::Read, sync::Arc};
 
 use crate::{
-    ParserSpec,
+    DefaultParserSpec, ParserSpec,
     sax::handler::{
         ContentHandler, DTDHandler, DeclHandler, EntityResolver, ErrorHandler, LexicalHandler,
     },
@@ -38,6 +38,12 @@ impl std::ops::BitOr<ParserConfig> for ParserOption {
 
 pub struct ParserConfig {
     flags: u64,
+}
+
+impl Default for ParserConfig {
+    fn default() -> Self {
+        ParserOption::Namespaces | ParserOption::ResolveDTDURIs
+    }
 }
 
 impl std::ops::BitOr<Self> for ParserConfig {
@@ -95,4 +101,23 @@ pub struct XMLReader<Spec: ParserSpec> {
     error_handler: Arc<dyn ErrorHandler>,
     lexical_handler: Arc<dyn LexicalHandler>,
     config: ParserConfig,
+}
+
+impl<'a> XMLReader<DefaultParserSpec<'a>> {
+    pub fn parse_uri(&mut self, uri: &str, encoding: Option<&str>) {
+        todo!()
+    }
+
+    pub fn parse_reader(
+        &mut self,
+        reader: impl Read + 'a,
+        encoding: Option<&str>,
+        uri: Option<&str>,
+    ) {
+        todo!()
+    }
+
+    pub fn parse_str(&mut self, str: &str) {
+        todo!()
+    }
 }
