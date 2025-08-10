@@ -1,0 +1,98 @@
+use std::sync::Arc;
+
+use crate::{
+    ParserSpec,
+    sax::handler::{
+        ContentHandler, DTDHandler, DeclHandler, EntityResolver, ErrorHandler, LexicalHandler,
+    },
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ParserOption {
+    ExternalGeneralEntities = 0,
+    ExternalParameterEntities = 1,
+    Namespaces = 2,
+    ResolveDTDURIs = 3,
+    Validation = 4,
+}
+
+impl std::ops::BitOr<Self> for ParserOption {
+    type Output = ParserConfig;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        ParserConfig {
+            flags: (1 << self as i32) | (1 << rhs as i32),
+        }
+    }
+}
+
+impl std::ops::BitOr<ParserConfig> for ParserOption {
+    type Output = ParserConfig;
+
+    fn bitor(self, rhs: ParserConfig) -> Self::Output {
+        ParserConfig {
+            flags: rhs.flags | (1 << self as i32),
+        }
+    }
+}
+
+pub struct ParserConfig {
+    flags: u64,
+}
+
+impl std::ops::BitOr<Self> for ParserConfig {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        ParserConfig {
+            flags: self.flags | rhs.flags,
+        }
+    }
+}
+
+impl std::ops::BitOr<ParserOption> for ParserConfig {
+    type Output = Self;
+
+    fn bitor(self, rhs: ParserOption) -> Self::Output {
+        ParserConfig {
+            flags: self.flags | (1 << rhs as i32),
+        }
+    }
+}
+
+impl std::ops::BitOrAssign<ParserOption> for ParserConfig {
+    fn bitor_assign(&mut self, rhs: ParserOption) {
+        self.flags |= 1 << rhs as i32;
+    }
+}
+
+impl std::ops::BitOrAssign<Self> for ParserConfig {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.flags |= rhs.flags;
+    }
+}
+
+impl ParserConfig {
+    pub fn get_option(&self, option: ParserOption) -> bool {
+        (self.flags >> option as i32) & 1 != 0
+    }
+
+    pub fn set_option(&mut self, option: ParserOption, flag: bool) {
+        if flag {
+            self.flags |= 1 << (option as i32);
+        } else {
+            self.flags &= !(1 << (option as i32));
+        }
+    }
+}
+
+pub struct XMLReader<Spec: ParserSpec> {
+    input: Spec::Reader,
+    content_handler: Arc<dyn ContentHandler>,
+    decl_handler: Arc<dyn DeclHandler>,
+    dtd_handler: Arc<dyn DTDHandler>,
+    entity_resolver: Arc<dyn EntityResolver>,
+    error_handler: Arc<dyn ErrorHandler>,
+    lexical_handler: Arc<dyn LexicalHandler>,
+    config: ParserConfig,
+}
