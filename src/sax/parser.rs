@@ -2,6 +2,7 @@ use std::{io::Read, sync::Arc};
 
 use crate::{
     DefaultParserSpec, ParserSpec,
+    error::XMLError,
     sax::handler::{
         ContentHandler, DTDHandler, DeclHandler, EntityResolver, ErrorHandler, LexicalHandler,
     },
@@ -104,7 +105,7 @@ pub struct XMLReader<Spec: ParserSpec> {
 }
 
 impl<'a> XMLReader<DefaultParserSpec<'a>> {
-    pub fn parse_uri(&mut self, uri: &str, encoding: Option<&str>) {
+    pub fn parse_uri(&mut self, uri: &str, encoding: Option<&str>) -> Result<(), XMLError> {
         todo!()
     }
 
@@ -113,11 +114,11 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         reader: impl Read + 'a,
         encoding: Option<&str>,
         uri: Option<&str>,
-    ) {
+    ) -> Result<(), XMLError> {
         todo!()
     }
 
-    pub fn parse_str(&mut self, str: &str) {
+    pub fn parse_str(&mut self, str: &str) -> Result<(), XMLError> {
         todo!()
     }
 }

@@ -1,4 +1,5 @@
 pub mod encoding;
+pub mod error;
 pub mod sax;
 
 use std::{borrow::Cow, marker::PhantomData};

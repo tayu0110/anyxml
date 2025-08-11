@@ -1,7 +1,8 @@
 use std::{io::Read, sync::Arc};
 
 use crate::{
-    Attribute, AttributeType, ContentSpec, DefaultDecl, Locator, sax::error::SAXParseError,
+    Attribute, AttributeType, ContentSpec, DefaultDecl, Locator, error::XMLError,
+    sax::error::SAXParseError,
 };
 
 pub trait ContentHandler {
@@ -94,9 +95,13 @@ pub trait DTDHandler {
 }
 
 pub trait EntityResolver {
-    fn get_external_subset(&self, name: &str, base_uri: Option<&str>) -> Option<Box<dyn Read>> {
+    fn get_external_subset(
+        &self,
+        name: &str,
+        base_uri: Option<&str>,
+    ) -> Result<Box<dyn Read>, XMLError> {
         let _ = (name, base_uri);
-        None
+        Err(XMLError::IONotFound)
     }
 
     fn resolve_entity(
@@ -105,9 +110,9 @@ pub trait EntityResolver {
         public_id: Option<&str>,
         base_uri: Option<&str>,
         system_id: &str,
-    ) -> Option<Box<dyn Read>> {
+    ) -> Result<Box<dyn Read>, XMLError> {
         let _ = (name, public_id, base_uri, system_id);
-        None
+        Err(XMLError::IONotFound)
     }
 }
 
@@ -156,7 +161,7 @@ impl EntityResolver for DefaultSAXHandler {
         public_id: Option<&str>,
         base_uri: Option<&str>,
         system_id: &str,
-    ) -> Option<Box<dyn Read>> {
+    ) -> Result<Box<dyn Read>, XMLError> {
         todo!()
     }
 }
