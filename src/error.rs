@@ -6,6 +6,9 @@ pub enum XMLError {
     InternalError,
     // parser errors
     ParserUnknownError,
+    ParserUnsupportedEncoding,
+    ParserTooLongXMLVersionNumber,
+    PraserTooLongEncodingName,
     // I/O errors
     IOUnknownError,
     IONotFound,

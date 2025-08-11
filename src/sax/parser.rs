@@ -98,7 +98,7 @@ impl ParserConfig {
 }
 
 pub struct XMLReader<Spec: ParserSpec> {
-    source: Spec::Reader,
+    source: Box<Spec::Reader>,
     content_handler: Arc<dyn ContentHandler>,
     decl_handler: Arc<dyn DeclHandler>,
     dtd_handler: Arc<dyn DTDHandler>,
@@ -119,16 +119,17 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         encoding: Option<&str>,
         uri: Option<&str>,
     ) -> Result<(), XMLError> {
+        self.source = Box::new(InputSource::from_reader(reader, encoding)?);
         todo!()
     }
 
     pub fn parse_str(&mut self, str: &str) -> Result<(), XMLError> {
-        self.source = InputSource::from_content(str);
+        self.source = Box::new(InputSource::from_content(str));
         todo!()
     }
 
     pub fn reset(&mut self) {
-        self.source = InputSource::default();
+        self.source = Box::new(InputSource::default());
         let handler = Arc::new(DefaultSAXHandler);
         self.content_handler = handler.clone();
         self.decl_handler = handler.clone();

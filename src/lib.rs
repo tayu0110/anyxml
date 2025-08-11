@@ -6,6 +6,9 @@ use std::{borrow::Cow, marker::PhantomData};
 
 use crate::sax::source::InputSource;
 
+const XML_VERSION_NUM_LIMIT_LENGTH: usize = 128;
+const ENCODING_NAME_LIMIT_LENGTH: usize = 128;
+
 pub trait ParserSpec {
     type Reader;
 }
