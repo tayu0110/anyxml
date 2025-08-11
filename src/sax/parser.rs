@@ -1,9 +1,10 @@
-use std::{io::Read, sync::Arc};
+use std::{io::Read, mem::replace, path::PathBuf, sync::Arc};
 
 use crate::{
-    DefaultParserSpec, ParserSpec,
+    DefaultParserSpec, ParserSpec, XMLVersion,
     error::XMLError,
     sax::{
+        Locator,
         handler::{
             ContentHandler, DTDHandler, DeclHandler, DefaultSAXHandler, EntityResolver,
             ErrorHandler, LexicalHandler,
@@ -97,19 +98,87 @@ impl ParserConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParserState {
+    BeforeStart,
+    Parsing,
+    FatalErrorOccurred,
+    Finished,
+}
+
 pub struct XMLReader<Spec: ParserSpec> {
-    source: Box<Spec::Reader>,
-    content_handler: Arc<dyn ContentHandler>,
-    decl_handler: Arc<dyn DeclHandler>,
-    dtd_handler: Arc<dyn DTDHandler>,
-    entity_resolver: Arc<dyn EntityResolver>,
-    error_handler: Arc<dyn ErrorHandler>,
-    lexical_handler: Arc<dyn LexicalHandler>,
-    config: ParserConfig,
+    pub(crate) source: Box<Spec::Reader>,
+    pub(crate) content_handler: Arc<dyn ContentHandler>,
+    pub(crate) decl_handler: Arc<dyn DeclHandler>,
+    pub(crate) dtd_handler: Arc<dyn DTDHandler>,
+    pub(crate) entity_resolver: Arc<dyn EntityResolver>,
+    pub(crate) error_handler: Arc<dyn ErrorHandler>,
+    pub(crate) lexical_handler: Arc<dyn LexicalHandler>,
+    pub(crate) locator: Arc<Locator>,
+    pub(crate) config: ParserConfig,
+    pub(crate) base_uri: PathBuf,
+
+    // Parser Context
+    pub(crate) state: ParserState,
+    pub(crate) version: XMLVersion,
+    pub(crate) encoding: Option<String>,
+    pub(crate) standalone: Option<bool>,
+}
+
+impl<Spec: ParserSpec> XMLReader<Spec> {
+    pub fn content_handler(&self) -> Arc<dyn ContentHandler> {
+        self.content_handler.clone()
+    }
+    pub fn decl_handler(&self) -> Arc<dyn DeclHandler> {
+        self.decl_handler.clone()
+    }
+    pub fn dtd_handler(&self) -> Arc<dyn DTDHandler> {
+        self.dtd_handler.clone()
+    }
+    pub fn entity_resolver(&self) -> Arc<dyn EntityResolver> {
+        self.entity_resolver.clone()
+    }
+    pub fn error_handler(&self) -> Arc<dyn ErrorHandler> {
+        self.error_handler.clone()
+    }
+    pub fn lexical_handler(&self) -> Arc<dyn LexicalHandler> {
+        self.lexical_handler.clone()
+    }
+
+    pub fn set_content_handler(
+        &mut self,
+        handler: Arc<dyn ContentHandler>,
+    ) -> Arc<dyn ContentHandler> {
+        replace(&mut self.content_handler, handler)
+    }
+    pub fn set_decl_handler(&mut self, handler: Arc<dyn DeclHandler>) -> Arc<dyn DeclHandler> {
+        replace(&mut self.decl_handler, handler)
+    }
+    pub fn set_dtd_handler(&mut self, handler: Arc<dyn DTDHandler>) -> Arc<dyn DTDHandler> {
+        replace(&mut self.dtd_handler, handler)
+    }
+    pub fn set_entity_resolver(
+        &mut self,
+        handler: Arc<dyn EntityResolver>,
+    ) -> Arc<dyn EntityResolver> {
+        replace(&mut self.entity_resolver, handler)
+    }
+    pub fn set_error_handler(&mut self, handler: Arc<dyn ErrorHandler>) -> Arc<dyn ErrorHandler> {
+        replace(&mut self.error_handler, handler)
+    }
+    pub fn set_lexical_handler(
+        &mut self,
+        handler: Arc<dyn LexicalHandler>,
+    ) -> Arc<dyn LexicalHandler> {
+        replace(&mut self.lexical_handler, handler)
+    }
 }
 
 impl<'a> XMLReader<DefaultParserSpec<'a>> {
     pub fn parse_uri(&mut self, uri: &str, encoding: Option<&str>) -> Result<(), XMLError> {
+        self.base_uri = uri.into();
+        self.locator = Arc::new(Locator::new(self.base_uri.clone().into(), None, 1, 1));
+        self.encoding = encoding.map(|enc| enc.to_owned());
         todo!()
     }
 
@@ -119,12 +188,26 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         encoding: Option<&str>,
         uri: Option<&str>,
     ) -> Result<(), XMLError> {
+        self.encoding = encoding.map(|enc| enc.to_owned());
         self.source = Box::new(InputSource::from_reader(reader, encoding)?);
+        if let Some(uri) = uri {
+            self.base_uri = uri.into();
+        } else {
+            self.base_uri = std::env::current_exe()?;
+        }
+        self.locator = Arc::new(Locator::new(self.base_uri.clone().into(), None, 1, 1));
         todo!()
     }
 
-    pub fn parse_str(&mut self, str: &str) -> Result<(), XMLError> {
+    pub fn parse_str(&mut self, str: &str, uri: Option<&str>) -> Result<(), XMLError> {
         self.source = Box::new(InputSource::from_content(str));
+        if let Some(uri) = uri {
+            self.base_uri = uri.into();
+        } else {
+            self.base_uri = std::env::current_exe()?;
+        }
+        self.locator = Arc::new(Locator::new(self.base_uri.clone().into(), None, 1, 1));
+        self.parse_document()?;
         todo!()
     }
 
@@ -138,5 +221,8 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         self.error_handler = handler.clone();
         self.lexical_handler = handler.clone();
         self.config = ParserConfig::default();
+        self.base_uri = "".into();
+        self.locator = Arc::new(Locator::new(self.base_uri.clone().into(), None, 1, 1));
+        self.state = ParserState::BeforeStart;
     }
 }

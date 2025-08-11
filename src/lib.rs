@@ -1,5 +1,6 @@
 pub mod encoding;
 pub mod error;
+mod parse;
 pub mod sax;
 
 use std::{borrow::Cow, marker::PhantomData};
@@ -37,10 +38,6 @@ pub struct Attribute<'a> {
     flag: u8,
 }
 
-pub struct Locator {
-    // todo!!!!
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttributeType {
     // todo!!!!
@@ -52,4 +49,33 @@ pub enum DefaultDecl {
 
 pub enum ContentSpec {
     // todo!!!!
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+pub enum XMLVersion {
+    /// XML 1.0
+    #[default]
+    XML10,
+    /// Unknown version. Treat as specified in XML 1.0.  
+    Unknown,
+}
+
+impl XMLVersion {
+    pub fn is_char(&self, c: impl Into<u32>) -> bool {
+        let c: u32 = c.into();
+        matches!(
+            c,
+            0x9
+                | 0xA
+                | 0xD
+                | 0x20..= 0xD7FF
+                | 0xE000..= 0xFFFD
+                | 0x10000..= 0x10FFFF
+        )
+    }
+
+    pub fn is_whitespace(&self, c: impl Into<u32>) -> bool {
+        let c: u32 = c.into();
+        matches!(c, 0x20 | 0x9 | 0xD | 0xA)
+    }
 }

@@ -1,14 +1,29 @@
 use crate::encoding::{DecodeError, EncodeError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum XMLErrorLevel {
+    FatalError,
+    Error,
+    Warning,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XMLError {
     // general errors
     InternalError,
     // parser errors
     ParserUnknownError,
     ParserUnsupportedEncoding,
+    ParserUnsupportedXMLVersion,
     ParserTooLongXMLVersionNumber,
     PraserTooLongEncodingName,
+    ParserInvalidCharacter,
+    ParserInvalidXMLDecl,
+    ParserInvalidXMLVersion,
+    ParserInvalidEncodingDecl,
+    ParserInvalidEncodingName,
+    ParserInvalidSDDecl,
+    ParserUnexpectedEOF,
     // I/O errors
     IOUnknownError,
     IONotFound,

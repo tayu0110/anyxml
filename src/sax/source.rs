@@ -177,6 +177,18 @@ impl<'a> InputSource<'a> {
         self.grow()?;
         Ok(self.decoded.chars().next())
     }
+
+    pub fn advance(&mut self, mut len: usize) -> Result<(), XMLError> {
+        while len > 0 {
+            self.grow()?;
+            let l = len.min(self.decoded.len() - self.decoded_next);
+            assert!(l > 0);
+            assert!(self.decoded.is_char_boundary(self.decoded_next + l));
+            self.decoded_next += l;
+            len -= l;
+        }
+        Ok(())
+    }
 }
 
 impl Default for InputSource<'_> {
