@@ -101,6 +101,7 @@ impl ParserConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParserState {
     BeforeStart,
+    InXMLDeclaration,
     Parsing,
     FatalErrorOccurred,
     Finished,
@@ -224,5 +225,23 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         self.base_uri = "".into();
         self.locator = Arc::new(Locator::new(self.base_uri.clone().into(), None, 1, 1));
         self.state = ParserState::BeforeStart;
+        self.version = XMLVersion::default();
+        self.encoding = None;
+        self.standalone = None;
+    }
+
+    pub(crate) fn grow(&mut self) -> Result<(), XMLError> {
+        let ret = self.source.grow();
+        if self.state == ParserState::InXMLDeclaration && self.encoding.is_none() {
+            // Until the XML declaration (especially the encoding declaration) is read completely,
+            // it may not be possible to set the decoder appropriately,
+            // and `self.source.grow` may throw an error.
+            // Such errors should be suppressed.
+            Ok(())
+        } else {
+            // If external encoding is specified or XML declaration has already read,
+            // decoding should not fail, so the error should be reported as is.
+            ret
+        }
     }
 }

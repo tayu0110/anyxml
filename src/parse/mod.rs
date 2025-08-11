@@ -22,13 +22,14 @@ impl XMLReader<DefaultParserSpec<'_>> {
     }
 
     pub(crate) fn parse_prolog(&mut self) -> Result<(), XMLError> {
-        self.source.grow()?;
-
         self.parse_xmldecl()?;
+        self.state = ParserState::Parsing;
         todo!()
     }
 
     pub(crate) fn parse_xmldecl(&mut self) -> Result<(), XMLError> {
+        self.state = ParserState::InXMLDeclaration;
+        self.grow()?;
         if !self.source.content_bytes().starts_with(b"<?xml") {
             return Ok(());
         }
@@ -94,7 +95,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         };
         self.locator.update_column(|c| c + 1);
 
-        self.source.grow()?;
+        self.grow()?;
         let content = self.source.content_bytes();
         let limit = content.len().min(XML_VERSION_NUM_LIMIT_LENGTH);
         let mut major = 0;
@@ -177,7 +178,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         // parse EncodingDecl
         let mut s = self.skip_whitespaces()?;
-        self.source.grow()?;
+        self.grow()?;
         let mut encoding = None;
         if self.source.content_bytes().starts_with(b"encoding") {
             if s == 0 {
@@ -191,7 +192,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
             encoding = Some(self.parse_encoding_decl(false)?);
             s = self.skip_whitespaces()?;
-            self.source.grow()?;
+            self.grow()?;
         }
 
         // parse SDDecl
@@ -208,7 +209,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
             standalone = Some(self.parse_sddecl(false)?);
             self.skip_whitespaces()?;
-            self.source.grow()?;
+            self.grow()?;
         }
 
         if !self.source.content_bytes().starts_with(b"?>") {
@@ -228,6 +229,16 @@ impl XMLReader<DefaultParserSpec<'_>> {
         if self.state != ParserState::FatalErrorOccurred {
             self.content_handler
                 .declaration(&version_str, encoding.as_deref(), standalone);
+        }
+        self.version = version;
+        self.standalone = standalone;
+        // If an encoding is provided from an external source, it is used as a priority.
+        // If not, `self.encoding` is `None`, so `self.encoding` is initialized with the value
+        // obtained from the XML declaration, and the decoder for `self.source` is switched.
+        if let Some(encoding) = encoding
+            && self.encoding.is_none()
+        {
+            self.encoding = Some(encoding);
         }
 
         Ok(())
@@ -291,6 +302,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.locator.update_column(|c| c + 1);
 
         let encoding = self.parse_enc_name()?;
+        self.grow()?;
 
         match self.source.next_char()? {
             Some(c) if c == quote => {
@@ -307,14 +319,26 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 return Err(XMLError::ParserInvalidEncodingDecl);
             }
             _ => {
-                fatal_error!(
-                    self.error_handler,
-                    XMLError::ParserUnexpectedEOF,
-                    self.locator,
-                    "Unexpected EOF."
-                );
                 self.state = ParserState::FatalErrorOccurred;
-                return Err(XMLError::ParserUnexpectedEOF);
+                // If we call `grow` just before and `source` is empty,
+                // `source` has probably reached EOF.
+                return if self.source.is_empty() {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserUnexpectedEOF,
+                        self.locator,
+                        "Unexpected EOF."
+                    );
+                    Err(XMLError::ParserUnexpectedEOF)
+                } else {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidEncodingDecl,
+                        self.locator,
+                        "The quotation marks in the encoding name are incorrect."
+                    );
+                    Err(XMLError::ParserInvalidEncodingDecl)
+                };
             }
         }
 
@@ -332,7 +356,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.state = ParserState::FatalErrorOccurred;
         }
 
-        self.source.grow()?;
+        self.grow()?;
         let content = self.source.content_bytes();
         if !content.starts_with(b"standalone") {
             fatal_error!(
@@ -349,7 +373,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.locator.update_column(|c| c + 10);
 
         self.skip_whitespaces()?;
-        self.source.grow()?;
+        self.grow()?;
         if !self.source.content_bytes().starts_with(b"=") {
             fatal_error!(
                 self.error_handler,
@@ -418,18 +442,30 @@ impl XMLReader<DefaultParserSpec<'_>> {
     }
 
     pub(crate) fn parse_enc_name(&mut self) -> Result<String, XMLError> {
-        self.source.grow()?;
+        self.grow()?;
 
         let content = self.source.content_bytes();
         if content.is_empty() {
-            fatal_error!(
-                self.error_handler,
-                XMLError::ParserUnexpectedEOF,
-                self.locator,
-                "Unexpected EOF."
-            );
             self.state = ParserState::FatalErrorOccurred;
-            return Err(XMLError::ParserUnexpectedEOF);
+            // If we call `grow` just before and `source` is empty,
+            // `source` has probably reached EOF.
+            return if self.source.is_empty() {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserUnexpectedEOF,
+                    self.locator,
+                    "Unexpected EOF."
+                );
+                Err(XMLError::ParserUnexpectedEOF)
+            } else {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidEncodingName,
+                    self.locator,
+                    "Data that may not be accepted as an encoding name has been detected."
+                );
+                Err(XMLError::ParserInvalidEncodingName)
+            };
         }
 
         if !content[0].is_ascii_alphabetic() {
@@ -460,14 +496,24 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::PraserTooLongEncodingName);
         } else if cur == content.len() {
-            fatal_error!(
-                self.error_handler,
-                XMLError::ParserUnexpectedEOF,
-                self.locator,
-                "Unexpected EOF."
-            );
             self.state = ParserState::FatalErrorOccurred;
-            return Err(XMLError::ParserUnexpectedEOF);
+            return if self.source.is_empty() {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserUnexpectedEOF,
+                    self.locator,
+                    "Unexpected EOF."
+                );
+                Err(XMLError::ParserUnexpectedEOF)
+            } else {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidEncodingName,
+                    self.locator,
+                    "Data that may not be accepted as an encoding name has been detected."
+                );
+                Err(XMLError::ParserInvalidEncodingName)
+            };
         }
 
         let ret = unsafe {

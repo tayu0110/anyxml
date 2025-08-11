@@ -1,7 +1,7 @@
 use std::io::Read;
 
 use crate::{
-    encoding::{Decoder, UTF8Decoder, UTF16BEDecoder, UTF16LEDecoder},
+    encoding::{DecodeError, Decoder, UTF8Decoder, UTF16BEDecoder, UTF16LEDecoder},
     error::XMLError,
 };
 
@@ -153,12 +153,34 @@ impl<'a> InputSource<'a> {
                 self.decoded.shrink_to(INPUT_CHUNK);
                 self.decoded_next = 0;
             }
-            let (read, _) = self.decoder.decode(
+            match self.decoder.decode(
                 &self.buffer[self.buffer_next..self.buffer_end],
                 &mut self.decoded,
                 self.eof,
-            )?;
-            self.buffer_next += read;
+            ) {
+                Ok((read, _)) => {
+                    self.buffer_next += read;
+                }
+                Err(e) => match e {
+                    DecodeError::Malformed {
+                        read,
+                        write: _,
+                        length,
+                        offset,
+                    } => {
+                        let actual_read = read - offset - length;
+                        // Since it may not be possible to set the decoder appropriately
+                        // from the BOM or external encoding, no error is returned as long as
+                        // some data can be decoded.
+                        if actual_read > 0 {
+                            self.buffer_next += actual_read;
+                        } else {
+                            return Err(From::from(e));
+                        }
+                    }
+                    _ => return Err(From::from(e)),
+                },
+            }
         }
         Ok(())
     }
@@ -174,6 +196,9 @@ impl<'a> InputSource<'a> {
     }
 
     pub fn peek_char(&mut self) -> Result<Option<char>, XMLError> {
+        if let Some(c) = self.decoded.chars().next() {
+            return Ok(Some(c));
+        }
         self.grow()?;
         Ok(self.decoded.chars().next())
     }
@@ -188,6 +213,17 @@ impl<'a> InputSource<'a> {
             len -= l;
         }
         Ok(())
+    }
+
+    /// Returns `true` if both the decoded but unused string
+    /// and the read but undecoded data are 0 bytes.
+    ///
+    /// # Note
+    /// Returning `true` does not mean that EOF has been reached.  
+    /// If all of the read data has been decoded and you continue to consume the decoded strings
+    /// without explicitly calling `grow`, this function may return `true` before reaching EOF.
+    pub fn is_empty(&self) -> bool {
+        self.decoded.len() - self.decoded_next == 0 && self.buffer_end - self.buffer_next == 0
     }
 }
 
