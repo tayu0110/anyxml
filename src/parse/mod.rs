@@ -226,21 +226,35 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(2)?;
         self.locator.update_column(|c| c + 2);
 
+        // If an encoding is provided from an external source, it is used as a priority.
+        // If not, `self.encoding` is `None`, so `self.encoding` is initialized with the value
+        // obtained from the XML declaration, and the decoder for `self.source` is switched.
+        if let Some(encoding) = encoding.as_deref()
+            && self.encoding.is_none()
+            && self.source.switch_encoding(encoding).is_err()
+        {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserUnsupportedEncoding,
+                self.locator,
+                "The declared encoding '{}' is not supported.",
+                encoding
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            // We continue decoding the data using the encoding inferred from the BOM or
+            // byte sequence at the beginning of the document entity, and attempt parsing
+            // and error detection.
+        }
+
         if self.state != ParserState::FatalErrorOccurred {
             self.content_handler
                 .declaration(&version_str, encoding.as_deref(), standalone);
         }
         self.version = version;
         self.standalone = standalone;
-        // If an encoding is provided from an external source, it is used as a priority.
-        // If not, `self.encoding` is `None`, so `self.encoding` is initialized with the value
-        // obtained from the XML declaration, and the decoder for `self.source` is switched.
-        if let Some(encoding) = encoding
-            && self.encoding.is_none()
-        {
-            self.encoding = Some(encoding);
+        if self.encoding.is_none() {
+            self.encoding = encoding;
         }
-
         Ok(())
     }
 

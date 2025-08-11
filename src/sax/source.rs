@@ -225,6 +225,14 @@ impl<'a> InputSource<'a> {
     pub fn is_empty(&self) -> bool {
         self.decoded.len() - self.decoded_next == 0 && self.buffer_end - self.buffer_next == 0
     }
+
+    pub fn encoding_name(&self) -> &'static str {
+        self.decoder.name()
+    }
+
+    pub(crate) fn switch_encoding(&mut self, to: &str) -> Result<(), XMLError> {
+        todo!()
+    }
 }
 
 impl Default for InputSource<'_> {
