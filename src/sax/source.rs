@@ -92,3 +92,19 @@ impl<'a> InputSource<'a> {
         Ok(self.decoded.chars().next())
     }
 }
+
+impl Default for InputSource<'_> {
+    fn default() -> Self {
+        Self {
+            source: Box::new(std::io::empty()),
+            buffer: [0; INPUT_CHUNK],
+            decoder: Box::new(UTF8Decoder),
+            decoded: String::new(),
+            buffer_next: 0,
+            buffer_end: 0,
+            decoded_next: 0,
+            total_read: 0,
+            eof: true,
+        }
+    }
+}

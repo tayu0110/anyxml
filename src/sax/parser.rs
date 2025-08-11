@@ -3,8 +3,12 @@ use std::{io::Read, sync::Arc};
 use crate::{
     DefaultParserSpec, ParserSpec,
     error::XMLError,
-    sax::handler::{
-        ContentHandler, DTDHandler, DeclHandler, EntityResolver, ErrorHandler, LexicalHandler,
+    sax::{
+        handler::{
+            ContentHandler, DTDHandler, DeclHandler, DefaultSAXHandler, EntityResolver,
+            ErrorHandler, LexicalHandler,
+        },
+        source::InputSource,
     },
 };
 
@@ -94,7 +98,7 @@ impl ParserConfig {
 }
 
 pub struct XMLReader<Spec: ParserSpec> {
-    input: Spec::Reader,
+    source: Spec::Reader,
     content_handler: Arc<dyn ContentHandler>,
     decl_handler: Arc<dyn DeclHandler>,
     dtd_handler: Arc<dyn DTDHandler>,
@@ -119,6 +123,19 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
     }
 
     pub fn parse_str(&mut self, str: &str) -> Result<(), XMLError> {
+        self.source = InputSource::from_content(str);
         todo!()
+    }
+
+    pub fn reset(&mut self) {
+        self.source = InputSource::default();
+        let handler = Arc::new(DefaultSAXHandler);
+        self.content_handler = handler.clone();
+        self.decl_handler = handler.clone();
+        self.dtd_handler = handler.clone();
+        self.entity_resolver = handler.clone();
+        self.error_handler = handler.clone();
+        self.lexical_handler = handler.clone();
+        self.config = ParserConfig::default();
     }
 }
