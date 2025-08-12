@@ -85,6 +85,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         // If the following character is neither ‘[’ nor ‘>’, then there is an ExternalID.
+        let mut system_id = None;
+        let mut public_id = None;
         if !matches!(self.source.content_bytes()[0], b'[' | b'>') {
             if s == 0 {
                 fatal_error!(
@@ -95,11 +97,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 );
                 self.state = ParserState::FatalErrorOccurred;
             }
-            let mut system_id = String::new();
-            let mut public_id = None;
-            self.parse_external_id(&mut system_id, &mut public_id)?;
+            self.parse_external_id(system_id.get_or_insert_default(), &mut public_id)?;
             self.skip_whitespaces()?;
-            todo!()
+        }
+        if self.state != ParserState::FatalErrorOccurred {
+            self.lexical_handler
+                .start_dtd(&name, public_id.as_deref(), system_id.as_deref());
         }
 
         self.grow()?;
@@ -110,7 +113,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.locator.update_column(|c| c + 1);
 
             // parse internal subset
-            todo!("parse internal subset");
+            self.parse_int_subset()?;
 
             self.grow()?;
             if !self.source.content_bytes().starts_with(b"]") {
@@ -145,6 +148,161 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(1)?;
         self.locator.update_column(|c| c + 1);
 
+        todo!("parse external subset");
+
+        if self.state != ParserState::FatalErrorOccurred {
+            self.lexical_handler.end_dtd();
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn parse_int_subset(&mut self) -> Result<(), XMLError> {
+        self.skip_whitespaces()?;
+
+        loop {
+            self.grow()?;
+            match self.source.content_bytes() {
+                [b'%', ..] => todo!("PEReference"),
+                [b'<', b'?', ..] => self.parse_pi()?,
+                [b'<', b'!', b'-', b'-', ..] => self.parse_comment()?,
+                [b'<', b'!', b'E', b'L', ..] => todo!("elementdecl"),
+                [b'<', b'!', b'E', b'N', ..] => todo!("EntityDecl"),
+                [b'<', b'!', b'A', ..] => todo!("AttlistDecl"),
+                [b'<', b'!', b'N', ..] => self.parse_notation_decl()?,
+                _ => break Ok(()),
+            }
+
+            self.skip_whitespaces()?;
+        }
+    }
+
+    pub(crate) fn parse_notation_decl(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+
+        if !self.source.content_bytes().starts_with(b"<!NOTATION") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidNotationDecl,
+                self.locator,
+                "Notation declration must start with '<!NOTATION'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidNotationDecl);
+        }
+        // skip '<!NOTATION'
+        self.source.advance(10)?;
+        self.locator.update_column(|c| c + 10);
+
+        if self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidNotationDecl,
+                self.locator,
+                "Whitespaces are required after '<!NOTATION' in Notation declaration."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        let mut name = String::new();
+        if self.config.is_enable(ParserOption::Namespaces) {
+            self.parse_ncname(&mut name)?;
+        } else {
+            self.parse_name(&mut name)?;
+        }
+
+        if self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidNotationDecl,
+                self.locator,
+                "Whitespaces are required after Name in Notation declaration."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        self.grow()?;
+        match self.source.content_bytes() {
+            [b'S', b'Y', b'S', b'T', b'E', b'M', ..] => {
+                // If it starts with “SYSTEM,” it is surely an ExternalID.
+                let mut system_id = String::new();
+                self.parse_external_id(&mut system_id, &mut None)?;
+                if self.state != ParserState::FatalErrorOccurred {
+                    self.dtd_handler
+                        .notation_decl(&name, None, Some(&system_id));
+                }
+            }
+            [b'P', b'U', b'B', b'L', b'I', b'C', ..] => {
+                // If it starts with “PUBLIC,” it is impossible to distinguish between ExternalID
+                // and PublicID, so methods such as `parse_external_id` should not be used.
+                //
+                // [75] ExternalID ::= 'SYSTEM' S SystemLiteral
+                //                      | 'PUBLIC' S PubidLiteral S SystemLiteral
+                // [83] PublicID   ::= 'PUBLIC' S PubidLiteral
+
+                // skip 'PUBLIC'
+                self.source.advance(6)?;
+                self.locator.update_column(|c| c + 6);
+
+                if self.skip_whitespaces()? == 0 {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidPubidLiteral,
+                        self.locator,
+                        "Whitespaces are required after 'PUBLIC' in Notation declaration."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                }
+                let mut public_id = String::new();
+                self.parse_pubid_literal(&mut public_id)?;
+
+                let s = self.skip_whitespaces()?;
+                self.grow()?;
+                // If '>' appears, notation declaration finished.
+                if self.source.content_bytes().starts_with(b">") {
+                    // skip '>'
+                    self.source.advance(1)?;
+                    self.locator.update_column(|c| c + 1);
+
+                    if self.state != ParserState::FatalErrorOccurred {
+                        self.dtd_handler
+                            .notation_decl(&name, Some(&public_id), None);
+                    }
+                    return Ok(());
+                }
+
+                // If notation declaration has not finished,
+                // whitespaces are required because SystemLiteral follows.
+                if s == 0 {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidPubidLiteral,
+                        self.locator,
+                        "Whitespaces are required before SystemLiteral in Notation declaration."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                }
+
+                let mut system_id = String::new();
+                self.parse_system_literal(&mut system_id)?;
+                self.skip_whitespaces()?;
+
+                if self.state != ParserState::FatalErrorOccurred {
+                    self.dtd_handler
+                        .notation_decl(&name, Some(&public_id), Some(&system_id));
+                }
+            }
+            _ => {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidNotationDecl,
+                    self.locator,
+                    "Notation declaration must have either ExternalID or PublicID."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserInvalidNotationDecl);
+            }
+        }
         Ok(())
     }
 

@@ -35,6 +35,10 @@ pub enum XMLError {
     ParserInvalidProcessingInstruction,
     ParserUnacceptablePITarget,
     ParserInvalidDoctypeDecl,
+    ParserInvalidElementDecl,
+    ParserInvalidAttlistDecl,
+    ParserInvalidEntityDecl,
+    ParserInvalidNotationDecl,
     ParserUnexpectedEOF,
     // I/O errors
     IOUnknownError,
