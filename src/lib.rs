@@ -130,6 +130,24 @@ impl XMLVersion {
         _is_name_char(*self, c.into())
     }
 
+    /// [13] PubidChar ::= #x20 | #xD | #xA | [a-zA-Z0-9] | [-'()+,./:=?;!*#@$_%]
+    pub fn is_pubid_char(&self, c: impl Into<u32>) -> bool {
+        fn _is_pubid_char(_version: XMLVersion, c: u32) -> bool {
+            matches!(c,
+                0xA
+                | 0xD
+                | 0x20..=0x21 // SP, '!'
+                | 0x23..=0x25 // [#$%]
+                | 0x27..=0x3B // ['()*+,-./], '0'..='9', [:;]
+                | 0x3D // '='
+                | 0x3F..=0x5A // [?@], 'A'..='Z'
+                | 0x5F // '_'
+                | 0x61..=0x7A // 'a'..='z'
+            )
+        }
+        _is_pubid_char(*self, c.into())
+    }
+
     pub fn is_whitespace(&self, c: impl Into<u32>) -> bool {
         let c: u32 = c.into();
         matches!(c, 0x20 | 0x9 | 0xD | 0xA)

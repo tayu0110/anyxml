@@ -1,3 +1,4 @@
+pub mod literals;
 pub mod tokens;
 
 use crate::{
@@ -15,6 +16,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.content_handler
             .set_document_locator(self.locator.clone());
         self.content_handler.start_document();
+        self.state = ParserState::Parsing;
         self.parse_prolog()?;
         self.parse_element()?;
         self.parse_misc()?;
@@ -23,16 +25,203 @@ impl XMLReader<DefaultParserSpec<'_>> {
     }
 
     pub(crate) fn parse_prolog(&mut self) -> Result<(), XMLError> {
-        self.parse_xmldecl()?;
-        self.state = ParserState::Parsing;
-        todo!()
+        if self.source.content_bytes().starts_with(b"<?xml") {
+            self.parse_xmldecl()?;
+            self.state = ParserState::Parsing;
+        }
+        self.parse_misc()?;
+        self.grow()?;
+        if self.source.content_bytes().starts_with(b"<!DOCTYPE") {
+            self.parse_doctypedecl()?;
+            self.parse_misc()?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn parse_doctypedecl(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+        if !self.source.content_bytes().starts_with(b"<!DOCTYPE") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidDoctypeDecl,
+                self.locator,
+                "The document type declaration must start with '<!DOCTYPE'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidDoctypeDecl);
+        }
+        // skip '<!DOCTYPE'
+        self.source.advance(9)?;
+        self.locator.update_column(|c| c + 9);
+
+        if self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidDoctypeDecl,
+                self.locator,
+                "Whitespaces are required after '<!DOCTYPE'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        let mut name = String::new();
+        if self.config.is_enable(ParserOption::Namespaces) {
+            self.parse_qname(&mut name)?;
+        } else {
+            self.parse_name(&mut name)?;
+        }
+
+        let s = self.skip_whitespaces()?;
+        self.grow()?;
+        if self.source.is_empty() {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserUnexpectedEOF,
+                self.locator,
+                "Unexpected EOF"
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserUnexpectedEOF);
+        }
+
+        // If the following character is neither ‘[’ nor ‘>’, then there is an ExternalID.
+        if !matches!(self.source.content_bytes()[0], b'[' | b'>') {
+            if s == 0 {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidDoctypeDecl,
+                    self.locator,
+                    "Whitespaces are required between Name and ExternalID."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+            }
+            let mut system_id = String::new();
+            let mut public_id = None;
+            self.parse_external_id(&mut system_id, &mut public_id)?;
+            self.skip_whitespaces()?;
+            todo!()
+        }
+
+        self.grow()?;
+        // try to detect Internal Subset
+        if self.source.content_bytes().starts_with(b"[") {
+            // skip '['
+            self.source.advance(1)?;
+            self.locator.update_column(|c| c + 1);
+
+            // parse internal subset
+            todo!("parse internal subset");
+
+            self.grow()?;
+            if !self.source.content_bytes().starts_with(b"]") {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidDoctypeDecl,
+                    self.locator,
+                    "']' for the end of internal DTD subset is not found."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserInvalidDoctypeDecl);
+            }
+            // skip ']'
+            self.source.advance(1)?;
+            self.locator.update_column(|c| c + 1);
+
+            self.skip_whitespaces()?;
+        }
+
+        self.grow()?;
+        if !self.source.content_bytes().starts_with(b">") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidDoctypeDecl,
+                self.locator,
+                "Document type declaration does not close with '>'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidDoctypeDecl);
+        }
+        // skip '>'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
+
+        Ok(())
+    }
+
+    pub(crate) fn parse_external_id(
+        &mut self,
+        system_id: &mut String,
+        public_id: &mut Option<String>,
+    ) -> Result<(), XMLError> {
+        self.grow()?;
+        match self.source.content_bytes() {
+            [b'S', b'Y', b'S', b'T', b'E', b'M', ..] => {
+                // skip 'SYSTEM'
+                self.source.advance(6)?;
+                self.locator.update_column(|c| c + 6);
+                if self.skip_whitespaces()? == 0 {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidExternalID,
+                        self.locator,
+                        "Whitespaces are required after 'SYSTEM' in ExternalID."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                }
+                *public_id = None;
+                self.parse_system_literal(system_id)?;
+            }
+            [b'P', b'U', b'B', b'L', b'I', b'C', ..] => {
+                // skip 'PUBLIC'
+                self.source.advance(6)?;
+                self.locator.update_column(|c| c + 6);
+                if self.skip_whitespaces()? == 0 {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidExternalID,
+                        self.locator,
+                        "Whitespaces are required after 'PUBLIC' in ExternalID."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                }
+                self.parse_pubid_literal(public_id.get_or_insert_default())?;
+                if self.skip_whitespaces()? == 0 {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidExternalID,
+                        self.locator,
+                        "Whitespaces are required after PubidLiteral in ExternalID."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                }
+                self.parse_system_literal(system_id)?;
+            }
+            _ => {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidExternalID,
+                    self.locator,
+                    "ExternalID must start with 'SYSTEM' or 'PUBLIC'."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserInvalidExternalID);
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn parse_xmldecl(&mut self) -> Result<(), XMLError> {
         self.state = ParserState::InXMLDeclaration;
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"<?xml") {
-            return Ok(());
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidXMLDecl,
+                self.locator,
+                "XML declaration must start with '<?xml'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidXMLDecl);
         }
         // skip '<?xml'
         self.source.advance(5)?;

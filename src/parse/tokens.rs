@@ -21,6 +21,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         self.version.is_name_char(c)
     }
 
+    pub fn is_pubid_char(&self, c: char) -> bool {
+        self.version.is_pubid_char(c)
+    }
+
     pub fn is_whitespace(&self, c: char) -> bool {
         self.version.is_whitespace(c)
     }
