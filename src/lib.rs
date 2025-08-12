@@ -65,8 +65,12 @@ pub enum DefaultDecl {
     None(Box<str>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ContentSpec {
-    // todo!!!!
+    EMPTY,
+    ANY,
+    Mixed(Vec<Box<str>>),
+    Children(Box<str>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]

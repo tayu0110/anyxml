@@ -2,7 +2,7 @@ pub mod literals;
 pub mod tokens;
 
 use crate::{
-    AttributeType, CHARDATA_CHUNK_LENGTH, DefaultDecl, DefaultParserSpec,
+    AttributeType, CHARDATA_CHUNK_LENGTH, ContentSpec, DefaultDecl, DefaultParserSpec,
     ENCODING_NAME_LIMIT_LENGTH, XML_VERSION_NUM_LIMIT_LENGTH, XMLVersion,
     error::XMLError,
     sax::{
@@ -168,7 +168,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 [b'%', ..] => todo!("PEReference"),
                 [b'<', b'?', ..] => self.parse_pi()?,
                 [b'<', b'!', b'-', b'-', ..] => self.parse_comment()?,
-                [b'<', b'!', b'E', b'L', ..] => todo!("elementdecl"),
+                [b'<', b'!', b'E', b'L', ..] => self.parse_element_decl()?,
                 [b'<', b'!', b'E', b'N', ..] => self.parse_entity_decl()?,
                 [b'<', b'!', b'A', ..] => self.parse_attlist_decl()?,
                 [b'<', b'!', b'N', ..] => self.parse_notation_decl()?,
@@ -177,6 +177,162 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
             self.skip_whitespaces()?;
         }
+    }
+
+    pub(crate) fn parse_element_decl(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+
+        if !self.source.content_bytes().starts_with(b"<!ELEMENT") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidElementDecl,
+                self.locator,
+                "Element declaration must start with '<!ELEMENT'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidElementDecl);
+        }
+        // skip '<!ELEMENT'
+        self.source.advance(9)?;
+        self.locator.update_column(|c| c + 9);
+
+        if self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidElementDecl,
+                self.locator,
+                "Whitespaces are required after '<!ELEMENT' in element declaration."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        let mut name = String::new();
+        if self.config.is_enable(ParserOption::Namespaces) {
+            self.parse_qname(&mut name)?;
+        } else {
+            self.parse_name(&mut name)?;
+        }
+
+        if self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidElementDecl,
+                self.locator,
+                "Whitespaces are required after Name in element declaration."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        // parse contentspec
+        self.grow()?;
+        let contentspec = match self.source.content_bytes() {
+            [b'E', b'M', b'P', b'T', b'Y', ..] => ContentSpec::EMPTY,
+            [b'A', b'N', b'Y', ..] => ContentSpec::ANY,
+            _ => {
+                if !self.source.content_bytes().starts_with(b"(") {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidElementDecl,
+                        self.locator,
+                        "Element or Mixed content must start with '('."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                    return Err(XMLError::ParserInvalidElementDecl);
+                }
+                // skip '('
+                self.source.advance(1)?;
+                self.locator.update_column(|c| c + 1);
+
+                self.skip_whitespaces()?;
+
+                self.grow()?;
+                if self.source.content_bytes().starts_with(b"#PCDATA") {
+                    // Mixed Content
+                    // [51] Mixed ::= '(' S? '#PCDATA' (S? '|' S? Name)* S? ')*'
+                    //              | '(' S? '#PCDATA' S? ')'
+                    self.skip_whitespaces()?;
+                    self.grow()?;
+                    let mut ret = vec![];
+                    if self.source.content_bytes().starts_with(b"|") {
+                        // skip '|'
+                        self.source.advance(1)?;
+                        self.locator.update_column(|c| c + 1);
+                        self.skip_whitespaces()?;
+
+                        let mut buffer = String::new();
+                        if self.config.is_enable(ParserOption::Namespaces) {
+                            self.parse_qname(&mut buffer)?;
+                        } else {
+                            self.parse_name(&mut buffer)?;
+                        }
+                        self.skip_whitespaces()?;
+                        while self.source.content_bytes().starts_with(b"|") {
+                            // skip '|'
+                            self.source.advance(1)?;
+                            self.locator.update_column(|c| c + 1);
+                            self.skip_whitespaces()?;
+
+                            ret.push(buffer.as_str().into());
+                            buffer.clear();
+                            if self.config.is_enable(ParserOption::Namespaces) {
+                                self.parse_qname(&mut buffer)?;
+                            } else {
+                                self.parse_name(&mut buffer)?;
+                            }
+                            self.skip_whitespaces()?;
+                            if self.source.content_bytes().is_empty() {
+                                self.grow()?;
+                            }
+                        }
+                        ret.push(buffer.into_boxed_str());
+                    }
+                    if !self.source.content_bytes().starts_with(b")") {
+                        fatal_error!(
+                            self.error_handler,
+                            XMLError::ParserInvalidElementDecl,
+                            self.locator,
+                            "Mixed Content is not wrapped by parentheses correctly."
+                        );
+                        self.state = ParserState::FatalErrorOccurred;
+                        return Err(XMLError::ParserInvalidElementDecl);
+                    }
+                    // skip ')'
+                    self.source.advance(1)?;
+                    self.locator.update_column(|c| c + 1);
+                    ContentSpec::Mixed(ret)
+                } else {
+                    // Element Content
+                    // [47] children ::= (choice | seq) ('?' | '*' | '+')?
+                    // [48] cp       ::= (Name | choice | seq) ('?' | '*' | '+')?
+                    // [49] choice   ::= '(' S? cp ( S? '|' S? cp )+ S? ')'	[VC: Proper Group/PE Nesting]
+                    // [50] seq      ::= '(' S? cp ( S? ',' S? cp )* S? ')' [VC: Proper Group/PE Nesting]
+                    todo!("Element Content")
+                }
+            }
+        };
+
+        self.skip_whitespaces()?;
+
+        self.grow()?;
+        if !self.source.content_bytes().starts_with(b">") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidElementDecl,
+                self.locator,
+                "Element declaration does not end with '>'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidElementDecl);
+        }
+        // skip '>'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
+
+        if self.state != ParserState::FatalErrorOccurred {
+            self.decl_handler.element_decl(&name, contentspec);
+        }
+
+        Ok(())
     }
 
     pub(crate) fn parse_entity_decl(&mut self) -> Result<(), XMLError> {
