@@ -157,4 +157,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             }
         }
     }
+
+    pub(crate) fn parse_att_value(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+        todo!()
+    }
 }

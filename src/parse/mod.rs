@@ -2,8 +2,8 @@ pub mod literals;
 pub mod tokens;
 
 use crate::{
-    CHARDATA_CHUNK_LENGTH, DefaultParserSpec, ENCODING_NAME_LIMIT_LENGTH,
-    XML_VERSION_NUM_LIMIT_LENGTH, XMLVersion,
+    AttributeType, CHARDATA_CHUNK_LENGTH, DefaultDecl, DefaultParserSpec,
+    ENCODING_NAME_LIMIT_LENGTH, XML_VERSION_NUM_LIMIT_LENGTH, XMLVersion,
     error::XMLError,
     sax::{
         error::{fatal_error, warning},
@@ -33,6 +33,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         if self.source.content_bytes().starts_with(b"<!DOCTYPE") {
             self.parse_doctypedecl()?;
+            self.state = ParserState::Parsing;
             self.parse_misc()?;
         }
         Ok(())
@@ -158,6 +159,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
     }
 
     pub(crate) fn parse_int_subset(&mut self) -> Result<(), XMLError> {
+        self.state = ParserState::InInternalSubset;
         self.skip_whitespaces()?;
 
         loop {
@@ -168,13 +170,356 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 [b'<', b'!', b'-', b'-', ..] => self.parse_comment()?,
                 [b'<', b'!', b'E', b'L', ..] => todo!("elementdecl"),
                 [b'<', b'!', b'E', b'N', ..] => todo!("EntityDecl"),
-                [b'<', b'!', b'A', ..] => todo!("AttlistDecl"),
+                [b'<', b'!', b'A', ..] => self.parse_attlist_decl()?,
                 [b'<', b'!', b'N', ..] => self.parse_notation_decl()?,
                 _ => break Ok(()),
             }
 
             self.skip_whitespaces()?;
         }
+    }
+
+    pub(crate) fn parse_attlist_decl(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+
+        if !self.source.content_bytes().starts_with(b"<!ATTLIST") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidAttlistDecl,
+                self.locator,
+                "Attribute list declration must start with '<!ATTLIST'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidAttlistDecl);
+        }
+        // skip '<!ATTLIST'
+        self.source.advance(9)?;
+        self.locator.update_column(|c| c + 9);
+
+        if self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidAttlistDecl,
+                self.locator,
+                "Whitespaces are required after '<!ATTLIST' in attribute list declaration."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        let mut name = String::new();
+        if self.config.is_enable(ParserOption::Namespaces) {
+            self.parse_qname(&mut name)?;
+        } else {
+            self.parse_name(&mut name)?;
+        }
+
+        let mut s = self.skip_whitespaces()?;
+        self.grow()?;
+        let mut att_name = String::new();
+        while !self.source.content_bytes().starts_with(b">") {
+            if s == 0 {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidAttlistDecl,
+                    self.locator,
+                    "Whitespaces are required before Name in AttDef."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+            }
+            att_name.clear();
+            let (atttype, default_decl) = self.parse_att_def(false, &mut att_name)?;
+            if self.state != ParserState::FatalErrorOccurred {
+                self.decl_handler
+                    .attribute_decl(&name, &att_name, atttype, default_decl);
+            }
+            s = self.skip_whitespaces()?;
+            if self.source.content_bytes().is_empty() {
+                self.grow()?;
+                if self.source.content_bytes().is_empty() {
+                    break;
+                }
+            }
+        }
+
+        if !self.source.content_bytes().starts_with(b">") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserUnexpectedEOF,
+                self.locator,
+                "Unexpected EOF."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserUnexpectedEOF);
+        }
+        // skip '>'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
+
+        Ok(())
+    }
+
+    pub(crate) fn parse_att_def(
+        &mut self,
+        need_trim_whitespace: bool,
+        att_name: &mut String,
+    ) -> Result<(AttributeType, DefaultDecl), XMLError> {
+        if need_trim_whitespace && self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidAttlistDecl,
+                self.locator,
+                "Whitespaces are required before Name in AttDef."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        if self.config.is_enable(ParserOption::Namespaces) {
+            self.parse_qname(att_name)?;
+        } else {
+            self.parse_name(att_name)?;
+        }
+
+        if self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidAttlistDecl,
+                self.locator,
+                "Whitespaces are required before AttType in AttDef."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        // parse AttType
+        self.grow()?;
+        let atttype = match self.source.content_bytes() {
+            [b'(', ..] => {
+                // Enumeration
+                // [59] Enumeration ::= '(' S? Nmtoken (S? '|' S? Nmtoken)* S? ')'
+
+                // skip '('
+                self.source.advance(1)?;
+                self.locator.update_column(|c| c + 1);
+
+                self.skip_whitespaces()?;
+                let mut buffer = String::new();
+                self.parse_nmtoken(&mut buffer)?;
+                let mut ret = vec![];
+                self.skip_whitespaces()?;
+                self.grow()?;
+                while self.source.content_bytes().starts_with(b"|") {
+                    self.source.advance(1)?;
+                    self.locator.update_column(|c| c + 1);
+                    self.skip_whitespaces()?;
+                    ret.push(buffer.as_str().into());
+                    buffer.clear();
+                    self.parse_nmtoken(&mut buffer)?;
+                    self.skip_whitespaces()?;
+                    if self.source.content_bytes().is_empty() {
+                        self.grow()?;
+                    }
+                }
+                ret.push(buffer.into_boxed_str());
+
+                if !self.source.content_bytes().starts_with(b")") {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidAttlistDecl,
+                        self.locator,
+                        "Enumerated Attribute Type declaration does not close with ')'."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                    return Err(XMLError::ParserInvalidAttlistDecl);
+                }
+                // skip ')'
+                self.source.advance(1)?;
+                self.locator.update_column(|c| c + 1);
+
+                AttributeType::Enumeration(ret)
+            }
+            [b'C', b'D', b'A', b'T', b'A', ..] => {
+                // StringType
+                // [55] StringType ::= 'CDATA'
+                self.source.advance(5)?;
+                self.locator.update_column(|c| c + 5);
+                AttributeType::CDATA
+            }
+            [b'N', b'O', b'T', b'A', b'T', b'I', b'O', b'N', ..] => {
+                // NotationType
+                // [58] NotationType ::= 'NOTATION' S '(' S? Name (S? '|' S? Name)* S? ')'
+
+                // skip 'NOTATION'
+                self.source.advance(8)?;
+                self.locator.update_column(|c| c + 8);
+
+                if self.skip_whitespaces()? == 0 {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidAttlistDecl,
+                        self.locator,
+                        "Whitespaces are required after 'NOTATION' in Notation Attribute Type declaration"
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                }
+
+                self.grow()?;
+                if !self.source.content_bytes().starts_with(b"(") {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidAttlistDecl,
+                        self.locator,
+                        "'(' is required after 'NOTATION' in Notation Attribute Type declaration."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                    return Err(XMLError::ParserInvalidAttlistDecl);
+                }
+                // skip '('
+                self.source.advance(1)?;
+                self.locator.update_column(|c| c + 1);
+
+                self.skip_whitespaces()?;
+                let mut buffer = String::new();
+                if self.config.is_enable(ParserOption::Namespaces) {
+                    self.parse_ncname(&mut buffer)?;
+                } else {
+                    self.parse_name(&mut buffer)?;
+                }
+                self.skip_whitespaces()?;
+                self.grow()?;
+                let mut ret = vec![];
+                while self.source.content_bytes().starts_with(b"|") {
+                    // skip '|'
+                    self.source.advance(1)?;
+                    self.locator.update_column(|c| c + 1);
+                    self.skip_whitespaces()?;
+                    ret.push(buffer.as_str().into());
+                    if self.config.is_enable(ParserOption::Namespaces) {
+                        self.parse_ncname(&mut buffer)?;
+                    } else {
+                        self.parse_name(&mut buffer)?;
+                    }
+                    self.skip_whitespaces()?;
+                    if self.source.content_bytes().is_empty() {
+                        self.grow()?;
+                    }
+                }
+                ret.push(buffer.into_boxed_str());
+
+                if !self.source.content_bytes().starts_with(b")") {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidAttlistDecl,
+                        self.locator,
+                        "Enumerated Attribute Type declaration does not close with ')'."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                    return Err(XMLError::ParserInvalidAttlistDecl);
+                }
+                // skip ')'
+                self.source.advance(1)?;
+                self.locator.update_column(|c| c + 1);
+
+                AttributeType::NOTATION(ret)
+            }
+            // TokenizedType
+            [b'I', b'D', b'R', b'E', b'F', b'S', ..] => {
+                self.source.advance(6)?;
+                self.locator.update_column(|c| c + 6);
+                AttributeType::IDREFS
+            }
+            [b'I', b'D', b'R', b'E', b'F', ..] => {
+                self.source.advance(5)?;
+                self.locator.update_column(|c| c + 5);
+                AttributeType::IDREF
+            }
+            [b'I', b'D', ..] => {
+                self.source.advance(2)?;
+                self.locator.update_column(|c| c + 2);
+                AttributeType::ID
+            }
+            [b'E', b'N', b'T', b'I', b'T', b'I', b'E', b'S', ..] => {
+                self.source.advance(8)?;
+                self.locator.update_column(|c| c + 8);
+                AttributeType::ENTITIES
+            }
+            [b'E', b'N', b'T', b'I', b'T', b'Y', ..] => {
+                self.source.advance(6)?;
+                self.locator.update_column(|c| c + 6);
+                AttributeType::ENTITY
+            }
+            [b'N', b'M', b'T', b'O', b'K', b'E', b'N', b'S', ..] => {
+                self.source.advance(8)?;
+                self.locator.update_column(|c| c + 8);
+                AttributeType::NMTOKENS
+            }
+            [b'N', b'M', b'T', b'O', b'K', b'E', b'N', ..] => {
+                self.source.advance(7)?;
+                self.locator.update_column(|c| c + 7);
+                AttributeType::NMTOKEN
+            }
+            _ => {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidAttlistDecl,
+                    self.locator,
+                    "AttType cannot be recognized."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserInvalidAttlistDecl);
+            }
+        };
+
+        if self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidAttlistDecl,
+                self.locator,
+                "Whitespaces are required between AttType and DefaultDecl in Attribute list declaration."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        // parse DefaultDecl
+        self.grow()?;
+        let default_decl = match self.source.content_bytes() {
+            [b'#', b'R', b'E', b'Q', b'U', b'I', b'R', b'E', b'D', ..] => {
+                // skip '#REQUIRED'
+                self.source.advance(9)?;
+                self.locator.update_column(|c| c + 9);
+                DefaultDecl::REQUIRED
+            }
+            [b'#', b'I', b'M', b'P', b'L', b'I', b'E', b'D', ..] => {
+                // skip '#IMPLIED'
+                self.source.advance(8)?;
+                self.locator.update_column(|c| c + 8);
+                DefaultDecl::IMPLIED
+            }
+            [b'#', b'F', b'I', b'X', b'E', b'D', ..] => {
+                // skip '#FIXED'
+                self.source.advance(6)?;
+                self.locator.update_column(|c| c + 6);
+
+                if self.skip_whitespaces()? == 0 {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidAttlistDecl,
+                        self.locator,
+                        "Whitespaces are required after '#FIXED' in DefaultDecl for attribute list declaration."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                }
+
+                let mut buffer = String::new();
+                self.parse_att_value(&mut buffer)?;
+                DefaultDecl::FIXED(buffer.into_boxed_str())
+            }
+            _ => {
+                let mut buffer = String::new();
+                self.parse_att_value(&mut buffer)?;
+                DefaultDecl::None(buffer.into_boxed_str())
+            }
+        };
+
+        Ok((atttype, default_decl))
     }
 
     pub(crate) fn parse_notation_decl(&mut self) -> Result<(), XMLError> {

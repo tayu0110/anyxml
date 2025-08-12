@@ -108,6 +108,8 @@ impl ParserConfig {
 pub enum ParserState {
     BeforeStart,
     InXMLDeclaration,
+    InInternalSubset,
+    InExternalSubset,
     Parsing,
     FatalErrorOccurred,
     Finished,

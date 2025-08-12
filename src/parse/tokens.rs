@@ -58,6 +58,26 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         Ok(skipped)
     }
 
+    pub fn parse_nmtoken(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+        let orig = buffer.len();
+        while let Some(c) = self.source.next_char_if(|c| self.version.is_name_char(c))? {
+            buffer.push(c);
+            self.locator.update_column(|c| c + 1);
+        }
+
+        if buffer.len() == orig {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserEmptyName,
+                self.locator,
+                "Nmtoken is empty."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserEmptyName);
+        }
+        Ok(())
+    }
+
     pub fn parse_name(&mut self, buffer: &mut String) -> Result<(), XMLError> {
         let Some(c) = self
             .source

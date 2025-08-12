@@ -42,13 +42,27 @@ pub struct Attribute<'a> {
     flag: u8,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum AttributeType {
-    // todo!!!!
+    #[default]
+    CDATA,
+    ID,
+    IDREF,
+    IDREFS,
+    ENTITY,
+    ENTITIES,
+    NMTOKEN,
+    NMTOKENS,
+    NOTATION(Vec<Box<str>>),
+    Enumeration(Vec<Box<str>>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DefaultDecl {
-    // todo!!!!
+    REQUIRED,
+    IMPLIED,
+    FIXED(Box<str>),
+    None(Box<str>),
 }
 
 pub enum ContentSpec {
