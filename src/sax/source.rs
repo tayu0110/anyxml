@@ -195,6 +195,13 @@ impl<'a> InputSource<'a> {
             .inspect(|c| self.decoded_next += c.len_utf8()))
     }
 
+    pub fn next_char_if(&mut self, f: impl Fn(char) -> bool) -> Result<Option<char>, XMLError> {
+        Ok(self
+            .peek_char()?
+            .filter(|c| f(*c))
+            .inspect(|c| self.decoded_next += c.len_utf8()))
+    }
+
     pub fn peek_char(&mut self) -> Result<Option<char>, XMLError> {
         if let Some(c) = self.decoded.chars().next() {
             return Ok(Some(c));

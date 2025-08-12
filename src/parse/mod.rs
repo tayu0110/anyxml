@@ -669,6 +669,23 @@ impl XMLReader<DefaultParserSpec<'_>> {
     }
 
     pub(crate) fn parse_pi(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+        if !self.source.content_bytes().starts_with(b"<?") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidProcessingInstruction,
+                self.locator,
+                "PI does not start with '<?'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidProcessingInstruction);
+        }
+        // skip '<?'
+        self.source.advance(2)?;
+        self.locator.update_column(|c| c + 2);
+
+        let mut target = String::new();
+
         todo!()
     }
 }

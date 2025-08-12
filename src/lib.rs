@@ -66,16 +66,68 @@ pub enum XMLVersion {
 
 impl XMLVersion {
     pub fn is_char(&self, c: impl Into<u32>) -> bool {
-        let c: u32 = c.into();
-        matches!(
-            c,
-            0x9
-                | 0xA
-                | 0xD
-                | 0x20..= 0xD7FF
-                | 0xE000..= 0xFFFD
-                | 0x10000..= 0x10FFFF
-        )
+        fn _is_char(_version: XMLVersion, c: u32) -> bool {
+            matches!(
+                c,
+                0x9
+                    | 0xA
+                    | 0xD
+                    | 0x20..= 0xD7FF
+                    | 0xE000..= 0xFFFD
+                    | 0x10000..= 0x10FFFF
+            )
+        }
+        _is_char(*self, c.into())
+    }
+
+    pub fn is_name_start_char(&self, c: impl Into<u32>) -> bool {
+        fn _is_name_start_char(_version: XMLVersion, c: u32) -> bool {
+            matches!(c,
+                0x3A // ':'
+                | 0x41..=0x5A // 'A'..='Z'
+                | 0x5F // '_'
+                | 0x61..=0x7A // 'a'..='z'
+                | 0xC0..=0xD6
+                | 0xD8..=0xF6
+                | 0xF8..=0x2FF
+                | 0x370..=0x37D
+                | 0x37F..=0x1FFF
+                | 0x200C..=0x200D
+                | 0x2070..=0x218F
+                | 0x2C00..=0x2FEF
+                | 0x3001..=0xD7FF
+                | 0xF900..=0xFDCF
+                | 0xFDF0..=0xFFFD
+                | 0x10000..=0xEFFFF
+            )
+        }
+        _is_name_start_char(*self, c.into())
+    }
+
+    pub fn is_name_char(&self, c: impl Into<u32>) -> bool {
+        fn _is_name_char(_version: XMLVersion, c: u32) -> bool {
+            matches!(c,
+                0x2D..=0x2E // '-', '.'
+                | 0x30..=0x3A // '0'..='9', ':'
+                | 0x41..=0x5A // 'A'..='Z'
+                | 0x5F // '_'
+                | 0x61..=0x7A // 'a'..='z'
+                | 0xB7
+                | 0xC0..=0xD6
+                | 0xD8..=0xF6
+                | 0xF8..=0x37D
+                | 0x37F..=0x1FFF
+                | 0x200C..=0x200D
+                | 0x203F..=0x2040
+                | 0x2070..=0x218F
+                | 0x2C00..=0x2FEF
+                | 0x3001..=0xD7FF
+                | 0xF900..=0xFDCF
+                | 0xFDF0..=0xFFFD
+                | 0x10000..=0xEFFFF
+            )
+        }
+        _is_name_char(*self, c.into())
     }
 
     pub fn is_whitespace(&self, c: impl Into<u32>) -> bool {

@@ -24,6 +24,12 @@ pub enum XMLError {
     ParserInvalidEncodingName,
     ParserInvalidSDDecl,
     ParserInvalidComment,
+    ParserEmptyName,
+    ParserEmptyNCName,
+    ParserEmptyQName,
+    ParserEmptyQNamePrefix,
+    ParserEmptyQNameLocalPart,
+    ParserInvalidProcessingInstruction,
     ParserUnexpectedEOF,
     // I/O errors
     IOUnknownError,

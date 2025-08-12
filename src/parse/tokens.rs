@@ -1,12 +1,24 @@
 use crate::{
     ParserSpec,
     error::XMLError,
-    sax::{parser::XMLReader, source::InputSource},
+    sax::{
+        error::fatal_error,
+        parser::{ParserState, XMLReader},
+        source::InputSource,
+    },
 };
 
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
     pub fn is_char(&self, c: char) -> bool {
         self.version.is_char(c)
+    }
+
+    pub fn is_name_start_char(&self, c: char) -> bool {
+        self.version.is_name_start_char(c)
+    }
+
+    pub fn is_name_char(&self, c: char) -> bool {
+        self.version.is_name_char(c)
     }
 
     pub fn is_whitespace(&self, c: char) -> bool {
@@ -40,5 +52,116 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         }
 
         Ok(skipped)
+    }
+
+    pub fn parse_name(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+        let Some(c) = self
+            .source
+            .next_char_if(|c| self.version.is_name_start_char(c))?
+        else {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserEmptyName,
+                self.locator,
+                "Name is empty."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserEmptyName);
+        };
+        buffer.push(c);
+        self.locator.update_column(|c| c + 1);
+
+        while let Some(c) = self.source.next_char_if(|c| self.version.is_name_char(c))? {
+            buffer.push(c);
+            self.locator.update_column(|c| c + 1);
+        }
+
+        Ok(())
+    }
+
+    /// Even if NCName is empty, no error will be reported.
+    fn parse_ncname_allow_empty(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+        let Some(c) = self
+            .source
+            .next_char_if(|c| self.version.is_name_start_char(c) && c != ':')?
+        else {
+            return Ok(());
+        };
+        buffer.push(c);
+        self.locator.update_column(|c| c + 1);
+
+        while let Some(c) = self
+            .source
+            .next_char_if(|c| self.version.is_name_char(c) && c != ':')?
+        {
+            buffer.push(c);
+            self.locator.update_column(|c| c + 1);
+        }
+
+        Ok(())
+    }
+
+    pub fn parse_ncname(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+        let orig = buffer.len();
+        self.parse_ncname_allow_empty(buffer)?;
+        if buffer.len() == orig {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserEmptyName,
+                self.locator,
+                "Name is empty."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserEmptyName);
+        }
+        Ok(())
+    }
+
+    /// Return the length of prefix if some errors occurred.
+    pub fn parse_qname(&mut self, buffer: &mut String) -> Result<usize, XMLError> {
+        let orig = buffer.len();
+        self.parse_ncname_allow_empty(buffer)?;
+
+        if self.source.next_char_if(|c| c == ':')?.is_none() {
+            return if buffer.len() == orig {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserEmptyQName,
+                    self.locator,
+                    "QName is empty."
+                );
+                Err(XMLError::ParserEmptyQName)
+            } else {
+                Ok(0)
+            };
+        };
+        if buffer.len() == orig {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserEmptyQNamePrefix,
+                self.locator,
+                "':' is found in QName, but its prefix is empty."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+        let prefix = buffer.len() - orig;
+        buffer.push(':');
+        self.locator.update_column(|c| c + 1);
+        self.parse_ncname_allow_empty(buffer)?;
+
+        if buffer.len() == orig + prefix + 1 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserEmptyQNameLocalPart,
+                self.locator,
+                "':' is found in QName, but its local part is empty."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            Err(XMLError::ParserEmptyQNameLocalPart)
+        } else if prefix == 0 {
+            Err(XMLError::ParserEmptyQNamePrefix)
+        } else {
+            Ok(prefix)
+        }
     }
 }
