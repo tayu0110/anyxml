@@ -46,6 +46,12 @@ pub struct ParserConfig {
     flags: u64,
 }
 
+impl ParserConfig {
+    pub fn is_enable(&self, option: ParserOption) -> bool {
+        self.flags & (1 << option as i32) != 0
+    }
+}
+
 impl Default for ParserConfig {
     fn default() -> Self {
         ParserOption::Namespaces | ParserOption::ResolveDTDURIs

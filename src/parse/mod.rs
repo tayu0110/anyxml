@@ -6,7 +6,7 @@ use crate::{
     error::XMLError,
     sax::{
         error::{fatal_error, warning},
-        parser::{ParserState, XMLReader},
+        parser::{ParserOption, ParserState, XMLReader},
     },
 };
 
@@ -685,7 +685,110 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.locator.update_column(|c| c + 2);
 
         let mut target = String::new();
+        if self.config.is_enable(ParserOption::Namespaces) {
+            self.parse_ncname(&mut target)?;
+        } else {
+            self.parse_name(&mut target)?;
+        }
 
-        todo!()
+        if target.eq_ignore_ascii_case("xml") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserUnacceptablePITarget,
+                self.locator,
+                "PI target '{}' is not allowed.",
+                target
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        let s = self.skip_whitespaces()?;
+        self.grow()?;
+        if self.source.content_bytes().starts_with(b"?>") {
+            // skip '?>'
+            self.source.advance(2)?;
+            self.locator.update_column(|c| c + 2);
+
+            if self.state != ParserState::FatalErrorOccurred {
+                self.content_handler.processing_instruction(&target, None);
+            }
+
+            return Ok(());
+        }
+
+        if s != 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidProcessingInstruction,
+                self.locator,
+                "Whitespaces are required between PI target and data."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        let mut data = String::new();
+        self.grow()?;
+        while !self.source.content_bytes().starts_with(b"?>") {
+            match self.source.next_char()? {
+                Some('\r') => {
+                    if self.source.peek_char()? != Some('\n') {
+                        self.locator.update_line(|l| l + 1);
+                        self.locator.set_column(1);
+                        data.push('\n');
+                    }
+                }
+                Some('\n') => {
+                    self.locator.update_line(|l| l + 1);
+                    self.locator.set_column(1);
+                    data.push('\n');
+                }
+                Some(c) if self.is_char(c) => {
+                    self.locator.update_column(|c| c + 1);
+                    data.push(c);
+                }
+                Some(c) => {
+                    self.locator.update_column(|c| c + 1);
+                    data.push(c);
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidCharacter,
+                        self.locator,
+                        "A character '0x{:X}' is not allowed in XML document.",
+                        c as u32
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                }
+                None => {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserUnexpectedEOF,
+                        self.locator,
+                        "Unexpected EOF."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                }
+            }
+            if self.source.content_bytes().len() < 2 {
+                self.grow()?;
+            }
+        }
+
+        if !self.source.content_bytes().starts_with(b"?>") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidProcessingInstruction,
+                self.locator,
+                "PI does not close with '?>'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidProcessingInstruction);
+        }
+
+        if self.state != ParserState::FatalErrorOccurred {
+            self.content_handler
+                .processing_instruction(&target, Some(&data));
+        }
+
+        Ok(())
     }
 }

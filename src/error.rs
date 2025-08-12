@@ -30,6 +30,7 @@ pub enum XMLError {
     ParserEmptyQNamePrefix,
     ParserEmptyQNameLocalPart,
     ParserInvalidProcessingInstruction,
+    ParserUnacceptablePITarget,
     ParserUnexpectedEOF,
     // I/O errors
     IOUnknownError,
