@@ -1,7 +1,8 @@
 pub mod tokens;
 
 use crate::{
-    DefaultParserSpec, ENCODING_NAME_LIMIT_LENGTH, XML_VERSION_NUM_LIMIT_LENGTH, XMLVersion,
+    CHARDATA_CHUNK_LENGTH, DefaultParserSpec, ENCODING_NAME_LIMIT_LENGTH,
+    XML_VERSION_NUM_LIMIT_LENGTH, XMLVersion,
     error::XMLError,
     sax::{
         error::{fatal_error, warning},
@@ -546,6 +547,128 @@ impl XMLReader<DefaultParserSpec<'_>> {
     }
 
     pub(crate) fn parse_misc(&mut self) -> Result<(), XMLError> {
+        self.skip_whitespaces()?;
+        self.grow()?;
+
+        loop {
+            match self.source.content_bytes() {
+                [b'<', b'!', b'-', b'-', ..] => self.parse_comment()?,
+                [b'<', b'?', ..] => self.parse_pi()?,
+                _ => break Ok(()),
+            }
+            self.skip_whitespaces()?;
+            self.grow()?;
+        }
+    }
+
+    pub(crate) fn parse_comment(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+        if !self.source.content_bytes().starts_with(b"<!--") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidComment,
+                self.locator,
+                "Comment does not start with '<!--'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidComment);
+        }
+        // skip '<!--'
+        self.source.advance(4)?;
+        self.locator.update_column(|c| c + 4);
+
+        self.grow()?;
+        let mut buffer = String::new();
+        while !self.source.content_bytes().starts_with(b"-->") {
+            let next = self.source.next_char()?;
+            match next {
+                Some('-') => {
+                    if self.source.peek_char()? == Some('-') {
+                        fatal_error!(
+                            self.error_handler,
+                            XMLError::ParserInvalidComment,
+                            self.locator,
+                            "Comment must not contain '--' except for delimiters."
+                        );
+                        self.state = ParserState::FatalErrorOccurred;
+                    }
+                    buffer.push('-');
+                }
+                Some('\r') => {
+                    // If the next character is not a line feed, normalize it to a line feed.
+                    // If so, treat it as a single line feed together with the next line feed
+                    // and do nothing.
+                    if self.source.peek_char()? != Some('\n') {
+                        self.locator.update_line(|l| l + 1);
+                        self.locator.set_column(1);
+                        buffer.push('\n');
+                    }
+                }
+                Some('\n') => {
+                    self.locator.update_line(|l| l + 1);
+                    self.locator.set_column(1);
+                    buffer.push('\n');
+                }
+                Some(c) if self.is_char(c) => {
+                    self.locator.update_column(|c| c + 1);
+                    buffer.push(c)
+                }
+                Some(c) => {
+                    self.locator.update_column(|c| c + 1);
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidCharacter,
+                        self.locator,
+                        "A character '0x{:X}' is not allowed in XML documents.",
+                        c as u32
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                }
+                None => {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserUnexpectedEOF,
+                        self.locator,
+                        "Unexpected EOF."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                    return Err(XMLError::ParserUnexpectedEOF);
+                }
+            }
+
+            if buffer.len() >= CHARDATA_CHUNK_LENGTH {
+                if self.state != ParserState::FatalErrorOccurred {
+                    self.lexical_handler.comment(&buffer);
+                }
+                buffer.clear();
+            }
+            if self.source.content_bytes().len() < 3 {
+                self.grow()?;
+            }
+        }
+
+        if !buffer.is_empty() && self.state != ParserState::FatalErrorOccurred {
+            self.lexical_handler.comment(&buffer);
+        }
+
+        if !self.source.content_bytes().starts_with(b"-->") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidComment,
+                self.locator,
+                "Comment does not end with '-->'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidComment);
+        }
+        // skip '-->'
+        self.source.advance(3)?;
+        self.locator.update_column(|c| c + 3);
+
+        Ok(())
+    }
+
+    pub(crate) fn parse_pi(&mut self) -> Result<(), XMLError> {
         todo!()
     }
 }

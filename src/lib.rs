@@ -7,8 +7,12 @@ use std::{borrow::Cow, marker::PhantomData};
 
 use crate::sax::source::InputSource;
 
+/// Maximum length of XML version numbers accepted by the parser
 const XML_VERSION_NUM_LIMIT_LENGTH: usize = 128;
+/// Maximum length of encoding names accepted by the parser
 const ENCODING_NAME_LIMIT_LENGTH: usize = 128;
+/// Approximate chunk length when the parser reports character data
+const CHARDATA_CHUNK_LENGTH: usize = 4096;
 
 pub trait ParserSpec {
     type Reader;

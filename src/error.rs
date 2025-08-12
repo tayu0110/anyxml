@@ -23,6 +23,7 @@ pub enum XMLError {
     ParserInvalidEncodingDecl,
     ParserInvalidEncodingName,
     ParserInvalidSDDecl,
+    ParserInvalidComment,
     ParserUnexpectedEOF,
     // I/O errors
     IOUnknownError,
