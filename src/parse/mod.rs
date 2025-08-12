@@ -169,7 +169,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 [b'<', b'?', ..] => self.parse_pi()?,
                 [b'<', b'!', b'-', b'-', ..] => self.parse_comment()?,
                 [b'<', b'!', b'E', b'L', ..] => todo!("elementdecl"),
-                [b'<', b'!', b'E', b'N', ..] => todo!("EntityDecl"),
+                [b'<', b'!', b'E', b'N', ..] => self.parse_entity_decl()?,
                 [b'<', b'!', b'A', ..] => self.parse_attlist_decl()?,
                 [b'<', b'!', b'N', ..] => self.parse_notation_decl()?,
                 _ => break Ok(()),
@@ -177,6 +177,172 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
             self.skip_whitespaces()?;
         }
+    }
+
+    pub(crate) fn parse_entity_decl(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+
+        if !self.source.content_bytes().starts_with(b"<!ENTITY") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidEntityDecl,
+                self.locator,
+                "Entity declaration must start with '<!ENTITY'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidEntityDecl);
+        }
+        // skip '<!ENTITY'
+        self.source.advance(8)?;
+        self.locator.update_column(|c| c + 8);
+
+        if self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidEntityDecl,
+                self.locator,
+                "Whitespaces are required after '<!ENTITY' in entity declaration."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        self.grow()?;
+        let mut pe = false;
+        if self.source.next_char_if(|c| c == '%')?.is_some() {
+            pe = true;
+            self.locator.update_column(|c| c + 1);
+            if self.skip_whitespaces()? == 0 {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidEntityDecl,
+                    self.locator,
+                    "Whitespaces are required after '%' in entity declaration."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+            }
+        }
+
+        let mut name = String::new();
+        if self.config.is_enable(ParserOption::Namespaces) {
+            self.parse_ncname(&mut name)?;
+        } else {
+            self.parse_name(&mut name)?;
+        }
+
+        if self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidEntityDecl,
+                self.locator,
+                "Whitespaces are required after Name in entity declaration."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+
+        self.grow()?;
+        match self.source.content_bytes() {
+            [b'"' | b'\'', ..] => {
+                todo!("EntityValue")
+            }
+            [b'S', b'Y', b'S', b'T', b'E', b'M', ..] | [b'P', b'U', b'B', b'L', b'I', b'C', ..] => {
+                let mut system_id = String::new();
+                let mut public_id = None;
+                self.parse_external_id(&mut system_id, &mut public_id)?;
+
+                let s = self.skip_whitespaces()?;
+                self.grow()?;
+
+                // If this is a general entity declaration, NDataDecl may follow.
+                // [73] EntityDef ::= EntityValue | (ExternalID NDataDecl?)
+                // If this is a parameter entity declaration, '>' must follow.
+                // [74] PEDef     ::= EntityValue | ExternalID
+                let mut ndata = None;
+                if !pe && !self.source.content_bytes().starts_with(b">") {
+                    if s == 0 {
+                        fatal_error!(
+                            self.error_handler,
+                            XMLError::ParserInvalidEntityDecl,
+                            self.locator,
+                            "Whitespaces are required between ExternalID and NDataDecl."
+                        );
+                        self.state = ParserState::FatalErrorOccurred;
+                    }
+
+                    if !self.source.content_bytes().starts_with(b"NDATA") {
+                        fatal_error!(
+                            self.error_handler,
+                            XMLError::ParserInvalidEntityDecl,
+                            self.locator,
+                            "NDataDecl must start with 'NDATA'."
+                        );
+                        self.state = ParserState::FatalErrorOccurred;
+                        return Err(XMLError::ParserInvalidEntityDecl);
+                    }
+                    // skip 'NDATA'
+                    self.source.advance(5)?;
+                    self.locator.update_column(|c| c + 5);
+
+                    if self.skip_whitespaces()? == 0 {
+                        fatal_error!(
+                            self.error_handler,
+                            XMLError::ParserInvalidEntityDecl,
+                            self.locator,
+                            "Whitespaces are required after 'NDATA' in entity declaration."
+                        );
+                        self.state = ParserState::FatalErrorOccurred;
+                    }
+
+                    if self.config.is_enable(ParserOption::Namespaces) {
+                        self.parse_ncname(ndata.get_or_insert_default())?;
+                    } else {
+                        self.parse_name(ndata.get_or_insert_default())?;
+                    }
+                    self.skip_whitespaces()?;
+                }
+                if !self.source.content_bytes().starts_with(b">") {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidEntityDecl,
+                        self.locator,
+                        "Entity declaration does not end with '>'."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                    return Err(XMLError::ParserInvalidEntityDecl);
+                }
+                // skip '>'
+                self.source.advance(1)?;
+                self.locator.update_column(|c| c + 1);
+
+                if !pe && self.state != ParserState::FatalErrorOccurred {
+                    if let Some(ndata) = ndata {
+                        self.dtd_handler.unparsed_entity_decl(
+                            &name,
+                            public_id.as_deref(),
+                            &system_id,
+                            &ndata,
+                        );
+                    } else {
+                        self.decl_handler.external_entity_decl(
+                            &name,
+                            public_id.as_deref(),
+                            &system_id,
+                        );
+                    }
+                }
+            }
+            _ => {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidEntityDecl,
+                    self.locator,
+                    "Neither EntityValue nor ExternalID are found in entity declaration."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserInvalidEntityDecl);
+            }
+        }
+
+        Ok(())
     }
 
     pub(crate) fn parse_attlist_decl(&mut self) -> Result<(), XMLError> {

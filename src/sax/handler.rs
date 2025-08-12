@@ -88,8 +88,8 @@ pub trait DTDHandler {
         &self,
         name: &str,
         public_id: Option<&str>,
-        system_id: Option<&str>,
-        notation_name: Option<&str>,
+        system_id: &str,
+        notation_name: &str,
     ) {
         let _ = (name, public_id, system_id, notation_name);
     }
