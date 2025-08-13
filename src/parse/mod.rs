@@ -2404,7 +2404,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
     pub(crate) fn parse_char_ref(&mut self) -> Result<char, XMLError> {
         self.grow()?;
 
-        let (code, overflowed, hex) = match self.source.content_bytes() {
+        let (code, overflowed, hex, len) = match self.source.content_bytes() {
             [b'&', b'#', b'x', ..] => {
                 // skip '&#x'
                 self.source.advance(3)?;
@@ -2428,7 +2428,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     cur += 1;
                     overflowed |= f | g;
                 }
-                (code, overflowed, true)
+                (code, overflowed, true, cur)
             }
             [b'&', b'#', ..] => {
                 // skip '&#'
@@ -2447,7 +2447,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     cur += 1;
                     overflowed |= f | g;
                 }
-                (code, overflowed, false)
+                (code, overflowed, false, cur)
             }
             _ => {
                 fatal_error!(
@@ -2460,6 +2460,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 return Err(XMLError::ParserInvalidCharacterReference);
             }
         };
+
+        // skip the read characters
+        self.source.advance(len)?;
+        self.locator.update_column(|c| c + len);
 
         self.grow()?;
         let content = self.source.content_bytes();
@@ -2490,6 +2494,16 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 XMLError::ParserInvalidCharacterReference,
                 self.locator,
                 "The character reference does not end with ';'"
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            Err(XMLError::ParserInvalidCharacterReference)
+        } else if len == 0 {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidCharacterReference,
+                self.locator,
+                "'&#{};' is not a correct character reference.",
+                if hex { "x" } else { "" }
             );
             self.state = ParserState::FatalErrorOccurred;
             Err(XMLError::ParserInvalidCharacterReference)

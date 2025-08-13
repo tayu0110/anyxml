@@ -6,7 +6,7 @@ use crate::{
 };
 
 const INPUT_CHUNK: usize = 4096;
-const GROW_THRESHOLD: usize = 16;
+const GROW_THRESHOLD: usize = 64;
 
 pub struct InputSource<'a> {
     source: Box<dyn Read + 'a>,
