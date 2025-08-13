@@ -1,7 +1,7 @@
-use std::{io::Read, mem::replace, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, io::Read, mem::replace, path::PathBuf, sync::Arc};
 
 use crate::{
-    DefaultParserSpec, ParserSpec, XMLVersion,
+    DefaultParserSpec, ParserSpec, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::{
         Locator,
@@ -132,6 +132,13 @@ pub struct XMLReader<Spec: ParserSpec> {
     pub(crate) version: XMLVersion,
     pub(crate) encoding: Option<String>,
     pub(crate) standalone: Option<bool>,
+    // (prefix, namespace name, before overwrite)
+    // Namespaces declared closer to the document element appear earlier in the list.
+    // The second `usize` is the position of the namespace that bound the same prefix until
+    // the namespace declaration appeared. If there is no such namespace, it is `usize::MAX`.
+    pub(crate) namespaces: Vec<(Arc<str>, Arc<str>, usize)>,
+    // (prefix, position in `namespaces`)
+    pub(crate) prefix_map: HashMap<Arc<str>, usize>,
 }
 
 impl<Spec: ParserSpec> XMLReader<Spec> {
@@ -236,6 +243,13 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         self.version = XMLVersion::default();
         self.encoding = None;
         self.standalone = None;
+        self.namespaces.clear();
+        // 'xml' prefix
+        let xml: Arc<str> = "xml".into();
+        self.namespaces
+            .push((xml.clone(), XML_XML_NAMESPACE.into(), usize::MAX));
+        self.prefix_map.clear();
+        self.prefix_map.insert(xml, 0);
     }
 
     pub(crate) fn grow(&mut self) -> Result<(), XMLError> {

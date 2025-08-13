@@ -30,7 +30,7 @@ macro_rules! generic_error {
             column: $locator.column(),
             system_id: $locator.system_id(),
             public_id: $locator.public_id(),
-            message: ::std::borrow::Cow::Owned(format!($message, $( $args )+)),
+            message: ::std::borrow::Cow::Owned(format!($message, $( $args ),+)),
         })
     };
     ($method:ident, $handler:expr, $code:expr, $level:expr, $locator:expr, $message:literal) => {

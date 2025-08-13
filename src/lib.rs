@@ -3,7 +3,7 @@ pub mod error;
 mod parse;
 pub mod sax;
 
-use std::{borrow::Cow, marker::PhantomData};
+use std::{borrow::Cow, marker::PhantomData, sync::Arc};
 
 use crate::sax::source::InputSource;
 
@@ -13,6 +13,9 @@ const XML_VERSION_NUM_LIMIT_LENGTH: usize = 128;
 const ENCODING_NAME_LIMIT_LENGTH: usize = 128;
 /// Approximate chunk length when the parser reports character data
 const CHARDATA_CHUNK_LENGTH: usize = 4096;
+
+const XML_XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
+const XML_NS_NAMESPACE: &str = "http://www.w3.org/2000/xmlns/";
 
 pub trait ParserSpec {
     type Reader;
@@ -32,14 +35,48 @@ impl ParserSpec for ProgressiveParserSpec {
     type Reader = InputSource<'static>;
 }
 
-pub struct Attribute<'a> {
-    uri: Option<Cow<'a, str>>,
-    local_name: Option<Cow<'a, str>>,
-    qname: Cow<'a, str>,
-    value: Cow<'a, str>,
+pub struct Attribute {
+    pub(crate) uri: Option<Arc<str>>,
+    pub(crate) local_name: Option<Box<str>>,
+    pub(crate) qname: Box<str>,
+    pub(crate) value: Box<str>,
     // 0: is declared in DTD
     // 1: is specified explicitly (in other words, `value` is not the default value provided by DTD)
-    flag: u8,
+    // 2: is namespace declaration attribute
+    pub(crate) flag: u8,
+}
+
+impl Attribute {
+    pub(crate) fn set_declared(&mut self) {
+        self.flag |= 1 << 0;
+    }
+    pub(crate) fn unset_declared(&mut self) {
+        self.flag &= !(1 << 0);
+    }
+
+    pub(crate) fn set_specified(&mut self) {
+        self.flag |= 1 << 1;
+    }
+    pub(crate) fn unset_specified(&mut self) {
+        self.flag &= !(1 << 1);
+    }
+
+    pub(crate) fn set_nsdecl(&mut self) {
+        self.flag |= 1 << 2;
+    }
+    pub(crate) fn unset_nsdecl(&mut self) {
+        self.flag &= !(1 << 2);
+    }
+
+    pub fn is_declared(&self) -> bool {
+        self.flag & (1 << 0) != 0
+    }
+    pub fn is_specified(&self) -> bool {
+        self.flag & (1 << 1) != 0
+    }
+    pub fn is_nsdecl(&self) -> bool {
+        self.flag & (1 << 2) != 0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]

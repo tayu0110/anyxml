@@ -39,6 +39,13 @@ pub enum XMLError {
     ParserInvalidAttlistDecl,
     ParserInvalidEntityDecl,
     ParserInvalidNotationDecl,
+    ParserInvalidStartOrEmptyTag,
+    ParserInvalidEndTag,
+    ParserMismatchElementType,
+    ParserInvalidAttribute,
+    ParserDuplicateAttributes,
+    ParserUnacceptableNamespaceName,
+    ParserUndefinedNamespace,
     ParserUnexpectedEOF,
     // I/O errors
     IOUnknownError,

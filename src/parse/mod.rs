@@ -1,12 +1,15 @@
 pub mod literals;
 pub mod tokens;
 
+use std::sync::Arc;
+
 use crate::{
-    AttributeType, CHARDATA_CHUNK_LENGTH, ContentSpec, DefaultDecl, DefaultParserSpec,
-    ENCODING_NAME_LIMIT_LENGTH, XML_VERSION_NUM_LIMIT_LENGTH, XMLVersion,
+    Attribute, AttributeType, CHARDATA_CHUNK_LENGTH, ContentSpec, DefaultDecl, DefaultParserSpec,
+    ENCODING_NAME_LIMIT_LENGTH, XML_NS_NAMESPACE, XML_VERSION_NUM_LIMIT_LENGTH, XML_XML_NAMESPACE,
+    XMLVersion,
     error::XMLError,
     sax::{
-        error::{fatal_error, warning},
+        error::{error, fatal_error, warning},
         parser::{ParserOption, ParserState, XMLReader},
     },
 };
@@ -86,7 +89,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         // If the following character is neither ‘[’ nor ‘>’, then there is an ExternalID.
-        let mut system_id = None;
+        let mut system_id = None::<String>;
         let mut public_id = None;
         if !matches!(self.source.content_bytes()[0], b'[' | b'>') {
             if s == 0 {
@@ -149,7 +152,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(1)?;
         self.locator.update_column(|c| c + 1);
 
-        todo!("parse external subset");
+        if let Some(system_id) = system_id {
+            todo!("parse external subset");
+        }
 
         if self.state != ParserState::FatalErrorOccurred {
             self.lexical_handler.end_dtd();
@@ -1556,10 +1561,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(ret)
     }
 
-    pub(crate) fn parse_element(&mut self) -> Result<(), XMLError> {
-        todo!()
-    }
-
     pub(crate) fn parse_misc(&mut self) -> Result<(), XMLError> {
         self.skip_whitespaces()?;
         self.grow()?;
@@ -1804,5 +1805,473 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         Ok(())
+    }
+
+    /// ```text
+    /// [39] element ::= EmptyElemTag | STag content ETag       [WFC: Element Type Match]
+    ///                                                         [VC:  Element Valid]
+    /// [40] STag ::= '<' Name (S Attribute)* S? '>'            [WFC: Unique Att Spec]
+    /// [42] ETag ::= '</' Name S? '>'
+    /// [44] EmptyElemTag ::= '<' Name (S Attribute)* S? '/>'   [WFC: Unique Att Spec]
+    /// ```
+    pub(crate) fn parse_element(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+
+        if !self.source.content_bytes().starts_with(b"<") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidStartOrEmptyTag,
+                self.locator,
+                "StartTag or EmptyTag must start with '<'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidStartOrEmptyTag);
+        }
+        // skip '<'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
+
+        let mut name = String::new();
+        let mut prefix_length = 0;
+        if self.config.is_enable(ParserOption::Namespaces) {
+            prefix_length = self.parse_qname(&mut name)?;
+        } else {
+            self.parse_name(&mut name)?;
+        }
+
+        let mut s = self.skip_whitespaces()?;
+        self.grow()?;
+        if self.source.content_bytes().is_empty() {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserUnexpectedEOF,
+                self.locator,
+                "Unexpceted EOF."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserUnexpectedEOF);
+        }
+
+        let old_ns_stack_depth = self.namespaces.len();
+        let mut atts = vec![];
+        let mut att_name = String::new();
+        let mut att_value = String::new();
+        let xml_ns_namespace: Arc<str> = XML_NS_NAMESPACE.into();
+        while !matches!(self.source.content_bytes()[0], b'/' | b'>') {
+            if s == 0 {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidStartOrEmptyTag,
+                    self.locator,
+                    "Whitespaces are required before attribute names."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+            }
+
+            att_name.clear();
+            let mut prefix_length = 0;
+            if self.config.is_enable(ParserOption::Namespaces) {
+                prefix_length = self.parse_qname(&mut att_name)?;
+            } else {
+                self.parse_name(&mut att_name)?;
+            }
+
+            self.skip_whitespaces()?;
+            self.grow()?;
+            if !self.source.content_bytes().starts_with(b"=") {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidAttribute,
+                    self.locator,
+                    "'=' is not found after an attribute name in start or empty tag."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserInvalidAttribute);
+            }
+            // skip '='
+            self.source.advance(1)?;
+            self.locator.update_column(|c| c + 1);
+
+            self.skip_whitespaces()?;
+
+            self.parse_att_value(&mut att_value)?;
+
+            if self.config.is_enable(ParserOption::Namespaces) {
+                let mut uri = None;
+                if (prefix_length == 5 && &att_name[..prefix_length] == "xmlns")
+                    || att_name == "xmlns"
+                {
+                    // This is a namespace declaration. Register the namespace.
+
+                    // TODO:
+                    // Warn when the namespace name is not a URI or is a relative URI.
+                    // According to the namespace specification, the check is optional,
+                    // so it conforms to the specification as is, but it may cause confusion
+                    // when utilizing other specifications.
+                    let prefix = if att_name == "xmlns" {
+                        if att_value == XML_NS_NAMESPACE || att_value == XML_XML_NAMESPACE {
+                            error!(
+                                self.error_handler,
+                                XMLError::ParserUnacceptableNamespaceName,
+                                self.locator,
+                                "Namespace '{}' cannot be declared as default namespace.",
+                                att_value
+                            );
+                        }
+                        ""
+                    } else {
+                        if att_value.is_empty()
+                            && matches!(self.version, XMLVersion::XML10 | XMLVersion::Unknown)
+                        {
+                            error!(
+                                self.error_handler,
+                                XMLError::ParserUnacceptableNamespaceName,
+                                self.locator,
+                                "Empty namespace name is not allowed in Namespace in XML 1.0."
+                            );
+                        } else if att_value == XML_NS_NAMESPACE {
+                            error!(
+                                self.error_handler,
+                                XMLError::ParserUnacceptableNamespaceName,
+                                self.locator,
+                                "The namespace '{}' cannot be declared explicitly.",
+                                XML_NS_NAMESPACE
+                            );
+                        } else if &att_name[prefix_length + 1..] != "xml"
+                            && att_value == XML_XML_NAMESPACE
+                        {
+                            error!(
+                                self.error_handler,
+                                XMLError::ParserUnacceptableNamespaceName,
+                                self.locator,
+                                "The namespace '{}' cannot bind prefixes other than 'xml'.",
+                                att_value
+                            );
+                        } else if &att_name[prefix_length + 1..] == "xml"
+                            && att_value != XML_XML_NAMESPACE
+                        {
+                            error!(
+                                self.error_handler,
+                                XMLError::ParserUnacceptableNamespaceName,
+                                self.locator,
+                                "The namespace '{}' cannot bind the prefix 'xml'.",
+                                &att_name[prefix_length + 1..]
+                            );
+                        }
+                        &att_name[prefix_length + 1..]
+                    };
+                    let pos = self.namespaces.len();
+                    if let Some((pre, old)) = self.prefix_map.get_key_value(prefix) {
+                        self.namespaces
+                            .push((pre.clone(), att_value.as_str().into(), *old));
+                        *self.prefix_map.get_mut(prefix).unwrap() = pos;
+                    } else {
+                        let prefix: Arc<str> = prefix.into();
+                        self.namespaces.push((
+                            prefix.clone(),
+                            att_value.as_str().into(),
+                            usize::MAX,
+                        ));
+                        self.prefix_map.insert(prefix, pos);
+                    }
+                    uri = Some(xml_ns_namespace.clone());
+                }
+                // The namespace name may be overwritten by declarations that appear later,
+                // so set it to `None` at this point.
+                // Check after reading all attributes of this tag.
+                let mut att = Attribute {
+                    uri,
+                    local_name: if prefix_length > 0 {
+                        Some(att_name[prefix_length + 1..].into())
+                    } else {
+                        Some(att_name.as_str().into())
+                    },
+                    qname: att_name.as_str().into(),
+                    value: att_value.as_str().into(),
+                    flag: 0,
+                };
+                att.set_specified();
+                if att.uri.is_some() {
+                    att.set_nsdecl();
+                }
+                atts.push(att);
+            } else {
+                let mut att = Attribute {
+                    uri: None,
+                    local_name: None,
+                    qname: att_name.as_str().into(),
+                    value: att_value.as_str().into(),
+                    flag: 0,
+                };
+                att.set_specified();
+                atts.push(att);
+            }
+
+            s = self.skip_whitespaces()?;
+            if self.source.content_bytes().is_empty() {
+                self.grow()?;
+                if self.source.content_bytes().is_empty() {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserUnexpectedEOF,
+                        self.locator,
+                        "Unexpected EOF."
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                    return Err(XMLError::ParserUnexpectedEOF);
+                }
+            }
+        }
+
+        // resolve namespaces for attribtues
+        if self.config.is_enable(ParserOption::Namespaces) {
+            for att in &mut atts {
+                if att.is_nsdecl() {
+                    continue;
+                }
+                let len = att.local_name.as_deref().unwrap().len();
+                if len == att.qname.len() {
+                    // According to the namespace specification, attribute names without prefixes
+                    // do not belong to the default namespace, but rather belong to no namespace.
+                    // Therefore, we need to do nothing.
+                    continue;
+                }
+
+                let prefix = &att.qname[..att.qname.len() - len - 1];
+                if let Some(&pos) = self.prefix_map.get(prefix) {
+                    att.uri = Some(self.namespaces[pos].0.clone());
+                } else {
+                    // It is unclear what to do when the corresponding namespace cannot be found,
+                    // but for now, we will do nothing except for report an error.
+                    error!(
+                        self.error_handler,
+                        XMLError::ParserUndefinedNamespace,
+                        self.locator,
+                        "The namespace name for the prefix '{}' has not been declared.",
+                        prefix
+                    );
+                }
+            }
+        }
+        // check attribute constraints
+        if self.config.is_enable(ParserOption::Namespaces) {
+            for (i, att) in atts.iter().enumerate() {
+                for prev in atts.iter().take(i) {
+                    if att.local_name == prev.local_name && att.uri == prev.uri {
+                        fatal_error!(
+                            self.error_handler,
+                            XMLError::ParserDuplicateAttributes,
+                            self.locator,
+                            "The attribute '{{{}}}{}' is duplicated",
+                            att.uri.as_deref().unwrap_or("(null)"),
+                            att.local_name.as_deref().unwrap()
+                        );
+                        self.state = ParserState::FatalErrorOccurred;
+                        break;
+                    }
+                }
+            }
+        } else {
+            for (i, att) in atts.iter().enumerate() {
+                for prev in atts.iter().take(i) {
+                    if att.qname == prev.qname {
+                        fatal_error!(
+                            self.error_handler,
+                            XMLError::ParserDuplicateAttributes,
+                            self.locator,
+                            "The attribute '{}' is duplicated.",
+                            att.qname
+                        );
+                        self.state = ParserState::FatalErrorOccurred;
+                        break;
+                    }
+                }
+            }
+        }
+
+        self.grow()?;
+        if !self.source.content_bytes().starts_with(b">")
+            && !self.source.content_bytes().starts_with(b"/>")
+        {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidStartOrEmptyTag,
+                self.locator,
+                "Start or Empty tag does not end with '>' or '/>'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidStartOrEmptyTag);
+        }
+
+        if self.state != ParserState::FatalErrorOccurred {
+            for att in atts.iter().filter(|att| att.is_nsdecl()) {
+                let len = att.local_name.as_deref().unwrap().len();
+                if len == att.qname.len() {
+                    self.content_handler.start_prefix_mapping(None, &att.value);
+                } else {
+                    self.content_handler.start_prefix_mapping(
+                        Some(&att.qname[..att.qname.len() - len - 1]),
+                        &att.value,
+                    );
+                }
+            }
+            if self.config.is_enable(ParserOption::Namespaces) {
+                if prefix_length > 0 {
+                    if let Some(&pos) = self.prefix_map.get(&name[..prefix_length]) {
+                        self.content_handler.start_element(
+                            Some(&self.namespaces[pos].0),
+                            Some(&name[prefix_length + 1..]),
+                            &name,
+                            &atts,
+                        );
+                    } else {
+                        todo!("undefined namespace")
+                    }
+                } else {
+                    // default namespace
+                    if let Some(&pos) = self.prefix_map.get("") {
+                        self.content_handler.start_element(
+                            Some(&self.namespaces[pos].0),
+                            Some(&name),
+                            &name,
+                            &atts,
+                        );
+                    } else {
+                        self.content_handler
+                            .start_element(None, Some(&name), &name, &atts);
+                    }
+                }
+            } else {
+                self.content_handler.start_element(None, None, &name, &atts);
+            }
+        }
+
+        if self.source.content_bytes().starts_with(b"/>") {
+            // This is an empty tag.
+
+            // skip '/>'
+            self.source.advance(2)?;
+            self.locator.update_column(|c| c + 2);
+        } else {
+            // This is a start tag.
+
+            // skip '>'
+            self.source.advance(1)?;
+            self.locator.update_column(|c| c + 1);
+
+            self.parse_content()?;
+            self.grow()?;
+
+            // parse end tag
+
+            if !self.source.content_bytes().starts_with(b"</") {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidEndTag,
+                    self.locator,
+                    "'</' is not found at the head of the end tag."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserInvalidEndTag);
+            }
+            // skip '</'
+            self.source.advance(2)?;
+            self.locator.update_column(|c| c + 2);
+
+            let mut end_tag_name = String::new();
+            if self.config.is_enable(ParserOption::Namespaces) {
+                self.parse_qname(&mut end_tag_name)?;
+            } else {
+                self.parse_name(&mut end_tag_name)?;
+            }
+
+            if name != end_tag_name {
+                let name = if name.chars().count() > 15 {
+                    format!("{}...", name.chars().take(12).collect::<String>())
+                } else {
+                    name
+                };
+                let end_tag_name = if end_tag_name.chars().count() > 15 {
+                    format!("{}...", end_tag_name.chars().take(12).collect::<String>())
+                } else {
+                    end_tag_name
+                };
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserMismatchElementType,
+                    self.locator,
+                    "The start tag ('{}') and end tag ('{}') names do not match.",
+                    name,
+                    end_tag_name
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserMismatchElementType);
+            }
+
+            self.skip_whitespaces()?;
+            self.grow()?;
+
+            if !self.source.content_bytes().starts_with(b">") {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidEndTag,
+                    self.locator,
+                    "The end tag does not end with '>'."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserInvalidEndTag);
+            }
+            // skip '>'
+            self.source.advance(1)?;
+            self.locator.update_column(|c| c + 1);
+        }
+
+        if self.state != ParserState::FatalErrorOccurred {
+            if self.config.is_enable(ParserOption::Namespaces) {
+                if prefix_length > 0 {
+                    if let Some(&pos) = self.prefix_map.get(&name[..prefix_length]) {
+                        self.content_handler.end_element(
+                            Some(&self.namespaces[pos].0),
+                            Some(&name[prefix_length + 1..]),
+                            &name,
+                        );
+                    } else {
+                        todo!("undefined namespace")
+                    }
+                } else {
+                    // default namespace
+                    if let Some(&pos) = self.prefix_map.get("") {
+                        self.content_handler.end_element(
+                            Some(&self.namespaces[pos].0),
+                            Some(&name),
+                            &name,
+                        );
+                    } else {
+                        self.content_handler.end_element(None, Some(&name), &name);
+                    }
+                }
+            } else {
+                self.content_handler.end_element(None, None, &name);
+            }
+        }
+
+        // resume namespace stack
+        while self.namespaces.len() > old_ns_stack_depth {
+            let (pre, _, old_position) = self.namespaces.pop().unwrap();
+            if self.state != ParserState::FatalErrorOccurred {
+                self.content_handler
+                    .end_prefix_mapping((!pre.is_empty()).then_some(pre.as_ref()));
+            }
+
+            if old_position < usize::MAX {
+                *self.prefix_map.get_mut(&pre).unwrap() = old_position;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn parse_content(&mut self) -> Result<(), XMLError> {
+        todo!()
     }
 }
