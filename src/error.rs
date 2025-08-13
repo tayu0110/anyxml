@@ -46,6 +46,7 @@ pub enum XMLError {
     ParserMismatchElementType,
     ParserInvalidAttribute,
     ParserDuplicateAttributes,
+    ParserInvalidCharacterReference,
     ParserUnacceptableNamespaceName,
     ParserUndefinedNamespace,
     ParserUnexpectedEOF,

@@ -2288,6 +2288,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     self.parse_cdsect()?
                 }
                 [b'<', b'/', ..] => break Ok(()),
+                [b'&', b'#', ..] => {
+                    // Character references are treated as part of the character data.
+                    self.parse_char_data()?
+                }
                 [b'<', ..] => self.parse_element()?,
                 [b'&', ..] => todo!("Reference"),
                 _ => self.parse_char_data()?,
@@ -2305,66 +2309,85 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         let mut buffer = String::new();
-        while !matches!(self.source.content_bytes()[0], b'<' | b'&') {
-            match self.source.next_char()? {
-                Some('\r') => {
-                    if self.source.peek_char()? != Some('\n') {
+        'outer: loop {
+            while !matches!(self.source.content_bytes()[0], b'<' | b'&') {
+                match self.source.next_char()? {
+                    Some('\r') => {
+                        if self.source.peek_char()? != Some('\n') {
+                            self.locator.update_line(|l| l + 1);
+                            self.locator.set_column(1);
+                            buffer.push('\n');
+                        }
+                    }
+                    Some('\n') => {
                         self.locator.update_line(|l| l + 1);
                         self.locator.set_column(1);
                         buffer.push('\n');
                     }
-                }
-                Some('\n') => {
-                    self.locator.update_line(|l| l + 1);
-                    self.locator.set_column(1);
-                    buffer.push('\n');
-                }
-                Some(']') => {
-                    if self.source.content_bytes().starts_with(b"]>") {
+                    Some(']') => {
+                        if self.source.content_bytes().starts_with(b"]>") {
+                            fatal_error!(
+                                self.error_handler,
+                                XMLError::ParserUnacceptablePatternInCharData,
+                                self.locator,
+                                "']]>' is not allowed in a character data."
+                            );
+                            self.state = ParserState::FatalErrorOccurred;
+                        }
+                        self.locator.update_column(|c| c + 1);
+                        buffer.push(']');
+                    }
+                    Some(c) if self.is_char(c) => {
+                        self.locator.update_column(|c| c + 1);
+                        buffer.push(c);
+                    }
+                    Some(c) => {
                         fatal_error!(
                             self.error_handler,
-                            XMLError::ParserUnacceptablePatternInCharData,
+                            XMLError::ParserInvalidCharacter,
                             self.locator,
-                            "']]>' is not allowed in a character data."
+                            "The characeter '0x{:X}' is not allowed in the XML document.",
+                            c as u32
                         );
                         self.state = ParserState::FatalErrorOccurred;
+                        self.locator.update_column(|c| c + 1);
+                        buffer.push(c);
                     }
-                    self.locator.update_column(|c| c + 1);
-                    buffer.push(']');
+                    _ => unreachable!(),
                 }
-                Some(c) if self.is_char(c) => {
-                    self.locator.update_column(|c| c + 1);
-                    buffer.push(c);
+
+                if buffer.len() >= CHARDATA_CHUNK_LENGTH {
+                    if self.state != ParserState::FatalErrorOccurred {
+                        self.content_handler.characters(&buffer);
+                    }
+                    buffer.clear();
                 }
-                Some(c) => {
-                    fatal_error!(
-                        self.error_handler,
-                        XMLError::ParserInvalidCharacter,
-                        self.locator,
-                        "The characeter '0x{:X}' is not allowed in the XML document.",
-                        c as u32
-                    );
-                    self.state = ParserState::FatalErrorOccurred;
-                    self.locator.update_column(|c| c + 1);
-                    buffer.push(c);
+
+                // Since it is necessary to check whether ']]>' is included,
+                // maintain at least 3 bytes as much as possible.
+                if self.source.content_bytes().len() < 3 {
+                    self.grow()?;
+                    if self.source.content_bytes().is_empty() {
+                        break 'outer;
+                    }
                 }
-                _ => unreachable!(),
             }
 
-            if buffer.len() >= CHARDATA_CHUNK_LENGTH {
-                if self.state != ParserState::FatalErrorOccurred {
-                    self.content_handler.characters(&buffer);
-                }
-                buffer.clear();
-            }
+            self.grow()?;
+            if self.source.content_bytes().starts_with(b"&#") {
+                // Resolve character references here and include them in the character data.
+                buffer.push(self.parse_char_ref()?);
 
-            // Since it is necessary to check whether ']]>' is included,
-            // maintain at least 3 bytes as much as possible.
-            if self.source.content_bytes().len() < 3 {
-                self.grow()?;
-                if self.source.content_bytes().is_empty() {
-                    break;
+                if buffer.len() >= CHARDATA_CHUNK_LENGTH {
+                    if self.state != ParserState::FatalErrorOccurred {
+                        self.content_handler.characters(&buffer);
+                    }
+                    buffer.clear();
                 }
+            } else {
+                // Do not process references other than character references or markup here,
+                // and exit the loop.
+                break;
             }
         }
 
@@ -2373,6 +2396,120 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         Ok(())
+    }
+
+    /// ```text
+    /// [66] CharRef ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';' [WFC: Legal Character]
+    /// ```
+    pub(crate) fn parse_char_ref(&mut self) -> Result<char, XMLError> {
+        self.grow()?;
+
+        let (code, overflowed, hex) = match self.source.content_bytes() {
+            [b'&', b'#', b'x', ..] => {
+                // skip '&#x'
+                self.source.advance(3)?;
+                self.locator.update_column(|c| c + 3);
+
+                self.grow()?;
+                let content = self.source.content_bytes();
+                let mut cur = 0;
+                let mut code = 0u32;
+                let mut overflowed = false;
+                while cur < content.len() && content[cur].is_ascii_hexdigit() {
+                    let (new, f) = code.overflowing_mul(16);
+                    let (new, g) = if content[cur].is_ascii_digit() {
+                        new.overflowing_add((content[cur] - b'0') as u32)
+                    } else if content[cur].is_ascii_uppercase() {
+                        new.overflowing_add((content[cur] - b'A' + 10) as u32)
+                    } else {
+                        new.overflowing_add((content[cur] - b'a' + 10) as u32)
+                    };
+                    code = new;
+                    cur += 1;
+                    overflowed |= f | g;
+                }
+                (code, overflowed, true)
+            }
+            [b'&', b'#', ..] => {
+                // skip '&#'
+                self.source.advance(2)?;
+                self.locator.update_column(|c| c + 2);
+
+                self.grow()?;
+                let content = self.source.content_bytes();
+                let mut cur = 0;
+                let mut code = 0u32;
+                let mut overflowed = false;
+                while cur < content.len() && content[cur].is_ascii_digit() {
+                    let (new, f) = code.overflowing_mul(10);
+                    let (new, g) = new.overflowing_add((content[cur] - b'0') as u32);
+                    code = new;
+                    cur += 1;
+                    overflowed |= f | g;
+                }
+                (code, overflowed, false)
+            }
+            _ => {
+                fatal_error!(
+                    self.error_handler,
+                    XMLError::ParserInvalidCharacterReference,
+                    self.locator,
+                    "A character reference must start with '&#' or '&#x'."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserInvalidCharacterReference);
+            }
+        };
+
+        self.grow()?;
+        let content = self.source.content_bytes();
+        if content.is_empty() {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserUnexpectedEOF,
+                self.locator,
+                "Unexpected EOF."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            Err(XMLError::ParserUnexpectedEOF)
+        } else if (hex && content[0].is_ascii_hexdigit())
+            || (!hex && content[0].is_ascii_digit())
+            || overflowed
+        {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidCharacterReference,
+                self.locator,
+                "The code point specified by the character reference is too large."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            Err(XMLError::ParserInvalidCharacterReference)
+        } else if content[0] != b';' {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidCharacterReference,
+                self.locator,
+                "The character reference does not end with ';'"
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            Err(XMLError::ParserInvalidCharacterReference)
+        } else if let Some(c) = char::from_u32(code).filter(|c| self.is_char(*c)) {
+            // skip ';'
+            self.source.advance(1)?;
+            self.locator.update_column(|c| c + 1);
+
+            Ok(c)
+        } else {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidCharacter,
+                self.locator,
+                "The code point '0x{:X}' does not indicate a character that is allowed in a XML document.",
+                code
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            Err(XMLError::ParserInvalidCharacter)
+        }
     }
 
     /// ```text
