@@ -2288,15 +2288,63 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     self.parse_cdsect()?
                 }
                 [b'<', b'/', ..] => break Ok(()),
+                [b'<', ..] => self.parse_element()?,
                 [b'&', b'#', ..] => {
                     // Character references are treated as part of the character data.
                     self.parse_char_data()?
                 }
-                [b'<', ..] => self.parse_element()?,
-                [b'&', ..] => todo!("Reference"),
+                [b'&', ..] => self.parse_entity_ref()?,
                 _ => self.parse_char_data()?,
             }
         }
+    }
+
+    /// ```text
+    /// [68] EntityRef ::= '&' Name ';'     [WFC: Entity Declared]
+    ///                                     [VC:  Entity Declared]
+    ///                                     [WFC: Parsed Entity]
+    ///                                     [WFC: No Recursion]
+    /// ```
+    pub(crate) fn parse_entity_ref(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+
+        if !self.source.content_bytes().starts_with(b"&") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidEntityReference,
+                self.locator,
+                "The entity reference does not start with '&'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidEntityReference);
+        }
+        // skip '&'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
+
+        let mut name = String::new();
+        if self.config.is_enable(ParserOption::Namespaces) {
+            self.parse_ncname(&mut name)?;
+        } else {
+            self.parse_name(&mut name)?;
+        }
+
+        self.grow()?;
+        if !self.source.content_bytes().starts_with(b";") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidEntityReference,
+                self.locator,
+                "The entity reference does not end with ';'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidEntityReference);
+        }
+        // skip ';'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
+
+        todo!("Include Entity")
     }
 
     /// ```text
