@@ -3,7 +3,7 @@ pub mod error;
 mod parse;
 pub mod sax;
 
-use std::{borrow::Cow, marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, sync::Arc};
 
 use crate::sax::source::InputSource;
 

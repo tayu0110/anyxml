@@ -2271,7 +2271,120 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(())
     }
 
+    /// ```text
+    /// [43] content ::= CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*
+    /// ```
     pub(crate) fn parse_content(&mut self) -> Result<(), XMLError> {
-        todo!()
+        loop {
+            self.grow()?;
+            if self.source.content_bytes().is_empty() {
+                break Ok(());
+            }
+
+            match self.source.content_bytes() {
+                [b'<', b'?', ..] => self.parse_pi()?,
+                [b'<', b'!', b'-', b'-', ..] => self.parse_comment()?,
+                [b'<', b'!', b'[', b'C', b'D', b'A', b'T', b'A', b'[', ..] => {
+                    self.parse_cdsect()?
+                }
+                [b'<', b'/', ..] => break Ok(()),
+                [b'<', ..] => self.parse_element()?,
+                [b'&', ..] => todo!("Reference"),
+                _ => todo!("CharData"),
+            }
+        }
+    }
+
+    pub(crate) fn parse_cdsect(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+
+        if !self.source.content_bytes().starts_with(b"<![CDATA[") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidCDSect,
+                self.locator,
+                "CDSect must start with '<![CDATA['."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidCDSect);
+        }
+        // skip '<![CDATA['
+        self.source.advance(9)?;
+        self.locator.update_column(|c| c + 9);
+
+        if self.state != ParserState::FatalErrorOccurred {
+            self.lexical_handler.start_cdata();
+        }
+
+        self.grow()?;
+        let mut buffer = String::new();
+        while !self.source.content_bytes().starts_with(b"]]>") {
+            match self.source.next_char()? {
+                Some('\r') => {
+                    if self.source.peek_char()? != Some('\n') {
+                        self.locator.update_line(|l| l + 1);
+                        self.locator.set_column(1);
+                        buffer.push('\n');
+                    }
+                }
+                Some('\n') => {
+                    self.locator.update_line(|l| l + 1);
+                    self.locator.set_column(1);
+                    buffer.push('\n');
+                }
+                Some(c) if self.is_char(c) => {
+                    self.locator.update_column(|c| c + 1);
+                    buffer.push(c);
+                }
+                Some(c) => {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidCharacter,
+                        self.locator,
+                        "The character '0x{:X}' is not allowed in the XML document.",
+                        c as u32
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                    self.locator.update_column(|c| c + 1);
+                    buffer.push(c);
+                }
+                None => break,
+            }
+
+            if buffer.len() >= CHARDATA_CHUNK_LENGTH {
+                if self.state != ParserState::FatalErrorOccurred {
+                    self.content_handler.characters(&buffer);
+                }
+                buffer.clear();
+            }
+
+            if self.source.content_bytes().len() < 3 {
+                self.grow()?;
+            }
+        }
+
+        if !buffer.is_empty() && self.state != ParserState::FatalErrorOccurred {
+            self.content_handler.characters(&buffer);
+        }
+
+        if !self.source.content_bytes().starts_with(b"]]>") {
+            fatal_error!(
+                self.error_handler,
+                XMLError::ParserInvalidCDSect,
+                self.locator,
+                "CDSect does not end with ']]>'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidCDSect);
+        }
+        // skip ']]>'
+        self.source.advance(3)?;
+        self.locator.update_column(|c| c + 3);
+
+        if self.state != ParserState::FatalErrorOccurred {
+            self.lexical_handler.end_cdata();
+        }
+
+        Ok(())
     }
 }
