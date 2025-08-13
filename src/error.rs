@@ -35,6 +35,7 @@ pub enum XMLError {
     ParserInvalidCDSect,
     ParserInvalidProcessingInstruction,
     ParserUnacceptablePITarget,
+    ParserUnacceptablePatternInCharData,
     ParserInvalidDoctypeDecl,
     ParserInvalidElementDecl,
     ParserInvalidAttlistDecl,

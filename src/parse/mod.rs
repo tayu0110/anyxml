@@ -2290,11 +2290,97 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 [b'<', b'/', ..] => break Ok(()),
                 [b'<', ..] => self.parse_element()?,
                 [b'&', ..] => todo!("Reference"),
-                _ => todo!("CharData"),
+                _ => self.parse_char_data()?,
             }
         }
     }
 
+    /// ```text
+    /// [14] CharData ::= [^<&]* - ([^<&]* ']]>' [^<&]*)
+    /// ```
+    pub(crate) fn parse_char_data(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+        if self.source.content_bytes().is_empty() {
+            return Ok(());
+        }
+
+        let mut buffer = String::new();
+        while !matches!(self.source.content_bytes()[0], b'<' | b'&') {
+            match self.source.next_char()? {
+                Some('\r') => {
+                    if self.source.peek_char()? != Some('\n') {
+                        self.locator.update_line(|l| l + 1);
+                        self.locator.set_column(1);
+                        buffer.push('\n');
+                    }
+                }
+                Some('\n') => {
+                    self.locator.update_line(|l| l + 1);
+                    self.locator.set_column(1);
+                    buffer.push('\n');
+                }
+                Some(']') => {
+                    if self.source.content_bytes().starts_with(b"]>") {
+                        fatal_error!(
+                            self.error_handler,
+                            XMLError::ParserUnacceptablePatternInCharData,
+                            self.locator,
+                            "']]>' is not allowed in a character data."
+                        );
+                        self.state = ParserState::FatalErrorOccurred;
+                    }
+                    self.locator.update_column(|c| c + 1);
+                    buffer.push(']');
+                }
+                Some(c) if self.is_char(c) => {
+                    self.locator.update_column(|c| c + 1);
+                    buffer.push(c);
+                }
+                Some(c) => {
+                    fatal_error!(
+                        self.error_handler,
+                        XMLError::ParserInvalidCharacter,
+                        self.locator,
+                        "The characeter '0x{:X}' is not allowed in the XML document.",
+                        c as u32
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                    self.locator.update_column(|c| c + 1);
+                    buffer.push(c);
+                }
+                _ => unreachable!(),
+            }
+
+            if buffer.len() >= CHARDATA_CHUNK_LENGTH {
+                if self.state != ParserState::FatalErrorOccurred {
+                    self.content_handler.characters(&buffer);
+                }
+                buffer.clear();
+            }
+
+            // Since it is necessary to check whether ']]>' is included,
+            // maintain at least 3 bytes as much as possible.
+            if self.source.content_bytes().len() < 3 {
+                self.grow()?;
+                if self.source.content_bytes().is_empty() {
+                    break;
+                }
+            }
+        }
+
+        if !buffer.is_empty() && self.state != ParserState::FatalErrorOccurred {
+            self.content_handler.characters(&buffer);
+        }
+
+        Ok(())
+    }
+
+    /// ```text
+    /// [18] CDSect  ::= CDStart CData CDEnd
+    /// [19] CDStart ::= '<![CDATA['
+    /// [20] CData   ::= (Char* - (Char* ']]>' Char*))
+    /// [21] CDEnd   ::= ']]>'
+    /// ```
     pub(crate) fn parse_cdsect(&mut self) -> Result<(), XMLError> {
         self.grow()?;
 
