@@ -68,7 +68,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         if buffer.len() == orig {
             fatal_error!(
                 self.error_handler,
-                XMLError::ParserEmptyName,
+                ParserEmptyName,
                 self.locator,
                 "Nmtoken is empty."
             );
@@ -85,7 +85,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         else {
             fatal_error!(
                 self.error_handler,
-                XMLError::ParserEmptyName,
+                ParserEmptyName,
                 self.locator,
                 "Name is empty."
             );
@@ -131,7 +131,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         if buffer.len() == orig {
             fatal_error!(
                 self.error_handler,
-                XMLError::ParserEmptyName,
+                ParserEmptyName,
                 self.locator,
                 "Name is empty."
             );
@@ -150,7 +150,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             return if buffer.len() == orig {
                 fatal_error!(
                     self.error_handler,
-                    XMLError::ParserEmptyQName,
+                    ParserEmptyQName,
                     self.locator,
                     "QName is empty."
                 );
@@ -162,7 +162,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         if buffer.len() == orig {
             fatal_error!(
                 self.error_handler,
-                XMLError::ParserEmptyQNamePrefix,
+                ParserEmptyQNamePrefix,
                 self.locator,
                 "':' is found in QName, but its prefix is empty."
             );
@@ -176,7 +176,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         if buffer.len() == orig + prefix + 1 {
             fatal_error!(
                 self.error_handler,
-                XMLError::ParserEmptyQNameLocalPart,
+                ParserEmptyQNameLocalPart,
                 self.locator,
                 "':' is found in QName, but its local part is empty."
             );

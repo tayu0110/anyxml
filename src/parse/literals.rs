@@ -18,7 +18,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             Some(c) => {
                 fatal_error!(
                     self.error_handler,
-                    XMLError::ParserInvalidSystemLiteral,
+                    ParserInvalidSystemLiteral,
                     self.locator,
                     "A character '0x{:X}' is not correct quotation mark for SystemLiteral.",
                     c as u32
@@ -29,7 +29,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             None => {
                 fatal_error!(
                     self.error_handler,
-                    XMLError::ParserUnexpectedEOF,
+                    ParserUnexpectedEOF,
                     self.locator,
                     "Unexpected EOF."
                 );
@@ -71,7 +71,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                 self.locator.update_column(|c| c + 1);
                 fatal_error!(
                     self.error_handler,
-                    XMLError::ParserInvalidPubidLiteral,
+                    ParserInvalidPubidLiteral,
                     self.locator,
                     "SystemLiteral does not close with the correct quotation mark."
                 );
@@ -81,7 +81,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             None => {
                 fatal_error!(
                     self.error_handler,
-                    XMLError::ParserUnexpectedEOF,
+                    ParserUnexpectedEOF,
                     self.locator,
                     "Unexpected EOF."
                 );
@@ -100,7 +100,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             Some(c) => {
                 fatal_error!(
                     self.error_handler,
-                    XMLError::ParserInvalidPubidLiteral,
+                    ParserInvalidPubidLiteral,
                     self.locator,
                     "A character '0x{:X}' is not correct quotation mark for PubidLiteral.",
                     c as u32
@@ -111,7 +111,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             None => {
                 fatal_error!(
                     self.error_handler,
-                    XMLError::ParserUnexpectedEOF,
+                    ParserUnexpectedEOF,
                     self.locator,
                     "Unexpected EOF."
                 );
@@ -138,7 +138,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                 self.locator.update_column(|c| c + 1);
                 fatal_error!(
                     self.error_handler,
-                    XMLError::ParserInvalidPubidLiteral,
+                    ParserInvalidPubidLiteral,
                     self.locator,
                     "PubidLiteral does not close with the correct quotation mark."
                 );
@@ -148,7 +148,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             None => {
                 fatal_error!(
                     self.error_handler,
-                    XMLError::ParserUnexpectedEOF,
+                    ParserUnexpectedEOF,
                     self.locator,
                     "Unexpected EOF."
                 );
