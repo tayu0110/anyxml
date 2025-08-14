@@ -1,15 +1,13 @@
 use std::{
     borrow::Cow,
+    collections::BTreeMap,
     iter::once,
     str::{from_utf8, from_utf8_unchecked},
+    sync::{LazyLock, RwLock},
 };
 
 pub trait Encoder {
     fn name(&self) -> &'static str;
-    /// Determines whether this encoder is the encoder specified by `name`.
-    ///
-    /// Reference: [Character Sets registered by IANA](https://www.iana.org/assignments/character-sets/character-sets.xhtml)
-    fn is_match(&self, name: &str) -> bool;
     /// If no error occurs, return `Ok((read_bytes, write_bytes))`.
     fn encode(
         &mut self,
@@ -21,10 +19,6 @@ pub trait Encoder {
 
 pub trait Decoder {
     fn name(&self) -> &'static str;
-    /// Determines whether this decoder is the decoder specified by `name`.
-    ///
-    /// Reference: [Character Sets registered by IANA](https://www.iana.org/assignments/character-sets/character-sets.xhtml)
-    fn is_match(&self, name: &str) -> bool;
     /// If no error occurs, return `Ok((read_bytes, write_bytes))`.
     fn decode(
         &mut self,
@@ -70,18 +64,11 @@ pub enum DecodeError {
 }
 
 const UTF8_NAME: &str = "UTF-8";
-const fn is_match_with_utf8(name: &str) -> bool {
-    matches!(name.as_bytes(), b"UTF-8" | b"UTF8")
-}
 
 pub struct UTF8Encoder;
 impl Encoder for UTF8Encoder {
     fn name(&self) -> &'static str {
         UTF8_NAME
-    }
-
-    fn is_match(&self, name: &str) -> bool {
-        is_match_with_utf8(name)
     }
 
     fn encode(
@@ -112,10 +99,6 @@ pub struct UTF8Decoder;
 impl Decoder for UTF8Decoder {
     fn name(&self) -> &'static str {
         UTF8_NAME
-    }
-
-    fn is_match(&self, name: &str) -> bool {
-        is_match_with_utf8(name)
     }
 
     fn decode(
@@ -174,9 +157,6 @@ impl Decoder for UTF8Decoder {
 }
 
 const UTF16_NAME: &str = "UTF-16";
-const fn is_match_with_utf16(name: &str) -> bool {
-    matches!(name.as_bytes(), b"UTF-16" | b"UTF16")
-}
 
 pub struct UTF16Encoder {
     init: bool,
@@ -184,10 +164,6 @@ pub struct UTF16Encoder {
 impl Encoder for UTF16Encoder {
     fn name(&self) -> &'static str {
         UTF16_NAME
-    }
-
-    fn is_match(&self, name: &str) -> bool {
-        is_match_with_utf16(name)
     }
 
     fn encode(
@@ -222,10 +198,6 @@ pub struct UTF16Decoder {
 impl Decoder for UTF16Decoder {
     fn name(&self) -> &'static str {
         UTF16_NAME
-    }
-
-    fn is_match(&self, name: &str) -> bool {
-        is_match_with_utf16(name)
     }
 
     fn decode(
@@ -321,18 +293,11 @@ impl Decoder for UTF16Decoder {
 }
 
 const UTF16BE_NAME: &str = "UTF-16BE";
-const fn is_match_with_utf16be(name: &str) -> bool {
-    matches!(name.as_bytes(), b"UTF-16BE" | b"UTF16BE")
-}
 
 pub struct UTF16BEEncoder;
 impl Encoder for UTF16BEEncoder {
     fn name(&self) -> &'static str {
         UTF16BE_NAME
-    }
-
-    fn is_match(&self, name: &str) -> bool {
-        is_match_with_utf16be(name)
     }
 
     fn encode(
@@ -374,10 +339,6 @@ pub struct UTF16BEDecoder;
 impl Decoder for UTF16BEDecoder {
     fn name(&self) -> &'static str {
         UTF16BE_NAME
-    }
-
-    fn is_match(&self, name: &str) -> bool {
-        is_match_with_utf16be(name)
     }
 
     fn decode(
@@ -428,18 +389,11 @@ impl Decoder for UTF16BEDecoder {
 }
 
 const UTF16LE_NAME: &str = "UTF-16LE";
-const fn is_match_with_utf16le(name: &str) -> bool {
-    matches!(name.as_bytes(), b"UTF-16LE" | b"UTF16LE")
-}
 
 pub struct UTF16LEEncoder;
 impl Encoder for UTF16LEEncoder {
     fn name(&self) -> &'static str {
         UTF16LE_NAME
-    }
-
-    fn is_match(&self, name: &str) -> bool {
-        is_match_with_utf16le(name)
     }
 
     fn encode(
@@ -481,10 +435,6 @@ pub struct UTF16LEDecoder;
 impl Decoder for UTF16LEDecoder {
     fn name(&self) -> &'static str {
         UTF16LE_NAME
-    }
-
-    fn is_match(&self, name: &str) -> bool {
-        is_match_with_utf16le(name)
     }
 
     fn decode(
@@ -532,4 +482,110 @@ impl Decoder for UTF16LEDecoder {
 
         Ok((read, write))
     }
+}
+
+/// Supported encodings.  
+///
+/// Encoding names are listed in lexical order.
+pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] =
+    &[UTF16_NAME, UTF16BE_NAME, UTF16LE_NAME, UTF8_NAME];
+/// Manage aliases for encoding names.
+pub static ENCODING_ALIASES: LazyLock<RwLock<BTreeMap<&'static str, &'static str>>> =
+    LazyLock::new(|| {
+        RwLock::new(BTreeMap::from([
+            ("UTF8", UTF8_NAME),
+            ("UTF16", UTF16_NAME),
+            ("UTF16BE", UTF16BE_NAME),
+            ("UTF16LE", UTF16LE_NAME),
+        ]))
+    });
+/// Register `alias` as an alias for the encoding name `real`.  \
+/// If `alias` is already an alias for another encoding name, overwrite it and return
+/// the encoding name before the overwrite.
+///
+/// It is assumed that real names and aliases will be linked based on the IANA list,
+/// but this is not required.  \
+/// However, since aliases do not redirect multiple times, `real` must be the name registered
+/// with the encoder/decoder.
+///
+/// If an encoding name becomes both a real name and an alias, searches may not work properly.
+///
+/// Reference: [Charcter sets registered by IANA](https://www.iana.org/assignments/character-sets/character-sets.xhtml)
+pub fn register_encoding_alias(alias: &'static str, real: &'static str) -> Option<&'static str> {
+    ENCODING_ALIASES.write().unwrap().insert(alias, real)
+}
+/// Unregister `alias` if it is registerd as an alias for an encoding name.  \
+/// If successfully removed, return the real name.
+pub fn unregister_encoding_alias(alias: &'static str) -> Option<&'static str> {
+    ENCODING_ALIASES.write().unwrap().remove(alias)
+}
+
+pub type EncoderFactory = fn() -> Box<dyn Encoder>;
+pub static ENCODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, EncoderFactory>>> =
+    LazyLock::new(|| {
+        let mut map = BTreeMap::<&'static str, EncoderFactory>::new();
+        map.insert(UTF8_NAME, || Box::new(UTF8Encoder));
+        map.insert(UTF16_NAME, || Box::new(UTF16Encoder { init: false }));
+        map.insert(UTF16BE_NAME, || Box::new(UTF16BEEncoder));
+        map.insert(UTF16LE_NAME, || Box::new(UTF16LEEncoder));
+        RwLock::new(map)
+    });
+pub fn find_encoder(encoding_name: &str) -> Option<Box<dyn Encoder>> {
+    let table = ENCODER_TABLE.read().unwrap();
+    if let Some(factory) = table.get(encoding_name) {
+        return Some(factory());
+    }
+
+    let &alias = ENCODING_ALIASES.read().unwrap().get(encoding_name)?;
+    table.get(alias).map(|f| f())
+}
+pub fn register_encoder(
+    encoding_name: &'static str,
+    factory: EncoderFactory,
+) -> Option<EncoderFactory> {
+    ENCODER_TABLE
+        .write()
+        .unwrap()
+        .insert(encoding_name, factory)
+}
+pub fn unregister_encoder(encoding_name: &str) -> Option<EncoderFactory> {
+    ENCODER_TABLE.write().unwrap().remove(encoding_name)
+}
+
+pub type DecoderFactory = fn() -> Box<dyn Decoder>;
+pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>>> =
+    LazyLock::new(|| {
+        let mut map = BTreeMap::<&'static str, DecoderFactory>::new();
+        map.insert(UTF8_NAME, || Box::new(UTF8Decoder));
+        map.insert(UTF16_NAME, || {
+            Box::new(UTF16Decoder {
+                read: 0,
+                top: [0; 2],
+                be: false,
+            })
+        });
+        map.insert(UTF16BE_NAME, || Box::new(UTF16BEDecoder));
+        map.insert(UTF16LE_NAME, || Box::new(UTF16LEDecoder));
+        RwLock::new(map)
+    });
+pub fn find_decoder(encoding_name: &str) -> Option<Box<dyn Decoder>> {
+    let table = DECODER_TABLE.read().unwrap();
+    if let Some(factory) = table.get(encoding_name) {
+        return Some(factory());
+    }
+
+    let &alias = ENCODING_ALIASES.read().unwrap().get(encoding_name)?;
+    table.get(alias).map(|f| f())
+}
+pub fn register_decoder(
+    encoding_name: &'static str,
+    factory: DecoderFactory,
+) -> Option<DecoderFactory> {
+    DECODER_TABLE
+        .write()
+        .unwrap()
+        .insert(encoding_name, factory)
+}
+pub fn unregister_decoder(encoding_name: &str) -> Option<DecoderFactory> {
+    DECODER_TABLE.write().unwrap().remove(encoding_name)
 }

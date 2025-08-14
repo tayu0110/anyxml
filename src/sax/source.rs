@@ -1,7 +1,7 @@
 use std::io::Read;
 
 use crate::{
-    encoding::{DecodeError, Decoder, UTF8Decoder, UTF16BEDecoder, UTF16LEDecoder},
+    encoding::{DecodeError, Decoder, UTF8Decoder, UTF16BEDecoder, UTF16LEDecoder, find_decoder},
     error::XMLError,
 };
 
@@ -33,7 +33,7 @@ impl<'a> InputSource<'a> {
         ret.source = Box::new(reader);
 
         if let Some(encoding) = encoding {
-            todo!()
+            ret.decoder = find_decoder(encoding).ok_or(XMLError::ParserUnsupportedEncoding)?;
         } else {
             // Handling strange implementations that write only one byte per read
             for _ in 0..INPUT_CHUNK {
