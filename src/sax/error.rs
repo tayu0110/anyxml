@@ -85,7 +85,9 @@ macro_rules! fatal_error {
 
 macro_rules! error {
     ($handler:expr, $code:ident, $locator:expr, $message:literal, $( $args:expr ),+) => {
-        $crate::sax::error::generic_error!(error, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Error, $locator, $message, $( $args ),+);
+        #[allow(unused)]
+        use $crate::error::XMLError::*;
+        $crate::sax::error::generic_error!(error, $handler, $code, $crate::error::XMLErrorLevel::Error, $locator, $message, $( $args ),+);
     };
     ($handler:expr, $code:ident, $locator:expr, $message:literal) => {
         $crate::sax::error::generic_error!(error, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Error, $locator, $message);

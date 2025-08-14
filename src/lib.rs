@@ -3,7 +3,7 @@ pub mod error;
 mod parse;
 pub mod sax;
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, path::Path, sync::Arc};
 
 use crate::sax::source::InputSource;
 
@@ -108,6 +108,34 @@ pub enum ContentSpec {
     ANY,
     Mixed(Vec<Box<str>>),
     Children(Box<str>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum EntityDecl {
+    InternalGeneralEntity {
+        base_uri: Arc<Path>,
+        replacement_text: Box<str>,
+    },
+    InternalParameterEntity {
+        base_uri: Arc<Path>,
+        replacement_text: Box<str>,
+    },
+    ExternalGeneralParsedEntity {
+        base_uri: Arc<Path>,
+        system_id: Box<str>,
+        public_id: Option<Box<str>>,
+    },
+    ExternalGeneralUnparsedEntity {
+        base_uri: Arc<Path>,
+        system_id: Box<str>,
+        public_id: Option<Box<str>>,
+    },
+    ExternalParameterEntity {
+        base_uri: Arc<Path>,
+        system_id: Box<str>,
+        public_id: Option<Box<str>>,
+        notation_name: Box<str>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]

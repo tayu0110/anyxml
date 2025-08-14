@@ -7,6 +7,16 @@ pub enum XMLErrorLevel {
     Warning,
 }
 
+impl std::fmt::Display for XMLErrorLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::FatalError => write!(f, "fatal error"),
+            Self::Error => write!(f, "error"),
+            Self::Warning => write!(f, "warning"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XMLError {
     // general errors
@@ -48,6 +58,9 @@ pub enum XMLError {
     ParserDuplicateAttributes,
     ParserInvalidCharacterReference,
     ParserInvalidEntityReference,
+    ParserEntityNotFound,
+    ParserEntityRecursion,
+    ParserEntityIncorrectNesting,
     ParserUnacceptableNamespaceName,
     ParserUndefinedNamespace,
     ParserUnexpectedEOF,

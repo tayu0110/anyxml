@@ -1,16 +1,17 @@
 pub mod literals;
 pub mod tokens;
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use crate::{
     Attribute, AttributeType, CHARDATA_CHUNK_LENGTH, ContentSpec, DefaultDecl, DefaultParserSpec,
-    ENCODING_NAME_LIMIT_LENGTH, XML_NS_NAMESPACE, XML_VERSION_NUM_LIMIT_LENGTH, XML_XML_NAMESPACE,
-    XMLVersion,
+    ENCODING_NAME_LIMIT_LENGTH, EntityDecl, XML_NS_NAMESPACE, XML_VERSION_NUM_LIMIT_LENGTH,
+    XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::{
         error::{error, fatal_error, warning},
         parser::{ParserOption, ParserState, XMLReader},
+        source::InputSource,
     },
 };
 
@@ -116,6 +117,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.source.advance(1)?;
             self.locator.update_column(|c| c + 1);
 
+            self.has_internal_subset = true;
+
             // parse internal subset
             self.parse_int_subset()?;
 
@@ -153,6 +156,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.locator.update_column(|c| c + 1);
 
         if let Some(system_id) = system_id {
+            self.has_external_subset = true;
             todo!("parse external subset");
         }
 
@@ -2344,7 +2348,152 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(1)?;
         self.locator.update_column(|c| c + 1);
 
-        todo!("Include Entity")
+        if let Some(decl) = self.entities.get(name.as_str()) {
+            if self
+                .entity_name_stack
+                .iter()
+                .any(|ent| ent.as_deref() == Some(name.as_str()))
+            {
+                // [WFC: No Recursion]
+                fatal_error!(
+                    self.error_handler,
+                    ParserEntityRecursion,
+                    self.locator,
+                    "The entity '{}' appears recursively.",
+                    name
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserEntityRecursion);
+            }
+            match decl {
+                EntityDecl::InternalGeneralEntity {
+                    base_uri,
+                    replacement_text,
+                } => {
+                    let source = InputSource::from_content(replacement_text.as_ref());
+                    let name: Arc<str> = name.into();
+                    self.push_source(
+                        Box::new(source),
+                        base_uri.clone(),
+                        Some(name.clone()),
+                        PathBuf::from(format!("#internal-entity.{name}")).into(),
+                        None,
+                    )?;
+
+                    if self.state != ParserState::FatalErrorOccurred {
+                        self.lexical_handler.start_entity(&name);
+                    }
+
+                    self.parse_content()?;
+                    self.grow()?;
+
+                    if !self.source.is_empty() {
+                        fatal_error!(
+                            self.error_handler,
+                            ParserEntityIncorrectNesting,
+                            self.locator,
+                            "The entity '{}' is nested incorrectly.",
+                            name
+                        );
+                        self.state = ParserState::FatalErrorOccurred;
+                    }
+
+                    self.pop_source()?;
+                    if self.state != ParserState::FatalErrorOccurred {
+                        self.lexical_handler.end_entity();
+                    }
+                }
+                EntityDecl::ExternalGeneralParsedEntity {
+                    base_uri,
+                    system_id,
+                    public_id,
+                } => {
+                    if self.config.is_enable(ParserOption::Validation)
+                        || self.config.is_enable(ParserOption::ExternalGeneralEntities)
+                    {
+                        match self.entity_resolver.resolve_entity(
+                            &name,
+                            public_id.as_deref(),
+                            base_uri.as_ref(),
+                            system_id.as_ref(),
+                        ) {
+                            Ok(source) => todo!("Include entity"),
+                            Err(err) => {
+                                error!(
+                                    self.error_handler,
+                                    err,
+                                    self.locator,
+                                    "The external general entity '{}' cannot be resolved.",
+                                    name
+                                );
+                            }
+                        }
+                    } else if self.state != ParserState::FatalErrorOccurred {
+                        self.content_handler.skipped_entity(&name);
+                    }
+                }
+                EntityDecl::ExternalGeneralUnparsedEntity { .. } => {
+                    // [WFC: Parsed Entity]
+                    fatal_error!(
+                        self.error_handler,
+                        ParserInvalidEntityReference,
+                        self.locator,
+                        "The unparsed entity '{}' cannot be referred.",
+                        name
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                }
+                EntityDecl::InternalParameterEntity { .. }
+                | EntityDecl::ExternalParameterEntity { .. } => {
+                    // The fact that we have reached this point suggests that the general
+                    // entity has been mistakenly registered as a parameter entity somewhere.
+                    unreachable!("Internal error: Reference name: {name}");
+                }
+            }
+        } else {
+            if self.config.is_enable(ParserOption::Validation) {
+                // is it correct ???
+                // I don't really understand the meaning of [WFC: Entity Declared],
+                // so if I'm wrong, please let me know...
+                if !self.has_external_subset || self.standalone == Some(true) {
+                    // [WFC: Entity Declared]
+                    fatal_error!(
+                        self.error_handler,
+                        ParserEntityNotFound,
+                        self.locator,
+                        "The entity '{}' is not declared.",
+                        name
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                } else {
+                    // [VC: Entity Declared]
+                    error!(
+                        self.error_handler,
+                        ParserEntityNotFound,
+                        self.locator,
+                        "The entity '{}' is not declared.",
+                        name
+                    );
+                }
+            } else {
+                // [WFC: Entity Declared]
+                if self.standalone == Some(true) {
+                    fatal_error!(
+                        self.error_handler,
+                        ParserEntityNotFound,
+                        self.locator,
+                        "The entity '{}' is not declared.",
+                        name
+                    );
+                    self.state = ParserState::FatalErrorOccurred;
+                }
+            }
+
+            if self.state != ParserState::FatalErrorOccurred {
+                self.content_handler.skipped_entity(&name);
+            }
+        }
+        Ok(())
     }
 
     /// ```text

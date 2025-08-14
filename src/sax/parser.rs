@@ -1,7 +1,13 @@
-use std::{collections::HashMap, io::Read, mem::replace, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    io::Read,
+    mem::replace,
+    path::{Path, PathBuf},
+    sync::{Arc, RwLock, atomic::AtomicUsize},
+};
 
 use crate::{
-    DefaultParserSpec, ParserSpec, XML_XML_NAMESPACE, XMLVersion,
+    DefaultParserSpec, EntityDecl, ParserSpec, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::{
         Locator,
@@ -50,6 +56,14 @@ impl ParserConfig {
     pub fn is_enable(&self, option: ParserOption) -> bool {
         self.flags & (1 << option as i32) != 0
     }
+
+    pub fn set_option(&mut self, option: ParserOption, flag: bool) {
+        if flag {
+            self.flags |= 1 << (option as i32);
+        } else {
+            self.flags &= !(1 << (option as i32));
+        }
+    }
 }
 
 impl Default for ParserConfig {
@@ -90,20 +104,6 @@ impl std::ops::BitOrAssign<Self> for ParserConfig {
     }
 }
 
-impl ParserConfig {
-    pub fn get_option(&self, option: ParserOption) -> bool {
-        (self.flags >> option as i32) & 1 != 0
-    }
-
-    pub fn set_option(&mut self, option: ParserOption, flag: bool) {
-        if flag {
-            self.flags |= 1 << (option as i32);
-        } else {
-            self.flags &= !(1 << (option as i32));
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParserState {
     BeforeStart,
@@ -125,13 +125,22 @@ pub struct XMLReader<Spec: ParserSpec> {
     pub(crate) lexical_handler: Arc<dyn LexicalHandler>,
     pub(crate) locator: Arc<Locator>,
     pub(crate) config: ParserConfig,
-    pub(crate) base_uri: PathBuf,
+    pub(crate) base_uri: Arc<Path>,
+    pub(crate) entity_name: Option<Arc<str>>,
+
+    // Entity Stack
+    source_stack: Vec<Box<Spec::Reader>>,
+    locator_stack: Vec<Locator>,
+    base_uri_stack: Vec<Arc<Path>>,
+    pub(crate) entity_name_stack: Vec<Option<Arc<str>>>,
 
     // Parser Context
     pub(crate) state: ParserState,
     pub(crate) version: XMLVersion,
     pub(crate) encoding: Option<String>,
     pub(crate) standalone: Option<bool>,
+    pub(crate) has_internal_subset: bool,
+    pub(crate) has_external_subset: bool,
     // (prefix, namespace name, before overwrite)
     // Namespaces declared closer to the document element appear earlier in the list.
     // The second `usize` is the position of the namespace that bound the same prefix until
@@ -139,6 +148,7 @@ pub struct XMLReader<Spec: ParserSpec> {
     pub(crate) namespaces: Vec<(Arc<str>, Arc<str>, usize)>,
     // (prefix, position in `namespaces`)
     pub(crate) prefix_map: HashMap<Arc<str>, usize>,
+    pub(crate) entities: HashMap<Box<str>, EntityDecl>,
 }
 
 impl<Spec: ParserSpec> XMLReader<Spec> {
@@ -192,8 +202,8 @@ impl<Spec: ParserSpec> XMLReader<Spec> {
 
 impl<'a> XMLReader<DefaultParserSpec<'a>> {
     pub fn parse_uri(&mut self, uri: &str, encoding: Option<&str>) -> Result<(), XMLError> {
-        self.base_uri = uri.into();
-        self.locator = Arc::new(Locator::new(self.base_uri.clone().into(), None, 1, 1));
+        self.base_uri = PathBuf::from(uri).into();
+        self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
         self.encoding = encoding.map(|enc| enc.to_owned());
         todo!()
     }
@@ -207,22 +217,22 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         self.encoding = encoding.map(|enc| enc.to_owned());
         self.source = Box::new(InputSource::from_reader(reader, encoding)?);
         if let Some(uri) = uri {
-            self.base_uri = uri.into();
+            self.base_uri = PathBuf::from(uri).into();
         } else {
-            self.base_uri = std::env::current_exe()?;
+            self.base_uri = std::env::current_exe()?.into();
         }
-        self.locator = Arc::new(Locator::new(self.base_uri.clone().into(), None, 1, 1));
+        self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
         todo!()
     }
 
     pub fn parse_str(&mut self, str: &str, uri: Option<&str>) -> Result<(), XMLError> {
         self.source = Box::new(InputSource::from_content(str));
         if let Some(uri) = uri {
-            self.base_uri = uri.into();
+            self.base_uri = PathBuf::from(uri).into();
         } else {
-            self.base_uri = std::env::current_exe()?;
+            self.base_uri = std::env::current_exe()?.into();
         }
-        self.locator = Arc::new(Locator::new(self.base_uri.clone().into(), None, 1, 1));
+        self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
         self.parse_document()?;
         todo!()
     }
@@ -237,12 +247,23 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         self.error_handler = handler.clone();
         self.lexical_handler = handler.clone();
         self.config = ParserConfig::default();
-        self.base_uri = "".into();
-        self.locator = Arc::new(Locator::new(self.base_uri.clone().into(), None, 1, 1));
+        self.base_uri = PathBuf::from("").into();
+        self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
+        self.entity_name = None;
+
+        // reset Entity Stack
+        self.source_stack.clear();
+        self.locator_stack.clear();
+        self.base_uri_stack.clear();
+        self.entity_name_stack.clear();
+
+        // reset Parser Context
         self.state = ParserState::BeforeStart;
         self.version = XMLVersion::default();
         self.encoding = None;
         self.standalone = None;
+        self.has_internal_subset = false;
+        self.has_external_subset = false;
         self.namespaces.clear();
         // 'xml' prefix
         let xml: Arc<str> = "xml".into();
@@ -250,6 +271,7 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
             .push((xml.clone(), XML_XML_NAMESPACE.into(), usize::MAX));
         self.prefix_map.clear();
         self.prefix_map.insert(xml, 0);
+        self.entities.clear();
     }
 
     pub(crate) fn grow(&mut self) -> Result<(), XMLError> {
@@ -265,5 +287,49 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
             // decoding should not fail, so the error should be reported as is.
             ret
         }
+    }
+
+    pub(crate) fn push_source(
+        &mut self,
+        source: Box<InputSource<'a>>,
+        base_uri: Arc<Path>,
+        entity_name: Option<Arc<str>>,
+        system_id: Arc<Path>,
+        public_id: Option<Arc<str>>,
+    ) -> Result<(), XMLError> {
+        self.source_stack.push(replace(&mut self.source, source));
+        self.base_uri_stack
+            .push(replace(&mut self.base_uri, base_uri));
+        self.entity_name_stack
+            .push(replace(&mut self.entity_name, entity_name));
+        self.locator_stack.push(Locator {
+            system_id: RwLock::new(self.locator.system_id()),
+            public_id: RwLock::new(self.locator.public_id()),
+            line: AtomicUsize::new(self.locator.line()),
+            column: AtomicUsize::new(self.locator.column()),
+        });
+        self.locator.set_system_id(system_id);
+        self.locator.set_public_id(public_id);
+        self.locator.set_line(1);
+        self.locator.set_column(1);
+        Ok(())
+    }
+
+    pub(crate) fn pop_source(&mut self) -> Result<(), XMLError> {
+        if self.source_stack.is_empty() {
+            return Err(XMLError::InternalError);
+        }
+
+        self.source = self.source_stack.pop().unwrap();
+        self.base_uri = self.base_uri_stack.pop().unwrap();
+        self.entity_name = self.entity_name_stack.pop().unwrap();
+
+        let locator = self.locator_stack.pop().unwrap();
+        self.locator.set_system_id(locator.system_id());
+        self.locator.set_public_id(locator.public_id());
+        self.locator.set_line(locator.line());
+        self.locator.set_column(locator.column());
+
+        Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use std::{io::Read, sync::Arc};
+use std::{io::Read, path::Path, sync::Arc};
 
 use crate::{
     Attribute, AttributeType, ContentSpec, DefaultDecl,
@@ -109,7 +109,7 @@ pub trait EntityResolver {
         &self,
         name: &str,
         public_id: Option<&str>,
-        base_uri: Option<&str>,
+        base_uri: &Path,
         system_id: &str,
     ) -> Result<Box<dyn Read>, XMLError> {
         let _ = (name, public_id, base_uri, system_id);
@@ -160,7 +160,7 @@ impl EntityResolver for DefaultSAXHandler {
         &self,
         name: &str,
         public_id: Option<&str>,
-        base_uri: Option<&str>,
+        base_uri: &Path,
         system_id: &str,
     ) -> Result<Box<dyn Read>, XMLError> {
         todo!()
