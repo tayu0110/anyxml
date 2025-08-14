@@ -63,7 +63,7 @@ pub enum DecodeError {
     Other { msg: Cow<'static, str> },
 }
 
-const UTF8_NAME: &str = "UTF-8";
+pub const UTF8_NAME: &str = "UTF-8";
 
 pub struct UTF8Encoder;
 impl Encoder for UTF8Encoder {
@@ -156,7 +156,7 @@ impl Decoder for UTF8Decoder {
     }
 }
 
-const UTF16_NAME: &str = "UTF-16";
+pub const UTF16_NAME: &str = "UTF-16";
 
 pub struct UTF16Encoder {
     init: bool,
@@ -292,7 +292,7 @@ impl Decoder for UTF16Decoder {
     }
 }
 
-const UTF16BE_NAME: &str = "UTF-16BE";
+pub const UTF16BE_NAME: &str = "UTF-16BE";
 
 pub struct UTF16BEEncoder;
 impl Encoder for UTF16BEEncoder {
@@ -388,7 +388,7 @@ impl Decoder for UTF16BEDecoder {
     }
 }
 
-const UTF16LE_NAME: &str = "UTF-16LE";
+pub const UTF16LE_NAME: &str = "UTF-16LE";
 
 pub struct UTF16LEEncoder;
 impl Encoder for UTF16LEEncoder {

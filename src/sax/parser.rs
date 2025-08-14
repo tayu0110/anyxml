@@ -8,6 +8,7 @@ use std::{
 
 use crate::{
     DefaultParserSpec, EntityDecl, ParserSpec, XML_XML_NAMESPACE, XMLVersion,
+    encoding::UTF8_NAME,
     error::XMLError,
     sax::{
         Locator,
@@ -226,6 +227,7 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
     }
 
     pub fn parse_str(&mut self, str: &str, uri: Option<&str>) -> Result<(), XMLError> {
+        self.encoding = Some(UTF8_NAME.into());
         self.source = Box::new(InputSource::from_content(str));
         if let Some(uri) = uri {
             self.base_uri = PathBuf::from(uri).into();

@@ -10,7 +10,7 @@ const GROW_THRESHOLD: usize = 64;
 
 pub struct InputSource<'a> {
     source: Box<dyn Read + 'a>,
-    buffer: [u8; INPUT_CHUNK],
+    buffer: Vec<u8>,
     decoder: Box<dyn Decoder>,
     decoded: String,
     /// Start position of the undecoded range of `buffer`
@@ -23,17 +23,26 @@ pub struct InputSource<'a> {
     total_read: usize,
     /// Whether `source` has reached EOF
     eof: bool,
+    /// If `true`, keep `buffer` within the size specified by `INPUT_CHUNK` automatically.  \
+    /// If `false`, the read byte sequence in `buffer` is retained.  
+    ///
+    /// Basically, this should be set to `true`, but if parsing is started with an unknown encoding,
+    /// it is necessary to re-decode all byte sequences later, so it should be set to `false`.
+    compact: bool,
 }
 
 impl<'a> InputSource<'a> {
     pub fn from_reader(reader: impl Read + 'a, encoding: Option<&str>) -> Result<Self, XMLError> {
         let mut ret = Self::default();
+        ret.buffer.resize(INPUT_CHUNK, 0);
         ret.decoded
             .reserve(INPUT_CHUNK.saturating_sub(ret.decoded.capacity()));
         ret.source = Box::new(reader);
 
         if let Some(encoding) = encoding {
             ret.decoder = find_decoder(encoding).ok_or(XMLError::ParserUnsupportedEncoding)?;
+            ret.buffer.shrink_to_fit();
+            ret.compact = true;
         } else {
             // Handling strange implementations that write only one byte per read
             for _ in 0..INPUT_CHUNK {
@@ -88,24 +97,33 @@ impl<'a> InputSource<'a> {
                 // UTF-16BE or big-endian ISO-10646-UCS-2 or other encoding  with a 16-bit
                 // code unit in big-endian order and ASCII characters encoded as ASCII values
                 // (the encoding declaration must be read to determine which)
-                [0x00, 0x3C, 0x00, 0x3F] => todo!(),
+                [0x00, 0x3C, 0x00, 0x3F] => {
+                    ret.decoder = Box::new(UTF16BEDecoder);
+                }
                 // UTF-16LE or little-endian ISO-10646-UCS-2 or other encoding with a 16-bit
                 // code unit in little-endian order and ASCII characters encoded as ASCII values
                 // (the encoding declaration must be read to determine which)
-                [0x3C, 0x00, 0x3F, 0x00] => todo!(),
+                [0x3C, 0x00, 0x3F, 0x00] => {
+                    ret.decoder = Box::new(UTF16LEDecoder);
+                }
                 // UTF-8, ISO 646, ASCII, some part of ISO 8859, Shift-JIS, EUC, or any other 7-bit,
                 // 8-bit, or mixed-width encoding which ensures that the characters of ASCII have
                 // their normal positions, width, and values; the actual encoding declaration must
                 // be read to detect which of these applies, but since all of these encodings use
                 // the same bit patterns for the relevant ASCII characters, the encoding declaration
                 // itself may be read reliably
-                [0x3C, 0x3F, 0x78, 0x6D] => todo!(),
+                [0x3C, 0x3F, 0x78, 0x6D] => {
+                    ret.decoder = Box::new(UTF8Decoder);
+                }
                 // EBCDIC (in some flavor; the full encoding declaration must be read to tell
                 // which code page is in use)
                 [0x4C, 0x6F, 0xA7, 0x94] => return Err(XMLError::ParserUnsupportedEncoding),
                 // cannot detect the specific encoding from the head of the content.
                 // In this case, we assume that it is a UTF-8 document without an XML declaration.
                 _ => {
+                    // Since it is either UTF-8 or an unknown encoding, the encoding is considered
+                    // to be fixed,  and the buffer control mode is also fixed.
+                    ret.compact = true;
                     ret.decoder = Box::new(UTF8Decoder);
                 }
             };
@@ -116,7 +134,7 @@ impl<'a> InputSource<'a> {
     pub fn from_content(str: &str) -> Self {
         Self {
             source: Box::new(std::io::empty()),
-            buffer: [0; _],
+            buffer: vec![],
             decoder: Box::new(UTF8Decoder),
             decoded: str.to_owned(),
             buffer_next: 0,
@@ -124,6 +142,7 @@ impl<'a> InputSource<'a> {
             decoded_next: 0,
             total_read: str.len(),
             eof: true,
+            compact: true,
         }
     }
 
@@ -131,12 +150,22 @@ impl<'a> InputSource<'a> {
         if !self.eof {
             let rem = self.buffer_end - self.buffer_next;
             if rem < GROW_THRESHOLD {
-                self.buffer
-                    .copy_within(self.buffer_next..self.buffer_end, 0);
-                self.buffer_next = 0;
-                self.buffer_end = rem;
+                if self.compact {
+                    // If compact mode, copy the remaining bytes to the top and leave a space.
+                    self.buffer
+                        .copy_within(self.buffer_next..self.buffer_end, 0);
+                    self.buffer_next = 0;
+                    self.buffer_end = rem;
+                    if self.buffer.len() > INPUT_CHUNK {
+                        debug_assert!(rem <= INPUT_CHUNK);
+                        self.buffer.truncate(INPUT_CHUNK);
+                        self.buffer.shrink_to_fit();
+                    }
+                } else {
+                    self.buffer.resize(self.buffer.len() + INPUT_CHUNK, 0);
+                }
                 let mut read = 1;
-                while self.buffer_end < INPUT_CHUNK && read != 0 {
+                while self.buffer_end < self.buffer.len() && read != 0 {
                     read = self.source.read(&mut self.buffer[self.buffer_end..])?;
                     self.buffer_end += read;
                     self.total_read += read;
@@ -238,7 +267,26 @@ impl<'a> InputSource<'a> {
     }
 
     pub(crate) fn switch_encoding(&mut self, to: &str) -> Result<(), XMLError> {
-        todo!()
+        // If compact mode, there may be data that has already been discarded,
+        // so this is considered an error.
+        if self.compact {
+            return Err(XMLError::InternalError);
+        }
+        self.decoder = find_decoder(to).ok_or(XMLError::ParserUnsupportedEncoding)?;
+        self.decoded.clear();
+        self.buffer_next = 0;
+        self.decoded_next = 0;
+        // I don't think it's necessary to change the encoding twice,
+        // so it should be fine to switch to compact mode...
+        self.compact = true;
+        self.grow()?;
+        Ok(())
+    }
+
+    /// Change buffer control to compact mode.  \
+    /// If it was already in compact mode, nothing will happen.
+    pub(crate) fn set_compact_mode(&mut self) {
+        self.compact = true;
     }
 }
 
@@ -246,7 +294,7 @@ impl Default for InputSource<'_> {
     fn default() -> Self {
         Self {
             source: Box::new(std::io::empty()),
-            buffer: [0; INPUT_CHUNK],
+            buffer: vec![],
             decoder: Box::new(UTF8Decoder),
             decoded: String::new(),
             buffer_next: 0,
@@ -254,6 +302,7 @@ impl Default for InputSource<'_> {
             decoded_next: 0,
             total_read: 0,
             eof: true,
+            compact: false,
         }
     }
 }

@@ -22,6 +22,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.content_handler.start_document();
         self.state = ParserState::Parsing;
         self.parse_prolog()?;
+        // At this point, the encoding should have been changed if necessary,
+        // so set it to compact mode.
+        self.source.set_compact_mode();
         self.parse_element()?;
         self.parse_misc()?;
         self.content_handler().end_document();
