@@ -293,7 +293,9 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
             ret
         }
     }
+}
 
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
     pub(crate) fn push_source(
         &mut self,
         source: Box<InputSource<'a>>,

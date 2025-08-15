@@ -2380,19 +2380,23 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     // Character references are treated as part of the character data.
                     self.parse_char_data()?
                 }
-                [b'&', ..] => self.parse_entity_ref()?,
+                [b'&', ..] => self.parse_entity_ref_in_content()?,
                 _ => self.parse_char_data()?,
             }
         }
     }
 
+    /// # Note
+    /// This method parses and expands assuming that entity references appear in the content.  \
+    /// Entity references appearing in attribute values are outside the scope of this method.
+    ///
     /// ```text
     /// [68] EntityRef ::= '&' Name ';'     [WFC: Entity Declared]
     ///                                     [VC:  Entity Declared]
     ///                                     [WFC: Parsed Entity]
     ///                                     [WFC: No Recursion]
     /// ```
-    pub(crate) fn parse_entity_ref(&mut self) -> Result<(), XMLError> {
+    pub(crate) fn parse_entity_ref_in_content(&mut self) -> Result<(), XMLError> {
         self.grow()?;
 
         if !self.source.content_bytes().starts_with(b"&") {
