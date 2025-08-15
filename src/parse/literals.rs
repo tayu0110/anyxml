@@ -129,13 +129,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         let quote = self.check_literal_start()?;
 
         self.source.grow()?;
-        if !self.source.content_bytes().is_empty() {
-            let orig_entity_stack = self.entity_name_stack.len();
-            self.parse_att_value_internal(buffer, quote, orig_entity_stack)?;
-            // `Ok` is returned only when entity references are nested correctly.
-            // Therefore, it is not necessary to check whether the stack state is correct.
-            assert_eq!(orig_entity_stack, self.entity_name_stack.len());
-        }
+        let orig_entity_stack = self.entity_name_stack.len();
+        self.parse_att_value_internal(buffer, quote, orig_entity_stack)?;
+        // `Ok` is returned only when entity references are nested correctly.
+        // Therefore, it is not necessary to check whether the stack state is correct.
+        assert_eq!(orig_entity_stack, self.entity_name_stack.len());
 
         self.check_literal_end(quote)
     }
@@ -146,7 +144,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         quote: char,
         orig_entity_stack: usize,
     ) -> Result<(), XMLError> {
-        'outer: loop {
+        self.source.grow()?;
+        'outer: while !self.source.content_bytes().is_empty() {
             while !matches!(self.source.content_bytes()[0], b'<' | b'&')
                 && self.source.content_bytes()[0] != quote as u8
             {
@@ -159,16 +158,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                 if self.source.content_bytes().is_empty() {
                     self.source.grow()?;
                     if self.source.content_bytes().is_empty() {
-                        if self.entity_name_stack.len() == orig_entity_stack {
-                            fatal_error!(
-                                self.error_handler,
-                                ParserUnexpectedEOF,
-                                self.locator,
-                                "Unexpected EOF."
-                            );
-                        }
-                        self.state = ParserState::FatalErrorOccurred;
-                        break 'outer Ok(());
+                        break 'outer;
                     }
                 }
             }
@@ -196,9 +186,23 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                         self.parse_entity_ref_in_att_value(buffer, quote, orig_entity_stack)?;
                     }
                 }
-                _ => break 'outer Ok(()),
+                _ => break,
             }
+            self.source.grow()?;
         }
+
+        if self.source.content_bytes().is_empty() {
+            if self.entity_name_stack.len() == orig_entity_stack {
+                fatal_error!(
+                    self.error_handler,
+                    ParserUnexpectedEOF,
+                    self.locator,
+                    "Unexpected EOF."
+                );
+            }
+            self.state = ParserState::FatalErrorOccurred;
+        }
+        Ok(())
     }
 
     fn parse_entity_ref_in_att_value(
