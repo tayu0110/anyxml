@@ -33,7 +33,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
     pub(crate) fn parse_prolog(&mut self) -> Result<(), XMLError> {
         if self.source.content_bytes().starts_with(b"<?xml") {
-            self.parse_xmldecl()?;
+            self.parse_xml_decl()?;
             self.state = ParserState::Parsing;
         }
         self.parse_misc()?;
@@ -1047,7 +1047,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(())
     }
 
-    pub(crate) fn parse_xmldecl(&mut self) -> Result<(), XMLError> {
+    pub(crate) fn parse_xml_decl(&mut self) -> Result<(), XMLError> {
         self.state = ParserState::InXMLDeclaration;
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"<?xml") {
@@ -1065,27 +1065,116 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.locator.update_column(|c| c + 5);
 
         // parse VersionInfo
-        let s = self.skip_whitespaces()?;
-        if s == 0 {
+        let (version, version_str) = self.parse_version_info(true)?;
+
+        // parse EncodingDecl if exists
+        let mut s = self.skip_whitespaces()?;
+        self.grow()?;
+        let mut encoding = None;
+        if self.source.content_bytes().starts_with(b"encoding") {
+            if s == 0 {
+                fatal_error!(
+                    self.error_handler,
+                    ParserInvalidXMLDecl,
+                    self.locator,
+                    "Whitespaces are required before 'encoding'."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+            }
+            encoding = Some(self.parse_encoding_decl(false)?);
+            s = self.skip_whitespaces()?;
+            self.grow()?;
+        }
+
+        // parse SDDecl if exists
+        let mut standalone = None;
+        if self.source.content_bytes().starts_with(b"standalone") {
+            if s == 0 {
+                fatal_error!(
+                    self.error_handler,
+                    ParserInvalidXMLDecl,
+                    self.locator,
+                    "Whitespaces are required before 'standalone'."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+            }
+            standalone = Some(self.parse_sddecl(false)?);
+            self.skip_whitespaces()?;
+            self.grow()?;
+        }
+
+        if !self.source.content_bytes().starts_with(b"?>") {
             fatal_error!(
                 self.error_handler,
                 ParserInvalidXMLDecl,
                 self.locator,
-                "Whitespaces are required between '<?xml' and 'version'."
+                "XMLDecl is not closed with '?>'."
             );
             self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidXMLDecl);
+        }
+        // skip '?>'
+        self.source.advance(2)?;
+        self.locator.update_column(|c| c + 2);
+
+        // If an encoding is provided from an external source, it is used as a priority.
+        // If not, `self.encoding` is `None`, so `self.encoding` is initialized with the value
+        // obtained from the XML declaration, and the decoder for `self.source` is switched.
+        if let Some(encoding) = encoding.as_deref()
+            && self.encoding.is_none()
+            && self.source.switch_encoding(encoding).is_err()
+        {
+            fatal_error!(
+                self.error_handler,
+                ParserUnsupportedEncoding,
+                self.locator,
+                "The declared encoding '{}' is not supported.",
+                encoding
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            // We continue decoding the data using the encoding inferred from the BOM or
+            // byte sequence at the beginning of the document entity, and attempt parsing
+            // and error detection.
+        }
+
+        if self.state != ParserState::FatalErrorOccurred {
+            self.content_handler
+                .declaration(&version_str, encoding.as_deref(), standalone);
+        }
+        self.version = version;
+        self.standalone = standalone;
+        if self.encoding.is_none() {
+            self.encoding = encoding;
+        }
+        Ok(())
+    }
+
+    /// ```text
+    /// [24] VersionInfo ::= S 'version' Eq ("'" VersionNum "'" | '"' VersionNum '"')
+    /// ```
+    pub(crate) fn parse_version_info(
+        &mut self,
+        need_trim_whitespace: bool,
+    ) -> Result<(XMLVersion, String), XMLError> {
+        if need_trim_whitespace && self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self.error_handler,
+                ParserInvalidEncodingDecl,
+                self.locator,
+                "Whitespaces are required before 'version' for VersionDecl."
+            );
+            self.state = ParserState::FatalErrorOccurred;
         }
 
         if !self.source.content_bytes().starts_with(b"version") {
             fatal_error!(
                 self.error_handler,
-                ParserInvalidXMLDecl,
+                ParserInvalidXMLVersion,
                 self.locator,
-                "VersionInfo is not found in XMLDecl."
+                "VersionInfo must start with 'version'."
             );
             self.state = ParserState::FatalErrorOccurred;
-            return Err(XMLError::ParserInvalidXMLDecl);
+            return Err(XMLError::ParserInvalidXMLVersion);
         }
         // skip 'version'
         self.source.advance(7)?;
@@ -1097,7 +1186,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.error_handler,
                 ParserInvalidXMLDecl,
                 self.locator,
-                "'=' is not found after 'version' in XMLDecl."
+                "'=' is not found after 'version' in VersionInfo."
             );
             self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidXMLDecl);
@@ -1203,88 +1292,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(minor + 1)?;
         self.locator.update_column(|c| c + minor + 1);
 
-        // parse EncodingDecl
-        let mut s = self.skip_whitespaces()?;
-        self.grow()?;
-        let mut encoding = None;
-        if self.source.content_bytes().starts_with(b"encoding") {
-            if s == 0 {
-                fatal_error!(
-                    self.error_handler,
-                    ParserInvalidXMLDecl,
-                    self.locator,
-                    "Whitespaces are required before 'encoding'."
-                );
-                self.state = ParserState::FatalErrorOccurred;
-            }
-            encoding = Some(self.parse_encoding_decl(false)?);
-            s = self.skip_whitespaces()?;
-            self.grow()?;
-        }
-
-        // parse SDDecl
-        let mut standalone = None;
-        if self.source.content_bytes().starts_with(b"standalone") {
-            if s == 0 {
-                fatal_error!(
-                    self.error_handler,
-                    ParserInvalidXMLDecl,
-                    self.locator,
-                    "Whitespaces are required before 'standalone'."
-                );
-                self.state = ParserState::FatalErrorOccurred;
-            }
-            standalone = Some(self.parse_sddecl(false)?);
-            self.skip_whitespaces()?;
-            self.grow()?;
-        }
-
-        if !self.source.content_bytes().starts_with(b"?>") {
-            fatal_error!(
-                self.error_handler,
-                ParserInvalidXMLDecl,
-                self.locator,
-                "XMLDecl is not closed with '?>'."
-            );
-            self.state = ParserState::FatalErrorOccurred;
-            return Err(XMLError::ParserInvalidXMLDecl);
-        }
-        // skip '?>'
-        self.source.advance(2)?;
-        self.locator.update_column(|c| c + 2);
-
-        // If an encoding is provided from an external source, it is used as a priority.
-        // If not, `self.encoding` is `None`, so `self.encoding` is initialized with the value
-        // obtained from the XML declaration, and the decoder for `self.source` is switched.
-        if let Some(encoding) = encoding.as_deref()
-            && self.encoding.is_none()
-            && self.source.switch_encoding(encoding).is_err()
-        {
-            fatal_error!(
-                self.error_handler,
-                ParserUnsupportedEncoding,
-                self.locator,
-                "The declared encoding '{}' is not supported.",
-                encoding
-            );
-            self.state = ParserState::FatalErrorOccurred;
-            // We continue decoding the data using the encoding inferred from the BOM or
-            // byte sequence at the beginning of the document entity, and attempt parsing
-            // and error detection.
-        }
-
-        if self.state != ParserState::FatalErrorOccurred {
-            self.content_handler
-                .declaration(&version_str, encoding.as_deref(), standalone);
-        }
-        self.version = version;
-        self.standalone = standalone;
-        if self.encoding.is_none() {
-            self.encoding = encoding;
-        }
-        Ok(())
+        Ok((version, version_str))
     }
 
+    /// ```text
+    /// [80] EncodingDecl ::= S 'encoding' Eq ('"' EncName '"' | "'" EncName "'" )
+    /// ```
     pub(crate) fn parse_encoding_decl(
         &mut self,
         need_trim_whitespace: bool,
@@ -2420,7 +2433,40 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             base_uri.as_ref(),
                             system_id.as_ref(),
                         ) {
-                            Ok(source) => todo!("Include entity"),
+                            Ok(source) => {
+                                let source = InputSource::from_reader(source, None)?;
+                                let name: Arc<str> = name.into();
+                                self.push_source(
+                                    Box::new(source),
+                                    self.base_uri.clone(),
+                                    Some(name.clone()),
+                                    PathBuf::from(system_id.as_ref()).into(),
+                                    public_id.as_deref().map(Arc::from),
+                                )?;
+
+                                if self.state != ParserState::FatalErrorOccurred {
+                                    self.lexical_handler.start_entity(&name);
+                                }
+
+                                self.parse_ext_parsed_ent()?;
+                                self.grow()?;
+
+                                if !self.source.is_empty() {
+                                    fatal_error!(
+                                        self.error_handler,
+                                        ParserEntityIncorrectNesting,
+                                        self.locator,
+                                        "The entity '{}' is nested incorrectly.",
+                                        name
+                                    );
+                                    self.state = ParserState::FatalErrorOccurred;
+                                }
+
+                                self.pop_source()?;
+                                if self.state != ParserState::FatalErrorOccurred {
+                                    self.lexical_handler.end_entity();
+                                }
+                            }
                             Err(err) => {
                                 error!(
                                     self.error_handler,
@@ -2496,6 +2542,104 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.content_handler.skipped_entity(&name);
             }
         }
+        Ok(())
+    }
+
+    /// # Note
+    /// It is assumed that the `InputSource` corresponding to the External Parsed Entity
+    /// to be parsed has been set by `push_source`.  \
+    /// In addition, `start_entity` and `end_entity` are not reported. This is the duty
+    /// of the caller.
+    ///
+    /// ```text
+    /// [78] extParsedEnt ::= TextDecl? content
+    /// ```
+    pub(crate) fn parse_ext_parsed_ent(&mut self) -> Result<(), XMLError> {
+        self.state = ParserState::InTextDeclaration;
+        self.grow()?;
+        // Save version and encoding because they may be overwritten by a text declaration.
+        let version = self.version;
+        let encoding = self.encoding.clone();
+        if self.source.content_bytes().starts_with(b"<?xml") {
+            self.parse_text_decl()?;
+        }
+
+        self.state = ParserState::Parsing;
+        self.source.set_compact_mode();
+        self.parse_content()?;
+        // Restore version and encoding.
+        self.encoding = encoding;
+        self.version = version;
+        Ok(())
+    }
+
+    /// ```text
+    /// [77] TextDecl ::= '<?xml' VersionInfo? EncodingDecl S? '?>'
+    /// ```
+    pub(crate) fn parse_text_decl(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+        if !self.source.content_bytes().starts_with(b"<?xml") {
+            fatal_error!(
+                self.error_handler,
+                ParserInvalidTextDecl,
+                self.locator,
+                "The text declaration does not start '<?xml'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidTextDecl);
+        }
+        // skip '<?xml'
+        self.source.advance(5)?;
+        self.locator.update_column(|c| c + 5);
+
+        // parse VersionInfo if exists
+        let mut s = self.skip_whitespaces()?;
+        if self.source.content_bytes().starts_with(b"version") {
+            if s == 0 {
+                fatal_error!(
+                    self.error_handler,
+                    ParserInvalidTextDecl,
+                    self.locator,
+                    "Whitespaces are required before 'encoding'."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+            }
+            let (version, _) = self.parse_version_info(false)?;
+            self.version = version;
+            s = self.skip_whitespaces()?;
+        }
+
+        // parse EncodingDecl
+        self.grow()?;
+        if s == 0 {
+            fatal_error!(
+                self.error_handler,
+                ParserInvalidXMLDecl,
+                self.locator,
+                "Whitespaces are required before 'encoding'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+        }
+        let encoding = self.parse_encoding_decl(false)?;
+        self.source.switch_encoding(&encoding)?;
+        self.encoding = Some(encoding);
+        self.skip_whitespaces()?;
+        self.grow()?;
+
+        if !self.source.content_bytes().starts_with(b"?>") {
+            fatal_error!(
+                self.error_handler,
+                ParserInvalidTextDecl,
+                self.locator,
+                "The text declaration does not end with '?>'."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidTextDecl);
+        }
+        // skip '?>'
+        self.source.advance(2)?;
+        self.locator.update_column(|c| c + 2);
+
         Ok(())
     }
 

@@ -111,6 +111,7 @@ pub enum ParserState {
     InXMLDeclaration,
     InInternalSubset,
     InExternalSubset,
+    InTextDeclaration,
     Parsing,
     FatalErrorOccurred,
     Finished,
@@ -278,7 +279,9 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
 
     pub(crate) fn grow(&mut self) -> Result<(), XMLError> {
         let ret = self.source.grow();
-        if self.state == ParserState::InXMLDeclaration && self.encoding.is_none() {
+        if (self.state == ParserState::InXMLDeclaration && self.encoding.is_none())
+            || self.state == ParserState::InTextDeclaration
+        {
             // Until the XML declaration (especially the encoding declaration) is read completely,
             // it may not be possible to set the decoder appropriately,
             // and `self.source.grow` may throw an error.

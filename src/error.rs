@@ -37,6 +37,7 @@ pub enum XMLError {
     ParserInvalidExternalID,
     ParserInvalidCharacter,
     ParserInvalidXMLDecl,
+    ParserInvalidTextDecl,
     ParserInvalidXMLVersion,
     ParserInvalidEncodingDecl,
     ParserInvalidEncodingName,

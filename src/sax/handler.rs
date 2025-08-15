@@ -1,4 +1,4 @@
-use std::{io::Read, path::Path, sync::Arc};
+use std::{fs::File, io::Read, path::Path, sync::Arc};
 
 use crate::{
     Attribute, AttributeType, ContentSpec, DefaultDecl,
@@ -158,12 +158,14 @@ impl DTDHandler for DefaultSAXHandler {}
 impl EntityResolver for DefaultSAXHandler {
     fn resolve_entity(
         &self,
-        name: &str,
-        public_id: Option<&str>,
+        _name: &str,
+        _public_id: Option<&str>,
         base_uri: &Path,
         system_id: &str,
     ) -> Result<Box<dyn Read>, XMLError> {
-        todo!()
+        let path = base_uri.join(system_id);
+        let file = File::open(path)?;
+        Ok(Box::new(file))
     }
 }
 impl ErrorHandler for DefaultSAXHandler {
