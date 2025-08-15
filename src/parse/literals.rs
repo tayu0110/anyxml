@@ -122,6 +122,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         self.check_literal_end(quote)
     }
 
+    /// # Note
+    /// If the parsing is successful, the stored attribute values are normalized.  \
+    /// However, normalization dependent on attribute value types is not performed.
+    /// This is because when this method is used to parse attribute list declarations,
+    /// the type of attribute value is unknown.
+    ///
     /// ```text
     /// [10] AttValue ::= '"' ([^<&"] | Reference)* '"' | "'" ([^<&'] | Reference)* "'"
     /// ```
@@ -150,10 +156,45 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                 && self.source.content_bytes()[0] != quote as u8
             {
                 match self.source.next_char()? {
-                    Some(c) => buffer.push(c),
+                    Some('\r') => {
+                        // End-of-Line normalization is performed before entity references
+                        // are recognized, so there is no need to consider the possibility
+                        // of references with line feeds at the beginning appearing
+                        // immediately after.
+                        //
+                        // Reference: 3.3.3 Attribute-Value Normalization
+                        if self.source.peek_char()? != Some('\n') {
+                            self.locator.update_line(|l| l + 1);
+                            self.locator.set_column(1);
+                            buffer.push('\x20');
+                        }
+                    }
+                    Some('\n') => {
+                        self.locator.update_line(|l| l + 1);
+                        self.locator.set_column(1);
+                        buffer.push('\x20');
+                    }
+                    Some(c) if self.is_whitespace(c) => {
+                        self.locator.update_column(|c| c + 1);
+                        buffer.push('\x20');
+                    }
+                    Some(c) if self.is_char(c) => {
+                        self.locator.update_column(|c| c + 1);
+                        buffer.push(c);
+                    }
+                    Some(c) => {
+                        fatal_error!(
+                            self.error_handler,
+                            ParserInvalidCharacter,
+                            self.locator,
+                            "The character '0x{:X}' is not allowed in the XML document.",
+                            c as u32
+                        );
+                        self.locator.update_column(|c| c + 1);
+                        self.state = ParserState::FatalErrorOccurred;
+                    }
                     None => unreachable!(),
                 }
-                self.locator.update_column(|c| c + 1);
 
                 if self.source.content_bytes().is_empty() {
                     self.source.grow()?;
@@ -180,6 +221,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                     self.source.grow()?;
                     if self.source.content_bytes().starts_with(b"&#") {
                         // character reference
+                        // Even if it is a whitespace character, it will not be normalized.
+                        // Reference: 3.3.3 Attribute-Value Normalization
                         buffer.push(self.parse_char_ref()?);
                     } else {
                         // general refenrence

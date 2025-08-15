@@ -3068,4 +3068,15 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             Err(XMLError::ParserInvalidCharacter)
         }
     }
+
+    /// Returns `true` if normalized according to the declaration,
+    /// and `false` if no declaration is found.
+    pub(crate) fn normalize_att_value(
+        &self,
+        elem_name: &str,
+        att_name: &str,
+        att_value: &mut String,
+    ) -> bool {
+        todo!()
+    }
 }
