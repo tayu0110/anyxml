@@ -107,6 +107,10 @@ impl AttlistDeclMap {
             .get(&(Cow::Borrowed(elem_name), Cow::Borrowed(attr_name)))
     }
 
+    pub fn contains(&self, elem_name: &str, attr_name: &str) -> bool {
+        self.get(elem_name, attr_name).is_some()
+    }
+
     pub fn clear(&mut self) {
         self.0.clear();
     }

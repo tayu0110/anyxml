@@ -2102,6 +2102,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 if att.uri.is_some() {
                     att.set_nsdecl();
                 }
+                if self.attlistdecls.contains(&name, &att_name) {
+                    att.set_declared();
+                }
                 atts.push(att);
             } else {
                 let mut att = Attribute {
@@ -2112,6 +2115,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     flag: 0,
                 };
                 att.set_specified();
+                if self.attlistdecls.contains(&name, &att_name) {
+                    att.set_declared();
+                }
                 atts.push(att);
             }
 
