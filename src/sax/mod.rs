@@ -29,22 +29,11 @@ impl Attribute {
     pub(crate) fn set_declared(&mut self) {
         self.flag |= 1 << 0;
     }
-    pub(crate) fn unset_declared(&mut self) {
-        self.flag &= !(1 << 0);
-    }
-
     pub(crate) fn set_specified(&mut self) {
         self.flag |= 1 << 1;
     }
-    pub(crate) fn unset_specified(&mut self) {
-        self.flag &= !(1 << 1);
-    }
-
     pub(crate) fn set_nsdecl(&mut self) {
         self.flag |= 1 << 2;
-    }
-    pub(crate) fn unset_nsdecl(&mut self) {
-        self.flag &= !(1 << 2);
     }
 
     pub fn is_declared(&self) -> bool {

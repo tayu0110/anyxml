@@ -15,7 +15,15 @@ pub struct SAXParseError {
 
 impl std::fmt::Display for SAXParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        writeln!(
+            f,
+            "{}[line:{},column:{}]:{}:{}",
+            self.system_id.display(),
+            self.line,
+            self.column,
+            self.level,
+            self.message,
+        )
     }
 }
 
