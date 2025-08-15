@@ -364,7 +364,15 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.locator.update_column(|c| c + 1);
 
         if self.state != ParserState::FatalErrorOccurred {
-            self.decl_handler.element_decl(&name, contentspec);
+            self.decl_handler.element_decl(&name, &contentspec);
+        }
+        if self.elementdecls.insert(name, contentspec).is_err()
+            && self.config.is_enable(ParserOption::Validation)
+        {
+            error!(
+                self.error_handler,
+                ParserDuplicateElementDecl, self.locator, "An element declaration is duplicated."
+            );
         }
 
         Ok(())
@@ -597,7 +605,20 @@ impl XMLReader<DefaultParserSpec<'_>> {
             let (atttype, default_decl) = self.parse_att_def(false, &mut att_name)?;
             if self.state != ParserState::FatalErrorOccurred {
                 self.decl_handler
-                    .attribute_decl(&name, &att_name, atttype, default_decl);
+                    .attribute_decl(&name, &att_name, &atttype, &default_decl);
+            }
+            if !self
+                .attlistdecls
+                .insert(name.as_str(), att_name.as_str(), atttype, default_decl)
+            {
+                warning!(
+                    self.error_handler,
+                    ParserDuplicateAttlistDecl,
+                    self.locator,
+                    "An attribute list declaration for the attribute '{}' the element '{}' is duplicated.",
+                    att_name,
+                    name
+                );
             }
             s = self.skip_whitespaces()?;
             if self.source.content_bytes().is_empty() {

@@ -4,6 +4,7 @@ pub mod parser;
 pub mod source;
 
 use std::{
+    borrow::Cow,
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{
@@ -70,12 +71,82 @@ pub enum DefaultDecl {
     None(Box<str>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AttlistDeclMap(
+    HashMap<(Cow<'static, str>, Cow<'static, str>), (AttributeType, DefaultDecl)>,
+);
+
+impl AttlistDeclMap {
+    /// Returns `true` if newly inserted, and `false` if an element or attribute with
+    /// the same name is already registered.
+    pub fn insert(
+        &mut self,
+        elem_name: impl Into<String>,
+        attr_name: impl Into<String>,
+        att_type: AttributeType,
+        default_decl: DefaultDecl,
+    ) -> bool {
+        use std::collections::hash_map::Entry::*;
+        let elem_name: String = elem_name.into();
+        let attr_name: String = attr_name.into();
+        match self.0.entry((Cow::Owned(elem_name), Cow::Owned(attr_name))) {
+            Vacant(entry) => {
+                entry.insert((att_type, default_decl));
+                true
+            }
+            Occupied(_) => false,
+        }
+    }
+
+    pub fn get<'a>(
+        &'a self,
+        elem_name: &'a str,
+        attr_name: &'a str,
+    ) -> Option<&'a (AttributeType, DefaultDecl)> {
+        self.0
+            .get(&(Cow::Borrowed(elem_name), Cow::Borrowed(attr_name)))
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ContentSpec {
     EMPTY,
     ANY,
     Mixed(Vec<Box<str>>),
     Children(Box<str>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ElementDeclMap(HashMap<Box<str>, ContentSpec>);
+
+impl ElementDeclMap {
+    pub fn insert(
+        &mut self,
+        name: impl Into<Box<str>>,
+        contentspec: ContentSpec,
+    ) -> Result<(), XMLError> {
+        use std::collections::hash_map::Entry::*;
+        let name: Box<str> = name.into();
+        match self.0.entry(name) {
+            Occupied(_) => Err(XMLError::ParserDuplicateElementDecl),
+            Vacant(entry) => {
+                entry.insert(contentspec);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<&ContentSpec> {
+        self.0.get(name)
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

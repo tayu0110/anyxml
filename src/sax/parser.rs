@@ -11,7 +11,7 @@ use crate::{
     encoding::UTF8_NAME,
     error::XMLError,
     sax::{
-        EntityMap, Locator,
+        AttlistDeclMap, ElementDeclMap, EntityMap, Locator,
         handler::{
             ContentHandler, DTDHandler, DeclHandler, DefaultSAXHandler, EntityResolver,
             ErrorHandler, LexicalHandler,
@@ -151,6 +151,8 @@ pub struct XMLReader<Spec: ParserSpec> {
     // (prefix, position in `namespaces`)
     pub(crate) prefix_map: HashMap<Arc<str>, usize>,
     pub(crate) entities: EntityMap,
+    pub(crate) elementdecls: ElementDeclMap,
+    pub(crate) attlistdecls: AttlistDeclMap,
 }
 
 impl<Spec: ParserSpec> XMLReader<Spec> {
@@ -275,6 +277,8 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         self.prefix_map.clear();
         self.prefix_map.insert(xml, 0);
         self.entities.clear();
+        self.elementdecls.clear();
+        self.attlistdecls.clear();
     }
 
     pub(crate) fn grow(&mut self) -> Result<(), XMLError> {

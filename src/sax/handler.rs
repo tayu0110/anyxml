@@ -59,13 +59,13 @@ pub trait DeclHandler {
         &self,
         element_name: &str,
         attribute_name: &str,
-        attribute_type: AttributeType,
-        default_decl: DefaultDecl,
+        attribute_type: &AttributeType,
+        default_decl: &DefaultDecl,
     ) {
         let _ = (element_name, attribute_name, attribute_type, default_decl);
     }
 
-    fn element_decl(&self, name: &str, contentspec: ContentSpec) {
+    fn element_decl(&self, name: &str, contentspec: &ContentSpec) {
         let _ = (name, contentspec);
     }
 
