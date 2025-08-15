@@ -16,6 +16,9 @@ use crate::{
 };
 
 impl XMLReader<DefaultParserSpec<'_>> {
+    /// ```text
+    /// [1] document ::= prolog element Misc*
+    /// ```
     pub(crate) fn parse_document(&mut self) -> Result<(), XMLError> {
         self.content_handler
             .set_document_locator(self.locator.clone());
@@ -31,6 +34,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         todo!()
     }
 
+    /// ```text
+    /// [22] prolog ::= XMLDecl? Misc* (doctypedecl Misc*)?
+    /// ```
     pub(crate) fn parse_prolog(&mut self) -> Result<(), XMLError> {
         if self.source.content_bytes().starts_with(b"<?xml") {
             self.parse_xml_decl()?;
@@ -46,6 +52,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(())
     }
 
+    /// ```text
+    /// [28] doctypedecl ::= '<!DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'  
+    ///                                                             [VC:  Root Element Type]
+    ///                                                             [WFC: External Subset]
+    /// ```
     pub(crate) fn parse_doctypedecl(&mut self) -> Result<(), XMLError> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"<!DOCTYPE") {
@@ -170,6 +181,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(())
     }
 
+    /// ```text
+    /// [28a] DeclSep    ::= PEReference | S                [WFC: PE Between Declarations]
+    /// [28b] intSubset  ::= (markupdecl | DeclSep)*
+    /// [29]  markupdecl ::= elementdecl | AttlistDecl | EntityDecl | NotationDecl | PI | Comment
+    ///                                                     [VC:  Proper Declaration/PE Nesting]
+    ///                                                     [WFC: PEs in Internal Subset]
+    /// ```
     pub(crate) fn parse_int_subset(&mut self) -> Result<(), XMLError> {
         self.state = ParserState::InInternalSubset;
         self.skip_whitespaces()?;
@@ -191,6 +209,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
     }
 
+    /// ```text
+    /// [45] elementdecl ::= '<!ELEMENT' S Name S contentspec S? '>'
+    ///                                                 [VC: Unique Element Type Declaration]
+    /// [46] contentspec ::= 'EMPTY' | 'ANY' | Mixed | children
+    /// ```
     pub(crate) fn parse_element_decl(&mut self) -> Result<(), XMLError> {
         self.grow()?;
 
@@ -347,6 +370,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(())
     }
 
+    /// ```text
+    /// [70] EntityDecl ::= GEDecl | PEDecl
+    /// [71] GEDecl     ::= '<!ENTITY' S Name S EntityDef S? '>'
+    /// [72] PEDecl     ::= '<!ENTITY' S '%' S Name S PEDef S? '>'
+    /// [73] EntityDef  ::= EntityValue | (ExternalID NDataDecl?)
+    /// [74] PEDef      ::= EntityValue | ExternalID
+    /// ```
     pub(crate) fn parse_entity_decl(&mut self) -> Result<(), XMLError> {
         self.grow()?;
 
@@ -513,6 +543,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(())
     }
 
+    /// ```text
+    /// [52] AttlistDecl ::= '<!ATTLIST' S Name AttDef* S? '>'
+    /// ```
     pub(crate) fn parse_attlist_decl(&mut self) -> Result<(), XMLError> {
         self.grow()?;
 
@@ -592,6 +625,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(())
     }
 
+    /// ```text
+    /// [53] AttDef ::= S Name S AttType S DefaultDecl
+    /// ```
     pub(crate) fn parse_att_def(
         &mut self,
         need_trim_whitespace: bool,
@@ -856,6 +892,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok((atttype, default_decl))
     }
 
+    /// ```text
+    /// [82] NotationDecl ::= '<!NOTATION' S Name S (ExternalID | PublicID) S? '>'
+    ///                                             [VC: Unique Notation Name]
+    /// [83] PublicID     ::= 'PUBLIC' S PubidLiteral
+    /// ```
     pub(crate) fn parse_notation_decl(&mut self) -> Result<(), XMLError> {
         self.grow()?;
 
@@ -985,6 +1026,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(())
     }
 
+    /// ```text
+    /// [75] ExternalID ::= 'SYSTEM' S SystemLiteral
+    ///                     | 'PUBLIC' S PubidLiteral S SystemLiteral
+    /// [76] NDataDecl  ::= S 'NDATA' S Name        [VC: Notation Declared]
+    /// ```
     pub(crate) fn parse_external_id(
         &mut self,
         system_id: &mut String,
@@ -1047,6 +1093,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(())
     }
 
+    /// ```text
+    /// [23] XMLDecl ::= '<?xml' VersionInfo EncodingDecl? SDDecl? S? '?>'
+    /// ```
     pub(crate) fn parse_xml_decl(&mut self) -> Result<(), XMLError> {
         self.state = ParserState::InXMLDeclaration;
         self.grow()?;
@@ -1399,6 +1448,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(encoding)
     }
 
+    /// ```text
+    /// [32] SDDecl ::= S 'standalone' Eq (("'" ('yes' | 'no') "'") | ('"' ('yes' | 'no') '"'))
+    ///                                                 [VC: Standalone Document Declaration]
+    /// ```
     pub(crate) fn parse_sddecl(&mut self, need_trim_whitespace: bool) -> Result<bool, XMLError> {
         if need_trim_whitespace && self.skip_whitespaces()? == 0 {
             fatal_error!(
@@ -1495,6 +1548,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(ret)
     }
 
+    /// ```text
+    /// [81] EncName ::= [A-Za-z] ([A-Za-z0-9._] | '-')*
+    ///                                     /* Encoding name contains only Latin characters */
+    /// ```
     pub(crate) fn parse_enc_name(&mut self) -> Result<String, XMLError> {
         self.grow()?;
 
@@ -1581,6 +1638,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(ret)
     }
 
+    /// ```text
+    /// [27] Misc ::= Comment | PI | S
+    /// ```
     pub(crate) fn parse_misc(&mut self) -> Result<(), XMLError> {
         self.skip_whitespaces()?;
         self.grow()?;
@@ -1596,6 +1656,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
     }
 
+    /// ```text
+    /// [15] Comment ::= '<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
+    /// ```
     pub(crate) fn parse_comment(&mut self) -> Result<(), XMLError> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"<!--") {
@@ -1703,6 +1766,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         Ok(())
     }
 
+    /// ```text
+    /// [16] PI       ::= '<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
+    /// [17] PITarget ::= Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))
+    /// ```
     pub(crate) fn parse_pi(&mut self) -> Result<(), XMLError> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"<?") {
