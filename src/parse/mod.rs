@@ -4,11 +4,11 @@ pub mod tokens;
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{
-    Attribute, AttributeType, CHARDATA_CHUNK_LENGTH, ContentSpec, DefaultDecl, DefaultParserSpec,
-    ENCODING_NAME_LIMIT_LENGTH, EntityDecl, ParserSpec, XML_NS_NAMESPACE,
-    XML_VERSION_NUM_LIMIT_LENGTH, XML_XML_NAMESPACE, XMLVersion,
+    CHARDATA_CHUNK_LENGTH, DefaultParserSpec, ENCODING_NAME_LIMIT_LENGTH, ParserSpec,
+    XML_NS_NAMESPACE, XML_VERSION_NUM_LIMIT_LENGTH, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::{
+        Attribute, AttributeType, ContentSpec, DefaultDecl, EntityDecl,
         error::{error, fatal_error, warning},
         parser::{ParserOption, ParserState, XMLReader},
         source::InputSource,

@@ -1,9 +1,8 @@
 use std::{fs::File, io::Read, path::Path, sync::Arc};
 
 use crate::{
-    Attribute, AttributeType, ContentSpec, DefaultDecl,
     error::XMLError,
-    sax::{Locator, error::SAXParseError},
+    sax::{Attribute, AttributeType, ContentSpec, DefaultDecl, Locator, error::SAXParseError},
 };
 
 pub trait ContentHandler {

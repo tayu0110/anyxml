@@ -7,11 +7,11 @@ use std::{
 };
 
 use crate::{
-    DefaultParserSpec, EntityDecl, ParserSpec, XML_XML_NAMESPACE, XMLVersion,
+    DefaultParserSpec, ParserSpec, XML_XML_NAMESPACE, XMLVersion,
     encoding::UTF8_NAME,
     error::XMLError,
     sax::{
-        Locator,
+        EntityMap, Locator,
         handler::{
             ContentHandler, DTDHandler, DeclHandler, DefaultSAXHandler, EntityResolver,
             ErrorHandler, LexicalHandler,
@@ -150,7 +150,7 @@ pub struct XMLReader<Spec: ParserSpec> {
     pub(crate) namespaces: Vec<(Arc<str>, Arc<str>, usize)>,
     // (prefix, position in `namespaces`)
     pub(crate) prefix_map: HashMap<Arc<str>, usize>,
-    pub(crate) entities: HashMap<Box<str>, EntityDecl>,
+    pub(crate) entities: EntityMap,
 }
 
 impl<Spec: ParserSpec> XMLReader<Spec> {
