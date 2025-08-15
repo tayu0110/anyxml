@@ -2003,6 +2003,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.skip_whitespaces()?;
 
             self.parse_att_value(&mut att_value)?;
+            let declared = self.normalize_att_value(&name, &att_name, &mut att_value);
 
             if self.config.is_enable(ParserOption::Namespaces) {
                 let mut uri = None;
@@ -2102,7 +2103,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 if att.uri.is_some() {
                     att.set_nsdecl();
                 }
-                if self.attlistdecls.contains(&name, &att_name) {
+                if declared {
                     att.set_declared();
                 }
                 atts.push(att);
@@ -2115,7 +2116,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     flag: 0,
                 };
                 att.set_specified();
-                if self.attlistdecls.contains(&name, &att_name) {
+                if declared {
                     att.set_declared();
                 }
                 atts.push(att);
@@ -3071,12 +3072,55 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
 
     /// Returns `true` if normalized according to the declaration,
     /// and `false` if no declaration is found.
+    ///
+    /// Since normalization that does not depend on attribute list declarations is
+    /// performed along with attribute value parsing, this function only performs
+    /// normalization  that depends on attribute list declarations.
     pub(crate) fn normalize_att_value(
         &self,
         elem_name: &str,
-        att_name: &str,
+        attr_name: &str,
         att_value: &mut String,
     ) -> bool {
-        todo!()
+        let Some((att_type, _)) = self.attlistdecls.get(elem_name, attr_name) else {
+            return false;
+        };
+
+        match att_type {
+            AttributeType::CDATA => {
+                // CDATA attribute values do not require space character normalization.
+            }
+            _ => {
+                unsafe {
+                    // # Safety
+                    // As long as the algorithm works correctly, only space characters
+                    // are normalized, so there are no violations of UTF-8 constraints.
+                    let bytes = att_value.as_bytes_mut();
+                    let mut filled = 0;
+                    let mut before_space = true;
+                    for i in 0..bytes.len() {
+                        if bytes[i] != 0x20 {
+                            bytes[filled] = bytes[i];
+                            filled += 1;
+                            before_space = false;
+                        } else {
+                            if !before_space {
+                                bytes[filled] = 0x20;
+                                filled += 1;
+                            }
+                            before_space = true;
+                        }
+                    }
+                    // trim the tail of 0x20
+                    if filled > 0 && bytes[filled] == 0x20 {
+                        filled -= 1;
+                    }
+                    // To avoid violating UTF-8 constraints, fill with all NULL characters.
+                    bytes[filled..].fill(0);
+                    att_value.truncate(filled);
+                }
+            }
+        }
+        true
     }
 }
