@@ -9,22 +9,23 @@ use crate::{
 };
 
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
-    /// ```text
-    /// [11] SystemLiteral ::= ('"' [^"]* '"') | ("'" [^']* "'")
-    /// ```
-    pub(crate) fn parse_system_literal(&mut self, buffer: &mut String) -> Result<(), XMLError> {
-        let quote = match self.source.next_char()? {
-            Some(c @ ('"' | '\'')) => c,
+    fn check_literal_start(&mut self) -> Result<char, XMLError> {
+        match self.source.next_char()? {
+            Some(c @ ('"' | '\'')) => {
+                self.locator.update_column(|c| c + 1);
+                Ok(c)
+            }
             Some(c) => {
                 fatal_error!(
                     self.error_handler,
-                    ParserInvalidSystemLiteral,
+                    ParserIncorrectLiteralQuotation,
                     self.locator,
-                    "A character '0x{:X}' is not correct quotation mark for SystemLiteral.",
+                    "A character '0x{:X}' is not correct quotation mark for a literal.",
                     c as u32
                 );
                 self.state = ParserState::FatalErrorOccurred;
-                return Err(XMLError::ParserInvalidSystemLiteral);
+                self.locator.update_column(|c| c + 1);
+                Err(XMLError::ParserIncorrectLiteralQuotation)
             }
             None => {
                 fatal_error!(
@@ -34,10 +35,46 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                     "Unexpected EOF."
                 );
                 self.state = ParserState::FatalErrorOccurred;
-                return Err(XMLError::ParserUnexpectedEOF);
+                Err(XMLError::ParserUnexpectedEOF)
             }
-        };
-        self.locator.update_column(|c| c + 1);
+        }
+    }
+
+    fn check_literal_end(&mut self, quote: char) -> Result<(), XMLError> {
+        match self.source.next_char()? {
+            Some(c) if c == quote => {
+                self.locator.update_column(|c| c + 1);
+                Ok(())
+            }
+            Some(_) => {
+                fatal_error!(
+                    self.error_handler,
+                    ParserIncorrectLiteralQuotation,
+                    self.locator,
+                    "The literal does not close with the correct quotation mark."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                self.locator.update_column(|c| c + 1);
+                Err(XMLError::ParserIncorrectLiteralQuotation)
+            }
+            None => {
+                fatal_error!(
+                    self.error_handler,
+                    ParserUnexpectedEOF,
+                    self.locator,
+                    "Unexpected EOF."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                Err(XMLError::ParserUnexpectedEOF)
+            }
+        }
+    }
+
+    /// ```text
+    /// [11] SystemLiteral ::= ('"' [^"]* '"') | ("'" [^']* "'")
+    /// ```
+    pub(crate) fn parse_system_literal(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+        let quote = self.check_literal_start()?;
 
         // Since BNF does not explicitly use Char, we do not perform a check using `self.is_char`.
         // (However, since all control characters except for a few are accepted as Char,
@@ -62,64 +99,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             }
         }
 
-        match self.source.next_char()? {
-            Some(c) if c == quote => {
-                self.locator.update_column(|c| c + 1);
-                Ok(())
-            }
-            Some(_) => {
-                self.locator.update_column(|c| c + 1);
-                fatal_error!(
-                    self.error_handler,
-                    ParserInvalidPubidLiteral,
-                    self.locator,
-                    "SystemLiteral does not close with the correct quotation mark."
-                );
-                self.state = ParserState::FatalErrorOccurred;
-                Err(XMLError::ParserInvalidPubidLiteral)
-            }
-            None => {
-                fatal_error!(
-                    self.error_handler,
-                    ParserUnexpectedEOF,
-                    self.locator,
-                    "Unexpected EOF."
-                );
-                self.state = ParserState::FatalErrorOccurred;
-                Err(XMLError::ParserUnexpectedEOF)
-            }
-        }
+        self.check_literal_end(quote)
     }
 
     /// ```text
     /// [12] PubidLiteral ::= '"' PubidChar* '"' | "'" (PubidChar - "'")* "'"
     /// ```
     pub(crate) fn parse_pubid_literal(&mut self, buffer: &mut String) -> Result<(), XMLError> {
-        let quote = match self.source.next_char()? {
-            Some(c @ ('"' | '\'')) => c,
-            Some(c) => {
-                fatal_error!(
-                    self.error_handler,
-                    ParserInvalidPubidLiteral,
-                    self.locator,
-                    "A character '0x{:X}' is not correct quotation mark for PubidLiteral.",
-                    c as u32
-                );
-                self.state = ParserState::FatalErrorOccurred;
-                return Err(XMLError::ParserInvalidPubidLiteral);
-            }
-            None => {
-                fatal_error!(
-                    self.error_handler,
-                    ParserUnexpectedEOF,
-                    self.locator,
-                    "Unexpected EOF."
-                );
-                self.state = ParserState::FatalErrorOccurred;
-                return Err(XMLError::ParserUnexpectedEOF);
-            }
-        };
-        self.locator.update_column(|c| c + 1);
+        let quote = self.check_literal_start()?;
 
         while let Some(c) = self
             .source
@@ -129,36 +116,70 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             self.locator.update_column(|c| c + 1);
         }
 
-        match self.source.next_char()? {
-            Some(c) if c == quote => {
-                self.locator.update_column(|c| c + 1);
-                Ok(())
-            }
-            Some(_) => {
-                self.locator.update_column(|c| c + 1);
-                fatal_error!(
-                    self.error_handler,
-                    ParserInvalidPubidLiteral,
-                    self.locator,
-                    "PubidLiteral does not close with the correct quotation mark."
-                );
-                self.state = ParserState::FatalErrorOccurred;
-                Err(XMLError::ParserInvalidPubidLiteral)
-            }
-            None => {
-                fatal_error!(
-                    self.error_handler,
-                    ParserUnexpectedEOF,
-                    self.locator,
-                    "Unexpected EOF."
-                );
-                self.state = ParserState::FatalErrorOccurred;
-                Err(XMLError::ParserUnexpectedEOF)
-            }
-        }
+        self.check_literal_end(quote)
     }
 
+    /// ```text
+    /// [10] AttValue ::= '"' ([^<&"] | Reference)* '"' | "'" ([^<&'] | Reference)* "'"
+    /// ```
     pub(crate) fn parse_att_value(&mut self, buffer: &mut String) -> Result<(), XMLError> {
-        todo!()
+        let quote = self.check_literal_start()?;
+
+        self.source.grow()?;
+        if !self.source.content_bytes().is_empty() {
+            'outer: loop {
+                while !matches!(self.source.content_bytes()[0], b'<' | b'&')
+                    && self.source.content_bytes()[0] != quote as u8
+                {
+                    match self.source.next_char()? {
+                        Some(c) => buffer.push(c),
+                        None => unreachable!(),
+                    }
+                    self.locator.update_column(|c| c + 1);
+
+                    if self.source.content_bytes().is_empty() {
+                        self.source.grow()?;
+                        if self.source.content_bytes().is_empty() {
+                            fatal_error!(
+                                self.error_handler,
+                                ParserUnexpectedEOF,
+                                self.locator,
+                                "Unexpected EOF."
+                            );
+                            self.state = ParserState::FatalErrorOccurred;
+                            break 'outer;
+                        }
+                    }
+                }
+
+                match self.source.content_bytes()[0] {
+                    b'<' => {
+                        fatal_error!(
+                            self.error_handler,
+                            ParserInvalidAttValue,
+                            self.locator,
+                            "AttValue must not contain '<'."
+                        );
+                        buffer.push('<');
+                        self.source.advance(1)?;
+                        self.locator.update_column(|c| c + 1);
+                        self.state = ParserState::FatalErrorOccurred;
+                    }
+                    b'&' => {
+                        self.source.grow()?;
+                        if self.source.content_bytes().starts_with(b"&#") {
+                            // character reference
+                            buffer.push(self.parse_char_ref()?);
+                        } else {
+                            // general refenrence
+                            todo!("General Reference");
+                        }
+                    }
+                    _ => break 'outer,
+                }
+            }
+        }
+
+        self.check_literal_end(quote)
     }
 }
