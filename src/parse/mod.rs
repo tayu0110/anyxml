@@ -439,14 +439,35 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.skip_whitespaces()?;
         self.grow()?;
 
+        // expand parameter entities
+        let base_entity_stack_depth = self.entity_name_stack.len();
+        while self.source.content_bytes().starts_with(b"%") {
+            self.parse_pe_reference()?;
+            self.skip_whitespaces()?;
+        }
+
         match self.source.content_bytes() {
             [b'I', b'N', b'C', b'L', b'U', b'D', b'E', ..] => {
                 // skip 'INCLUDE'
                 self.source.advance(7)?;
                 self.locator.update_column(|c| c + 7);
 
-                self.skip_whitespaces()?;
-                self.grow()?;
+                while self.entity_name_stack.len() > base_entity_stack_depth {
+                    self.skip_whitespaces()?;
+                    self.grow()?;
+                    if !self.source.is_empty() {
+                        fatal_error!(
+                            self,
+                            ParserEntityIncorrectNesting,
+                            "A parameter entity in the conditional section is nested incorrectly."
+                        );
+                        return Err(XMLError::ParserEntityIncorrectNesting);
+                    }
+                    self.pop_source()?;
+                    if !self.fatal_error_occurred {
+                        self.lexical_handler.end_entity();
+                    }
+                }
                 if !self.source.content_bytes().starts_with(b"[") {
                     fatal_error!(
                         self,
@@ -472,15 +493,28 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 // skip ']]>'
                 self.source.advance(3)?;
                 self.locator.update_column(|c| c + 3);
-                Ok(())
             }
             [b'I', b'G', b'N', b'O', b'R', b'E', ..] => {
                 // skip 'IGNORE'
                 self.source.advance(6)?;
                 self.locator.update_column(|c| c + 6);
 
-                self.skip_whitespaces()?;
-                self.grow()?;
+                while self.entity_name_stack.len() > base_entity_stack_depth {
+                    self.skip_whitespaces()?;
+                    self.grow()?;
+                    if !self.source.is_empty() {
+                        fatal_error!(
+                            self,
+                            ParserEntityIncorrectNesting,
+                            "A parameter entity in the conditional section is nested incorrectly."
+                        );
+                        return Err(XMLError::ParserEntityIncorrectNesting);
+                    }
+                    self.pop_source()?;
+                    if !self.fatal_error_occurred {
+                        self.lexical_handler.end_entity();
+                    }
+                }
                 if !self.source.content_bytes().starts_with(b"[") {
                     fatal_error!(
                         self,
@@ -535,7 +569,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         }
                     }
                 }
-                Ok(())
             }
             _ => {
                 fatal_error!(
@@ -543,9 +576,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     ParserInvalidConditionalSect,
                     "A conditional section does not have neither 'INCLUDE' nor 'IGNORE' parameter."
                 );
-                Err(XMLError::ParserInvalidConditionalSect)
+                return Err(XMLError::ParserInvalidConditionalSect);
             }
         }
+        Ok(())
     }
 
     /// ```text
