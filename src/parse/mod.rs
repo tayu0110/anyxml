@@ -468,6 +468,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         self.lexical_handler.end_entity();
                     }
                 }
+                self.skip_whitespaces()?;
+                self.grow()?;
                 if !self.source.content_bytes().starts_with(b"[") {
                     fatal_error!(
                         self,
@@ -515,6 +517,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         self.lexical_handler.end_entity();
                     }
                 }
+                self.skip_whitespaces()?;
+                self.grow()?;
                 if !self.source.content_bytes().starts_with(b"[") {
                     fatal_error!(
                         self,
@@ -648,6 +652,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
             );
         }
 
+        let base_entity_stack_depth = self.entity_name_stack.len();
+        while self.source.content_bytes().starts_with(b"%") {
+            self.parse_pe_reference()?;
+            self.skip_whitespaces()?;
+            self.grow()?;
+        }
+
         let mut name = String::new();
         if self.config.is_enable(ParserOption::Namespaces) {
             self.parse_qname(&mut name)?;
@@ -655,7 +666,23 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.parse_name(&mut name)?;
         }
 
-        if self.skip_whitespaces()? == 0 {
+        let mut s = 0;
+        while self.entity_name_stack.len() > base_entity_stack_depth {
+            s += self.skip_whitespaces()?;
+            self.grow()?;
+            if !self.source.is_empty() {
+                break;
+            }
+            self.pop_source()?;
+            s += 1;
+            if !self.fatal_error_occurred {
+                self.lexical_handler.end_entity();
+            }
+        }
+        s += self.skip_whitespaces()?;
+        self.grow()?;
+
+        if s == 0 {
             fatal_error!(
                 self,
                 ParserInvalidElementDecl,
@@ -663,8 +690,14 @@ impl XMLReader<DefaultParserSpec<'_>> {
             );
         }
 
+        // expand parameter entities
+        while self.source.content_bytes().starts_with(b"%") {
+            self.parse_pe_reference()?;
+            self.skip_whitespaces()?;
+            self.grow()?;
+        }
+
         // parse contentspec
-        self.grow()?;
         let contentspec = match self.source.content_bytes() {
             [b'E', b'M', b'P', b'T', b'Y', ..] => ContentSpec::EMPTY,
             [b'A', b'N', b'Y', ..] => ContentSpec::ANY,
@@ -753,6 +786,20 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 }
             }
         };
+
+        while self.entity_name_stack.len() > base_entity_stack_depth {
+            self.skip_whitespaces()?;
+            self.grow()?;
+            if !self.source.is_empty() {
+                fatal_error!(
+                    self,
+                    ParserEntityIncorrectNesting,
+                    "A parameter entity in an element declaration is nested incorrectly."
+                );
+                return Err(XMLError::ParserEntityIncorrectNesting);
+            }
+            self.pop_source()?;
+        }
 
         self.skip_whitespaces()?;
 
