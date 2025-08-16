@@ -285,6 +285,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     // Mixed Content
                     // [51] Mixed ::= '(' S? '#PCDATA' (S? '|' S? Name)* S? ')*'
                     //              | '(' S? '#PCDATA' S? ')'
+
+                    // skip '#PCDATA'
+                    self.source.advance(7)?;
+                    self.locator.update_column(|c| c + 7);
+
                     self.skip_whitespaces()?;
                     self.grow()?;
                     let mut ret = vec![];
@@ -341,7 +346,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     // [48] cp       ::= (Name | choice | seq) ('?' | '*' | '+')?
                     // [49] choice   ::= '(' S? cp ( S? '|' S? cp )+ S? ')'	[VC: Proper Group/PE Nesting]
                     // [50] seq      ::= '(' S? cp ( S? ',' S? cp )* S? ')' [VC: Proper Group/PE Nesting]
-                    todo!("Element Content")
+                    let mut buffer = "(".to_owned();
+                    self.parse_children(&mut buffer)?;
+                    ContentSpec::Children(buffer.into())
                 }
             }
         };
@@ -374,6 +381,216 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 ParserDuplicateElementDecl, self.locator, "An element declaration is duplicated."
             );
         }
+
+        Ok(())
+    }
+
+    /// # Note
+    /// Due to the implementation of `parse_element_decl`, the leading ‘(’ and subsequent
+    /// whitespaces are considered to have already been consumed.  \
+    /// This is a compromise due to the constraint that it is necessary to consume the
+    /// leading ‘(’ and subsequent whitespace to determine whether ‘#PCDATA’ follows, in
+    /// order to distinguish between mixed content and element content.
+    ///
+    /// ```text
+    /// [47] children ::= (choice | seq) ('?' | '*' | '+')?
+    /// [48] cp       ::= (Name | choice | seq) ('?' | '*' | '+')?
+    /// [49] choice   ::= '(' S? cp ( S? '|' S? cp )+ S? ')' [VC: Proper Group/PE Nesting]
+    /// [50] seq      ::= '(' S? cp ( S? ',' S? cp )* S? ')' [VC: Proper Group/PE Nesting]
+    /// ```
+    pub(crate) fn parse_children(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+        self.parse_cp(buffer)?;
+        self.skip_whitespaces()?;
+
+        self.grow()?;
+        match self.source.content_bytes() {
+            [b'|', ..] => {
+                while self.source.content_bytes().starts_with(b"|") {
+                    // skip '|'
+                    self.source.advance(1)?;
+                    self.locator.update_column(|c| c + 1);
+                    buffer.push('|');
+
+                    self.skip_whitespaces()?;
+                    self.parse_cp(buffer)?;
+                    self.skip_whitespaces()?;
+                }
+            }
+            [b',', ..] => {
+                while self.source.content_bytes().starts_with(b",") {
+                    // skip ','
+                    self.source.advance(1)?;
+                    self.locator.update_column(|c| c + 1);
+                    buffer.push(',');
+
+                    self.skip_whitespaces()?;
+                    self.parse_cp(buffer)?;
+                    self.skip_whitespaces()?;
+                }
+            }
+            [b')', ..] => {}
+            [_, ..] => {
+                fatal_error!(
+                    self.error_handler,
+                    ParserInvalidElementDecl,
+                    self.locator,
+                    "Unexpected character is occurred in an element declaration."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserInvalidElementDecl);
+            }
+            _ => {
+                fatal_error!(
+                    self.error_handler,
+                    ParserUnexpectedEOF,
+                    self.locator,
+                    "Unexpected EOF."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserUnexpectedEOF);
+            }
+        }
+
+        if !self.source.content_bytes().starts_with(b")") {
+            fatal_error!(
+                self.error_handler,
+                ParserInvalidElementDecl,
+                self.locator,
+                "A choice or seq in contentspec in an element declaration does not end with '('."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidElementDecl);
+        }
+        // skip ')'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
+        buffer.push(')');
+
+        self.grow()?;
+        if let [c @ (b'?' | b'*' | b'+'), ..] = self.source.content_bytes() {
+            buffer.push(*c as char);
+            self.source.advance(1)?;
+            self.locator.update_column(|c| c + 1);
+        }
+
+        Ok(())
+    }
+
+    /// ```text
+    /// [48] cp       ::= (Name | choice | seq) ('?' | '*' | '+')?
+    /// ```
+    pub(crate) fn parse_cp(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+        self.grow()?;
+        if self.source.content_bytes().starts_with(b"(") {
+            self.parse_choice_or_seq(buffer)?;
+        } else {
+            // parse Name
+            if self.config.is_enable(ParserOption::Namespaces) {
+                self.parse_qname(buffer)?;
+            } else {
+                self.parse_name(buffer)?;
+            }
+        }
+
+        self.grow()?;
+        if let [c @ (b'?' | b'*' | b'+'), ..] = self.source.content_bytes() {
+            buffer.push(*c as char);
+            self.source.advance(1)?;
+            self.locator.update_column(|c| c + 1);
+        }
+        Ok(())
+    }
+
+    /// ```text
+    /// [49] choice   ::= '(' S? cp ( S? '|' S? cp )+ S? ')' [VC: Proper Group/PE Nesting]
+    /// [50] seq      ::= '(' S? cp ( S? ',' S? cp )* S? ')' [VC: Proper Group/PE Nesting]
+    /// ```
+    pub(crate) fn parse_choice_or_seq(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+        self.grow()?;
+        if !self.source.content_bytes().starts_with(b"(") {
+            fatal_error!(
+                self.error_handler,
+                ParserInvalidElementDecl,
+                self.locator,
+                "A choice or seq in contentspec in an element declaration does not start with '('."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidElementDecl);
+        }
+        // skip '('
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
+        buffer.push('(');
+
+        self.skip_whitespaces()?;
+
+        self.parse_cp(buffer)?;
+
+        self.skip_whitespaces()?;
+
+        self.grow()?;
+        match self.source.content_bytes() {
+            [b'|', ..] => {
+                while self.source.content_bytes().starts_with(b"|") {
+                    // skip '|'
+                    self.source.advance(1)?;
+                    self.locator.update_column(|c| c + 1);
+                    buffer.push('|');
+
+                    self.skip_whitespaces()?;
+                    self.parse_cp(buffer)?;
+                    self.skip_whitespaces()?;
+                }
+            }
+            [b',', ..] => {
+                while self.source.content_bytes().starts_with(b",") {
+                    // skip ','
+                    self.source.advance(1)?;
+                    self.locator.update_column(|c| c + 1);
+                    buffer.push(',');
+
+                    self.skip_whitespaces()?;
+                    self.parse_cp(buffer)?;
+                    self.skip_whitespaces()?;
+                }
+            }
+            [b')', ..] => {}
+            [_, ..] => {
+                fatal_error!(
+                    self.error_handler,
+                    ParserInvalidElementDecl,
+                    self.locator,
+                    "Unexpected character is occurred in an element declaration."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserInvalidElementDecl);
+            }
+            _ => {
+                fatal_error!(
+                    self.error_handler,
+                    ParserUnexpectedEOF,
+                    self.locator,
+                    "Unexpected EOF."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+                return Err(XMLError::ParserUnexpectedEOF);
+            }
+        }
+
+        if !self.source.content_bytes().starts_with(b")") {
+            fatal_error!(
+                self.error_handler,
+                ParserInvalidElementDecl,
+                self.locator,
+                "A choice or seq in contentspec in an element declaration does not end with '('."
+            );
+            self.state = ParserState::FatalErrorOccurred;
+            return Err(XMLError::ParserInvalidElementDecl);
+        }
+        // skip ')'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
+        buffer.push(')');
 
         Ok(())
     }
