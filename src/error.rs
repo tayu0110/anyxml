@@ -57,6 +57,7 @@ pub enum XMLError {
     ParserInvalidEntityDecl,
     ParserDuplicateEntityDecl,
     ParserInvalidNotationDecl,
+    ParserInvalidConditionalSect,
     ParserInvalidStartOrEmptyTag,
     ParserInvalidEndTag,
     ParserMismatchElementType,
