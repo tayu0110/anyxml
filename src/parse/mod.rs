@@ -31,7 +31,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.parse_element()?;
         self.parse_misc()?;
         self.content_handler().end_document();
-        todo!()
+        Ok(())
     }
 
     /// ```text
@@ -248,10 +248,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         self.skip_whitespaces()?;
 
+        let base_entity_stack_depth = self.entity_name_stack.len();
         loop {
             self.grow()?;
             match self.source.content_bytes() {
-                [b'%', ..] => todo!("PEReference"),
+                [b'%', ..] => self.parse_pe_reference()?,
                 [b'<', b'?', ..] => self.parse_pi()?,
                 [b'<', b'!', b'-', b'-', ..] => self.parse_comment()?,
                 [b'<', b'!', b'[', ..] => self.parse_conditional_sect()?,
@@ -259,11 +260,157 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 [b'<', b'!', b'E', b'N', ..] => self.parse_entity_decl()?,
                 [b'<', b'!', b'A', ..] => self.parse_attlist_decl()?,
                 [b'<', b'!', b'N', ..] => self.parse_notation_decl()?,
-                _ => break Ok(()),
+                _ => {
+                    if self.entity_name_stack.len() > base_entity_stack_depth {
+                        self.pop_source()?;
+                        if !self.fatal_error_occurred {
+                            self.lexical_handler.end_entity();
+                        }
+                    } else {
+                        break Ok(());
+                    }
+                }
             }
 
             self.skip_whitespaces()?;
         }
+    }
+
+    /// # Note
+    /// This method adds InputSource to the context depending on whether the configuration
+    /// or reference resolution succeeds. If InputSource is added to the context,
+    /// [`LexicalHandler::start_entity`](crate::sax::handler::LexicalHandler::start_entity)
+    /// is called; otherwise,
+    /// [`ContentHandler::skipped_entity`](crate::sax::handler::ContentHandler::skipped_entity)
+    /// is called.  \
+    /// If an InputSource is added, the caller should remove the InputSource that has reached
+    /// EOF and call
+    /// [`LexicalHandler::end_entity`](crate::sax::handler::LexicalHandler::end_entity).
+    ///
+    /// ```text
+    /// [69] PEReference ::= '%' Name ';'   [VC:  Entity Declared]
+    ///                                     [WFC: No Recursion]
+    ///                                     [WFC: In DTD]
+    /// ```
+    pub(crate) fn parse_pe_reference(&mut self) -> Result<(), XMLError> {
+        // skip '%'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
+
+        let mut name = "%".to_owned();
+        if self.config.is_enable(ParserOption::Namespaces) {
+            self.parse_ncname(&mut name)?;
+        } else {
+            self.parse_name(&mut name)?;
+        }
+
+        self.grow()?;
+        if !self.source.content_bytes().starts_with(b";") {
+            fatal_error!(
+                self,
+                ParserInvalidEntityReference,
+                "A parameter reference does not end with ';'."
+            );
+            return Err(XMLError::ParserInvalidEntityReference);
+        }
+        // skip ';'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
+
+        if self
+            .entity_name_stack
+            .iter()
+            .any(|prev| prev.as_deref() == Some(name.as_str()))
+        {
+            // [WFC: No Recursion]
+            fatal_error!(
+                self,
+                ParserEntityRecursion,
+                "The parameter entity '{}' appears recursively.",
+                name
+            );
+            return Err(XMLError::ParserEntityRecursion);
+        }
+
+        if self.config.is_enable(ParserOption::Validation)
+            || self.config.is_enable(ParserOption::ExternalGeneralEntities)
+        {
+            if let Some(decl) = self.entities.get(&name) {
+                match decl {
+                    EntityDecl::InternalParameterEntity {
+                        base_uri,
+                        replacement_text,
+                    } => {
+                        if self.config.is_enable(ParserOption::Validation) {
+                            let source = InputSource::from_content(replacement_text.as_ref());
+                            let name: Arc<str> = name.into();
+                            self.push_source(
+                                Box::new(source),
+                                base_uri.clone(),
+                                Some(name.clone()),
+                                PathBuf::from(format!("#internal-parameter-entity.{name}")).into(),
+                                None,
+                            )?;
+
+                            if !self.fatal_error_occurred {
+                                self.lexical_handler.start_entity(&name);
+                            }
+                        } else if !self.fatal_error_occurred {
+                            self.content_handler.skipped_entity(&name);
+                        }
+                    }
+                    EntityDecl::ExternalParameterEntity {
+                        base_uri,
+                        system_id,
+                        public_id,
+                    } => {
+                        match self.entity_resolver.resolve_entity(
+                            &name,
+                            public_id.as_deref(),
+                            base_uri.as_ref(),
+                            system_id.as_ref(),
+                        ) {
+                            Ok(source) => {
+                                let source = source;
+                                let name: Arc<str> = name.into();
+                                self.push_source(
+                                    Box::new(source),
+                                    self.base_uri.clone(),
+                                    Some(name.clone()),
+                                    PathBuf::from(system_id.as_ref()).into(),
+                                    public_id.as_deref().map(Arc::from),
+                                )?;
+
+                                if !self.fatal_error_occurred {
+                                    self.lexical_handler.start_entity(&name);
+                                }
+                            }
+                            Err(err) => {
+                                error!(
+                                    self,
+                                    err,
+                                    "The external general entity '{}' cannot be resolved.",
+                                    name
+                                );
+                                if !self.fatal_error_occurred {
+                                    self.content_handler.skipped_entity(&name);
+                                }
+                            }
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            } else {
+                error!(
+                    self,
+                    ParserEntityNotFound, "The parameter entity '{}' is not declared.", name
+                );
+                self.content_handler.skipped_entity(&name);
+            }
+        } else if !self.fatal_error_occurred {
+            self.content_handler.skipped_entity(&name);
+        }
+        Ok(())
     }
 
     /// ```text
@@ -412,17 +559,27 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.state = ParserState::InInternalSubset;
         self.skip_whitespaces()?;
 
+        let base_entity_stack_depth = self.entity_name_stack.len();
         loop {
             self.grow()?;
             match self.source.content_bytes() {
-                [b'%', ..] => todo!("PEReference"),
+                [b'%', ..] => self.parse_pe_reference()?,
                 [b'<', b'?', ..] => self.parse_pi()?,
                 [b'<', b'!', b'-', b'-', ..] => self.parse_comment()?,
                 [b'<', b'!', b'E', b'L', ..] => self.parse_element_decl()?,
                 [b'<', b'!', b'E', b'N', ..] => self.parse_entity_decl()?,
                 [b'<', b'!', b'A', ..] => self.parse_attlist_decl()?,
                 [b'<', b'!', b'N', ..] => self.parse_notation_decl()?,
-                _ => break Ok(()),
+                _ => {
+                    if self.entity_name_stack.len() > base_entity_stack_depth {
+                        self.pop_source()?;
+                        if !self.fatal_error_occurred {
+                            self.lexical_handler.end_entity();
+                        }
+                    } else {
+                        break Ok(());
+                    }
+                }
             }
 
             self.skip_whitespaces()?;
@@ -825,7 +982,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
         }
 
-        let mut name = String::new();
+        let mut name = if pe { "%".to_owned() } else { String::new() };
         if self.config.is_enable(ParserOption::Namespaces) {
             self.parse_ncname(&mut name)?;
         } else {
@@ -2703,9 +2860,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     system_id,
                     public_id,
                 } => {
-                    if self.config.is_enable(ParserOption::Validation)
-                        || self.config.is_enable(ParserOption::ExternalGeneralEntities)
-                    {
+                    if self.config.is_enable(ParserOption::ExternalGeneralEntities) {
                         match self.entity_resolver.resolve_entity(
                             &name,
                             public_id.as_deref(),

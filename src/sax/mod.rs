@@ -172,12 +172,12 @@ pub enum EntityDecl {
         base_uri: Arc<Path>,
         system_id: Box<str>,
         public_id: Option<Box<str>>,
+        notation_name: Box<str>,
     },
     ExternalParameterEntity {
         base_uri: Arc<Path>,
         system_id: Box<str>,
         public_id: Option<Box<str>>,
-        notation_name: Box<str>,
     },
 }
 
