@@ -29,6 +29,9 @@ pub struct InputSource<'a> {
     /// Basically, this should be set to `true`, but if parsing is started with an unknown encoding,
     /// it is necessary to re-decode all byte sequences later, so it should be set to `false`.
     compact: bool,
+
+    system_id: Option<Box<str>>,
+    public_id: Option<Box<str>>,
 }
 
 impl<'a> InputSource<'a> {
@@ -143,6 +146,8 @@ impl<'a> InputSource<'a> {
             total_read: str.len(),
             eof: true,
             compact: true,
+            system_id: None,
+            public_id: None,
         }
     }
 
@@ -288,6 +293,22 @@ impl<'a> InputSource<'a> {
     pub(crate) fn set_compact_mode(&mut self) {
         self.compact = true;
     }
+
+    pub fn system_id(&self) -> Option<&str> {
+        self.system_id.as_deref()
+    }
+
+    pub fn public_id(&self) -> Option<&str> {
+        self.public_id.as_deref()
+    }
+
+    pub fn set_system_id(&mut self, system_id: impl Into<String>) {
+        self.system_id = Some(system_id.into().into_boxed_str());
+    }
+
+    pub fn set_public_id(&mut self, public_id: impl Into<String>) {
+        self.public_id = Some(public_id.into().into_boxed_str());
+    }
 }
 
 impl Default for InputSource<'_> {
@@ -303,6 +324,8 @@ impl Default for InputSource<'_> {
             total_read: 0,
             eof: true,
             compact: false,
+            system_id: None,
+            public_id: None,
         }
     }
 }

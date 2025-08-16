@@ -106,6 +106,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         // If the following character is neither ‘[’ nor ‘>’, then there is an ExternalID.
         let mut system_id = None::<String>;
         let mut public_id = None;
+        let mut external_subset = None;
         if !matches!(self.source.content_bytes()[0], b'[' | b'>') {
             if s == 0 {
                 fatal_error!(
@@ -116,8 +117,28 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 );
                 self.state = ParserState::FatalErrorOccurred;
             }
-            self.parse_external_id(system_id.get_or_insert_default(), &mut public_id)?;
+            let system_id = system_id.get_or_insert_default();
+            self.parse_external_id(system_id, &mut public_id)?;
             self.skip_whitespaces()?;
+            if self.config.is_enable(ParserOption::ExternalGeneralEntities)
+                || self.config.is_enable(ParserOption::Validation)
+            {
+                external_subset = Some(self.entity_resolver.resolve_entity(
+                    "[dtd]",
+                    public_id.as_deref(),
+                    &self.base_uri,
+                    system_id.as_str(),
+                )?);
+            }
+        } else if (self.config.is_enable(ParserOption::ExternalGeneralEntities)
+            || self.config.is_enable(ParserOption::Validation))
+            && let Ok(ext) = self
+                .entity_resolver
+                .get_external_subset(&name, Some(&self.base_uri))
+        {
+            system_id = ext.system_id().map(str::to_owned);
+            public_id = ext.public_id().map(str::to_owned);
+            external_subset = Some(ext);
         }
         if self.state != ParserState::FatalErrorOccurred {
             self.lexical_handler
@@ -169,9 +190,48 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(1)?;
         self.locator.update_column(|c| c + 1);
 
-        if let Some(system_id) = system_id {
+        if let Some(external_subset) = external_subset {
             self.has_external_subset = true;
-            todo!("parse external subset");
+            self.push_source(
+                Box::new(external_subset),
+                self.base_uri.clone(),
+                Some("[dtd]".into()),
+                system_id
+                    .as_deref()
+                    .map(PathBuf::from)
+                    .map(From::from)
+                    .unwrap_or_else(|| PathBuf::from("(null)").into()),
+                public_id.as_deref().map(From::from),
+            )?;
+
+            if self.state != ParserState::FatalErrorOccurred {
+                self.lexical_handler.start_entity("[dtd]");
+            }
+
+            self.parse_ext_subset()?;
+            self.grow()?;
+
+            if !self.source.is_empty() {
+                fatal_error!(
+                    self.error_handler,
+                    ParserEntityIncorrectNesting,
+                    self.locator,
+                    "The external DTD subset finish incorrectly."
+                );
+                self.state = ParserState::FatalErrorOccurred;
+            }
+
+            self.pop_source()?;
+
+            if self.state != ParserState::FatalErrorOccurred {
+                self.lexical_handler.end_entity();
+            }
+        } else if system_id.is_some()
+            && !self.config.is_enable(ParserOption::Validation)
+            && !self.config.is_enable(ParserOption::ExternalGeneralEntities)
+            && self.state != ParserState::FatalErrorOccurred
+        {
+            self.content_handler.skipped_entity("[dtd]");
         }
 
         if self.state != ParserState::FatalErrorOccurred {
@@ -179,6 +239,49 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         Ok(())
+    }
+
+    /// ```text
+    /// [30] extSubset ::= TextDecl? extSubsetDecl
+    /// ```
+    pub(crate) fn parse_ext_subset(&mut self) -> Result<(), XMLError> {
+        let old_state = self.state;
+        self.state = ParserState::InTextDeclaration;
+        self.grow()?;
+        if self.source.content_bytes().starts_with(b"<?xml") {
+            self.parse_text_decl()?;
+        }
+        self.source.set_compact_mode();
+        self.state = ParserState::InExternalSubset;
+        self.parse_ext_subset_decl()?;
+
+        self.state = old_state;
+        Ok(())
+    }
+
+    /// ```text
+    /// [31] extSubsetDecl ::= ( markupdecl | conditionalSect | DeclSep)*
+    /// ```
+    pub(crate) fn parse_ext_subset_decl(&mut self) -> Result<(), XMLError> {
+        self.grow()?;
+        self.skip_whitespaces()?;
+
+        loop {
+            self.grow()?;
+            match self.source.content_bytes() {
+                [b'%', ..] => todo!("PEReference"),
+                [b'<', b'?', ..] => self.parse_pi()?,
+                [b'<', b'!', b'-', b'-', ..] => self.parse_comment()?,
+                [b'<', b'!', b'[', ..] => todo!("conditionalSect"),
+                [b'<', b'!', b'E', b'L', ..] => self.parse_element_decl()?,
+                [b'<', b'!', b'E', b'N', ..] => self.parse_entity_decl()?,
+                [b'<', b'!', b'A', ..] => self.parse_attlist_decl()?,
+                [b'<', b'!', b'N', ..] => self.parse_notation_decl()?,
+                _ => break Ok(()),
+            }
+
+            self.skip_whitespaces()?;
+        }
     }
 
     /// ```text
@@ -2750,7 +2853,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             system_id.as_ref(),
                         ) {
                             Ok(source) => {
-                                let source = InputSource::from_reader(source, None)?;
+                                let source = source;
                                 let name: Arc<str> = name.into();
                                 self.push_source(
                                     Box::new(source),

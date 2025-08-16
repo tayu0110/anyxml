@@ -1,8 +1,11 @@
-use std::{fs::File, io::Read, path::Path, sync::Arc};
+use std::{fs::File, path::Path, sync::Arc};
 
 use crate::{
     error::XMLError,
-    sax::{Attribute, AttributeType, ContentSpec, DefaultDecl, Locator, error::SAXParseError},
+    sax::{
+        Attribute, AttributeType, ContentSpec, DefaultDecl, Locator, error::SAXParseError,
+        source::InputSource,
+    },
 };
 
 pub trait ContentHandler {
@@ -98,8 +101,8 @@ pub trait EntityResolver {
     fn get_external_subset(
         &self,
         name: &str,
-        base_uri: Option<&str>,
-    ) -> Result<Box<dyn Read>, XMLError> {
+        base_uri: Option<&Path>,
+    ) -> Result<InputSource<'static>, XMLError> {
         let _ = (name, base_uri);
         Err(XMLError::IONotFound)
     }
@@ -110,7 +113,7 @@ pub trait EntityResolver {
         public_id: Option<&str>,
         base_uri: &Path,
         system_id: &str,
-    ) -> Result<Box<dyn Read>, XMLError> {
+    ) -> Result<InputSource<'static>, XMLError> {
         let _ = (name, public_id, base_uri, system_id);
         Err(XMLError::IONotFound)
     }
@@ -161,10 +164,10 @@ impl EntityResolver for DefaultSAXHandler {
         _public_id: Option<&str>,
         base_uri: &Path,
         system_id: &str,
-    ) -> Result<Box<dyn Read>, XMLError> {
+    ) -> Result<InputSource<'static>, XMLError> {
         let path = base_uri.join(system_id);
         let file = File::open(path)?;
-        Ok(Box::new(file))
+        InputSource::from_reader(file, None)
     }
 }
 impl ErrorHandler for DefaultSAXHandler {
