@@ -6,7 +6,7 @@ use crate::{
     sax::{
         EntityDecl,
         error::{error, fatal_error},
-        parser::{ParserOption, ParserState, XMLReader},
+        parser::{ParserOption, XMLReader},
         source::InputSource,
     },
 };
@@ -20,24 +20,16 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             }
             Some(c) => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserIncorrectLiteralQuotation,
-                    self.locator,
                     "A character '0x{:X}' is not correct quotation mark for a literal.",
                     c as u32
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 self.locator.update_column(|c| c + 1);
                 Err(XMLError::ParserIncorrectLiteralQuotation)
             }
             None => {
-                fatal_error!(
-                    self.error_handler,
-                    ParserUnexpectedEOF,
-                    self.locator,
-                    "Unexpected EOF."
-                );
-                self.state = ParserState::FatalErrorOccurred;
+                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                 Err(XMLError::ParserUnexpectedEOF)
             }
         }
@@ -51,23 +43,15 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             }
             Some(_) => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserIncorrectLiteralQuotation,
-                    self.locator,
                     "The literal does not close with the correct quotation mark."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 self.locator.update_column(|c| c + 1);
                 Err(XMLError::ParserIncorrectLiteralQuotation)
             }
             None => {
-                fatal_error!(
-                    self.error_handler,
-                    ParserUnexpectedEOF,
-                    self.locator,
-                    "Unexpected EOF."
-                );
-                self.state = ParserState::FatalErrorOccurred;
+                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                 Err(XMLError::ParserUnexpectedEOF)
             }
         }
@@ -184,14 +168,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                     }
                     Some(c) => {
                         fatal_error!(
-                            self.error_handler,
+                            self,
                             ParserInvalidCharacter,
-                            self.locator,
                             "The character '0x{:X}' is not allowed in the XML document.",
                             c as u32
                         );
                         self.locator.update_column(|c| c + 1);
-                        self.state = ParserState::FatalErrorOccurred;
                     }
                     None => unreachable!(),
                 }
@@ -207,15 +189,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             match self.source.content_bytes()[0] {
                 b'<' => {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidAttValue,
-                        self.locator,
                         "AttValue must not contain '<'."
                     );
                     buffer.push('<');
                     self.source.advance(1)?;
                     self.locator.update_column(|c| c + 1);
-                    self.state = ParserState::FatalErrorOccurred;
                 }
                 b'&' => {
                     self.source.grow()?;
@@ -234,16 +214,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             self.source.grow()?;
         }
 
-        if self.source.content_bytes().is_empty() {
-            if self.entity_name_stack.len() == orig_entity_stack {
-                fatal_error!(
-                    self.error_handler,
-                    ParserUnexpectedEOF,
-                    self.locator,
-                    "Unexpected EOF."
-                );
-            }
-            self.state = ParserState::FatalErrorOccurred;
+        if self.source.content_bytes().is_empty()
+            && self.entity_name_stack.len() == orig_entity_stack
+        {
+            fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
         }
         Ok(())
     }
@@ -257,12 +231,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         self.source.grow()?;
         if !self.source.content_bytes().starts_with(b"&") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidEntityReference,
-                self.locator,
                 "An entity reference does not start with '&'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidEntityReference);
         }
         // skip '&'
@@ -279,12 +251,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         self.source.grow()?;
         if !self.source.content_bytes().starts_with(b";") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidEntityReference,
-                self.locator,
                 "The entity reference does not end with ';'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidEntityReference);
         }
         // skip ';'
@@ -299,13 +269,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             {
                 // [WFC: No Recursion]
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserEntityRecursion,
-                    self.locator,
                     "The entity '{}' appears recursively.",
                     name
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserEntityRecursion);
             }
             match decl {
@@ -323,7 +291,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                         None,
                     )?;
 
-                    if self.state != ParserState::FatalErrorOccurred {
+                    if !self.fatal_error_occurred {
                         self.lexical_handler.start_entity(&name);
                     }
 
@@ -332,18 +300,16 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
 
                     if !self.source.is_empty() {
                         fatal_error!(
-                            self.error_handler,
+                            self,
                             ParserEntityIncorrectNesting,
-                            self.locator,
                             "The entity '{}' is nested incorrectly.",
                             name
                         );
-                        self.state = ParserState::FatalErrorOccurred;
                         return Err(XMLError::ParserEntityIncorrectNesting);
                     }
 
                     self.pop_source()?;
-                    if self.state != ParserState::FatalErrorOccurred {
+                    if !self.fatal_error_occurred {
                         self.lexical_handler.end_entity();
                     }
                 }
@@ -352,23 +318,19 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                     // [Reference in Attribute Value]
                     // 4.4.4 Forbidden
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidEntityReference,
-                        self.locator,
                         "An external entity reference is not allowed in AttValue"
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
                 EntityDecl::ExternalGeneralUnparsedEntity { .. } => {
                     // [WFC: Parsed Entity]
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidEntityReference,
-                        self.locator,
                         "The unparsed entity '{}' cannot be referred.",
                         name
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
                 EntityDecl::InternalParameterEntity { .. }
                 | EntityDecl::ExternalParameterEntity { .. } => {
@@ -385,38 +347,31 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                 if !self.has_external_subset || self.standalone == Some(true) {
                     // [WFC: Entity Declared]
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserEntityNotFound,
-                        self.locator,
                         "The entity '{}' is not declared.",
                         name
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 } else {
                     // [VC: Entity Declared]
                     error!(
-                        self.error_handler,
-                        ParserEntityNotFound,
-                        self.locator,
-                        "The entity '{}' is not declared.",
-                        name
+                        self,
+                        ParserEntityNotFound, "The entity '{}' is not declared.", name
                     );
                 }
             } else {
                 // [WFC: Entity Declared]
                 if self.standalone == Some(true) {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserEntityNotFound,
-                        self.locator,
                         "The entity '{}' is not declared.",
                         name
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
             }
 
-            if self.state != ParserState::FatalErrorOccurred {
+            if !self.fatal_error_occurred {
                 self.content_handler.skipped_entity(&name);
             }
         }

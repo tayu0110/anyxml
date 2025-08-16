@@ -61,12 +61,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"<!DOCTYPE") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidDoctypeDecl,
-                self.locator,
                 "The document type declaration must start with '<!DOCTYPE'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidDoctypeDecl);
         }
         // skip '<!DOCTYPE'
@@ -75,12 +73,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidDoctypeDecl,
-                self.locator,
                 "Whitespaces are required after '<!DOCTYPE'."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         let mut name = String::new();
@@ -93,13 +89,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         let s = self.skip_whitespaces()?;
         self.grow()?;
         if self.source.is_empty() {
-            fatal_error!(
-                self.error_handler,
-                ParserUnexpectedEOF,
-                self.locator,
-                "Unexpected EOF"
-            );
-            self.state = ParserState::FatalErrorOccurred;
+            fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF");
             return Err(XMLError::ParserUnexpectedEOF);
         }
 
@@ -110,12 +100,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         if !matches!(self.source.content_bytes()[0], b'[' | b'>') {
             if s == 0 {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidDoctypeDecl,
-                    self.locator,
                     "Whitespaces are required between Name and ExternalID."
                 );
-                self.state = ParserState::FatalErrorOccurred;
             }
             let system_id = system_id.get_or_insert_default();
             self.parse_external_id(system_id, &mut public_id)?;
@@ -140,7 +128,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             public_id = ext.public_id().map(str::to_owned);
             external_subset = Some(ext);
         }
-        if self.state != ParserState::FatalErrorOccurred {
+        if !self.fatal_error_occurred {
             self.lexical_handler
                 .start_dtd(&name, public_id.as_deref(), system_id.as_deref());
         }
@@ -160,12 +148,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.grow()?;
             if !self.source.content_bytes().starts_with(b"]") {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidDoctypeDecl,
-                    self.locator,
                     "']' for the end of internal DTD subset is not found."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidDoctypeDecl);
             }
             // skip ']'
@@ -178,12 +164,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b">") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidDoctypeDecl,
-                self.locator,
                 "Document type declaration does not close with '>'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidDoctypeDecl);
         }
         // skip '>'
@@ -204,7 +188,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 public_id.as_deref().map(From::from),
             )?;
 
-            if self.state != ParserState::FatalErrorOccurred {
+            if !self.fatal_error_occurred {
                 self.lexical_handler.start_entity("[dtd]");
             }
 
@@ -213,28 +197,26 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
             if !self.source.is_empty() {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserEntityIncorrectNesting,
-                    self.locator,
                     "The external DTD subset finish incorrectly."
                 );
-                self.state = ParserState::FatalErrorOccurred;
             }
 
             self.pop_source()?;
 
-            if self.state != ParserState::FatalErrorOccurred {
+            if !self.fatal_error_occurred {
                 self.lexical_handler.end_entity();
             }
         } else if system_id.is_some()
             && !self.config.is_enable(ParserOption::Validation)
             && !self.config.is_enable(ParserOption::ExternalGeneralEntities)
-            && self.state != ParserState::FatalErrorOccurred
+            && !self.fatal_error_occurred
         {
             self.content_handler.skipped_entity("[dtd]");
         }
 
-        if self.state != ParserState::FatalErrorOccurred {
+        if !self.fatal_error_occurred {
             self.lexical_handler.end_dtd();
         }
 
@@ -297,12 +279,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"<![") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidConditionalSect,
-                self.locator,
                 "A conditional section in DTD does not start with '<!['."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidConditionalSect);
         }
         // skip '<!['
@@ -322,12 +302,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.grow()?;
                 if !self.source.content_bytes().starts_with(b"[") {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidConditionalSect,
-                        self.locator,
                         "'[' is not found after 'INCLUDE' in a conditional section."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                     return Err(XMLError::ParserInvalidConditionalSect);
                 }
                 // skip '['
@@ -338,12 +316,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                 if !self.source.content_bytes().starts_with(b"]]>") {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidConditionalSect,
-                        self.locator,
                         "The conditional section does not end with ']]>'."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                     return Err(XMLError::ParserInvalidConditionalSect);
                 }
                 // skip ']]>'
@@ -360,12 +336,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.grow()?;
                 if !self.source.content_bytes().starts_with(b"[") {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidConditionalSect,
-                        self.locator,
                         "'[' is not found after 'IGNORE' in a conditional section."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                     return Err(XMLError::ParserInvalidConditionalSect);
                 }
                 // skip '['
@@ -400,23 +374,15 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             }
                             Some(c) => {
                                 fatal_error!(
-                                    self.error_handler,
+                                    self,
                                     ParserInvalidCharacter,
-                                    self.locator,
                                     "The character '0x{:X}' is not allowed in the XML document.",
                                     c as u32
                                 );
                                 self.locator.update_column(|c| c + 1);
-                                self.state = ParserState::FatalErrorOccurred;
                             }
                             None => {
-                                fatal_error!(
-                                    self.error_handler,
-                                    ParserUnexpectedEOF,
-                                    self.locator,
-                                    "Unexpected EOF."
-                                );
-                                self.state = ParserState::FatalErrorOccurred;
+                                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                                 return Err(XMLError::ParserUnexpectedEOF);
                             }
                         }
@@ -426,12 +392,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
             _ => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidConditionalSect,
-                    self.locator,
                     "A conditional section does not have neither 'INCLUDE' nor 'IGNORE' parameter."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 Err(XMLError::ParserInvalidConditionalSect)
             }
         }
@@ -475,12 +439,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if !self.source.content_bytes().starts_with(b"<!ELEMENT") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidElementDecl,
-                self.locator,
                 "Element declaration must start with '<!ELEMENT'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidElementDecl);
         }
         // skip '<!ELEMENT'
@@ -489,12 +451,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidElementDecl,
-                self.locator,
                 "Whitespaces are required after '<!ELEMENT' in element declaration."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         let mut name = String::new();
@@ -506,12 +466,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidElementDecl,
-                self.locator,
                 "Whitespaces are required after Name in element declaration."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         // parse contentspec
@@ -522,12 +480,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
             _ => {
                 if !self.source.content_bytes().starts_with(b"(") {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidElementDecl,
-                        self.locator,
                         "Element or Mixed content must start with '('."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                     return Err(XMLError::ParserInvalidElementDecl);
                 }
                 // skip '('
@@ -584,12 +540,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     }
                     if !self.source.content_bytes().starts_with(b")") {
                         fatal_error!(
-                            self.error_handler,
+                            self,
                             ParserInvalidElementDecl,
-                            self.locator,
                             "Mixed Content is not wrapped by parentheses correctly."
                         );
-                        self.state = ParserState::FatalErrorOccurred;
                         return Err(XMLError::ParserInvalidElementDecl);
                     }
                     // skip ')'
@@ -614,27 +568,25 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b">") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidElementDecl,
-                self.locator,
                 "Element declaration does not end with '>'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidElementDecl);
         }
         // skip '>'
         self.source.advance(1)?;
         self.locator.update_column(|c| c + 1);
 
-        if self.state != ParserState::FatalErrorOccurred {
+        if !self.fatal_error_occurred {
             self.decl_handler.element_decl(&name, &contentspec);
         }
         if self.elementdecls.insert(name, contentspec).is_err()
             && self.config.is_enable(ParserOption::Validation)
         {
             error!(
-                self.error_handler,
-                ParserDuplicateElementDecl, self.locator, "An element declaration is duplicated."
+                self,
+                ParserDuplicateElementDecl, "An element declaration is duplicated."
             );
         }
 
@@ -687,34 +639,24 @@ impl XMLReader<DefaultParserSpec<'_>> {
             [b')', ..] => {}
             [_, ..] => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidElementDecl,
-                    self.locator,
                     "Unexpected character is occurred in an element declaration."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidElementDecl);
             }
             _ => {
-                fatal_error!(
-                    self.error_handler,
-                    ParserUnexpectedEOF,
-                    self.locator,
-                    "Unexpected EOF."
-                );
-                self.state = ParserState::FatalErrorOccurred;
+                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                 return Err(XMLError::ParserUnexpectedEOF);
             }
         }
 
         if !self.source.content_bytes().starts_with(b")") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidElementDecl,
-                self.locator,
                 "A choice or seq in contentspec in an element declaration does not end with '('."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidElementDecl);
         }
         // skip ')'
@@ -765,12 +707,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"(") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidElementDecl,
-                self.locator,
                 "A choice or seq in contentspec in an element declaration does not start with '('."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidElementDecl);
         }
         // skip '('
@@ -813,34 +753,24 @@ impl XMLReader<DefaultParserSpec<'_>> {
             [b')', ..] => {}
             [_, ..] => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidElementDecl,
-                    self.locator,
                     "Unexpected character is occurred in an element declaration."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidElementDecl);
             }
             _ => {
-                fatal_error!(
-                    self.error_handler,
-                    ParserUnexpectedEOF,
-                    self.locator,
-                    "Unexpected EOF."
-                );
-                self.state = ParserState::FatalErrorOccurred;
+                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                 return Err(XMLError::ParserUnexpectedEOF);
             }
         }
 
         if !self.source.content_bytes().starts_with(b")") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidElementDecl,
-                self.locator,
                 "A choice or seq in contentspec in an element declaration does not end with '('."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidElementDecl);
         }
         // skip ')'
@@ -863,12 +793,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if !self.source.content_bytes().starts_with(b"<!ENTITY") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidEntityDecl,
-                self.locator,
                 "Entity declaration must start with '<!ENTITY'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidEntityDecl);
         }
         // skip '<!ENTITY'
@@ -877,12 +805,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidEntityDecl,
-                self.locator,
                 "Whitespaces are required after '<!ENTITY' in entity declaration."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         self.grow()?;
@@ -892,12 +818,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.locator.update_column(|c| c + 1);
             if self.skip_whitespaces()? == 0 {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidEntityDecl,
-                    self.locator,
                     "Whitespaces are required after '%' in entity declaration."
                 );
-                self.state = ParserState::FatalErrorOccurred;
             }
         }
 
@@ -910,12 +834,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidEntityDecl,
-                self.locator,
                 "Whitespaces are required after Name in entity declaration."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         self.grow()?;
@@ -939,22 +861,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 if !pe && !self.source.content_bytes().starts_with(b">") {
                     if s == 0 {
                         fatal_error!(
-                            self.error_handler,
+                            self,
                             ParserInvalidEntityDecl,
-                            self.locator,
                             "Whitespaces are required between ExternalID and NDataDecl."
                         );
-                        self.state = ParserState::FatalErrorOccurred;
                     }
 
                     if !self.source.content_bytes().starts_with(b"NDATA") {
                         fatal_error!(
-                            self.error_handler,
+                            self,
                             ParserInvalidEntityDecl,
-                            self.locator,
                             "NDataDecl must start with 'NDATA'."
                         );
-                        self.state = ParserState::FatalErrorOccurred;
                         return Err(XMLError::ParserInvalidEntityDecl);
                     }
                     // skip 'NDATA'
@@ -963,12 +881,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                     if self.skip_whitespaces()? == 0 {
                         fatal_error!(
-                            self.error_handler,
+                            self,
                             ParserInvalidEntityDecl,
-                            self.locator,
                             "Whitespaces are required after 'NDATA' in entity declaration."
                         );
-                        self.state = ParserState::FatalErrorOccurred;
                     }
 
                     if self.config.is_enable(ParserOption::Namespaces) {
@@ -980,19 +896,17 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 }
                 if !self.source.content_bytes().starts_with(b">") {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidEntityDecl,
-                        self.locator,
                         "Entity declaration does not end with '>'."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                     return Err(XMLError::ParserInvalidEntityDecl);
                 }
                 // skip '>'
                 self.source.advance(1)?;
                 self.locator.update_column(|c| c + 1);
 
-                if !pe && self.state != ParserState::FatalErrorOccurred {
+                if !pe && !self.fatal_error_occurred {
                     if let Some(ndata) = ndata {
                         self.dtd_handler.unparsed_entity_decl(
                             &name,
@@ -1011,12 +925,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
             _ => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidEntityDecl,
-                    self.locator,
                     "Neither EntityValue nor ExternalID are found in entity declaration."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidEntityDecl);
             }
         }
@@ -1032,12 +944,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if !self.source.content_bytes().starts_with(b"<!ATTLIST") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidAttlistDecl,
-                self.locator,
                 "Attribute list declration must start with '<!ATTLIST'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidAttlistDecl);
         }
         // skip '<!ATTLIST'
@@ -1046,12 +956,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidAttlistDecl,
-                self.locator,
                 "Whitespaces are required after '<!ATTLIST' in attribute list declaration."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         let mut name = String::new();
@@ -1067,16 +975,14 @@ impl XMLReader<DefaultParserSpec<'_>> {
         while !self.source.content_bytes().starts_with(b">") {
             if s == 0 {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidAttlistDecl,
-                    self.locator,
                     "Whitespaces are required before Name in AttDef."
                 );
-                self.state = ParserState::FatalErrorOccurred;
             }
             att_name.clear();
             let (atttype, default_decl) = self.parse_att_def(false, &mut att_name)?;
-            if self.state != ParserState::FatalErrorOccurred {
+            if !self.fatal_error_occurred {
                 self.decl_handler
                     .attribute_decl(&name, &att_name, &atttype, &default_decl);
             }
@@ -1085,9 +991,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 .insert(name.as_str(), att_name.as_str(), atttype, default_decl)
             {
                 warning!(
-                    self.error_handler,
+                    self,
                     ParserDuplicateAttlistDecl,
-                    self.locator,
                     "An attribute list declaration for the attribute '{}' the element '{}' is duplicated.",
                     att_name,
                     name
@@ -1103,13 +1008,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if !self.source.content_bytes().starts_with(b">") {
-            fatal_error!(
-                self.error_handler,
-                ParserUnexpectedEOF,
-                self.locator,
-                "Unexpected EOF."
-            );
-            self.state = ParserState::FatalErrorOccurred;
+            fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
             return Err(XMLError::ParserUnexpectedEOF);
         }
         // skip '>'
@@ -1129,12 +1028,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
     ) -> Result<(AttributeType, DefaultDecl), XMLError> {
         if need_trim_whitespace && self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidAttlistDecl,
-                self.locator,
                 "Whitespaces are required before Name in AttDef."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         if self.config.is_enable(ParserOption::Namespaces) {
@@ -1145,12 +1042,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidAttlistDecl,
-                self.locator,
                 "Whitespaces are required before AttType in AttDef."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         // parse AttType
@@ -1186,12 +1081,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                 if !self.source.content_bytes().starts_with(b")") {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidAttlistDecl,
-                        self.locator,
                         "Enumerated Attribute Type declaration does not close with ')'."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                     return Err(XMLError::ParserInvalidAttlistDecl);
                 }
                 // skip ')'
@@ -1217,23 +1110,19 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                 if self.skip_whitespaces()? == 0 {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidAttlistDecl,
-                        self.locator,
                         "Whitespaces are required after 'NOTATION' in Notation Attribute Type declaration"
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
 
                 self.grow()?;
                 if !self.source.content_bytes().starts_with(b"(") {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidAttlistDecl,
-                        self.locator,
                         "'(' is required after 'NOTATION' in Notation Attribute Type declaration."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                     return Err(XMLError::ParserInvalidAttlistDecl);
                 }
                 // skip '('
@@ -1270,12 +1159,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                 if !self.source.content_bytes().starts_with(b")") {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidAttlistDecl,
-                        self.locator,
                         "Enumerated Attribute Type declaration does not close with ')'."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                     return Err(XMLError::ParserInvalidAttlistDecl);
                 }
                 // skip ')'
@@ -1322,24 +1209,20 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
             _ => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidAttlistDecl,
-                    self.locator,
                     "AttType cannot be recognized."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidAttlistDecl);
             }
         };
 
         if self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidAttlistDecl,
-                self.locator,
                 "Whitespaces are required between AttType and DefaultDecl in Attribute list declaration."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         // parse DefaultDecl
@@ -1364,12 +1247,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                 if self.skip_whitespaces()? == 0 {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidAttlistDecl,
-                        self.locator,
                         "Whitespaces are required after '#FIXED' in DefaultDecl for attribute list declaration."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
 
                 let mut buffer = String::new();
@@ -1396,12 +1277,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if !self.source.content_bytes().starts_with(b"<!NOTATION") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidNotationDecl,
-                self.locator,
                 "Notation declration must start with '<!NOTATION'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidNotationDecl);
         }
         // skip '<!NOTATION'
@@ -1410,12 +1289,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidNotationDecl,
-                self.locator,
                 "Whitespaces are required after '<!NOTATION' in Notation declaration."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         let mut name = String::new();
@@ -1427,12 +1304,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidNotationDecl,
-                self.locator,
                 "Whitespaces are required after Name in Notation declaration."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         self.grow()?;
@@ -1441,7 +1316,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 // If it starts with “SYSTEM,” it is surely an ExternalID.
                 let mut system_id = String::new();
                 self.parse_external_id(&mut system_id, &mut None)?;
-                if self.state != ParserState::FatalErrorOccurred {
+                if !self.fatal_error_occurred {
                     self.dtd_handler
                         .notation_decl(&name, None, Some(&system_id));
                 }
@@ -1460,12 +1335,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                 if self.skip_whitespaces()? == 0 {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidPubidLiteral,
-                        self.locator,
                         "Whitespaces are required after 'PUBLIC' in Notation declaration."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
                 let mut public_id = String::new();
                 self.parse_pubid_literal(&mut public_id)?;
@@ -1478,7 +1351,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     self.source.advance(1)?;
                     self.locator.update_column(|c| c + 1);
 
-                    if self.state != ParserState::FatalErrorOccurred {
+                    if !self.fatal_error_occurred {
                         self.dtd_handler
                             .notation_decl(&name, Some(&public_id), None);
                     }
@@ -1489,31 +1362,27 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 // whitespaces are required because SystemLiteral follows.
                 if s == 0 {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidPubidLiteral,
-                        self.locator,
                         "Whitespaces are required before SystemLiteral in Notation declaration."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
 
                 let mut system_id = String::new();
                 self.parse_system_literal(&mut system_id)?;
                 self.skip_whitespaces()?;
 
-                if self.state != ParserState::FatalErrorOccurred {
+                if !self.fatal_error_occurred {
                     self.dtd_handler
                         .notation_decl(&name, Some(&public_id), Some(&system_id));
                 }
             }
             _ => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidNotationDecl,
-                    self.locator,
                     "Notation declaration must have either ExternalID or PublicID."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidNotationDecl);
             }
         }
@@ -1538,12 +1407,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.locator.update_column(|c| c + 6);
                 if self.skip_whitespaces()? == 0 {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidExternalID,
-                        self.locator,
                         "Whitespaces are required after 'SYSTEM' in ExternalID."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
                 *public_id = None;
                 self.parse_system_literal(system_id)?;
@@ -1554,33 +1421,27 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.locator.update_column(|c| c + 6);
                 if self.skip_whitespaces()? == 0 {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidExternalID,
-                        self.locator,
                         "Whitespaces are required after 'PUBLIC' in ExternalID."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
                 self.parse_pubid_literal(public_id.get_or_insert_default())?;
                 if self.skip_whitespaces()? == 0 {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidExternalID,
-                        self.locator,
                         "Whitespaces are required after PubidLiteral in ExternalID."
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
                 self.parse_system_literal(system_id)?;
             }
             _ => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidExternalID,
-                    self.locator,
                     "ExternalID must start with 'SYSTEM' or 'PUBLIC'."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidExternalID);
             }
         }
@@ -1595,12 +1456,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"<?xml") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidXMLDecl,
-                self.locator,
                 "XML declaration must start with '<?xml'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidXMLDecl);
         }
         // skip '<?xml'
@@ -1617,12 +1476,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         if self.source.content_bytes().starts_with(b"encoding") {
             if s == 0 {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidXMLDecl,
-                    self.locator,
                     "Whitespaces are required before 'encoding'."
                 );
-                self.state = ParserState::FatalErrorOccurred;
             }
             encoding = Some(self.parse_encoding_decl(false)?);
             s = self.skip_whitespaces()?;
@@ -1634,12 +1491,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         if self.source.content_bytes().starts_with(b"standalone") {
             if s == 0 {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidXMLDecl,
-                    self.locator,
                     "Whitespaces are required before 'standalone'."
                 );
-                self.state = ParserState::FatalErrorOccurred;
             }
             standalone = Some(self.parse_sddecl(false)?);
             self.skip_whitespaces()?;
@@ -1648,12 +1503,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if !self.source.content_bytes().starts_with(b"?>") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidXMLDecl,
-                self.locator,
                 "XMLDecl is not closed with '?>'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidXMLDecl);
         }
         // skip '?>'
@@ -1668,19 +1521,17 @@ impl XMLReader<DefaultParserSpec<'_>> {
             && self.source.switch_encoding(encoding).is_err()
         {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserUnsupportedEncoding,
-                self.locator,
                 "The declared encoding '{}' is not supported.",
                 encoding
             );
-            self.state = ParserState::FatalErrorOccurred;
             // We continue decoding the data using the encoding inferred from the BOM or
             // byte sequence at the beginning of the document entity, and attempt parsing
             // and error detection.
         }
 
-        if self.state != ParserState::FatalErrorOccurred {
+        if !self.fatal_error_occurred {
             self.content_handler
                 .declaration(&version_str, encoding.as_deref(), standalone);
         }
@@ -1701,22 +1552,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
     ) -> Result<(XMLVersion, String), XMLError> {
         if need_trim_whitespace && self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidEncodingDecl,
-                self.locator,
                 "Whitespaces are required before 'version' for VersionDecl."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         if !self.source.content_bytes().starts_with(b"version") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidXMLVersion,
-                self.locator,
                 "VersionInfo must start with 'version'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidXMLVersion);
         }
         // skip 'version'
@@ -1726,12 +1573,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.skip_whitespaces()?;
         if !self.source.content_bytes().starts_with(b"=") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidXMLDecl,
-                self.locator,
                 "'=' is not found after 'version' in VersionInfo."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidXMLDecl);
         }
         // skip '='
@@ -1743,12 +1588,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
             Some(c @ ('"' | '\'')) => c,
             _ => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidXMLDecl,
-                    self.locator,
                     "The quotation marks in the version number are incorrect."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidXMLDecl);
             }
         };
@@ -1763,20 +1606,16 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
         if major > 1 || content[0] != b'1' {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidXMLVersion,
-                self.locator,
                 "XML major version number must be '1'."
             );
-            self.state = ParserState::FatalErrorOccurred;
         } else if content[major] != b'.' {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidXMLVersion,
-                self.locator,
                 "Invalid XML version number is found."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidXMLVersion);
         }
         let mut minor = major + 1;
@@ -1785,12 +1624,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
         if minor == limit {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserTooLongXMLVersionNumber,
-                self.locator,
                 "Too long XML version number is found."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserTooLongXMLVersionNumber);
         }
         let version = if major + 1 < minor {
@@ -1800,30 +1637,25 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
         } else {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidXMLVersion,
-                self.locator,
                 "XML minor version number is not found."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidXMLVersion);
         };
         if version == XMLVersion::Unknown {
             warning!(
-                self.error_handler,
+                self,
                 ParserUnsupportedXMLVersion,
-                self.locator,
                 "Unsupported XML version number is found. Fallback to XML 1.0."
             );
         }
         if content[minor] != quote as u8 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidXMLDecl,
-                self.locator,
                 "The quotation marks in the version number are incorrect."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidXMLDecl);
         }
         let version_str = unsafe {
@@ -1847,22 +1679,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
     ) -> Result<String, XMLError> {
         if need_trim_whitespace && self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidEncodingDecl,
-                self.locator,
                 "Whitespaces are required before 'encoding' for EncodingDecl."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         if !self.source.content_bytes().starts_with(b"encoding") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidEncodingDecl,
-                self.locator,
                 "'encoding' is not found for EncodingDecl."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidEncodingDecl);
         }
         // skip 'encoding'
@@ -1872,12 +1700,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.skip_whitespaces()?;
         if self.source.next_char()? != Some('=') {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidEncodingDecl,
-                self.locator,
                 "'=' is not found after 'encoding' in EncodingDecl."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidEncodingDecl);
         }
         self.locator.update_column(|c| c + 1);
@@ -1887,12 +1713,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
             Some(c @ ('"' | '\'')) => c,
             _ => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidEncodingDecl,
-                    self.locator,
                     "The quotation marks in the encoding name are incorrect."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidEncodingDecl);
             }
         };
@@ -1907,31 +1731,22 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
             Some(_) => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidEncodingDecl,
-                    self.locator,
                     "The quotation marks in the encoding name are incorrect."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidEncodingDecl);
             }
             _ => {
-                self.state = ParserState::FatalErrorOccurred;
                 // If we call `grow` just before and `source` is empty,
                 // `source` has probably reached EOF.
                 return if self.source.is_empty() {
-                    fatal_error!(
-                        self.error_handler,
-                        ParserUnexpectedEOF,
-                        self.locator,
-                        "Unexpected EOF."
-                    );
+                    fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                     Err(XMLError::ParserUnexpectedEOF)
                 } else {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidEncodingDecl,
-                        self.locator,
                         "The quotation marks in the encoding name are incorrect."
                     );
                     Err(XMLError::ParserInvalidEncodingDecl)
@@ -1949,24 +1764,20 @@ impl XMLReader<DefaultParserSpec<'_>> {
     pub(crate) fn parse_sddecl(&mut self, need_trim_whitespace: bool) -> Result<bool, XMLError> {
         if need_trim_whitespace && self.skip_whitespaces()? == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidSDDecl,
-                self.locator,
                 "Whitespaces are required before 'standalone' for SDDecl."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         self.grow()?;
         let content = self.source.content_bytes();
         if !content.starts_with(b"standalone") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidSDDecl,
-                self.locator,
                 "'standalone' is not found for SDDecl."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidSDDecl);
         }
         // skip 'standalone'
@@ -1976,13 +1787,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.skip_whitespaces()?;
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"=") {
-            fatal_error!(
-                self.error_handler,
-                ParserInvalidSDDecl,
-                self.locator,
-                "'=' is not found for SDDecl."
-            );
-            self.state = ParserState::FatalErrorOccurred;
+            fatal_error!(self, ParserInvalidSDDecl, "'=' is not found for SDDecl.");
             return Err(XMLError::ParserInvalidSDDecl);
         }
         // skip '='
@@ -1993,12 +1798,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
             Some(c @ ('"' | '\'')) => c,
             _ => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidSDDecl,
-                    self.locator,
                     "The quotation marks in the standalone declaration are incorrect."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidSDDecl);
             }
         };
@@ -2017,24 +1820,20 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
             _ => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidSDDecl,
-                    self.locator,
                     "The value of SDDecl must be either 'yes' or 'no'."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidXMLDecl);
             }
         };
 
         if self.source.next_char()? != Some(quote) {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidSDDecl,
-                self.locator,
                 "The quotation marks in the standalone declaration are incorrect."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidSDDecl);
         }
         self.locator.update_column(|c| c + 1);
@@ -2051,22 +1850,15 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         let content = self.source.content_bytes();
         if content.is_empty() {
-            self.state = ParserState::FatalErrorOccurred;
             // If we call `grow` just before and `source` is empty,
             // `source` has probably reached EOF.
             return if self.source.is_empty() {
-                fatal_error!(
-                    self.error_handler,
-                    ParserUnexpectedEOF,
-                    self.locator,
-                    "Unexpected EOF."
-                );
+                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                 Err(XMLError::ParserUnexpectedEOF)
             } else {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidEncodingName,
-                    self.locator,
                     "Data that may not be accepted as an encoding name has been detected."
                 );
                 Err(XMLError::ParserInvalidEncodingName)
@@ -2075,12 +1867,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if !content[0].is_ascii_alphabetic() {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidEncodingName,
-                self.locator,
                 "The first character of an encoding name must be ASCII alphabetic."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         let limit = ENCODING_NAME_LIMIT_LENGTH.min(content.len());
@@ -2093,28 +1883,19 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if cur == ENCODING_NAME_LIMIT_LENGTH {
             fatal_error!(
-                self.error_handler,
+                self,
                 PraserTooLongEncodingName,
-                self.locator,
                 "Too long encoding name is found."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::PraserTooLongEncodingName);
         } else if cur == content.len() {
-            self.state = ParserState::FatalErrorOccurred;
             return if self.source.is_empty() {
-                fatal_error!(
-                    self.error_handler,
-                    ParserUnexpectedEOF,
-                    self.locator,
-                    "Unexpected EOF."
-                );
+                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                 Err(XMLError::ParserUnexpectedEOF)
             } else {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidEncodingName,
-                    self.locator,
                     "Data that may not be accepted as an encoding name has been detected."
                 );
                 Err(XMLError::ParserInvalidEncodingName)
@@ -2157,12 +1938,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"<!--") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidComment,
-                self.locator,
                 "Comment does not start with '<!--'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidComment);
         }
         // skip '<!--'
@@ -2177,12 +1956,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 Some('-') => {
                     if self.source.peek_char()? == Some('-') {
                         fatal_error!(
-                            self.error_handler,
+                            self,
                             ParserInvalidComment,
-                            self.locator,
                             "Comment must not contain '--' except for delimiters."
                         );
-                        self.state = ParserState::FatalErrorOccurred;
                     }
                     buffer.push('-');
                 }
@@ -2208,28 +1985,20 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 Some(c) => {
                     self.locator.update_column(|c| c + 1);
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidCharacter,
-                        self.locator,
                         "A character '0x{:X}' is not allowed in XML documents.",
                         c as u32
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
                 None => {
-                    fatal_error!(
-                        self.error_handler,
-                        ParserUnexpectedEOF,
-                        self.locator,
-                        "Unexpected EOF."
-                    );
-                    self.state = ParserState::FatalErrorOccurred;
+                    fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                     return Err(XMLError::ParserUnexpectedEOF);
                 }
             }
 
             if buffer.len() >= CHARDATA_CHUNK_LENGTH {
-                if self.state != ParserState::FatalErrorOccurred {
+                if !self.fatal_error_occurred {
                     self.lexical_handler.comment(&buffer);
                 }
                 buffer.clear();
@@ -2239,18 +2008,16 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
         }
 
-        if !buffer.is_empty() && self.state != ParserState::FatalErrorOccurred {
+        if !buffer.is_empty() && !self.fatal_error_occurred {
             self.lexical_handler.comment(&buffer);
         }
 
         if !self.source.content_bytes().starts_with(b"-->") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidComment,
-                self.locator,
                 "Comment does not end with '-->'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidComment);
         }
         // skip '-->'
@@ -2268,12 +2035,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"<?") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidProcessingInstruction,
-                self.locator,
                 "PI does not start with '<?'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidProcessingInstruction);
         }
         // skip '<?'
@@ -2289,13 +2054,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if target.eq_ignore_ascii_case("xml") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserUnacceptablePITarget,
-                self.locator,
                 "PI target '{}' is not allowed.",
                 target
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         let s = self.skip_whitespaces()?;
@@ -2305,7 +2068,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.source.advance(2)?;
             self.locator.update_column(|c| c + 2);
 
-            if self.state != ParserState::FatalErrorOccurred {
+            if !self.fatal_error_occurred {
                 self.content_handler.processing_instruction(&target, None);
             }
 
@@ -2314,12 +2077,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if s != 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidProcessingInstruction,
-                self.locator,
                 "Whitespaces are required between PI target and data."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
 
         let mut data = String::new();
@@ -2346,22 +2107,14 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     self.locator.update_column(|c| c + 1);
                     data.push(c);
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidCharacter,
-                        self.locator,
                         "A character '0x{:X}' is not allowed in XML document.",
                         c as u32
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
                 None => {
-                    fatal_error!(
-                        self.error_handler,
-                        ParserUnexpectedEOF,
-                        self.locator,
-                        "Unexpected EOF."
-                    );
-                    self.state = ParserState::FatalErrorOccurred;
+                    fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                 }
             }
             if self.source.content_bytes().len() < 2 {
@@ -2371,16 +2124,14 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if !self.source.content_bytes().starts_with(b"?>") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidProcessingInstruction,
-                self.locator,
                 "PI does not close with '?>'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidProcessingInstruction);
         }
 
-        if self.state != ParserState::FatalErrorOccurred {
+        if !self.fatal_error_occurred {
             self.content_handler
                 .processing_instruction(&target, Some(&data));
         }
@@ -2400,12 +2151,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if !self.source.content_bytes().starts_with(b"<") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidStartOrEmptyTag,
-                self.locator,
                 "StartTag or EmptyTag must start with '<'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidStartOrEmptyTag);
         }
         // skip '<'
@@ -2423,13 +2172,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         let mut s = self.skip_whitespaces()?;
         self.grow()?;
         if self.source.content_bytes().is_empty() {
-            fatal_error!(
-                self.error_handler,
-                ParserUnexpectedEOF,
-                self.locator,
-                "Unexpceted EOF."
-            );
-            self.state = ParserState::FatalErrorOccurred;
+            fatal_error!(self, ParserUnexpectedEOF, "Unexpceted EOF.");
             return Err(XMLError::ParserUnexpectedEOF);
         }
 
@@ -2441,12 +2184,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         while !matches!(self.source.content_bytes()[0], b'/' | b'>') {
             if s == 0 {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidStartOrEmptyTag,
-                    self.locator,
                     "Whitespaces are required before attribute names."
                 );
-                self.state = ParserState::FatalErrorOccurred;
             }
 
             att_name.clear();
@@ -2461,12 +2202,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.grow()?;
             if !self.source.content_bytes().starts_with(b"=") {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidAttribute,
-                    self.locator,
                     "'=' is not found after an attribute name in start or empty tag."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidAttribute);
             }
             // skip '='
@@ -2493,9 +2232,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     let prefix = if att_name == "xmlns" {
                         if att_value == XML_NS_NAMESPACE || att_value == XML_XML_NAMESPACE {
                             error!(
-                                self.error_handler,
+                                self,
                                 ParserUnacceptableNamespaceName,
-                                self.locator,
                                 "Namespace '{}' cannot be declared as default namespace.",
                                 att_value
                             );
@@ -2506,16 +2244,14 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             && matches!(self.version, XMLVersion::XML10 | XMLVersion::Unknown)
                         {
                             error!(
-                                self.error_handler,
+                                self,
                                 ParserUnacceptableNamespaceName,
-                                self.locator,
                                 "Empty namespace name is not allowed in Namespace in XML 1.0."
                             );
                         } else if att_value == XML_NS_NAMESPACE {
                             error!(
-                                self.error_handler,
+                                self,
                                 ParserUnacceptableNamespaceName,
-                                self.locator,
                                 "The namespace '{}' cannot be declared explicitly.",
                                 XML_NS_NAMESPACE
                             );
@@ -2523,9 +2259,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             && att_value == XML_XML_NAMESPACE
                         {
                             error!(
-                                self.error_handler,
+                                self,
                                 ParserUnacceptableNamespaceName,
-                                self.locator,
                                 "The namespace '{}' cannot bind prefixes other than 'xml'.",
                                 att_value
                             );
@@ -2533,9 +2268,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             && att_value != XML_XML_NAMESPACE
                         {
                             error!(
-                                self.error_handler,
+                                self,
                                 ParserUnacceptableNamespaceName,
-                                self.locator,
                                 "The namespace '{}' cannot bind the prefix 'xml'.",
                                 &att_name[prefix_length + 1..]
                             );
@@ -2599,13 +2333,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             if self.source.content_bytes().is_empty() {
                 self.grow()?;
                 if self.source.content_bytes().is_empty() {
-                    fatal_error!(
-                        self.error_handler,
-                        ParserUnexpectedEOF,
-                        self.locator,
-                        "Unexpected EOF."
-                    );
-                    self.state = ParserState::FatalErrorOccurred;
+                    fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                     return Err(XMLError::ParserUnexpectedEOF);
                 }
             }
@@ -2632,9 +2360,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     // It is unclear what to do when the corresponding namespace cannot be found,
                     // but for now, we will do nothing except for report an error.
                     error!(
-                        self.error_handler,
+                        self,
                         ParserUndefinedNamespace,
-                        self.locator,
                         "The namespace name for the prefix '{}' has not been declared.",
                         prefix
                     );
@@ -2647,14 +2374,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 for prev in atts.iter().take(i) {
                     if att.local_name == prev.local_name && att.uri == prev.uri {
                         fatal_error!(
-                            self.error_handler,
+                            self,
                             ParserDuplicateAttributes,
-                            self.locator,
                             "The attribute '{{{}}}{}' is duplicated",
                             att.uri.as_deref().unwrap_or("(null)"),
                             att.local_name.as_deref().unwrap()
                         );
-                        self.state = ParserState::FatalErrorOccurred;
                         break;
                     }
                 }
@@ -2664,13 +2389,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 for prev in atts.iter().take(i) {
                     if att.qname == prev.qname {
                         fatal_error!(
-                            self.error_handler,
+                            self,
                             ParserDuplicateAttributes,
-                            self.locator,
                             "The attribute '{}' is duplicated.",
                             att.qname
                         );
-                        self.state = ParserState::FatalErrorOccurred;
                         break;
                     }
                 }
@@ -2682,16 +2405,14 @@ impl XMLReader<DefaultParserSpec<'_>> {
             && !self.source.content_bytes().starts_with(b"/>")
         {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidStartOrEmptyTag,
-                self.locator,
                 "Start or Empty tag does not end with '>' or '/>'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidStartOrEmptyTag);
         }
 
-        if self.state != ParserState::FatalErrorOccurred {
+        if !self.fatal_error_occurred {
             for att in atts.iter().filter(|att| att.is_nsdecl()) {
                 let len = att.local_name.as_deref().unwrap().len();
                 if len == att.qname.len() {
@@ -2754,12 +2475,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
             if !self.source.content_bytes().starts_with(b"</") {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidEndTag,
-                    self.locator,
                     "'</' is not found at the head of the end tag."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidEndTag);
             }
             // skip '</'
@@ -2785,14 +2504,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     end_tag_name
                 };
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserMismatchElementType,
-                    self.locator,
                     "The start tag ('{}') and end tag ('{}') names do not match.",
                     name,
                     end_tag_name
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserMismatchElementType);
             }
 
@@ -2801,12 +2518,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
             if !self.source.content_bytes().starts_with(b">") {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidEndTag,
-                    self.locator,
                     "The end tag does not end with '>'."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidEndTag);
             }
             // skip '>'
@@ -2814,7 +2529,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.locator.update_column(|c| c + 1);
         }
 
-        if self.state != ParserState::FatalErrorOccurred {
+        if !self.fatal_error_occurred {
             if self.config.is_enable(ParserOption::Namespaces) {
                 if prefix_length > 0 {
                     if let Some(&pos) = self.prefix_map.get(&name[..prefix_length]) {
@@ -2846,7 +2561,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         // resume namespace stack
         while self.namespaces.len() > old_ns_stack_depth {
             let (pre, _, old_position) = self.namespaces.pop().unwrap();
-            if self.state != ParserState::FatalErrorOccurred {
+            if !self.fatal_error_occurred {
                 self.content_handler
                     .end_prefix_mapping((!pre.is_empty()).then_some(pre.as_ref()));
             }
@@ -2902,12 +2617,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if !self.source.content_bytes().starts_with(b"&") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidEntityReference,
-                self.locator,
                 "The entity reference does not start with '&'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidEntityReference);
         }
         // skip '&'
@@ -2924,12 +2637,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b";") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidEntityReference,
-                self.locator,
                 "The entity reference does not end with ';'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidEntityReference);
         }
         // skip ';'
@@ -2944,13 +2655,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
             {
                 // [WFC: No Recursion]
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserEntityRecursion,
-                    self.locator,
                     "The entity '{}' appears recursively.",
                     name
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserEntityRecursion);
             }
             match decl {
@@ -2968,7 +2677,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         None,
                     )?;
 
-                    if self.state != ParserState::FatalErrorOccurred {
+                    if !self.fatal_error_occurred {
                         self.lexical_handler.start_entity(&name);
                     }
 
@@ -2977,17 +2686,15 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                     if !self.source.is_empty() {
                         fatal_error!(
-                            self.error_handler,
+                            self,
                             ParserEntityIncorrectNesting,
-                            self.locator,
                             "The entity '{}' is nested incorrectly.",
                             name
                         );
-                        self.state = ParserState::FatalErrorOccurred;
                     }
 
                     self.pop_source()?;
-                    if self.state != ParserState::FatalErrorOccurred {
+                    if !self.fatal_error_occurred {
                         self.lexical_handler.end_entity();
                     }
                 }
@@ -3016,7 +2723,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                     public_id.as_deref().map(Arc::from),
                                 )?;
 
-                                if self.state != ParserState::FatalErrorOccurred {
+                                if !self.fatal_error_occurred {
                                     self.lexical_handler.start_entity(&name);
                                 }
 
@@ -3025,44 +2732,39 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                                 if !self.source.is_empty() {
                                     fatal_error!(
-                                        self.error_handler,
+                                        self,
                                         ParserEntityIncorrectNesting,
-                                        self.locator,
                                         "The entity '{}' is nested incorrectly.",
                                         name
                                     );
-                                    self.state = ParserState::FatalErrorOccurred;
                                 }
 
                                 self.pop_source()?;
-                                if self.state != ParserState::FatalErrorOccurred {
+                                if !self.fatal_error_occurred {
                                     self.lexical_handler.end_entity();
                                 }
                             }
                             Err(err) => {
                                 error!(
-                                    self.error_handler,
+                                    self,
                                     err,
-                                    self.locator,
                                     "The external general entity '{}' cannot be resolved.",
                                     name
                                 );
                             }
                         }
-                    } else if self.state != ParserState::FatalErrorOccurred {
+                    } else if !self.fatal_error_occurred {
                         self.content_handler.skipped_entity(&name);
                     }
                 }
                 EntityDecl::ExternalGeneralUnparsedEntity { .. } => {
                     // [WFC: Parsed Entity]
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidEntityReference,
-                        self.locator,
                         "The unparsed entity '{}' cannot be referred.",
                         name
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
                 EntityDecl::InternalParameterEntity { .. }
                 | EntityDecl::ExternalParameterEntity { .. } => {
@@ -3079,38 +2781,31 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 if !self.has_external_subset || self.standalone == Some(true) {
                     // [WFC: Entity Declared]
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserEntityNotFound,
-                        self.locator,
                         "The entity '{}' is not declared.",
                         name
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 } else {
                     // [VC: Entity Declared]
                     error!(
-                        self.error_handler,
-                        ParserEntityNotFound,
-                        self.locator,
-                        "The entity '{}' is not declared.",
-                        name
+                        self,
+                        ParserEntityNotFound, "The entity '{}' is not declared.", name
                     );
                 }
             } else {
                 // [WFC: Entity Declared]
                 if self.standalone == Some(true) {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserEntityNotFound,
-                        self.locator,
                         "The entity '{}' is not declared.",
                         name
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                 }
             }
 
-            if self.state != ParserState::FatalErrorOccurred {
+            if !self.fatal_error_occurred {
                 self.content_handler.skipped_entity(&name);
             }
         }
@@ -3152,12 +2847,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"<?xml") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidTextDecl,
-                self.locator,
                 "The text declaration does not start '<?xml'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidTextDecl);
         }
         // skip '<?xml'
@@ -3169,12 +2862,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         if self.source.content_bytes().starts_with(b"version") {
             if s == 0 {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidTextDecl,
-                    self.locator,
                     "Whitespaces are required before 'encoding'."
                 );
-                self.state = ParserState::FatalErrorOccurred;
             }
             let (version, _) = self.parse_version_info(false)?;
             self.version = version;
@@ -3185,12 +2876,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
         if s == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidXMLDecl,
-                self.locator,
                 "Whitespaces are required before 'encoding'."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
         let encoding = self.parse_encoding_decl(false)?;
         self.source.switch_encoding(&encoding)?;
@@ -3200,12 +2889,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if !self.source.content_bytes().starts_with(b"?>") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidTextDecl,
-                self.locator,
                 "The text declaration does not end with '?>'."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidTextDecl);
         }
         // skip '?>'
@@ -3243,12 +2930,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     Some(']') => {
                         if self.source.content_bytes().starts_with(b"]>") {
                             fatal_error!(
-                                self.error_handler,
+                                self,
                                 ParserUnacceptablePatternInCharData,
-                                self.locator,
                                 "']]>' is not allowed in a character data."
                             );
-                            self.state = ParserState::FatalErrorOccurred;
                         }
                         self.locator.update_column(|c| c + 1);
                         buffer.push(']');
@@ -3259,13 +2944,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     }
                     Some(c) => {
                         fatal_error!(
-                            self.error_handler,
+                            self,
                             ParserInvalidCharacter,
-                            self.locator,
                             "The characeter '0x{:X}' is not allowed in the XML document.",
                             c as u32
                         );
-                        self.state = ParserState::FatalErrorOccurred;
                         self.locator.update_column(|c| c + 1);
                         buffer.push(c);
                     }
@@ -3273,7 +2956,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 }
 
                 if buffer.len() >= CHARDATA_CHUNK_LENGTH {
-                    if self.state != ParserState::FatalErrorOccurred {
+                    if !self.fatal_error_occurred {
                         self.content_handler.characters(&buffer);
                     }
                     buffer.clear();
@@ -3295,7 +2978,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 buffer.push(self.parse_char_ref()?);
 
                 if buffer.len() >= CHARDATA_CHUNK_LENGTH {
-                    if self.state != ParserState::FatalErrorOccurred {
+                    if !self.fatal_error_occurred {
                         self.content_handler.characters(&buffer);
                     }
                     buffer.clear();
@@ -3307,7 +2990,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
         }
 
-        if !buffer.is_empty() && self.state != ParserState::FatalErrorOccurred {
+        if !buffer.is_empty() && !self.fatal_error_occurred {
             self.content_handler.characters(&buffer);
         }
 
@@ -3325,19 +3008,17 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if !self.source.content_bytes().starts_with(b"<![CDATA[") {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidCDSect,
-                self.locator,
                 "CDSect must start with '<![CDATA['."
             );
-            self.state = ParserState::FatalErrorOccurred;
             return Err(XMLError::ParserInvalidCDSect);
         }
         // skip '<![CDATA['
         self.source.advance(9)?;
         self.locator.update_column(|c| c + 9);
 
-        if self.state != ParserState::FatalErrorOccurred {
+        if !self.fatal_error_occurred {
             self.lexical_handler.start_cdata();
         }
 
@@ -3363,13 +3044,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 }
                 Some(c) => {
                     fatal_error!(
-                        self.error_handler,
+                        self,
                         ParserInvalidCharacter,
-                        self.locator,
                         "The character '0x{:X}' is not allowed in the XML document.",
                         c as u32
                     );
-                    self.state = ParserState::FatalErrorOccurred;
                     self.locator.update_column(|c| c + 1);
                     buffer.push(c);
                 }
@@ -3377,7 +3056,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
 
             if buffer.len() >= CHARDATA_CHUNK_LENGTH {
-                if self.state != ParserState::FatalErrorOccurred {
+                if !self.fatal_error_occurred {
                     self.content_handler.characters(&buffer);
                 }
                 buffer.clear();
@@ -3388,25 +3067,19 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
         }
 
-        if !buffer.is_empty() && self.state != ParserState::FatalErrorOccurred {
+        if !buffer.is_empty() && !self.fatal_error_occurred {
             self.content_handler.characters(&buffer);
         }
 
         if !self.source.content_bytes().starts_with(b"]]>") {
-            fatal_error!(
-                self.error_handler,
-                ParserInvalidCDSect,
-                self.locator,
-                "CDSect does not end with ']]>'."
-            );
-            self.state = ParserState::FatalErrorOccurred;
+            fatal_error!(self, ParserInvalidCDSect, "CDSect does not end with ']]>'.");
             return Err(XMLError::ParserInvalidCDSect);
         }
         // skip ']]>'
         self.source.advance(3)?;
         self.locator.update_column(|c| c + 3);
 
-        if self.state != ParserState::FatalErrorOccurred {
+        if !self.fatal_error_occurred {
             self.lexical_handler.end_cdata();
         }
 
@@ -3468,12 +3141,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             }
             _ => {
                 fatal_error!(
-                    self.error_handler,
+                    self,
                     ParserInvalidCharacterReference,
-                    self.locator,
                     "A character reference must start with '&#' or '&#x'."
                 );
-                self.state = ParserState::FatalErrorOccurred;
                 return Err(XMLError::ParserInvalidCharacterReference);
             }
         };
@@ -3485,44 +3156,32 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         self.source.grow()?;
         let content = self.source.content_bytes();
         if content.is_empty() {
-            fatal_error!(
-                self.error_handler,
-                ParserUnexpectedEOF,
-                self.locator,
-                "Unexpected EOF."
-            );
-            self.state = ParserState::FatalErrorOccurred;
+            fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
             Err(XMLError::ParserUnexpectedEOF)
         } else if (hex && content[0].is_ascii_hexdigit())
             || (!hex && content[0].is_ascii_digit())
             || overflowed
         {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidCharacterReference,
-                self.locator,
                 "The code point specified by the character reference is too large."
             );
-            self.state = ParserState::FatalErrorOccurred;
             Err(XMLError::ParserInvalidCharacterReference)
         } else if content[0] != b';' {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidCharacterReference,
-                self.locator,
                 "The character reference does not end with ';'"
             );
-            self.state = ParserState::FatalErrorOccurred;
             Err(XMLError::ParserInvalidCharacterReference)
         } else if len == 0 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidCharacterReference,
-                self.locator,
                 "'&#{};' is not a correct character reference.",
                 if hex { "x" } else { "" }
             );
-            self.state = ParserState::FatalErrorOccurred;
             Err(XMLError::ParserInvalidCharacterReference)
         } else if let Some(c) = char::from_u32(code).filter(|c| self.is_char(*c)) {
             // skip ';'
@@ -3532,13 +3191,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             Ok(c)
         } else {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserInvalidCharacter,
-                self.locator,
                 "The code point '0x{:X}' does not indicate a character that is allowed in a XML document.",
                 code
             );
-            self.state = ParserState::FatalErrorOccurred;
             Err(XMLError::ParserInvalidCharacter)
         }
     }

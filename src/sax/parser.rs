@@ -113,7 +113,6 @@ pub enum ParserState {
     InExternalSubset,
     InTextDeclaration,
     Parsing,
-    FatalErrorOccurred,
     Finished,
 }
 
@@ -138,6 +137,7 @@ pub struct XMLReader<Spec: ParserSpec> {
 
     // Parser Context
     pub(crate) state: ParserState,
+    pub(crate) fatal_error_occurred: bool,
     pub(crate) version: XMLVersion,
     pub(crate) encoding: Option<String>,
     pub(crate) standalone: Option<bool>,
@@ -264,6 +264,7 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
 
         // reset Parser Context
         self.state = ParserState::BeforeStart;
+        self.fatal_error_occurred = false;
         self.version = XMLVersion::default();
         self.encoding = None;
         self.standalone = None;

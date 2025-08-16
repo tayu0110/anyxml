@@ -77,49 +77,53 @@ macro_rules! generic_error {
 }
 
 macro_rules! fatal_error {
-    ($handler:expr, $code:ident, $locator:expr, $message:literal, $( $args:expr ),+) => {
-        $crate::sax::error::generic_error!(fatal_error, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::FatalError, $locator, $message, $( $args ),+);
+    ($reader:expr, $code:ident, $message:literal, $( $args:expr ),+) => {
+        $crate::sax::error::generic_error!(fatal_error, $reader.error_handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::FatalError, $reader.locator, $message, $( $args ),+);
+        $reader.fatal_error_occurred = true;
     };
-    ($handler:expr, $code:ident, $locator:expr, $message:literal) => {
-        $crate::sax::error::generic_error!(fatal_error, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::FatalError, $locator, $message);
+    ($reader:expr, $code:ident, $message:literal) => {
+        $crate::sax::error::generic_error!(fatal_error, $reader.error_handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::FatalError, $reader.locator, $message);
+        $reader.fatal_error_occurred = true;
     };
-    ($handler:expr, $code:ident, $locator:expr, $message:expr) => {
-        $crate::sax::error::generic_error!(fatal_error, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::FatalError, $locator, $message);
+    ($reader:expr, $code:ident, $message:expr) => {
+        $crate::sax::error::generic_error!(fatal_error, $reader.error_handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::FatalError, $reader.locator, $message);
+        $reader.fatal_error_occurred = true;
     };
-    ($handler:expr, $code:ident, $locator:expr) => {
-        $crate::sax::error::generic_error!(fatal_error, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::FatalError, $locator);
+    ($reader:expr, $code:ident) => {
+        $crate::sax::error::generic_error!(fatal_error, $reader.error_handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::FatalError, $reader.locator);
+        $reader.fatal_error_occurred = true;
     };
 }
 
 macro_rules! error {
-    ($handler:expr, $code:ident, $locator:expr, $message:literal, $( $args:expr ),+) => {
+    ($reader:expr, $code:ident, $message:literal, $( $args:expr ),+) => {
         #[allow(unused)]
         use $crate::error::XMLError::*;
-        $crate::sax::error::generic_error!(error, $handler, $code, $crate::error::XMLErrorLevel::Error, $locator, $message, $( $args ),+);
+        $crate::sax::error::generic_error!(error, $reader.error_handler, $code, $crate::error::XMLErrorLevel::Error, $reader.locator, $message, $( $args ),+);
     };
-    ($handler:expr, $code:ident, $locator:expr, $message:literal) => {
-        $crate::sax::error::generic_error!(error, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Error, $locator, $message);
+    ($reader:expr, $code:ident, $message:literal) => {
+        $crate::sax::error::generic_error!(error, $reader.error_handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Error, $reader.locator, $message);
     };
-    ($handler:expr, $code:ident, $locator:expr, $message:expr) => {
-        $crate::sax::error::generic_error!(error, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Error, $locator, $message);
+    ($reader:expr, $code:ident, $message:expr) => {
+        $crate::sax::error::generic_error!(error, $reader.error_handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Error, $reader.locator, $message);
     };
-    ($handler:expr, $code:ident, $locator:expr) => {
-        $crate::sax::error::generic_error!(error, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Error, $locator);
+    ($reader:expr, $code:ident) => {
+        $crate::sax::error::generic_error!(error, $reader.error_handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Error, $reader.locator);
     };
 }
 
 macro_rules! warning {
-    ($handler:expr, $code:ident, $locator:expr, $message:literal, $( $args:expr ),+) => {
-        $crate::sax::error::generic_error!(warning, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Warning, $locator, $message, $( $args ),+);
+    ($reader:expr, $code:ident, $message:literal, $( $args:expr ),+) => {
+        $crate::sax::error::generic_error!(warning, $reader.error_handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Warning, $reader.locator, $message, $( $args ),+);
     };
-    ($handler:expr, $code:ident, $locator:expr, $message:literal) => {
-        $crate::sax::error::generic_error!(warning, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Warning, $locator, $message);
+    ($reader:expr, $code:ident, $message:literal) => {
+        $crate::sax::error::generic_error!(warning, $reader.error_handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Warning, $reader.locator, $message);
     };
-    ($handler:expr, $code:ident, $locator:expr, $message:expr) => {
-        $crate::sax::error::generic_error!(warning, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Warning, $locator, $message);
+    ($reader:expr, $code:ident, $message:expr) => {
+        $crate::sax::error::generic_error!(warning, $reader.error_handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Warning, $reader.locator, $message);
     };
-    ($handler:expr, $code:ident, $locator:expr) => {
-        $crate::sax::error::generic_error!(warning, $handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Warning, $locator);
+    ($reader:expr, $code:ident) => {
+        $crate::sax::error::generic_error!(warning, $reader.error_handler, $crate::error::XMLError::$code, $crate::error::XMLErrorLevel::Warning, $reader.locator);
     };
 }
 

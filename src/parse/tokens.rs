@@ -1,11 +1,7 @@
 use crate::{
     ParserSpec,
     error::XMLError,
-    sax::{
-        error::fatal_error,
-        parser::{ParserState, XMLReader},
-        source::InputSource,
-    },
+    sax::{error::fatal_error, parser::XMLReader, source::InputSource},
 };
 
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
@@ -66,13 +62,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         }
 
         if buffer.len() == orig {
-            fatal_error!(
-                self.error_handler,
-                ParserEmptyName,
-                self.locator,
-                "Nmtoken is empty."
-            );
-            self.state = ParserState::FatalErrorOccurred;
+            fatal_error!(self, ParserEmptyName, "Nmtoken is empty.");
             return Err(XMLError::ParserEmptyName);
         }
         Ok(())
@@ -83,13 +73,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             .source
             .next_char_if(|c| self.version.is_name_start_char(c))?
         else {
-            fatal_error!(
-                self.error_handler,
-                ParserEmptyName,
-                self.locator,
-                "Name is empty."
-            );
-            self.state = ParserState::FatalErrorOccurred;
+            fatal_error!(self, ParserEmptyName, "Name is empty.");
             return Err(XMLError::ParserEmptyName);
         };
         buffer.push(c);
@@ -129,13 +113,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         let orig = buffer.len();
         self.parse_ncname_allow_empty(buffer)?;
         if buffer.len() == orig {
-            fatal_error!(
-                self.error_handler,
-                ParserEmptyName,
-                self.locator,
-                "Name is empty."
-            );
-            self.state = ParserState::FatalErrorOccurred;
+            fatal_error!(self, ParserEmptyName, "Name is empty.");
             return Err(XMLError::ParserEmptyName);
         }
         Ok(())
@@ -148,12 +126,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
 
         if self.source.next_char_if(|c| c == ':')?.is_none() {
             return if buffer.len() == orig {
-                fatal_error!(
-                    self.error_handler,
-                    ParserEmptyQName,
-                    self.locator,
-                    "QName is empty."
-                );
+                fatal_error!(self, ParserEmptyQName, "QName is empty.");
                 Err(XMLError::ParserEmptyQName)
             } else {
                 Ok(0)
@@ -161,12 +134,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         };
         if buffer.len() == orig {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserEmptyQNamePrefix,
-                self.locator,
                 "':' is found in QName, but its prefix is empty."
             );
-            self.state = ParserState::FatalErrorOccurred;
         }
         let prefix = buffer.len() - orig;
         buffer.push(':');
@@ -175,12 +146,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
 
         if buffer.len() == orig + prefix + 1 {
             fatal_error!(
-                self.error_handler,
+                self,
                 ParserEmptyQNameLocalPart,
-                self.locator,
                 "':' is found in QName, but its local part is empty."
             );
-            self.state = ParserState::FatalErrorOccurred;
             Err(XMLError::ParserEmptyQNameLocalPart)
         } else if prefix == 0 {
             Err(XMLError::ParserEmptyQNamePrefix)
