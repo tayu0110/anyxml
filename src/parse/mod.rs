@@ -1257,7 +1257,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(9)?;
         self.locator.update_column(|c| c + 9);
 
-        if self.skip_whitespaces()? == 0 {
+        let base_entity_stack_depth = self.entity_name_stack.len();
+        if self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0 {
             fatal_error!(
                 self,
                 ParserInvalidAttlistDecl,
@@ -1272,7 +1273,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.parse_name(&mut name)?;
         }
 
-        let mut s = self.skip_whitespaces()?;
+        let mut s = self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
         self.grow()?;
         let mut att_name = String::new();
         while !self.source.content_bytes().starts_with(b">") {
@@ -1284,7 +1285,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 );
             }
             att_name.clear();
-            let (atttype, default_decl) = self.parse_att_def(false, &mut att_name)?;
+            let (atttype, default_decl) =
+                self.parse_att_def(false, base_entity_stack_depth, &mut att_name)?;
             if !self.fatal_error_occurred {
                 self.decl_handler
                     .attribute_decl(&name, &att_name, &atttype, &default_decl);
@@ -1301,13 +1303,22 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     name
                 );
             }
-            s = self.skip_whitespaces()?;
+            s = self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
             if self.source.content_bytes().is_empty() {
                 self.grow()?;
                 if self.source.content_bytes().is_empty() {
                     break;
                 }
             }
+        }
+
+        if self.entity_name_stack.len() != base_entity_stack_depth {
+            fatal_error!(
+                self,
+                ParserEntityIncorrectNesting,
+                "A parameter entity in an element declaration is nested incorrectly."
+            );
+            return Err(XMLError::ParserEntityIncorrectNesting);
         }
 
         if !self.source.content_bytes().starts_with(b">") {
@@ -1327,9 +1338,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
     pub(crate) fn parse_att_def(
         &mut self,
         need_trim_whitespace: bool,
+        base_entity_stack_depth: usize,
         att_name: &mut String,
     ) -> Result<(AttributeType, DefaultDecl), XMLError> {
-        if need_trim_whitespace && self.skip_whitespaces()? == 0 {
+        if need_trim_whitespace
+            && self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0
+        {
             fatal_error!(
                 self,
                 ParserInvalidAttlistDecl,
@@ -1343,7 +1357,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.parse_name(att_name)?;
         }
 
-        if self.skip_whitespaces()? == 0 {
+        if self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0 {
             fatal_error!(
                 self,
                 ParserInvalidAttlistDecl,
@@ -1362,25 +1376,36 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.source.advance(1)?;
                 self.locator.update_column(|c| c + 1);
 
-                self.skip_whitespaces()?;
+                let enum_entity_stack_depth = self.entity_name_stack.len();
+
+                self.skip_whitespaces_with_handle_peref(enum_entity_stack_depth, true)?;
                 let mut buffer = String::new();
                 self.parse_nmtoken(&mut buffer)?;
                 let mut ret = vec![];
-                self.skip_whitespaces()?;
+                self.skip_whitespaces_with_handle_peref(enum_entity_stack_depth, true)?;
                 self.grow()?;
                 while self.source.content_bytes().starts_with(b"|") {
                     self.source.advance(1)?;
                     self.locator.update_column(|c| c + 1);
-                    self.skip_whitespaces()?;
+                    self.skip_whitespaces_with_handle_peref(enum_entity_stack_depth, true)?;
                     ret.push(buffer.as_str().into());
                     buffer.clear();
                     self.parse_nmtoken(&mut buffer)?;
-                    self.skip_whitespaces()?;
+                    self.skip_whitespaces_with_handle_peref(enum_entity_stack_depth, true)?;
                     if self.source.content_bytes().is_empty() {
                         self.grow()?;
                     }
                 }
                 ret.push(buffer.into_boxed_str());
+
+                if self.entity_name_stack.len() != enum_entity_stack_depth {
+                    fatal_error!(
+                        self,
+                        ParserEntityIncorrectNesting,
+                        "A parameter entity in an AttDef is nested incorrectly."
+                    );
+                    return Err(XMLError::ParserEntityIncorrectNesting);
+                }
 
                 if !self.source.content_bytes().starts_with(b")") {
                     fatal_error!(
@@ -1411,7 +1436,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.source.advance(8)?;
                 self.locator.update_column(|c| c + 8);
 
-                if self.skip_whitespaces()? == 0 {
+                if self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0 {
                     fatal_error!(
                         self,
                         ParserInvalidAttlistDecl,
@@ -1432,33 +1457,44 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.source.advance(1)?;
                 self.locator.update_column(|c| c + 1);
 
-                self.skip_whitespaces()?;
+                let enum_entity_stack_depth = self.entity_name_stack.len();
+
+                self.skip_whitespaces_with_handle_peref(enum_entity_stack_depth, true)?;
                 let mut buffer = String::new();
                 if self.config.is_enable(ParserOption::Namespaces) {
                     self.parse_ncname(&mut buffer)?;
                 } else {
                     self.parse_name(&mut buffer)?;
                 }
-                self.skip_whitespaces()?;
+                self.skip_whitespaces_with_handle_peref(enum_entity_stack_depth, true)?;
                 self.grow()?;
                 let mut ret = vec![];
                 while self.source.content_bytes().starts_with(b"|") {
                     // skip '|'
                     self.source.advance(1)?;
                     self.locator.update_column(|c| c + 1);
-                    self.skip_whitespaces()?;
+                    self.skip_whitespaces_with_handle_peref(enum_entity_stack_depth, true)?;
                     ret.push(buffer.as_str().into());
                     if self.config.is_enable(ParserOption::Namespaces) {
                         self.parse_ncname(&mut buffer)?;
                     } else {
                         self.parse_name(&mut buffer)?;
                     }
-                    self.skip_whitespaces()?;
+                    self.skip_whitespaces_with_handle_peref(enum_entity_stack_depth, true)?;
                     if self.source.content_bytes().is_empty() {
                         self.grow()?;
                     }
                 }
                 ret.push(buffer.into_boxed_str());
+
+                if self.entity_name_stack.len() != enum_entity_stack_depth {
+                    fatal_error!(
+                        self,
+                        ParserEntityIncorrectNesting,
+                        "A parameter entity in an AttDef is nested incorrectly."
+                    );
+                    return Err(XMLError::ParserEntityIncorrectNesting);
+                }
 
                 if !self.source.content_bytes().starts_with(b")") {
                     fatal_error!(
@@ -1520,7 +1556,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
         };
 
-        if self.skip_whitespaces()? == 0 {
+        if self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0 {
             fatal_error!(
                 self,
                 ParserInvalidAttlistDecl,
@@ -1548,7 +1584,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.source.advance(6)?;
                 self.locator.update_column(|c| c + 6);
 
-                if self.skip_whitespaces()? == 0 {
+                if self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0 {
                     fatal_error!(
                         self,
                         ParserInvalidAttlistDecl,
