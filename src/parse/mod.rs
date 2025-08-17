@@ -1626,7 +1626,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(10)?;
         self.locator.update_column(|c| c + 10);
 
-        if self.skip_whitespaces()? == 0 {
+        let base_entity_stack_depth = self.entity_name_stack.len();
+
+        if self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0 {
             fatal_error!(
                 self,
                 ParserInvalidNotationDecl,
@@ -1641,7 +1643,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.parse_name(&mut name)?;
         }
 
-        if self.skip_whitespaces()? == 0 {
+        if self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0 {
             fatal_error!(
                 self,
                 ParserInvalidNotationDecl,
@@ -1672,7 +1674,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.source.advance(6)?;
                 self.locator.update_column(|c| c + 6);
 
-                if self.skip_whitespaces()? == 0 {
+                if self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0 {
                     fatal_error!(
                         self,
                         ParserInvalidPubidLiteral,
@@ -1682,7 +1684,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 let mut public_id = String::new();
                 self.parse_pubid_literal(&mut public_id)?;
 
-                let s = self.skip_whitespaces()?;
+                let s = self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 self.grow()?;
                 // If '>' appears, notation declaration finished.
                 if self.source.content_bytes().starts_with(b">") {
@@ -1709,7 +1711,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                 let mut system_id = String::new();
                 self.parse_system_literal(&mut system_id)?;
-                self.skip_whitespaces()?;
+                self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
 
                 if !self.fatal_error_occurred {
                     self.dtd_handler
@@ -1725,6 +1727,17 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 return Err(XMLError::ParserInvalidNotationDecl);
             }
         }
+
+        self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
+        if self.entity_name_stack.len() != base_entity_stack_depth {
+            fatal_error!(
+                self,
+                ParserEntityIncorrectNesting,
+                "A parameter entity in a notation declaration is nested incorrectly."
+            );
+            return Err(XMLError::ParserEntityIncorrectNesting);
+        }
+
         Ok(())
     }
 
@@ -1744,7 +1757,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 // skip 'SYSTEM'
                 self.source.advance(6)?;
                 self.locator.update_column(|c| c + 6);
-                if self.skip_whitespaces()? == 0 {
+                let s = if self.state == ParserState::InExternalSubset {
+                    self.skip_whitespaces_with_handle_peref(self.entity_name_stack.len(), true)?
+                } else {
+                    self.skip_whitespaces()?
+                };
+                if s == 0 {
                     fatal_error!(
                         self,
                         ParserInvalidExternalID,
@@ -1758,7 +1776,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 // skip 'PUBLIC'
                 self.source.advance(6)?;
                 self.locator.update_column(|c| c + 6);
-                if self.skip_whitespaces()? == 0 {
+                let s = if self.state == ParserState::InExternalSubset {
+                    self.skip_whitespaces_with_handle_peref(self.entity_name_stack.len(), true)?
+                } else {
+                    self.skip_whitespaces()?
+                };
+                if s == 0 {
                     fatal_error!(
                         self,
                         ParserInvalidExternalID,
@@ -1766,7 +1789,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     );
                 }
                 self.parse_pubid_literal(public_id.get_or_insert_default())?;
-                if self.skip_whitespaces()? == 0 {
+                let s = if self.state == ParserState::InExternalSubset {
+                    self.skip_whitespaces_with_handle_peref(self.entity_name_stack.len(), true)?
+                } else {
+                    self.skip_whitespaces()?
+                };
+                if s == 0 {
                     fatal_error!(
                         self,
                         ParserInvalidExternalID,
