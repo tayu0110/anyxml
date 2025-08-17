@@ -1,7 +1,7 @@
 pub mod literals;
 pub mod tokens;
 
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, str::from_utf8_unchecked, sync::Arc};
 
 use crate::{
     CHARDATA_CHUNK_LENGTH, DefaultParserSpec, ENCODING_NAME_LIMIT_LENGTH, ParserSpec,
@@ -417,6 +417,56 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.content_handler.skipped_entity(&name);
         }
         Ok(())
+    }
+
+    /// Skip white space while handling parameter entity references.
+    ///
+    /// If `in_decl` is `true`, whitespace is considered to appear within the markup declaration.
+    /// Parameter entity references within markup declarations in the internal subset are WFC
+    /// violations, so a fatal error is reported.
+    pub(crate) fn skip_whitespaces_with_handle_peref(
+        &mut self,
+        base_entity_stack_depth: usize,
+        in_decl: bool,
+    ) -> Result<usize, XMLError> {
+        let mut s = self.skip_whitespaces()?;
+        loop {
+            self.grow()?;
+            if self.source.content_bytes().starts_with(b"%") {
+                let rem = unsafe {
+                    // # Safety
+                    // `self.source.content_bytes` is a valid UTF-8 byte sequence,
+                    // and '%' is a single byte UTF-8 character.
+                    // Therefore, `self.source.content_bytes[1..]` is also a valid
+                    // UTF-8 byte sequence.
+                    from_utf8_unchecked(&self.source.content_bytes()[1..])
+                };
+                // A single ‘%’ is definitely not a parameter entity, so processing ends.
+                if rem.is_empty() || rem.starts_with(|c| self.is_whitespace(c)) {
+                    break Ok(s);
+                }
+                if in_decl && self.state == ParserState::InInternalSubset {
+                    fatal_error!(
+                        self,
+                        ParserInvalidEntityReference,
+                        "A parameter entity appears in the markup declaration in an internal subset."
+                    );
+                    return Err(XMLError::ParserInvalidEntityReference);
+                } else {
+                    self.parse_pe_reference()?;
+                    s += self.skip_whitespaces()?;
+                    self.grow()?;
+                }
+            } else if self.source.is_empty()
+                && self.entity_name_stack.len() > base_entity_stack_depth
+            {
+                self.pop_source()?;
+                s += 1 + self.skip_whitespaces()?;
+                self.grow()?;
+            } else {
+                break Ok(s + self.skip_whitespaces()?);
+            }
+        }
     }
 
     /// ```text
@@ -1236,26 +1286,26 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(8)?;
         self.locator.update_column(|c| c + 8);
 
-        if self.skip_whitespaces()? == 0 {
+        let base_entity_stack_depth = self.entity_name_stack.len();
+
+        let mut s = self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
+        self.grow()?;
+        let mut pe = false;
+        while self.source.content_bytes().starts_with(b"%") {
+            pe = true;
+            // skip '%'
+            self.source.advance(1)?;
+            self.locator.update_column(|c| c + 1);
+
+            s = self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
+        }
+
+        if s == 0 {
             fatal_error!(
                 self,
                 ParserInvalidEntityDecl,
-                "Whitespaces are required after '<!ENTITY' in entity declaration."
+                "Whitespaces are required before Name in an entity declaration."
             );
-        }
-
-        self.grow()?;
-        let mut pe = false;
-        if self.source.next_char_if(|c| c == '%')?.is_some() {
-            pe = true;
-            self.locator.update_column(|c| c + 1);
-            if self.skip_whitespaces()? == 0 {
-                fatal_error!(
-                    self,
-                    ParserInvalidEntityDecl,
-                    "Whitespaces are required after '%' in entity declaration."
-                );
-            }
         }
 
         let mut name = if pe { "%".to_owned() } else { String::new() };
@@ -1265,7 +1315,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.parse_name(&mut name)?;
         }
 
-        if self.skip_whitespaces()? == 0 {
+        if self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0 {
             fatal_error!(
                 self,
                 ParserInvalidEntityDecl,
@@ -1283,8 +1333,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 let mut public_id = None;
                 self.parse_external_id(&mut system_id, &mut public_id)?;
 
-                let s = self.skip_whitespaces()?;
-                self.grow()?;
+                let s = self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
 
                 // If this is a general entity declaration, NDataDecl may follow.
                 // [73] EntityDef ::= EntityValue | (ExternalID NDataDecl?)
@@ -1312,7 +1361,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     self.source.advance(5)?;
                     self.locator.update_column(|c| c + 5);
 
-                    if self.skip_whitespaces()? == 0 {
+                    if self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0
+                    {
                         fatal_error!(
                             self,
                             ParserInvalidEntityDecl,
@@ -1325,7 +1375,16 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     } else {
                         self.parse_name(ndata.get_or_insert_default())?;
                     }
-                    self.skip_whitespaces()?;
+                    self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
+                }
+
+                if self.entity_name_stack.len() != base_entity_stack_depth {
+                    fatal_error!(
+                        self,
+                        ParserEntityIncorrectNesting,
+                        "A parameter entity in an element declaration is nested incorrectly."
+                    );
+                    return Err(XMLError::ParserEntityIncorrectNesting);
                 }
                 if !self.source.content_bytes().starts_with(b">") {
                     fatal_error!(
@@ -1356,13 +1415,17 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     }
                 }
             }
-            _ => {
+            [_, ..] => {
                 fatal_error!(
                     self,
                     ParserInvalidEntityDecl,
                     "Neither EntityValue nor ExternalID are found in entity declaration."
                 );
                 return Err(XMLError::ParserInvalidEntityDecl);
+            }
+            [] => {
+                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
+                return Err(XMLError::ParserUnexpectedEOF);
             }
         }
 
