@@ -1093,6 +1093,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(8)?;
         self.locator.update_column(|c| c + 8);
 
+        // The base URI of the entity is determined by the position of the first occurrence
+        // of '<', so it must be saved at this point before the parameter entity is resolved.
+        let base_uri = self.base_uri.clone();
         let base_entity_stack_depth = self.entity_name_stack.len();
 
         let mut s = self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
@@ -1131,9 +1134,21 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         self.grow()?;
-        match self.source.content_bytes() {
+        let decl = match self.source.content_bytes() {
             [b'"' | b'\'', ..] => {
-                todo!("EntityValue")
+                let mut buffer = String::new();
+                self.parse_entity_value(&mut buffer)?;
+                if pe {
+                    EntityDecl::InternalParameterEntity {
+                        base_uri,
+                        replacement_text: buffer.into_boxed_str(),
+                    }
+                } else {
+                    EntityDecl::InternalGeneralEntity {
+                        base_uri,
+                        replacement_text: buffer.into_boxed_str(),
+                    }
+                }
             }
             [b'S', b'Y', b'S', b'T', b'E', b'M', ..] | [b'P', b'U', b'B', b'L', b'I', b'C', ..] => {
                 let mut system_id = String::new();
@@ -1146,7 +1161,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 // [73] EntityDef ::= EntityValue | (ExternalID NDataDecl?)
                 // If this is a parameter entity declaration, '>' must follow.
                 // [74] PEDef     ::= EntityValue | ExternalID
-                let mut ndata = None;
+                let mut ndata = None::<String>;
                 if !pe && !self.source.content_bytes().starts_with(b">") {
                     if s == 0 {
                         fatal_error!(
@@ -1206,12 +1221,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.locator.update_column(|c| c + 1);
 
                 if !pe && !self.fatal_error_occurred {
-                    if let Some(ndata) = ndata {
+                    if let Some(ndata) = ndata.as_deref() {
                         self.dtd_handler.unparsed_entity_decl(
                             &name,
                             public_id.as_deref(),
                             &system_id,
-                            &ndata,
+                            ndata,
                         );
                     } else {
                         self.decl_handler.external_entity_decl(
@@ -1219,6 +1234,27 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             public_id.as_deref(),
                             &system_id,
                         );
+                    }
+                }
+
+                if pe {
+                    EntityDecl::ExternalParameterEntity {
+                        base_uri,
+                        system_id: system_id.into(),
+                        public_id: public_id.map(From::from),
+                    }
+                } else if let Some(notation) = ndata {
+                    EntityDecl::ExternalGeneralUnparsedEntity {
+                        base_uri,
+                        system_id: system_id.into(),
+                        public_id: public_id.map(From::from),
+                        notation_name: notation.into(),
+                    }
+                } else {
+                    EntityDecl::ExternalGeneralParsedEntity {
+                        base_uri,
+                        system_id: system_id.into(),
+                        public_id: public_id.map(From::from),
                     }
                 }
             }
@@ -1234,7 +1270,15 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                 return Err(XMLError::ParserUnexpectedEOF);
             }
-        }
+        };
+
+        // Duplicate declarations are not errors.
+        //
+        // Reference: 4.2 Entity Declarations
+        // > If the same entity is declared more than once, the first declaration
+        // > encountered is binding; at user option, an XML processor MAY issue a
+        // > warning if entities are declared multiple times.
+        self.entities.insert(name, decl).ok();
 
         Ok(())
     }

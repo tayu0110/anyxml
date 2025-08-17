@@ -209,6 +209,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                         self.parse_entity_ref_in_att_value(buffer, quote, orig_entity_stack)?;
                     }
                 }
+                c if c == quote as u8 && self.entity_name_stack.len() != orig_entity_stack => {
+                    // Within the included entity, quotes must also be treated as part of the data.
+                    // Reference: 4.4.5 Included in Literal
+                    buffer.push(quote);
+                    self.source.advance(quote.len_utf8())?;
+                    self.locator.update_column(|c| c + quote.len_utf8());
+                }
                 _ => break,
             }
             self.source.grow()?;
@@ -376,5 +383,319 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn parse_entity_value(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+        let quote = self.check_literal_start()?;
+        self.parse_entity_value_internal(buffer, quote, false)?;
+        self.check_literal_end(quote)
+    }
+
+    pub(crate) fn parse_entity_value_internal(
+        &mut self,
+        buffer: &mut String,
+        quote: char,
+        in_entity: bool,
+    ) -> Result<(), XMLError> {
+        loop {
+            self.source.grow()?;
+            match self.source.content_bytes() {
+                [b'%', ..] => {
+                    // skip '%'
+                    self.source.advance(1)?;
+                    self.locator.update_column(|c| c + 1);
+
+                    let mut name = "%".to_owned();
+                    if self.config.is_enable(ParserOption::Namespaces) {
+                        self.parse_ncname(&mut name)?;
+                    } else {
+                        self.parse_name(&mut name)?;
+                    }
+                    self.source.grow()?;
+                    if !self.source.content_bytes().starts_with(b";") {
+                        fatal_error!(
+                            self,
+                            ParserInvalidEntityReference,
+                            "The entity reference does not end with ';'."
+                        );
+                        return Err(XMLError::ParserInvalidEntityReference);
+                    }
+                    // skip ';'
+                    self.source.advance(1)?;
+                    self.locator.update_column(|c| c + 1);
+
+                    if let Some(decl) = self.entities.get(name.as_str()) {
+                        if self
+                            .entity_name_stack
+                            .iter()
+                            .any(|ent| ent.as_deref() == Some(name.as_str()))
+                        {
+                            // [WFC: No Recursion]
+                            fatal_error!(
+                                self,
+                                ParserEntityRecursion,
+                                "The entity '{}' appears recursively.",
+                                name
+                            );
+                            return Err(XMLError::ParserEntityRecursion);
+                        }
+                        match decl {
+                            EntityDecl::InternalGeneralEntity { .. }
+                            | EntityDecl::ExternalGeneralParsedEntity { .. }
+                            | EntityDecl::ExternalGeneralUnparsedEntity { .. } => {
+                                // The fact that we have reached this point suggests that the general
+                                // entity has been mistakenly registered as a parameter entity somewhere.
+                                unreachable!("Internal error: Reference name: {name}");
+                            }
+                            EntityDecl::InternalParameterEntity {
+                                base_uri,
+                                replacement_text,
+                            } => {
+                                let source = InputSource::from_content(replacement_text);
+                                let name: Arc<str> = name.into();
+                                self.push_source(
+                                    Box::new(source),
+                                    base_uri.clone(),
+                                    Some(name.clone()),
+                                    PathBuf::from(format!("#internal-entity.{name}")).into(),
+                                    None,
+                                )?;
+
+                                self.parse_entity_value_internal(buffer, quote, true)?;
+                                self.source.grow()?;
+
+                                if !self.source.is_empty() {
+                                    fatal_error!(
+                                        self,
+                                        ParserEntityIncorrectNesting,
+                                        "The entity '{}' is nested incorrectly.",
+                                        name
+                                    );
+                                    return Err(XMLError::ParserEntityIncorrectNesting);
+                                }
+                                self.pop_source()?;
+                            }
+                            EntityDecl::ExternalParameterEntity {
+                                base_uri,
+                                system_id,
+                                public_id,
+                            } => {
+                                if self.config.is_enable(ParserOption::Validation)
+                                    || self
+                                        .config
+                                        .is_enable(ParserOption::ExternalParameterEntities)
+                                {
+                                    match self.entity_resolver.resolve_entity(
+                                        &name,
+                                        public_id.as_deref(),
+                                        base_uri,
+                                        system_id,
+                                    ) {
+                                        Ok(source) => {
+                                            let name: Arc<str> = name.into();
+                                            self.push_source(
+                                                Box::new(source),
+                                                base_uri.clone(),
+                                                Some(name.clone()),
+                                                PathBuf::from(format!("#internal-entity.{name}"))
+                                                    .into(),
+                                                None,
+                                            )?;
+
+                                            self.parse_entity_value_internal(buffer, quote, true)?;
+                                            self.source.grow()?;
+
+                                            if !self.source.is_empty() {
+                                                fatal_error!(
+                                                    self,
+                                                    ParserEntityIncorrectNesting,
+                                                    "The entity '{}' is nested incorrectly.",
+                                                    name
+                                                );
+                                                return Err(XMLError::ParserEntityIncorrectNesting);
+                                            }
+                                            self.pop_source()?;
+                                        }
+                                        Err(err) => {
+                                            error!(
+                                                self,
+                                                err, "The entity '{}' cannot be resolved.", name
+                                            );
+                                            if !self.fatal_error_occurred {
+                                                self.content_handler.skipped_entity(&name);
+                                            }
+                                        }
+                                    }
+                                } else if !self.fatal_error_occurred {
+                                    self.content_handler.skipped_entity(&name);
+                                }
+                            }
+                        }
+                    } else {
+                        if self.config.is_enable(ParserOption::Validation) {
+                            // is it correct ???
+                            // I don't really understand the meaning of [WFC: Entity Declared],
+                            // so if I'm wrong, please let me know...
+                            if !self.has_external_subset || self.standalone == Some(true) {
+                                // [WFC: Entity Declared]
+                                fatal_error!(
+                                    self,
+                                    ParserEntityNotFound,
+                                    "The entity '{}' is not declared.",
+                                    name
+                                );
+                            } else {
+                                // [VC: Entity Declared]
+                                error!(
+                                    self,
+                                    ParserEntityNotFound, "The entity '{}' is not declared.", name
+                                );
+                            }
+                        } else {
+                            // [WFC: Entity Declared]
+                            if self.standalone == Some(true) {
+                                fatal_error!(
+                                    self,
+                                    ParserEntityNotFound,
+                                    "The entity '{}' is not declared.",
+                                    name
+                                );
+                            }
+                        }
+                        if !self.fatal_error_occurred {
+                            self.content_handler.skipped_entity(&name);
+                        }
+                    }
+                }
+                [b'&', b'#', ..] => buffer.push(self.parse_char_ref()?),
+                [b'&', ..] => {
+                    // skip '&'
+                    self.source.advance(1)?;
+                    self.locator.update_column(|c| c + 1);
+
+                    let mut name = String::new();
+                    if self.config.is_enable(ParserOption::Namespaces) {
+                        self.parse_ncname(&mut name)?;
+                    } else {
+                        self.parse_name(&mut name)?;
+                    }
+                    self.source.grow()?;
+                    if !self.source.content_bytes().starts_with(b";") {
+                        fatal_error!(
+                            self,
+                            ParserInvalidEntityReference,
+                            "The entity reference does not end with ';'."
+                        );
+                        return Err(XMLError::ParserInvalidEntityReference);
+                    }
+                    // skip ';'
+                    self.source.advance(1)?;
+                    self.locator.update_column(|c| c + 1);
+
+                    if let Some(decl) = self.entities.get(name.as_str()) {
+                        // Since general entities are not expanded here,
+                        // recursion checking is not necessary.
+
+                        match decl {
+                            EntityDecl::InternalGeneralEntity { .. }
+                            | EntityDecl::ExternalGeneralParsedEntity { .. } => {
+                                // 4.4.7 Bypassed
+                                buffer.push('&');
+                                buffer.push_str(&name);
+                                buffer.push(';');
+                            }
+                            EntityDecl::ExternalGeneralUnparsedEntity { .. } => {
+                                // 4.4.9 Error
+                                error!(
+                                    self,
+                                    ParserInvalidEntityReference,
+                                    "The unparsed entity '{}' must not appear in EntityValue.",
+                                    name
+                                );
+                            }
+                            EntityDecl::InternalParameterEntity { .. }
+                            | EntityDecl::ExternalParameterEntity { .. } => {
+                                // The fact that we have reached this point suggests that the general
+                                // entity has been mistakenly registered as a parameter entity somewhere.
+                                unreachable!("Internal error: Reference name: {name}");
+                            }
+                        }
+                    } else if self.config.is_enable(ParserOption::Validation) {
+                        // is it correct ???
+                        // I don't really understand the meaning of [WFC: Entity Declared],
+                        // so if I'm wrong, please let me know...
+                        if !self.has_external_subset || self.standalone == Some(true) {
+                            // [WFC: Entity Declared]
+                            fatal_error!(
+                                self,
+                                ParserEntityNotFound,
+                                "The entity '{}' is not declared.",
+                                name
+                            );
+                        } else {
+                            // [VC: Entity Declared]
+                            error!(
+                                self,
+                                ParserEntityNotFound, "The entity '{}' is not declared.", name
+                            );
+                        }
+                    } else {
+                        // [WFC: Entity Declared]
+                        if self.standalone == Some(true) {
+                            fatal_error!(
+                                self,
+                                ParserEntityNotFound,
+                                "The entity '{}' is not declared.",
+                                name
+                            );
+                        }
+                    }
+                }
+                [c, ..] if *c == quote as u8 => {
+                    if in_entity {
+                        // Within the included entity, quotes must also be treated as part of the data.
+                        // Reference: 4.4.5 Included in Literal
+                        self.source.advance(quote.len_utf8())?;
+                        self.locator.update_column(|c| c + quote.len_utf8());
+                        buffer.push(quote);
+                    } else {
+                        break Ok(());
+                    }
+                }
+                [_, ..] => match self.source.next_char()? {
+                    Some('\r') => {
+                        if self.source.peek_char()? != Some('\n') {
+                            self.locator.update_line(|l| l + 1);
+                            self.locator.set_column(1);
+                            buffer.push('\n');
+                        }
+                    }
+                    Some('\n') => {
+                        self.locator.update_line(|l| l + 1);
+                        self.locator.set_column(1);
+                        buffer.push('\n');
+                    }
+                    Some(c) if self.is_char(c) => {
+                        buffer.push(c);
+                        self.locator.update_column(|c| c + 1);
+                    }
+                    Some(c) => {
+                        fatal_error!(
+                            self,
+                            ParserInvalidCharacter,
+                            "The character '0x{:X}' is not allowed in the XML document.",
+                            c as u32
+                        );
+                        buffer.push(c);
+                        self.locator.update_column(|c| c + 1);
+                    }
+                    _ => unreachable!(),
+                },
+                [] => {
+                    fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
+                    break Err(XMLError::ParserUnexpectedEOF);
+                }
+            }
+        }
     }
 }
