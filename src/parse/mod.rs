@@ -461,6 +461,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 && self.entity_name_stack.len() > base_entity_stack_depth
             {
                 self.pop_source()?;
+                if !self.fatal_error_occurred {
+                    self.lexical_handler.end_entity();
+                }
                 s += 1 + self.skip_whitespaces()?;
                 self.grow()?;
             } else {
@@ -492,15 +495,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(3)?;
         self.locator.update_column(|c| c + 3);
 
-        self.skip_whitespaces()?;
-        self.grow()?;
-
-        // expand parameter entities
         let base_entity_stack_depth = self.entity_name_stack.len();
-        while self.source.content_bytes().starts_with(b"%") {
-            self.parse_pe_reference()?;
-            self.skip_whitespaces()?;
-        }
+        self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
+        self.grow()?;
 
         match self.source.content_bytes() {
             [b'I', b'N', b'C', b'L', b'U', b'D', b'E', ..] => {
@@ -508,24 +505,17 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.source.advance(7)?;
                 self.locator.update_column(|c| c + 7);
 
-                while self.entity_name_stack.len() > base_entity_stack_depth {
-                    self.skip_whitespaces()?;
-                    self.grow()?;
-                    if !self.source.is_empty() {
-                        fatal_error!(
-                            self,
-                            ParserEntityIncorrectNesting,
-                            "A parameter entity in the conditional section is nested incorrectly."
-                        );
-                        return Err(XMLError::ParserEntityIncorrectNesting);
-                    }
-                    self.pop_source()?;
-                    if !self.fatal_error_occurred {
-                        self.lexical_handler.end_entity();
-                    }
-                }
-                self.skip_whitespaces()?;
+                self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 self.grow()?;
+                if self.entity_name_stack.len() != base_entity_stack_depth {
+                    fatal_error!(
+                        self,
+                        ParserEntityIncorrectNesting,
+                        "A parameter entity in the conditional section is nested incorrectly."
+                    );
+                    return Err(XMLError::ParserEntityIncorrectNesting);
+                }
+
                 if !self.source.content_bytes().starts_with(b"[") {
                     fatal_error!(
                         self,
@@ -557,24 +547,17 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.source.advance(6)?;
                 self.locator.update_column(|c| c + 6);
 
-                while self.entity_name_stack.len() > base_entity_stack_depth {
-                    self.skip_whitespaces()?;
-                    self.grow()?;
-                    if !self.source.is_empty() {
-                        fatal_error!(
-                            self,
-                            ParserEntityIncorrectNesting,
-                            "A parameter entity in the conditional section is nested incorrectly."
-                        );
-                        return Err(XMLError::ParserEntityIncorrectNesting);
-                    }
-                    self.pop_source()?;
-                    if !self.fatal_error_occurred {
-                        self.lexical_handler.end_entity();
-                    }
-                }
-                self.skip_whitespaces()?;
+                self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 self.grow()?;
+                if self.entity_name_stack.len() != base_entity_stack_depth {
+                    fatal_error!(
+                        self,
+                        ParserEntityIncorrectNesting,
+                        "A parameter entity in the conditional section is nested incorrectly."
+                    );
+                    return Err(XMLError::ParserEntityIncorrectNesting);
+                }
+
                 if !self.source.content_bytes().starts_with(b"[") {
                     fatal_error!(
                         self,
@@ -700,45 +683,14 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(9)?;
         self.locator.update_column(|c| c + 9);
 
-        if self.skip_whitespaces()? == 0 {
+        let base_entity_stack_depth = self.entity_name_stack.len();
+        if self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0 {
             fatal_error!(
                 self,
                 ParserInvalidElementDecl,
                 "Whitespaces are required after '<!ELEMENT' in element declaration."
             );
         }
-
-        let base_entity_stack_depth = self.entity_name_stack.len();
-        macro_rules! expand_pe_reference {
-            ($reader:expr) => {
-                while self.source.content_bytes().starts_with(b"%") {
-                    if self.state == ParserState::InInternalSubset {
-                        fatal_error!(
-                            self,
-                            ParserInvalidEntityReference,
-                            "A parameter entity appears in the element declaration in an internal subset."
-                        );
-                        return Err(XMLError::ParserInvalidEntityReference);
-                    }
-                    self.parse_pe_reference()?;
-                    self.skip_whitespaces()?;
-                    self.grow()?;
-                }
-            };
-        }
-        macro_rules! break_pe_reference {
-            ($reader:expr, $base:expr) => {
-                while self.entity_name_stack.len() > $base {
-                    self.skip_whitespaces()?;
-                    self.grow()?;
-                    if !self.source.is_empty() {
-                        break;
-                    }
-                    self.pop_source()?;
-                }
-            };
-        }
-        expand_pe_reference!(self);
 
         let mut name = String::new();
         if self.config.is_enable(ParserOption::Namespaces) {
@@ -747,36 +699,14 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.parse_name(&mut name)?;
         }
 
-        let mut s = 0;
-        while self.entity_name_stack.len() > base_entity_stack_depth {
-            s += self.skip_whitespaces()?;
-            self.grow()?;
-            if !self.source.is_empty() {
-                break;
-            }
-            self.pop_source()?;
-            s += 1;
-            if !self.fatal_error_occurred {
-                self.lexical_handler.end_entity();
-            }
-        }
-        s += self.skip_whitespaces()?;
-        self.grow()?;
-
-        if s == 0 {
+        if self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)? == 0 {
             fatal_error!(
                 self,
                 ParserInvalidElementDecl,
                 "Whitespaces are required after Name in element declaration."
             );
         }
-
-        // expand parameter entities
-        while self.source.content_bytes().starts_with(b"%") {
-            self.parse_pe_reference()?;
-            self.skip_whitespaces()?;
-            self.grow()?;
-        }
+        self.grow()?;
 
         // parse contentspec
         let contentspec = match self.source.content_bytes() {
@@ -796,9 +726,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.locator.update_column(|c| c + 1);
                 let model_entity_stack_depth = self.entity_name_stack.len();
 
-                self.skip_whitespaces()?;
+                self.skip_whitespaces_with_handle_peref(model_entity_stack_depth, true)?;
                 self.grow()?;
-                expand_pe_reference!(self);
 
                 if self.source.content_bytes().starts_with(b"#PCDATA") {
                     // Mixed Content
@@ -809,27 +738,22 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     self.source.advance(7)?;
                     self.locator.update_column(|c| c + 7);
 
-                    self.skip_whitespaces()?;
+                    self.skip_whitespaces_with_handle_peref(model_entity_stack_depth, true)?;
                     self.grow()?;
-                    expand_pe_reference!(self);
                     let mut ret = vec![];
                     if self.source.content_bytes().starts_with(b"|") {
                         // skip '|'
                         self.source.advance(1)?;
                         self.locator.update_column(|c| c + 1);
 
-                        break_pe_reference!(self, model_entity_stack_depth);
-                        self.skip_whitespaces()?;
-                        expand_pe_reference!(self);
+                        self.skip_whitespaces_with_handle_peref(model_entity_stack_depth, true)?;
                         let mut buffer = String::new();
                         if self.config.is_enable(ParserOption::Namespaces) {
                             self.parse_qname(&mut buffer)?;
                         } else {
                             self.parse_name(&mut buffer)?;
                         }
-                        break_pe_reference!(self, model_entity_stack_depth);
-                        self.skip_whitespaces()?;
-                        expand_pe_reference!(self);
+                        self.skip_whitespaces_with_handle_peref(model_entity_stack_depth, true)?;
                         while self.source.content_bytes().starts_with(b"|") {
                             // skip '|'
                             self.source.advance(1)?;
@@ -837,24 +761,25 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                             ret.push(buffer.as_str().into());
                             buffer.clear();
-                            break_pe_reference!(self, model_entity_stack_depth);
-                            self.skip_whitespaces()?;
-                            expand_pe_reference!(self);
+                            self.skip_whitespaces_with_handle_peref(
+                                model_entity_stack_depth,
+                                true,
+                            )?;
                             if self.config.is_enable(ParserOption::Namespaces) {
                                 self.parse_qname(&mut buffer)?;
                             } else {
                                 self.parse_name(&mut buffer)?;
                             }
-                            break_pe_reference!(self, model_entity_stack_depth);
-                            self.skip_whitespaces()?;
-                            expand_pe_reference!(self);
+                            self.skip_whitespaces_with_handle_peref(
+                                model_entity_stack_depth,
+                                true,
+                            )?;
                             if self.source.content_bytes().is_empty() {
                                 self.grow()?;
                             }
                         }
                         ret.push(buffer.into_boxed_str());
                     }
-                    break_pe_reference!(self, model_entity_stack_depth);
                     if self.entity_name_stack.len() != model_entity_stack_depth {
                         fatal_error!(
                             self,
@@ -888,7 +813,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
         };
 
-        break_pe_reference!(self, base_entity_stack_depth);
+        self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
         if self.entity_name_stack.len() != base_entity_stack_depth {
             fatal_error!(
                 self,
@@ -897,8 +822,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
             );
             return Err(XMLError::ParserEntityIncorrectNesting);
         }
-
-        self.skip_whitespaces()?;
 
         self.grow()?;
         if !self.source.content_bytes().starts_with(b">") {
@@ -944,38 +867,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
     pub(crate) fn parse_children(&mut self, buffer: &mut String) -> Result<(), XMLError> {
         let base_entity_stack_depth = self.entity_name_stack.len();
         self.parse_cp(buffer)?;
-        self.skip_whitespaces()?;
-
-        macro_rules! expand_pe_reference {
-            ($reader:expr) => {
-                while self.source.content_bytes().starts_with(b"%") {
-                    if self.state == ParserState::InInternalSubset {
-                        fatal_error!(
-                            self,
-                            ParserInvalidEntityReference,
-                            "A parameter entity appears in the element declaration in an internal subset."
-                        );
-                        return Err(XMLError::ParserInvalidEntityReference);
-                    }
-                    self.parse_pe_reference()?;
-                    self.skip_whitespaces()?;
-                    self.grow()?;
-                }
-            };
-        }
-        macro_rules! break_pe_reference {
-            ($reader:expr, $base:expr) => {
-                while self.entity_name_stack.len() > $base {
-                    self.skip_whitespaces()?;
-                    self.grow()?;
-                    if !self.source.is_empty() {
-                        break;
-                    }
-                    self.pop_source()?;
-                }
-            };
-        }
-        expand_pe_reference!(self);
+        self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
 
         self.grow()?;
         match self.source.content_bytes() {
@@ -986,13 +878,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     self.locator.update_column(|c| c + 1);
                     buffer.push('|');
 
-                    break_pe_reference!(self, base_entity_stack_depth);
-                    self.skip_whitespaces()?;
-                    expand_pe_reference!(self);
+                    self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                     self.parse_cp(buffer)?;
-                    break_pe_reference!(self, base_entity_stack_depth);
-                    self.skip_whitespaces()?;
-                    expand_pe_reference!(self);
+                    self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 }
             }
             [b',', ..] => {
@@ -1002,13 +890,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     self.locator.update_column(|c| c + 1);
                     buffer.push(',');
 
-                    break_pe_reference!(self, base_entity_stack_depth);
-                    self.skip_whitespaces()?;
-                    expand_pe_reference!(self);
+                    self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                     self.parse_cp(buffer)?;
-                    break_pe_reference!(self, base_entity_stack_depth);
-                    self.skip_whitespaces()?;
-                    expand_pe_reference!(self);
+                    self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 }
             }
             [b')', ..] => {}
@@ -1025,8 +909,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 return Err(XMLError::ParserUnexpectedEOF);
             }
         }
-
-        break_pe_reference!(self, base_entity_stack_depth);
 
         if self.entity_name_stack.len() != base_entity_stack_depth {
             fatal_error!(
@@ -1067,37 +949,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.grow()?;
 
         let base_entity_stack_depth = self.entity_name_stack.len();
-        macro_rules! expand_pe_reference {
-            ($reader:expr) => {
-                while self.source.content_bytes().starts_with(b"%") {
-                    if self.state == ParserState::InInternalSubset {
-                        fatal_error!(
-                            self,
-                            ParserInvalidEntityReference,
-                            "A parameter entity appears in the element declaration in an internal subset."
-                        );
-                        return Err(XMLError::ParserInvalidEntityReference);
-                    }
-                    self.parse_pe_reference()?;
-                    self.skip_whitespaces()?;
-                    self.grow()?;
-                }
-            };
-        }
-        macro_rules! break_pe_reference {
-            ($reader:expr, $base:expr) => {
-                while self.entity_name_stack.len() > $base {
-                    self.skip_whitespaces()?;
-                    self.grow()?;
-                    if !self.source.is_empty() {
-                        break;
-                    }
-                    self.pop_source()?;
-                }
-            };
-        }
-        expand_pe_reference!(self);
-
         if self.source.content_bytes().starts_with(b"(") {
             self.parse_choice_or_seq(buffer)?;
         } else {
@@ -1116,7 +967,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.locator.update_column(|c| c + 1);
         }
 
-        break_pe_reference!(self, base_entity_stack_depth);
         if self.entity_name_stack.len() != base_entity_stack_depth {
             fatal_error!(
                 self,
@@ -1149,44 +999,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
         buffer.push('(');
 
         let base_entity_stack_depth = self.entity_name_stack.len();
-        macro_rules! expand_pe_reference {
-            ($reader:expr) => {
-                while self.source.content_bytes().starts_with(b"%") {
-                    if self.state == ParserState::InInternalSubset {
-                        fatal_error!(
-                            self,
-                            ParserInvalidEntityReference,
-                            "A parameter entity appears in the element declaration in an internal subset."
-                        );
-                        return Err(XMLError::ParserInvalidEntityReference);
-                    }
-                    self.parse_pe_reference()?;
-                    self.skip_whitespaces()?;
-                    self.grow()?;
-                }
-            };
-        }
-        macro_rules! break_pe_reference {
-            ($reader:expr, $base:expr) => {
-                while self.entity_name_stack.len() > $base {
-                    self.skip_whitespaces()?;
-                    self.grow()?;
-                    if !self.source.is_empty() {
-                        break;
-                    }
-                    self.pop_source()?;
-                }
-            };
-        }
-        expand_pe_reference!(self);
-
-        self.skip_whitespaces()?;
+        self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
 
         self.parse_cp(buffer)?;
 
-        break_pe_reference!(self, base_entity_stack_depth);
-        self.skip_whitespaces()?;
-        expand_pe_reference!(self);
+        self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
 
         self.grow()?;
         match self.source.content_bytes() {
@@ -1197,13 +1014,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     self.locator.update_column(|c| c + 1);
                     buffer.push('|');
 
-                    break_pe_reference!(self, base_entity_stack_depth);
-                    self.skip_whitespaces()?;
-                    expand_pe_reference!(self);
+                    self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                     self.parse_cp(buffer)?;
-                    break_pe_reference!(self, base_entity_stack_depth);
-                    self.skip_whitespaces()?;
-                    expand_pe_reference!(self);
+                    self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 }
             }
             [b',', ..] => {
@@ -1213,13 +1026,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     self.locator.update_column(|c| c + 1);
                     buffer.push(',');
 
-                    break_pe_reference!(self, base_entity_stack_depth);
-                    self.skip_whitespaces()?;
-                    expand_pe_reference!(self);
+                    self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                     self.parse_cp(buffer)?;
-                    break_pe_reference!(self, base_entity_stack_depth);
-                    self.skip_whitespaces()?;
-                    expand_pe_reference!(self);
+                    self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 }
             }
             [b')', ..] => {}
@@ -1236,8 +1045,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 return Err(XMLError::ParserUnexpectedEOF);
             }
         }
-
-        break_pe_reference!(self, base_entity_stack_depth);
 
         if self.entity_name_stack.len() != base_entity_stack_depth {
             fatal_error!(
