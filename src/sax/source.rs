@@ -237,11 +237,11 @@ impl<'a> InputSource<'a> {
     }
 
     pub fn peek_char(&mut self) -> Result<Option<char>, XMLError> {
-        if let Some(c) = self.decoded.chars().next() {
+        if let Some(c) = self.decoded[self.decoded_next..].chars().next() {
             return Ok(Some(c));
         }
         self.grow()?;
-        Ok(self.decoded.chars().next())
+        Ok(self.decoded[self.decoded_next..].chars().next())
     }
 
     pub fn advance(&mut self, mut len: usize) -> Result<(), XMLError> {
@@ -280,11 +280,67 @@ impl<'a> InputSource<'a> {
         self.decoder = find_decoder(to).ok_or(XMLError::ParserUnsupportedEncoding)?;
         self.decoded.clear();
         self.buffer_next = 0;
-        self.decoded_next = 0;
+        if self.decoded.capacity() < 4 {
+            self.decoded.reserve(INPUT_CHUNK);
+        }
+        while self.buffer_next < self.buffer.len() {
+            match self.decoder.decode(
+                &self.buffer[self.buffer_next..],
+                &mut self.decoded,
+                self.eof,
+            ) {
+                Ok((read, write)) => {
+                    self.buffer_next += read;
+                    if write <= self.decoded_next {
+                        self.decoded_next -= write;
+                        self.decoded.clear();
+                    } else if self.decoded_next > 0 {
+                        self.decoded.drain(..self.decoded_next);
+                        self.decoded_next = 0;
+                    }
+                }
+                Err(err) => match err {
+                    e @ DecodeError::Malformed {
+                        read,
+                        write,
+                        length,
+                        offset,
+                    } => {
+                        let actual_read = read - length - offset;
+                        self.buffer_next += actual_read;
+                        if write <= self.decoded_next {
+                            self.decoded_next -= write;
+                            self.decoded.clear();
+                        } else if self.decoded_next > 0 {
+                            self.decoded.drain(..self.decoded_next);
+                            self.decoded_next = 0;
+                        }
+                        if !self.eof && (actual_read > 0 || !self.decoded.is_empty()) {
+                            break;
+                        }
+                        return Err(From::from(e));
+                    }
+                    e => return Err(From::from(e)),
+                },
+            }
+            if self.decoded.capacity() - self.decoded.len() < 4 {
+                self.decoded.reserve(INPUT_CHUNK);
+            }
+        }
+
+        if self.decoded_next > self.decoded.len() {
+            return Err(XMLError::DecoderUnknownError);
+        }
+
+        self.decoded.shrink_to(INPUT_CHUNK);
+        self.buffer_end = self.buffer.len() - self.buffer_next;
+        self.buffer.drain(..self.buffer_next);
+        self.buffer_next = 0;
+        self.buffer.shrink_to(INPUT_CHUNK);
+
         // I don't think it's necessary to change the encoding twice,
         // so it should be fine to switch to compact mode...
         self.compact = true;
-        self.grow()?;
         Ok(())
     }
 

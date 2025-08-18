@@ -165,9 +165,16 @@ impl EntityResolver for DefaultSAXHandler {
         base_uri: &Path,
         system_id: &str,
     ) -> Result<InputSource<'static>, XMLError> {
-        let path = base_uri.join(system_id);
-        let file = File::open(path)?;
-        InputSource::from_reader(file, None)
+        let path = if base_uri.is_dir() {
+            base_uri.join(system_id)
+        } else {
+            base_uri.parent().unwrap().join(system_id)
+        };
+        eprintln!("path: {}", path.display());
+        let file = File::open(path.as_path())?;
+        let mut reader = InputSource::from_reader(file, None)?;
+        reader.set_system_id(path.to_string_lossy());
+        Ok(reader)
     }
 }
 impl ErrorHandler for DefaultSAXHandler {

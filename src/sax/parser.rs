@@ -206,10 +206,21 @@ impl<Spec: ParserSpec> XMLReader<Spec> {
 
 impl<'a> XMLReader<DefaultParserSpec<'a>> {
     pub fn parse_uri(&mut self, uri: &str, encoding: Option<&str>) -> Result<(), XMLError> {
-        self.base_uri = PathBuf::from(uri).into();
-        self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
         self.encoding = encoding.map(|enc| enc.to_owned());
-        todo!()
+        self.source = Box::new(self.entity_resolver.resolve_entity(
+            "[document]",
+            None,
+            &self.base_uri,
+            uri,
+        )?);
+        if let Some(system_id) = self.source.system_id() {
+            self.base_uri = PathBuf::from(system_id).into();
+            if let Ok(canonic) = self.base_uri.canonicalize() {
+                self.base_uri = canonic.into();
+            }
+        }
+        self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
+        self.parse_document()
     }
 
     pub fn parse_reader(
@@ -300,6 +311,44 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
     }
 }
 
+impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
+    fn default() -> Self {
+        let handler = Arc::new(DefaultSAXHandler);
+        let base_uri: Arc<Path> = std::env::current_exe()
+            .unwrap_or_else(|_| PathBuf::from(""))
+            .into();
+        Self {
+            source: Box::new(InputSource::default()),
+            content_handler: handler.clone(),
+            decl_handler: handler.clone(),
+            dtd_handler: handler.clone(),
+            entity_resolver: handler.clone(),
+            error_handler: handler.clone(),
+            lexical_handler: handler.clone(),
+            locator: Arc::new(Locator::new(base_uri.clone(), None, 1, 1)),
+            config: ParserConfig::default(),
+            base_uri,
+            entity_name: None,
+            source_stack: vec![],
+            locator_stack: vec![],
+            base_uri_stack: vec![],
+            entity_name_stack: vec![],
+            state: ParserState::BeforeStart,
+            fatal_error_occurred: false,
+            version: XMLVersion::default(),
+            encoding: None,
+            standalone: None,
+            has_internal_subset: false,
+            has_external_subset: false,
+            namespaces: vec![],
+            prefix_map: HashMap::new(),
+            entities: Default::default(),
+            elementdecls: Default::default(),
+            attlistdecls: Default::default(),
+        }
+    }
+}
+
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
     pub(crate) fn push_source(
         &mut self,
@@ -343,5 +392,65 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         self.locator.set_column(locator.column());
 
         Ok(())
+    }
+}
+
+pub struct XMLReaderBuilder<'a> {
+    reader: XMLReader<DefaultParserSpec<'a>>,
+}
+
+impl<'a> XMLReaderBuilder<'a> {
+    pub fn new() -> Self {
+        Self {
+            reader: Default::default(),
+        }
+    }
+
+    pub fn set_content_handler(mut self, handler: Arc<dyn ContentHandler>) -> Self {
+        self.reader.content_handler = handler;
+        self
+    }
+    pub fn set_decl_handler(mut self, handler: Arc<dyn DeclHandler>) -> Self {
+        self.reader.decl_handler = handler;
+        self
+    }
+    pub fn set_dtd_handler(mut self, handler: Arc<dyn DTDHandler>) -> Self {
+        self.reader.dtd_handler = handler;
+        self
+    }
+    pub fn set_entity_resolver(mut self, handler: Arc<dyn EntityResolver>) -> Self {
+        self.reader.entity_resolver = handler;
+        self
+    }
+    pub fn set_error_handler(mut self, handler: Arc<dyn ErrorHandler>) -> Self {
+        self.reader.error_handler = handler;
+        self
+    }
+    pub fn lexical_handler(mut self, handler: Arc<dyn LexicalHandler>) -> Self {
+        self.reader.lexical_handler = handler;
+        self
+    }
+
+    pub fn set_parser_config(mut self, config: ParserConfig) -> Self {
+        self.reader.config = config;
+        self
+    }
+    pub fn enable_option(mut self, option: ParserOption) -> Self {
+        self.reader.config.set_option(option, true);
+        self
+    }
+    pub fn disable_option(mut self, option: ParserOption) -> Self {
+        self.reader.config.set_option(option, false);
+        self
+    }
+
+    pub fn build(self) -> XMLReader<DefaultParserSpec<'a>> {
+        self.reader
+    }
+}
+
+impl<'a> Default for XMLReaderBuilder<'a> {
+    fn default() -> Self {
+        Self::new()
     }
 }

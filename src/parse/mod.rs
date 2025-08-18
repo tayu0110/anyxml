@@ -38,10 +38,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
     /// [22] prolog ::= XMLDecl? Misc* (doctypedecl Misc*)?
     /// ```
     pub(crate) fn parse_prolog(&mut self) -> Result<(), XMLError> {
+        self.state = ParserState::InXMLDeclaration;
+        self.grow()?;
         if self.source.content_bytes().starts_with(b"<?xml") {
             self.parse_xml_decl()?;
-            self.state = ParserState::Parsing;
         }
+        self.state = ParserState::Parsing;
         self.parse_misc()?;
         self.grow()?;
         if self.source.content_bytes().starts_with(b"<!DOCTYPE") {

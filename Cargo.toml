@@ -7,3 +7,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+
+[[test]]
+name = "sax-test"
+path = "tests/sax-test.rs"
