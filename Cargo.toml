@@ -1,5 +1,5 @@
 [workspace]
-members = ["anyxml-automata"]
+members = ["anyxml-automata", "anyxml-uri"]
 
 [package]
 name = "anyxml"
