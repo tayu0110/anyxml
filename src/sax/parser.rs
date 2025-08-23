@@ -234,7 +234,7 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         if let Some(uri) = uri {
             self.base_uri = PathBuf::from(uri).into();
         } else {
-            self.base_uri = std::env::current_exe()?.into();
+            self.base_uri = std::env::current_dir()?.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
         todo!()
@@ -246,7 +246,7 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         if let Some(uri) = uri {
             self.base_uri = PathBuf::from(uri).into();
         } else {
-            self.base_uri = std::env::current_exe()?.into();
+            self.base_uri = std::env::current_dir()?.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
         self.parse_document()?;
@@ -314,7 +314,7 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
 impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
     fn default() -> Self {
         let handler = Arc::new(DefaultSAXHandler);
-        let base_uri: Arc<Path> = std::env::current_exe()
+        let base_uri: Arc<Path> = std::env::current_dir()
             .unwrap_or_else(|_| PathBuf::from(""))
             .into();
         Self {
