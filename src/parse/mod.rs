@@ -2494,7 +2494,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             return Ok(());
         }
 
-        if s != 0 {
+        if s == 0 {
             fatal_error!(
                 self,
                 ParserInvalidProcessingInstruction,
@@ -3330,7 +3330,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         let mut buffer = String::new();
         'outer: loop {
-            while !matches!(self.source.content_bytes()[0], b'<' | b'&') {
+            while !self.source.content_bytes().is_empty()
+                && !matches!(self.source.content_bytes()[0], b'<' | b'&')
+            {
                 match self.source.next_char()? {
                     Some('\r') => {
                         if self.source.peek_char()? != Some('\n') {
