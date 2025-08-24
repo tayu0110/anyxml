@@ -1,72 +1,33 @@
 use std::{
-    borrow::Cow,
+    borrow::{Borrow, Cow},
+    ops::Deref,
     path::Path,
+    rc::Rc,
     str::{from_utf8, from_utf8_unchecked},
+    sync::Arc,
 };
 
 use crate::ParseRIError;
 
-#[derive(Debug, Clone)]
-pub struct URIString {
-    /// Escaped URI string.
-    ///
-    /// Parts generated from UTF-8 strings can always be converted back
-    /// to the original UTF-8 byte sequence.
-    /// Similarly, the parts generated from Path can probably be converted back
-    /// to the original Path byte sequence.
-    ///
-    /// As a result of resolving URI references, there may be a mixture of parts generated
-    /// from UTF-8 strings and parts generated from Paths, so the whole may not always revert
-    /// to a UTF-8 string or Path byte sequence.
-    uri: String,
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct URIStr {
+    uri: str,
 }
 
-impl URIString {
-    pub fn parse(uri: impl AsRef<str>) -> Result<Self, ParseRIError> {
-        fn _parse(uri: &str) -> Result<URIString, ParseRIError> {
-            let uri = escape_except(uri, |b| {
-                b.is_ascii() && (is_reserved(b as u8) || is_unreserved(b as u8))
-            });
-            let mut bytes = uri.as_bytes();
-            parse_uri_reference(&mut bytes)?;
-            if !bytes.is_empty() {
-                Err(ParseRIError::NotTermination)
-            } else {
-                Ok(URIString {
-                    uri: uri.into_owned(),
-                })
-            }
+impl URIStr {
+    fn new(s: &str) -> &Self {
+        unsafe {
+            // # Safety
+            // Since `URIStr` is a transparent newtype of `str`,
+            // the bit patterns are exactly the same and have the same features.
+            &*(s as *const str as *const Self)
         }
-        _parse(uri.as_ref())
-    }
-
-    /// # Note
-    /// In the current implementation, paths that cannot be converted to UTF-8 strings
-    /// cannot be handled.  \
-    /// I don't think there will be any problems in most environments, but there may be
-    /// some paths that cannot be handled.
-    pub fn parse_file_path(path: impl AsRef<Path>) -> Result<Self, ParseRIError> {
-        #[cfg(target_family = "unix")]
-        fn _parse_file_path(path: &Path) -> Result<URIString, ParseRIError> {
-            let path_str = path.to_str().ok_or(ParseRIError::Unsupported)?;
-            if path.is_absolute() {
-                let path_str = format!("file://{path_str}");
-                debug_assert!(path_str.starts_with("file:///"));
-                URIString::parse(path_str.as_str())
-            } else {
-                URIString::parse(path_str)
-            }
-        }
-        #[cfg(not(target_family = "unix"))]
-        fn _parse_file_path(path: &Path) -> Result<URIString, ParseRIError> {
-            todo!()
-        }
-        _parse_file_path(path.as_ref())
     }
 
     /// # Reference
     /// [5.2.  Relative Resolution](https://datatracker.ietf.org/doc/html/rfc3986#section-5.2)
-    pub fn resolve(&self, reference: &Self) -> Self {
+    pub fn resolve(&self, reference: &Self) -> URIString {
         use Component::*;
 
         assert!(self.is_absolute());
@@ -76,7 +37,7 @@ impl URIString {
             .next_if(|comp| matches!(comp, Scheme(_)))
             .is_some()
         {
-            let mut ret = reference.clone();
+            let mut ret = reference.to_owned();
             ret.normalize();
             return ret;
         }
@@ -86,8 +47,8 @@ impl URIString {
             .is_some()
         {
             // has authority
-            let mut ret = Self {
-                uri: [self.scheme().unwrap(), ":", reference.uri.as_str()].concat(),
+            let mut ret = URIString {
+                uri: [self.scheme().unwrap(), ":", &reference.uri].concat(),
             };
             ret.normalize();
             return ret;
@@ -122,7 +83,7 @@ impl URIString {
             .is_some()
         {
             uri.push_str(&reference.uri);
-            let mut ret = Self { uri };
+            let mut ret = URIString { uri };
             ret.normalize();
             return ret;
         }
@@ -171,57 +132,7 @@ impl URIString {
             uri.push_str(fragment);
         }
 
-        Self { uri }
-    }
-
-    /// # Reference
-    /// [6.2.2.  Syntax-Based Normalization](https://datatracker.ietf.org/doc/html/rfc3986#section-6.2.2).
-    pub fn normalize(&mut self) {
-        use Component::*;
-
-        let mut uri = String::with_capacity(self.uri.len());
-        let mut paths = vec![];
-        let mut query = None;
-        let mut fragment = None;
-        let mut has_root = false;
-        for comp in self.components() {
-            match comp {
-                Scheme(scheme) => {
-                    uri.push_str(&scheme.to_ascii_lowercase());
-                    uri.push(':');
-                }
-                Authority {
-                    userinfo,
-                    host,
-                    port,
-                } => {
-                    uri.push_str("//");
-                    if let Some(userinfo) = userinfo {
-                        uri.push_str(userinfo);
-                        uri.push('@');
-                    }
-                    uri.push_str(host);
-                    if let Some(port) = port {
-                        uri.push(':');
-                        uri.push_str(port);
-                    }
-                }
-                RootSegment => has_root = true,
-                Segment(segment) => paths.push(segment),
-                Query(q) => query = Some(q),
-                Fragment(f) => fragment = Some(f),
-            }
-        }
-        build_normalized_path(paths.into_iter(), has_root, &mut uri);
-        if let Some(query) = query {
-            uri.push('?');
-            uri.push_str(query);
-        }
-        if let Some(fragment) = fragment {
-            uri.push('#');
-            uri.push_str(fragment);
-        }
-        self.uri = uri;
+        URIString { uri }
     }
 
     pub fn as_escaped_str(&self) -> &str {
@@ -280,7 +191,7 @@ impl URIString {
     }
 
     pub fn path(&self) -> &str {
-        let mut path = self.uri.as_str();
+        let mut path = &self.uri;
         if let Some(scheme) = self.scheme() {
             // has scheme
             path = &path[scheme.len() + 1..];
@@ -313,6 +224,188 @@ impl URIString {
         Components::new(&self.uri)
     }
 }
+
+impl ToOwned for URIStr {
+    type Owned = URIString;
+
+    fn to_owned(&self) -> Self::Owned {
+        URIString {
+            uri: self.uri.to_owned(),
+        }
+    }
+}
+
+impl From<&URIStr> for URIString {
+    fn from(value: &URIStr) -> Self {
+        value.to_owned()
+    }
+}
+
+macro_rules! impl_boxed_convertion_uri_str {
+    ($( $t:ident ),*) => {
+        $(
+            impl From<&URIStr> for $t<URIStr> {
+                fn from(value: &URIStr) -> Self {
+                    let boxed: $t<str> = value.uri.into();
+                    unsafe {
+                        // # Safety
+                        // Since `URIStr` is a transparent newtype of `str`,
+                        // the bit patterns are exactly the same and have the same features.
+                        std::mem::transmute(boxed)
+                    }
+                }
+            }
+        )*
+    };
+}
+impl_boxed_convertion_uri_str!(Box, Rc, Arc);
+
+#[derive(Debug, Clone)]
+#[repr(transparent)]
+pub struct URIString {
+    /// Escaped URI string.
+    ///
+    /// Parts generated from UTF-8 strings can always be converted back
+    /// to the original UTF-8 byte sequence.
+    /// Similarly, the parts generated from Path can probably be converted back
+    /// to the original Path byte sequence.
+    ///
+    /// As a result of resolving URI references, there may be a mixture of parts generated
+    /// from UTF-8 strings and parts generated from Paths, so the whole may not always revert
+    /// to a UTF-8 string or Path byte sequence.
+    uri: String,
+}
+
+impl URIString {
+    pub fn parse(uri: impl AsRef<str>) -> Result<Self, ParseRIError> {
+        fn _parse(uri: &str) -> Result<URIString, ParseRIError> {
+            let uri = escape_except(uri, |b| {
+                b.is_ascii() && (is_reserved(b as u8) || is_unreserved(b as u8))
+            });
+            let mut bytes = uri.as_bytes();
+            parse_uri_reference(&mut bytes)?;
+            if !bytes.is_empty() {
+                Err(ParseRIError::NotTermination)
+            } else {
+                Ok(URIString {
+                    uri: uri.into_owned(),
+                })
+            }
+        }
+        _parse(uri.as_ref())
+    }
+
+    /// # Note
+    /// In the current implementation, paths that cannot be converted to UTF-8 strings
+    /// cannot be handled.  \
+    /// I don't think there will be any problems in most environments, but there may be
+    /// some paths that cannot be handled.
+    pub fn parse_file_path(path: impl AsRef<Path>) -> Result<Self, ParseRIError> {
+        #[cfg(target_family = "unix")]
+        fn _parse_file_path(path: &Path) -> Result<URIString, ParseRIError> {
+            let path_str = path.to_str().ok_or(ParseRIError::Unsupported)?;
+            if path.is_absolute() {
+                let path_str = format!("file://{path_str}");
+                debug_assert!(path_str.starts_with("file:///"));
+                URIString::parse(path_str.as_str())
+            } else {
+                URIString::parse(path_str)
+            }
+        }
+        #[cfg(not(target_family = "unix"))]
+        fn _parse_file_path(path: &Path) -> Result<URIString, ParseRIError> {
+            todo!()
+        }
+        _parse_file_path(path.as_ref())
+    }
+
+    pub fn into_boxed_uri_str(self) -> Box<URIStr> {
+        Box::from(self.as_ref())
+    }
+
+    /// # Reference
+    /// [6.2.2.  Syntax-Based Normalization](https://datatracker.ietf.org/doc/html/rfc3986#section-6.2.2).
+    pub fn normalize(&mut self) {
+        use Component::*;
+
+        let mut uri = String::with_capacity(self.uri.len());
+        let mut paths = vec![];
+        let mut query = None;
+        let mut fragment = None;
+        let mut has_root = false;
+        for comp in self.components() {
+            match comp {
+                Scheme(scheme) => {
+                    uri.push_str(&scheme.to_ascii_lowercase());
+                    uri.push(':');
+                }
+                Authority {
+                    userinfo,
+                    host,
+                    port,
+                } => {
+                    uri.push_str("//");
+                    if let Some(userinfo) = userinfo {
+                        uri.push_str(userinfo);
+                        uri.push('@');
+                    }
+                    uri.push_str(host);
+                    if let Some(port) = port {
+                        uri.push(':');
+                        uri.push_str(port);
+                    }
+                }
+                RootSegment => has_root = true,
+                Segment(segment) => paths.push(segment),
+                Query(q) => query = Some(q),
+                Fragment(f) => fragment = Some(f),
+            }
+        }
+        build_normalized_path(paths.into_iter(), has_root, &mut uri);
+        if let Some(query) = query {
+            uri.push('?');
+            uri.push_str(query);
+        }
+        if let Some(fragment) = fragment {
+            uri.push('#');
+            uri.push_str(fragment);
+        }
+        self.uri = uri;
+    }
+}
+
+impl AsRef<URIStr> for URIString {
+    fn as_ref(&self) -> &URIStr {
+        URIStr::new(&self.uri)
+    }
+}
+
+impl Borrow<URIStr> for URIString {
+    fn borrow(&self) -> &URIStr {
+        self.as_ref()
+    }
+}
+
+impl Deref for URIString {
+    type Target = URIStr;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
+macro_rules! impl_convertion_uri_string {
+    ($( $t:ty ),*) => {
+        $(
+            impl From<URIString> for $t {
+                fn from(value: URIString) -> $t {
+                    From::from(value.as_ref())
+                }
+            }
+        )*
+    };
+}
+impl_convertion_uri_string!(Box<URIStr>, Rc<URIStr>, Arc<URIStr>);
 
 fn build_normalized_path<'a>(
     segments: impl Iterator<Item = &'a str>,
