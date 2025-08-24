@@ -1,4 +1,6 @@
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
+
+use anyxml_uri::uri::URIString;
 
 use crate::{
     ParserSpec,
@@ -294,7 +296,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                         Box::new(source),
                         base_uri.clone(),
                         Some(name.clone()),
-                        PathBuf::from(format!("#internal-entity.{name}")).into(),
+                        URIString::parse(format!("#internal-entity.{name}"))?.into(),
                         None,
                     )?;
 
@@ -457,7 +459,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                                     Box::new(source),
                                     base_uri.clone(),
                                     Some(name.clone()),
-                                    PathBuf::from(format!("#internal-entity.{name}")).into(),
+                                    URIString::parse(format!("#internal-entity.{name}"))?.into(),
                                     None,
                                 )?;
 
@@ -497,8 +499,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                                                 Box::new(source),
                                                 base_uri.clone(),
                                                 Some(name.clone()),
-                                                PathBuf::from(format!("#internal-entity.{name}"))
-                                                    .into(),
+                                                URIString::parse(format!(
+                                                    "#internal-entity.{name}"
+                                                ))?
+                                                .into(),
                                                 None,
                                             )?;
 

@@ -1,4 +1,6 @@
-use std::{borrow::Cow, path::Path, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
+
+use anyxml_uri::uri::URIStr;
 
 use crate::error::{XMLError, XMLErrorLevel};
 
@@ -8,22 +10,30 @@ pub struct SAXParseError {
     pub level: XMLErrorLevel,
     pub line: usize,
     pub column: usize,
-    pub system_id: Arc<Path>,
+    pub system_id: Arc<URIStr>,
     pub public_id: Option<Arc<str>>,
     pub message: Cow<'static, str>,
 }
 
 impl std::fmt::Display for SAXParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
-            f,
-            "{}[line:{},column:{}]:{}:{}",
-            self.system_id.display(),
-            self.line,
-            self.column,
-            self.level,
-            self.message,
-        )
+        if let Some(unescaped) = self.system_id.as_unescaped_str() {
+            writeln!(
+                f,
+                "{}[line:{},column:{}]:{}:{}",
+                unescaped, self.line, self.column, self.level, self.message,
+            )
+        } else {
+            writeln!(
+                f,
+                "{}[line:{},column:{}]:{}:{}",
+                self.system_id.as_escaped_str(),
+                self.line,
+                self.column,
+                self.level,
+                self.message,
+            )
+        }
     }
 }
 

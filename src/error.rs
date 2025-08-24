@@ -1,3 +1,5 @@
+use anyxml_uri::ParseRIError;
+
 use crate::encoding::{DecodeError, EncodeError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -131,6 +133,10 @@ pub enum XMLError {
         offset: usize,
     },
     DecoderUnknownError,
+    // URI errors
+    URIParseFailure,
+    URIBaseURINotAbsolute,
+    URIBaseURINotFound,
 }
 
 impl std::fmt::Display for XMLError {
@@ -220,5 +226,11 @@ impl From<DecodeError> for XMLError {
             },
             Other { msg: _ } => XMLError::DecoderUnknownError,
         }
+    }
+}
+
+impl From<ParseRIError> for XMLError {
+    fn from(_: ParseRIError) -> Self {
+        Self::URIParseFailure
     }
 }

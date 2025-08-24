@@ -9,7 +9,7 @@ use std::{
 
 use crate::ParseRIError;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct URIStr {
     uri: str,
@@ -241,6 +241,12 @@ impl From<&URIStr> for URIString {
     }
 }
 
+impl Clone for Box<URIStr> {
+    fn clone(&self) -> Self {
+        self.as_ref().into()
+    }
+}
+
 macro_rules! impl_boxed_convertion_uri_str {
     ($( $t:ident ),*) => {
         $(
@@ -260,7 +266,7 @@ macro_rules! impl_boxed_convertion_uri_str {
 }
 impl_boxed_convertion_uri_str!(Box, Rc, Arc);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct URIString {
     /// Escaped URI string.
@@ -303,14 +309,14 @@ impl URIString {
     pub fn parse_file_path(path: impl AsRef<Path>) -> Result<Self, ParseRIError> {
         #[cfg(target_family = "unix")]
         fn _parse_file_path(path: &Path) -> Result<URIString, ParseRIError> {
-            let path_str = path.to_str().ok_or(ParseRIError::Unsupported)?;
-            if path.is_absolute() {
-                let path_str = format!("file://{path_str}");
-                debug_assert!(path_str.starts_with("file:///"));
-                URIString::parse(path_str.as_str())
-            } else {
-                URIString::parse(path_str)
+            let mut path_str = path.to_str().ok_or(ParseRIError::Unsupported)?.to_owned();
+            if path.is_dir() && !path_str.ends_with("/") {
+                path_str.push('/');
             }
+            if path.is_absolute() {
+                path_str.insert_str(0, "file://");
+            }
+            URIString::parse(path_str)
         }
         #[cfg(not(target_family = "unix"))]
         fn _parse_file_path(path: &Path) -> Result<URIString, ParseRIError> {

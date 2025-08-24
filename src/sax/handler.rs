@@ -1,4 +1,6 @@
-use std::{fs::File, path::Path, sync::Arc};
+use std::{fs::File, sync::Arc};
+
+use anyxml_uri::uri::URIStr;
 
 use crate::{
     error::XMLError,
@@ -72,7 +74,7 @@ pub trait DeclHandler {
         let _ = (name, contentspec);
     }
 
-    fn external_entity_decl(&self, name: &str, public_id: Option<&str>, system_id: &str) {
+    fn external_entity_decl(&self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
         let _ = (name, public_id, system_id);
     }
 
@@ -82,7 +84,7 @@ pub trait DeclHandler {
 }
 
 pub trait DTDHandler {
-    fn notation_decl(&self, name: &str, public_id: Option<&str>, system_id: Option<&str>) {
+    fn notation_decl(&self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
         let _ = (name, public_id, system_id);
     }
 
@@ -90,7 +92,7 @@ pub trait DTDHandler {
         &self,
         name: &str,
         public_id: Option<&str>,
-        system_id: &str,
+        system_id: &URIStr,
         notation_name: &str,
     ) {
         let _ = (name, public_id, system_id, notation_name);
@@ -101,7 +103,7 @@ pub trait EntityResolver {
     fn get_external_subset(
         &self,
         name: &str,
-        base_uri: Option<&Path>,
+        base_uri: Option<&URIStr>,
     ) -> Result<InputSource<'static>, XMLError> {
         let _ = (name, base_uri);
         Err(XMLError::IONotFound)
@@ -111,8 +113,8 @@ pub trait EntityResolver {
         &self,
         name: &str,
         public_id: Option<&str>,
-        base_uri: &Path,
-        system_id: &str,
+        base_uri: &URIStr,
+        system_id: &URIStr,
     ) -> Result<InputSource<'static>, XMLError> {
         let _ = (name, public_id, base_uri, system_id);
         Err(XMLError::IONotFound)
@@ -141,7 +143,7 @@ pub trait LexicalHandler {
     fn start_cdata(&self) {}
     fn end_cdata(&self) {}
 
-    fn start_dtd(&self, name: &str, public_id: Option<&str>, system_id: Option<&str>) {
+    fn start_dtd(&self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
         let _ = (name, public_id, system_id);
     }
     fn end_dtd(&self) {}
@@ -162,18 +164,13 @@ impl EntityResolver for DefaultSAXHandler {
         &self,
         _name: &str,
         _public_id: Option<&str>,
-        base_uri: &Path,
-        system_id: &str,
+        base_uri: &URIStr,
+        system_id: &URIStr,
     ) -> Result<InputSource<'static>, XMLError> {
-        let path = if base_uri.is_dir() {
-            base_uri.join(system_id)
-        } else {
-            base_uri.parent().unwrap().join(system_id)
-        };
-        eprintln!("path: {}", path.display());
-        let file = File::open(path.as_path())?;
+        let path = base_uri.resolve(system_id);
+        let file = File::open(path.path())?;
         let mut reader = InputSource::from_reader(file, None)?;
-        reader.set_system_id(path.to_string_lossy());
+        reader.set_system_id(path);
         Ok(reader)
     }
 }

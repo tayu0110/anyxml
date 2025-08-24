@@ -1,7 +1,9 @@
 pub mod literals;
 pub mod tokens;
 
-use std::{path::PathBuf, str::from_utf8_unchecked, sync::Arc};
+use std::{str::from_utf8_unchecked, sync::Arc};
+
+use anyxml_uri::uri::URIString;
 
 use crate::{
     CHARDATA_CHUNK_LENGTH, DefaultParserSpec, ENCODING_NAME_LIMIT_LENGTH, ParserSpec,
@@ -96,7 +98,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         // If the following character is neither ‘[’ nor ‘>’, then there is an ExternalID.
-        let mut system_id = None::<String>;
+        let mut system_id = None::<URIString>;
         let mut public_id = None;
         let mut external_subset = None;
         if !matches!(self.source.content_bytes()[0], b'[' | b'>') {
@@ -107,8 +109,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     "Whitespaces are required between Name and ExternalID."
                 );
             }
-            let system_id = system_id.get_or_insert_default();
-            self.parse_external_id(system_id, &mut public_id)?;
+            let mut buf = String::new();
+            self.parse_external_id(&mut buf, &mut public_id)?;
+            system_id = Some(URIString::parse(buf)?);
             self.skip_whitespaces()?;
             if self.config.is_enable(ParserOption::ExternalGeneralEntities)
                 || self.config.is_enable(ParserOption::Validation)
@@ -117,7 +120,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     "[dtd]",
                     public_id.as_deref(),
                     &self.base_uri,
-                    system_id.as_str(),
+                    system_id.as_deref().unwrap(),
                 )?);
             }
         } else if (self.config.is_enable(ParserOption::ExternalGeneralEntities)
@@ -126,7 +129,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 .entity_resolver
                 .get_external_subset(&name, Some(&self.base_uri))
         {
-            system_id = ext.system_id().map(str::to_owned);
+            system_id = ext.system_id().map(ToOwned::to_owned);
             public_id = ext.public_id().map(str::to_owned);
             external_subset = Some(ext);
         }
@@ -184,9 +187,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 Some("[dtd]".into()),
                 system_id
                     .as_deref()
-                    .map(PathBuf::from)
                     .map(From::from)
-                    .unwrap_or_else(|| PathBuf::from("(null)").into()),
+                    .unwrap_or_else(|| URIString::parse("").unwrap().into()),
                 public_id.as_deref().map(From::from),
             )?;
 
@@ -356,7 +358,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 Box::new(source),
                                 base_uri.clone(),
                                 Some(name.clone()),
-                                PathBuf::from(format!("#internal-parameter-entity.{name}")).into(),
+                                URIString::parse(format!("#internal-parameter-entity.{name}"))?
+                                    .into(),
                                 None,
                             )?;
 
@@ -385,7 +388,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                     Box::new(source),
                                     self.base_uri.clone(),
                                     Some(name.clone()),
-                                    PathBuf::from(system_id.as_ref()).into(),
+                                    system_id.as_ref().into(),
                                     public_id.as_deref().map(Arc::from),
                                 )?;
 
@@ -1222,6 +1225,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.source.advance(1)?;
                 self.locator.update_column(|c| c + 1);
 
+                let system_id = URIString::parse(system_id)?;
                 if !pe && !self.fatal_error_occurred {
                     if let Some(ndata) = ndata.as_deref() {
                         self.dtd_handler.unparsed_entity_decl(
@@ -1704,6 +1708,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 let mut system_id = String::new();
                 self.parse_external_id(&mut system_id, &mut None)?;
                 if !self.fatal_error_occurred {
+                    let system_id = URIString::parse(system_id)?;
                     self.dtd_handler
                         .notation_decl(&name, None, Some(&system_id));
                 }
@@ -1760,6 +1765,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
 
                 if !self.fatal_error_occurred {
+                    let system_id = URIString::parse(system_id)?;
                     self.dtd_handler
                         .notation_decl(&name, Some(&public_id), Some(&system_id));
                 }
@@ -3086,7 +3092,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         Box::new(source),
                         base_uri.clone(),
                         Some(name.clone()),
-                        PathBuf::from(format!("#internal-entity.{name}")).into(),
+                        URIString::parse(format!("#internal-entity.{name}"))?.into(),
                         None,
                     )?;
 
@@ -3130,7 +3136,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                     Box::new(source),
                                     self.base_uri.clone(),
                                     Some(name.clone()),
-                                    PathBuf::from(system_id.as_ref()).into(),
+                                    system_id.as_ref().into(),
                                     public_id.as_deref().map(Arc::from),
                                 )?;
 

@@ -6,12 +6,13 @@ pub mod source;
 use std::{
     borrow::Cow,
     collections::HashMap,
-    path::{Path, PathBuf},
     sync::{
         Arc, LazyLock, RwLock,
         atomic::{AtomicUsize, Ordering},
     },
 };
+
+use anyxml_uri::uri::{URIStr, URIString};
 
 use crate::error::XMLError;
 
@@ -156,54 +157,54 @@ impl ElementDeclMap {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EntityDecl {
     InternalGeneralEntity {
-        base_uri: Arc<Path>,
+        base_uri: Arc<URIStr>,
         replacement_text: Box<str>,
     },
     InternalParameterEntity {
-        base_uri: Arc<Path>,
+        base_uri: Arc<URIStr>,
         replacement_text: Box<str>,
     },
     ExternalGeneralParsedEntity {
-        base_uri: Arc<Path>,
-        system_id: Box<str>,
+        base_uri: Arc<URIStr>,
+        system_id: Box<URIStr>,
         public_id: Option<Box<str>>,
     },
     ExternalGeneralUnparsedEntity {
-        base_uri: Arc<Path>,
-        system_id: Box<str>,
+        base_uri: Arc<URIStr>,
+        system_id: Box<URIStr>,
         public_id: Option<Box<str>>,
         notation_name: Box<str>,
     },
     ExternalParameterEntity {
-        base_uri: Arc<Path>,
-        system_id: Box<str>,
+        base_uri: Arc<URIStr>,
+        system_id: Box<URIStr>,
         public_id: Option<Box<str>>,
     },
 }
 
 static PREDEFINED_ENTITY_LT: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
-        base_uri: PathBuf::from("#predefined").into(),
+        base_uri: URIString::parse("#predefined").unwrap().into(),
         replacement_text: "&#60;".into(), // '<'
     });
 static PREDEFINED_ENTITY_GT: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
-        base_uri: PathBuf::from("#predefined").into(),
+        base_uri: URIString::parse("#predefined").unwrap().into(),
         replacement_text: "&#62;".into(), // '>'
     });
 static PREDEFINED_ENTITY_AMP: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
-        base_uri: PathBuf::from("#predefined").into(),
+        base_uri: URIString::parse("#predefined").unwrap().into(),
         replacement_text: "&#38;".into(), // '&'
     });
 static PREDEFINED_ENTITY_APOS: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
-        base_uri: PathBuf::from("#predefined").into(),
+        base_uri: URIString::parse("#predefined").unwrap().into(),
         replacement_text: "&#39;".into(), // '''
     });
 static PREDEFINED_ENTITY_QUOT: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
-        base_uri: PathBuf::from("#predefined").into(),
+        base_uri: URIString::parse("#predefined").unwrap().into(),
         replacement_text: "&#34;".into(), // '"'
     });
 
@@ -244,7 +245,7 @@ impl EntityMap {
 }
 
 pub struct Locator {
-    system_id: RwLock<Arc<Path>>,
+    system_id: RwLock<Arc<URIStr>>,
     public_id: RwLock<Option<Arc<str>>>,
     line: AtomicUsize,
     column: AtomicUsize,
@@ -252,7 +253,7 @@ pub struct Locator {
 
 impl Locator {
     pub(crate) fn new(
-        system_id: Arc<Path>,
+        system_id: Arc<URIStr>,
         public_id: Option<Arc<str>>,
         line: usize,
         column: usize,
@@ -265,7 +266,7 @@ impl Locator {
         }
     }
 
-    pub fn system_id(&self) -> Arc<Path> {
+    pub fn system_id(&self) -> Arc<URIStr> {
         self.system_id.read().unwrap().clone()
     }
 
@@ -281,7 +282,7 @@ impl Locator {
         self.column.load(Ordering::Acquire)
     }
 
-    pub(crate) fn set_system_id(&self, system_id: Arc<Path>) {
+    pub(crate) fn set_system_id(&self, system_id: Arc<URIStr>) {
         *self.system_id.write().unwrap() = system_id;
     }
 

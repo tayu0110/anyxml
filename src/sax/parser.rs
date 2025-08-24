@@ -2,9 +2,10 @@ use std::{
     collections::HashMap,
     io::Read,
     mem::replace,
-    path::{Path, PathBuf},
     sync::{Arc, RwLock, atomic::AtomicUsize},
 };
+
+use anyxml_uri::uri::{URIStr, URIString};
 
 use crate::{
     DefaultParserSpec, ParserSpec, XML_XML_NAMESPACE, XMLVersion,
@@ -126,13 +127,14 @@ pub struct XMLReader<Spec: ParserSpec> {
     pub(crate) lexical_handler: Arc<dyn LexicalHandler>,
     pub(crate) locator: Arc<Locator>,
     pub(crate) config: ParserConfig,
-    pub(crate) base_uri: Arc<Path>,
+    default_base_uri: Option<Arc<URIStr>>,
+    pub(crate) base_uri: Arc<URIStr>,
     pub(crate) entity_name: Option<Arc<str>>,
 
     // Entity Stack
     source_stack: Vec<Box<Spec::Reader>>,
     locator_stack: Vec<Locator>,
-    base_uri_stack: Vec<Arc<Path>>,
+    base_uri_stack: Vec<Arc<URIStr>>,
     pub(crate) entity_name_stack: Vec<Option<Arc<str>>>,
 
     // Parser Context
@@ -156,6 +158,31 @@ pub struct XMLReader<Spec: ParserSpec> {
 }
 
 impl<Spec: ParserSpec> XMLReader<Spec> {
+    pub fn default_base_uri(&self) -> Result<Arc<URIStr>, XMLError> {
+        if let Some(base_uri) = self.default_base_uri.clone() {
+            return Ok(base_uri);
+        }
+
+        let mut pwd = std::env::current_dir()?;
+        if !pwd.is_absolute() {
+            pwd = pwd.canonicalize()?;
+        }
+        Ok(URIString::parse_file_path(pwd)?.into())
+    }
+
+    pub fn set_default_base_uri(
+        &mut self,
+        base_uri: impl Into<Arc<URIStr>>,
+    ) -> Result<(), XMLError> {
+        let base_uri: Arc<URIStr> = base_uri.into();
+        if base_uri.is_absolute() {
+            self.default_base_uri = Some(base_uri);
+            Ok(())
+        } else {
+            Err(XMLError::URIBaseURINotAbsolute)
+        }
+    }
+
     pub fn content_handler(&self) -> Arc<dyn ContentHandler> {
         self.content_handler.clone()
     }
@@ -232,20 +259,24 @@ impl<Spec: ParserSpec> XMLReader<Spec> {
 }
 
 impl<'a> XMLReader<DefaultParserSpec<'a>> {
-    pub fn parse_uri(&mut self, uri: &str, encoding: Option<&str>) -> Result<(), XMLError> {
+    pub fn parse_uri(
+        &mut self,
+        uri: impl AsRef<URIStr>,
+        encoding: Option<&str>,
+    ) -> Result<(), XMLError> {
         self.reset_context();
         self.encoding = encoding.map(|enc| enc.to_owned());
+        self.base_uri = self.default_base_uri()?;
         self.source = Box::new(self.entity_resolver.resolve_entity(
             "[document]",
             None,
             &self.base_uri,
-            uri,
+            uri.as_ref(),
         )?);
         if let Some(system_id) = self.source.system_id() {
-            self.base_uri = PathBuf::from(system_id).into();
-            if let Ok(canonic) = self.base_uri.canonicalize() {
-                self.base_uri = canonic.into();
-            }
+            let mut base_uri = self.base_uri.resolve(system_id);
+            base_uri.normalize();
+            self.base_uri = base_uri.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
         self.parse_document()
@@ -255,38 +286,36 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         &mut self,
         reader: impl Read + 'a,
         encoding: Option<&str>,
-        uri: Option<&str>,
+        uri: Option<&URIStr>,
     ) -> Result<(), XMLError> {
         self.reset_context();
         self.encoding = encoding.map(|enc| enc.to_owned());
+        self.base_uri = self.default_base_uri()?;
         self.source = Box::new(InputSource::from_reader(reader, encoding)?);
         if let Some(uri) = uri {
-            self.base_uri = PathBuf::from(uri).into();
-        } else {
-            self.base_uri = std::env::current_dir()?.into();
+            let mut base_uri = self.base_uri.resolve(uri);
+            base_uri.normalize();
+            self.base_uri = base_uri.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
         todo!()
     }
 
-    pub fn parse_str(&mut self, str: &str, uri: Option<&str>) -> Result<(), XMLError> {
+    pub fn parse_str(&mut self, str: &str, uri: Option<&URIStr>) -> Result<(), XMLError> {
         self.reset_context();
         self.encoding = Some(UTF8_NAME.into());
+        self.base_uri = self.default_base_uri()?;
         self.source = Box::new(InputSource::from_content(str));
         if let Some(uri) = uri {
-            self.base_uri = PathBuf::from(uri).into();
-        } else {
-            self.base_uri = std::env::current_dir()?.into();
+            let mut base_uri = self.base_uri.resolve(uri);
+            base_uri.normalize();
+            self.base_uri = base_uri.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
         self.parse_document()
     }
 
-    pub fn reset(&mut self) {
-        let base_uri: Arc<Path> = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from(""))
-            .into();
-
+    pub fn reset(&mut self) -> Result<(), XMLError> {
         self.source = Box::new(InputSource::default());
         let handler = Arc::new(DefaultSAXHandler);
         self.content_handler = handler.clone();
@@ -296,11 +325,13 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         self.error_handler = handler.clone();
         self.lexical_handler = handler.clone();
         self.config = ParserConfig::default();
-        self.base_uri = base_uri;
+        self.default_base_uri = None;
+        self.base_uri = URIString::parse("")?.into();
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
         self.entity_name = None;
 
         self.reset_context();
+        Ok(())
     }
 
     pub(crate) fn grow(&mut self) -> Result<(), XMLError> {
@@ -324,9 +355,7 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
 impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
     fn default() -> Self {
         let handler = Arc::new(DefaultSAXHandler);
-        let base_uri: Arc<Path> = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from(""))
-            .into();
+        let base_uri: Arc<URIStr> = URIString::parse("").unwrap().into();
         Self {
             source: Box::new(InputSource::default()),
             content_handler: handler.clone(),
@@ -337,6 +366,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             lexical_handler: handler.clone(),
             locator: Arc::new(Locator::new(base_uri.clone(), None, 1, 1)),
             config: ParserConfig::default(),
+            default_base_uri: None,
             base_uri,
             entity_name: None,
             source_stack: vec![],
@@ -363,9 +393,9 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
     pub(crate) fn push_source(
         &mut self,
         source: Box<InputSource<'a>>,
-        base_uri: Arc<Path>,
+        base_uri: Arc<URIStr>,
         entity_name: Option<Arc<str>>,
-        system_id: Arc<Path>,
+        system_id: Arc<URIStr>,
         public_id: Option<Arc<str>>,
     ) -> Result<(), XMLError> {
         self.source_stack.push(replace(&mut self.source, source));
@@ -414,6 +444,14 @@ impl<'a> XMLReaderBuilder<'a> {
         Self {
             reader: Default::default(),
         }
+    }
+
+    pub fn set_default_base_uri(
+        mut self,
+        base_uri: impl Into<Arc<URIStr>>,
+    ) -> Result<Self, XMLError> {
+        self.reader.set_default_base_uri(base_uri)?;
+        Ok(self)
     }
 
     pub fn set_content_handler(mut self, handler: Arc<dyn ContentHandler>) -> Self {

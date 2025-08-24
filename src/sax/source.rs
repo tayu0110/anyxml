@@ -1,5 +1,7 @@
 use std::io::Read;
 
+use anyxml_uri::uri::{URIStr, URIString};
+
 use crate::{
     encoding::{DecodeError, Decoder, UTF8Decoder, UTF16BEDecoder, UTF16LEDecoder, find_decoder},
     error::XMLError,
@@ -30,7 +32,7 @@ pub struct InputSource<'a> {
     /// it is necessary to re-decode all byte sequences later, so it should be set to `false`.
     compact: bool,
 
-    system_id: Option<Box<str>>,
+    system_id: Option<Box<URIStr>>,
     public_id: Option<Box<str>>,
 }
 
@@ -350,7 +352,7 @@ impl<'a> InputSource<'a> {
         self.compact = true;
     }
 
-    pub fn system_id(&self) -> Option<&str> {
+    pub fn system_id(&self) -> Option<&URIStr> {
         self.system_id.as_deref()
     }
 
@@ -358,8 +360,8 @@ impl<'a> InputSource<'a> {
         self.public_id.as_deref()
     }
 
-    pub fn set_system_id(&mut self, system_id: impl Into<String>) {
-        self.system_id = Some(system_id.into().into_boxed_str());
+    pub fn set_system_id(&mut self, system_id: impl Into<URIString>) {
+        self.system_id = Some(system_id.into().into());
     }
 
     pub fn set_public_id(&mut self, public_id: impl Into<String>) {
