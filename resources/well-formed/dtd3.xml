@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE root [
+    <!ELEMENT root (#PCDATA|child)*>
+    <!ELEMENT child (child2*,child3+,child2?,child4)>
+    <!ELEMENT child2 EMPTY>
+    <!ELEMENT child3 ANY>
+    <!ELEMENT child4 (child2|child3)+>
+
+    <!ATTLIST root      attr1 ID #REQUIRED>
+    <!ATTLIST child     attr2 NMTOKENS #REQUIRED
+                        attr3 IDREF #IMPLIED>
+    <!ATTLIST child2    attr4 NMTOKEN #FIXED "hoge"
+                        attr5 (foo|bar|hoge) #IMPLIED>
+]>
+<root attr1="foo">
+    This is a character data.
+    <child attr2=" bar  fuga " attr3=" foo ">
+        <child2 attr4="hoge"/>
+        <child3></child3>
+        <child4>
+            <child2 />
+        </child4>
+    </child>
+</root>

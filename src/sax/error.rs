@@ -20,7 +20,7 @@ impl std::fmt::Display for SAXParseError {
         if let Some(unescaped) = self.system_id.as_unescaped_str() {
             write!(
                 f,
-                "{}[line:{},column:{}]:{}:{}",
+                "{}[line:{},column:{}][{}] {}",
                 unescaped, self.line, self.column, self.level, self.message,
             )
         } else {

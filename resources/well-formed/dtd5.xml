@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE root [
+    <!ELEMENT root (#PCDATA|child)*>
+    <!ELEMENT child (((child2+,child3)|child3)?,child4)*>
+    <!ELEMENT child2 EMPTY>
+    <!ELEMENT child3 ANY>
+    <!ELEMENT child4 (child2|child3)+>
+
+    <!-- entity declarations -->
+    <!ENTITY ent1 SYSTEM "foo.gif" NDATA gif>
+    <!ENTITY ent2 SYSTEM "bar.png" NDATA png>
+    <!ENTITY ent3 "entity-value">
+    
+    <!NOTATION jpg PUBLIC "JPG 1.0" "image/jpeg">
+    <!NOTATION gif PUBLIC "GIF 1.0">
+    <!NOTATION png SYSTEM "image/png">
+
+    <!ATTLIST root      attr1 ID #REQUIRED>
+    <!ATTLIST child     attr2 NOTATION (jpg|gif|png) #REQUIRED
+                        attr3 ENTITY #REQUIRED>
+    <!ATTLIST child2    attr4 ENTITIES #REQUIRED
+                        attr5 (foo|bar|hoge) #IMPLIED>
+]>
+<root attr1="foo">
+    This is a character data.
+    <child attr2="jpg" attr3=" ent3 ">
+        <child2 attr4="ent1 ent2"/>
+        <child3></child3>
+        <child4>
+            <child2 attr4="ent1 ent2" attr5="hoge" />
+            <child3></child3>
+        </child4>
+    </child>
+</root>

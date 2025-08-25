@@ -34,7 +34,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             self.source.next_char()?;
 
             match w {
-                '\x20' | '\t' => self.locator.update_line(|c| c + 1),
+                '\x20' | '\t' => self.locator.update_column(|c| c + 1),
                 '\n' => {
                     self.locator.set_column(1);
                     self.locator.update_line(|l| l + 1);

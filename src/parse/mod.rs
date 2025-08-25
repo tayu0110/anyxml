@@ -715,8 +715,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         // parse contentspec
         let contentspec = match self.source.content_bytes() {
-            [b'E', b'M', b'P', b'T', b'Y', ..] => ContentSpec::EMPTY,
-            [b'A', b'N', b'Y', ..] => ContentSpec::ANY,
+            [b'E', b'M', b'P', b'T', b'Y', ..] => {
+                // skip 'EMPTY'
+                self.source.advance(5)?;
+                self.locator.update_column(|c| c + 5);
+                ContentSpec::EMPTY
+            }
+            [b'A', b'N', b'Y', ..] => {
+                // skip 'ANY'
+                self.source.advance(3)?;
+                self.locator.update_column(|c| c + 3);
+                ContentSpec::ANY
+            }
             _ => {
                 if !self.source.content_bytes().starts_with(b"(") {
                     fatal_error!(
@@ -793,7 +803,22 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         );
                         return Err(XMLError::ParserEntityIncorrectNesting);
                     }
-                    if !self.source.content_bytes().starts_with(b")") {
+                    if self.source.content_bytes().starts_with(b")*") {
+                        // skip ')*'
+                        self.source.advance(2)?;
+                        self.locator.update_column(|c| c + 2);
+                    } else if self.source.content_bytes().starts_with(b")") {
+                        if !ret.is_empty() {
+                            fatal_error!(
+                                self,
+                                ParserInvalidElementDecl,
+                                "Mixed Content with elements does not end with ')*'."
+                            );
+                        }
+                        // skip ')'
+                        self.source.advance(1)?;
+                        self.locator.update_column(|c| c + 1);
+                    } else {
                         fatal_error!(
                             self,
                             ParserInvalidElementDecl,
@@ -801,9 +826,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         );
                         return Err(XMLError::ParserInvalidElementDecl);
                     }
-                    // skip ')'
-                    self.source.advance(1)?;
-                    self.locator.update_column(|c| c + 1);
+
                     ContentSpec::Mixed(ret)
                 } else {
                     // Element Content
@@ -1143,6 +1166,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             [b'"' | b'\'', ..] => {
                 let mut buffer = String::new();
                 self.parse_entity_value(&mut buffer)?;
+                self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 if pe {
                     EntityDecl::InternalParameterEntity {
                         base_uri,
@@ -1205,26 +1229,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 }
 
-                if self.entity_name_stack.len() != base_entity_stack_depth {
-                    fatal_error!(
-                        self,
-                        ParserEntityIncorrectNesting,
-                        "A parameter entity in an element declaration is nested incorrectly."
-                    );
-                    return Err(XMLError::ParserEntityIncorrectNesting);
-                }
-                if !self.source.content_bytes().starts_with(b">") {
-                    fatal_error!(
-                        self,
-                        ParserInvalidEntityDecl,
-                        "Entity declaration does not end with '>'."
-                    );
-                    return Err(XMLError::ParserInvalidEntityDecl);
-                }
-                // skip '>'
-                self.source.advance(1)?;
-                self.locator.update_column(|c| c + 1);
-
                 let system_id = URIString::parse(system_id)?;
                 if !pe && !self.fatal_error_occurred {
                     if let Some(ndata) = ndata.as_deref() {
@@ -1277,6 +1281,26 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 return Err(XMLError::ParserUnexpectedEOF);
             }
         };
+
+        if self.entity_name_stack.len() != base_entity_stack_depth {
+            fatal_error!(
+                self,
+                ParserEntityIncorrectNesting,
+                "A parameter entity in an element declaration is nested incorrectly."
+            );
+            return Err(XMLError::ParserEntityIncorrectNesting);
+        }
+        if !self.source.content_bytes().starts_with(b">") {
+            fatal_error!(
+                self,
+                ParserInvalidEntityDecl,
+                "Entity declaration does not end with '>'."
+            );
+            return Err(XMLError::ParserInvalidEntityDecl);
+        }
+        // skip '>'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
 
         // Duplicate declarations are not errors.
         //
@@ -1789,6 +1813,17 @@ impl XMLReader<DefaultParserSpec<'_>> {
             );
             return Err(XMLError::ParserEntityIncorrectNesting);
         }
+        if !self.source.content_bytes().starts_with(b">") {
+            fatal_error!(
+                self,
+                ParserInvalidNotationDecl,
+                "A notation declaration does not end with '>'."
+            );
+            return Err(XMLError::ParserInvalidNotationDecl);
+        }
+        // skip '>'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
 
         Ok(())
     }
@@ -3661,7 +3696,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                         }
                     }
                     // trim the tail of 0x20
-                    if filled > 0 && bytes[filled] == 0x20 {
+                    if filled > 0 && filled < bytes.len() && bytes[filled] == 0x20 {
                         filled -= 1;
                     }
                     // To avoid violating UTF-8 constraints, fill with all NULL characters.

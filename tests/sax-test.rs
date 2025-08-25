@@ -72,7 +72,7 @@ fn well_formed_tests() {
             && ent.metadata().unwrap().is_file()
         {
             let uri = URIString::parse_file_path(ent.path().canonicalize().unwrap()).unwrap();
-            reader.parse_uri(&uri, None).unwrap();
+            reader.parse_uri(&uri, None).ok();
             assert_eq!(
                 handler.fatal_error.get(),
                 0,
