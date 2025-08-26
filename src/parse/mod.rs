@@ -1972,7 +1972,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         // obtained from the XML declaration, and the decoder for `self.source` is switched.
         if let Some(encoding) = encoding.as_deref()
             && self.encoding.is_none()
-            && self.source.switch_encoding(encoding).is_err()
+            && let Err(err) = self.source.switch_encoding(encoding)
         {
             fatal_error!(
                 self,
@@ -1980,9 +1980,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 "The declared encoding '{}' is not supported.",
                 encoding
             );
-            // We continue decoding the data using the encoding inferred from the BOM or
-            // byte sequence at the beginning of the document entity, and attempt parsing
-            // and error detection.
+            return Err(err);
         }
 
         if !self.fatal_error_occurred {
@@ -2569,6 +2567,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 }
                 None => {
                     fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
+                    return Err(XMLError::ParserUnexpectedEOF);
                 }
             }
             if self.source.content_bytes().len() < 2 {
@@ -2892,7 +2891,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             &atts,
                         );
                     } else {
-                        todo!("undefined namespace")
+                        error!(
+                            self,
+                            ParserUndefinedNamespace,
+                            "The prefix '{}' is not bind to any namespaces.",
+                            &name[..prefix_length]
+                        );
                     }
                 } else {
                     // default namespace
@@ -2997,7 +3001,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             &name,
                         );
                     } else {
-                        todo!("undefined namespace")
+                        error!(
+                            self,
+                            ParserUndefinedNamespace,
+                            "The prefix '{}' is not bind to any namespaces.",
+                            &name[..prefix_length]
+                        );
                     }
                 } else {
                     // default namespace

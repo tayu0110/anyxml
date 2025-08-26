@@ -1,3 +1,5 @@
+#![allow(clippy::arc_with_non_send_sync)]
+
 use std::{
     cell::{Cell, RefCell},
     fmt::Write as _,
@@ -62,7 +64,6 @@ impl ErrorHandler for TestSAXHandler {
 
 #[test]
 fn well_formed_tests() {
-    #[allow(clippy::arc_with_non_send_sync)]
     let handler = Arc::new(TestSAXHandler::new());
 
     let mut reader = XMLReaderBuilder::new()
@@ -125,8 +126,14 @@ impl ContentHandler for XMLConfWalker {
                     if att.qname.as_ref() == "PROFILE" {
                         writeln!(
                             self.log.borrow_mut(),
-                            "--- Start Test Case '{}' ---",
-                            att.value
+                            "--- Start Test Case '{}' in '{}' ---",
+                            att.value,
+                            self.locator
+                                .borrow()
+                                .as_ref()
+                                .unwrap()
+                                .system_id()
+                                .as_escaped_str()
                         )
                         .ok();
                     }
@@ -136,12 +143,32 @@ impl ContentHandler for XMLConfWalker {
                 let mut id = String::new();
                 let mut r#type = String::new();
                 let mut uri = String::new();
+                let mut recommendation = String::new();
+                let mut edition = String::new();
                 for att in atts {
                     match att.qname.as_ref() {
                         "TYPE" => r#type = att.value.to_string(),
                         "ID" => id = att.value.to_string(),
                         "URI" => uri = att.value.to_string(),
+                        "RECOMMENDATION" => recommendation = att.value.to_string(),
+                        "EDITION" => edition = att.value.to_string(),
                         _ => {}
+                    }
+                }
+                if recommendation == "XML1.1" {
+                    // skip
+                    // writeln!(self.log.borrow_mut(), "{id}: XML1.1 is not supported").ok();
+                    return;
+                }
+                if !edition.is_empty() {
+                    let editions = edition
+                        .split_ascii_whitespace()
+                        .map(|e| e.trim())
+                        .collect::<Vec<_>>();
+                    if !editions.contains(&"5") {
+                        // skip
+                        // writeln!(self.log.borrow_mut(), "{id}: skip because this is version specific test for version '{edition}'.").ok();
+                        return;
                     }
                 }
 
@@ -153,13 +180,47 @@ impl ContentHandler for XMLConfWalker {
                     .system_id()
                     .resolve(&URIString::parse(uri).unwrap());
 
-                writeln!(
-                    self.log.borrow_mut(),
-                    "id: {id}, type: {}, uri: {}",
-                    r#type,
-                    uri.as_escaped_str()
-                )
-                .ok();
+                let handler = Arc::new(TestSAXHandler::new());
+                let mut reader = XMLReaderBuilder::new()
+                    .set_error_handler(handler.clone() as _)
+                    .build();
+                reader.parse_uri(uri, None).ok();
+
+                match r#type.as_str() {
+                    "not-wf" => {
+                        if handler.fatal_error.get() == 0 {
+                            self.unexpected_success.update(|c| c + 1);
+                            writeln!(self.log.borrow_mut(), "{id}: unexpected success").ok();
+                            writeln!(self.log.borrow_mut(), "{}", handler.buffer.borrow()).ok();
+                        }
+                    }
+                    "error" => {
+                        // skip
+                        // writeln!(
+                        //     self.log.borrow_mut(),
+                        //     "{id}: test type 'error' is not yet supported.",
+                        //     r#type
+                        // )
+                        // .ok();
+                    }
+                    _type @ ("valid" | "invalid") => {
+                        // skip
+                        // writeln!(
+                        //     self.log.borrow_mut(),
+                        //     "{id}: test type '{}' is not yet supported.",
+                        //     r#type
+                        // )
+                        // .ok();
+                    }
+                    r#type => {
+                        writeln!(
+                            self.log.borrow_mut(),
+                            "{id}: test type '{}' is unknown.",
+                            r#type
+                        )
+                        .ok();
+                    }
+                }
             }
             _ => {}
         }
@@ -174,7 +235,6 @@ fn xmlconf_tests() {
         "Please execute `deno run -A resources/get-xmlconf.ts on the crate root.`"
     );
 
-    #[allow(clippy::arc_with_non_send_sync)]
     let handler = Arc::new(XMLConfWalker::default());
     let xmlconf = URIString::parse_file_path(format!("{XMLCONF_DIR}/xmlconf.xml")).unwrap();
     let mut reader = XMLReaderBuilder::new()
