@@ -1,12 +1,17 @@
 use std::{
     cell::{Cell, RefCell},
+    fmt::Write as _,
     fs::read_dir,
     sync::Arc,
 };
 
 use anyxml::{
     error::XMLErrorLevel,
-    sax::{handler::ErrorHandler, parser::XMLReaderBuilder},
+    sax::{
+        Locator,
+        handler::{ContentHandler, ErrorHandler},
+        parser::{ParserOption, XMLReaderBuilder},
+    },
 };
 use anyxml_uri::uri::URIString;
 
@@ -37,21 +42,18 @@ impl TestSAXHandler {
 
 impl ErrorHandler for TestSAXHandler {
     fn fatal_error(&self, error: anyxml::sax::error::SAXParseError) {
-        use std::fmt::Write;
         assert_eq!(error.level, XMLErrorLevel::FatalError);
         self.fatal_error.update(|c| c + 1);
         writeln!(self.buffer.borrow_mut(), "{}", error).ok();
     }
 
     fn error(&self, error: anyxml::sax::error::SAXParseError) {
-        use std::fmt::Write;
         assert_eq!(error.level, XMLErrorLevel::Error);
         self.error.update(|c| c + 1);
         writeln!(self.buffer.borrow_mut(), "{}", error).ok();
     }
 
     fn warning(&self, error: anyxml::sax::error::SAXParseError) {
-        use std::fmt::Write;
         assert_eq!(error.level, XMLErrorLevel::Warning);
         self.warning.update(|c| c + 1);
         writeln!(self.buffer.borrow_mut(), "{}", error).ok();
@@ -85,6 +87,85 @@ fn well_formed_tests() {
     }
 }
 
+#[derive(Default)]
+struct XMLConfWalker {
+    log: RefCell<String>,
+    locator: RefCell<Option<Arc<Locator>>>,
+    unexpected_failure: Cell<usize>,
+    unexpected_success: Cell<usize>,
+}
+
+impl ContentHandler for XMLConfWalker {
+    fn set_document_locator(&self, locator: Arc<Locator>) {
+        *self.locator.borrow_mut() = Some(locator);
+    }
+
+    fn start_element(
+        &self,
+        _uri: Option<&str>,
+        _local_name: Option<&str>,
+        qname: &str,
+        atts: &[anyxml::sax::Attribute],
+    ) {
+        match qname {
+            "TESTSUITE" => {
+                for att in atts {
+                    if att.qname.as_ref() == "PROFILE" {
+                        writeln!(
+                            self.log.borrow_mut(),
+                            "=== Start Test Suite '{}' ===",
+                            att.value
+                        )
+                        .ok();
+                    }
+                }
+            }
+            "TESTCASES" => {
+                for att in atts {
+                    if att.qname.as_ref() == "PROFILE" {
+                        writeln!(
+                            self.log.borrow_mut(),
+                            "--- Start Test Case '{}' ---",
+                            att.value
+                        )
+                        .ok();
+                    }
+                }
+            }
+            "TEST" => {
+                let mut id = String::new();
+                let mut r#type = String::new();
+                let mut uri = String::new();
+                for att in atts {
+                    match att.qname.as_ref() {
+                        "TYPE" => r#type = att.value.to_string(),
+                        "ID" => id = att.value.to_string(),
+                        "URI" => uri = att.value.to_string(),
+                        _ => {}
+                    }
+                }
+
+                let uri = self
+                    .locator
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .system_id()
+                    .resolve(&URIString::parse(uri).unwrap());
+
+                writeln!(
+                    self.log.borrow_mut(),
+                    "id: {id}, type: {}, uri: {}",
+                    r#type,
+                    uri.as_escaped_str()
+                )
+                .ok();
+            }
+            _ => {}
+        }
+    }
+}
+
 #[test]
 fn xmlconf_tests() {
     const XMLCONF_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/resources/xmlconf");
@@ -93,7 +174,19 @@ fn xmlconf_tests() {
         "Please execute `deno run -A resources/get-xmlconf.ts on the crate root.`"
     );
 
+    #[allow(clippy::arc_with_non_send_sync)]
+    let handler = Arc::new(XMLConfWalker::default());
     let xmlconf = URIString::parse_file_path(format!("{XMLCONF_DIR}/xmlconf.xml")).unwrap();
-    let mut reader = XMLReaderBuilder::new().build();
+    let mut reader = XMLReaderBuilder::new()
+        .set_content_handler(handler.clone() as _)
+        .enable_option(ParserOption::ExternalGeneralEntities)
+        .build();
     reader.parse_uri(xmlconf, None).unwrap();
+
+    assert!(
+        handler.unexpected_success.get() == 0 && handler.unexpected_failure.get() == 0,
+        "{}",
+        handler.log.borrow()
+    );
+    // panic!("{}", handler.log.borrow());
 }

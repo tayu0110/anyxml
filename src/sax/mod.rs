@@ -17,10 +17,10 @@ use anyxml_uri::uri::{URIStr, URIString};
 use crate::error::XMLError;
 
 pub struct Attribute {
-    pub(crate) uri: Option<Arc<str>>,
-    pub(crate) local_name: Option<Box<str>>,
-    pub(crate) qname: Box<str>,
-    pub(crate) value: Box<str>,
+    pub uri: Option<Arc<str>>,
+    pub local_name: Option<Box<str>>,
+    pub qname: Box<str>,
+    pub value: Box<str>,
     // 0: is declared in DTD
     // 1: is specified explicitly (in other words, `value` is not the default value provided by DTD)
     // 2: is namespace declaration attribute

@@ -28,6 +28,7 @@ pub trait Decoder {
     ) -> Result<(usize, usize), DecodeError>;
 }
 
+#[derive(Debug)]
 pub enum EncodeError {
     /// Input buffer is empty.
     InputIsEmpty,
@@ -43,6 +44,7 @@ pub enum EncodeError {
     /// Other errors.
     Other { msg: Cow<'static, str> },
 }
+#[derive(Debug)]
 pub enum DecodeError {
     /// Input buffer is empty.
     InputIsEmpty,
@@ -115,9 +117,6 @@ impl Decoder for UTF8Decoder {
             return Err(DecodeError::OutputTooShort);
         }
 
-        if finish && len < src.len() {
-            return Err(DecodeError::OutputTooShort);
-        }
         let len = len.min(src.len());
         match from_utf8(&src[..len]) {
             Ok(s) => {

@@ -183,39 +183,41 @@ impl<'a> InputSource<'a> {
 
         let rem = self.buffer_end - self.buffer_next;
         if rem > 0 {
-            let cap = self.decoded.capacity() - self.decoded_next;
+            let cap = self.decoded.len() - self.decoded_next;
             if cap < GROW_THRESHOLD {
                 self.decoded.drain(..self.decoded_next);
                 self.decoded.shrink_to(INPUT_CHUNK);
                 self.decoded_next = 0;
             }
-            match self.decoder.decode(
-                &self.buffer[self.buffer_next..self.buffer_end],
-                &mut self.decoded,
-                self.eof,
-            ) {
-                Ok((read, _)) => {
-                    self.buffer_next += read;
-                }
-                Err(e) => match e {
-                    DecodeError::Malformed {
-                        read,
-                        write: _,
-                        length,
-                        offset,
-                    } => {
-                        let actual_read = read - offset - length;
-                        // Since it may not be possible to set the decoder appropriately
-                        // from the BOM or external encoding, no error is returned as long as
-                        // some data can be decoded.
-                        if actual_read > 0 {
-                            self.buffer_next += actual_read;
-                        } else {
-                            return Err(From::from(e));
-                        }
+            if self.decoded.capacity() - self.decoded.len() > GROW_THRESHOLD {
+                match self.decoder.decode(
+                    &self.buffer[self.buffer_next..self.buffer_end],
+                    &mut self.decoded,
+                    self.eof,
+                ) {
+                    Ok((read, _)) => {
+                        self.buffer_next += read;
                     }
-                    _ => return Err(From::from(e)),
-                },
+                    Err(e) => match e {
+                        DecodeError::Malformed {
+                            read,
+                            write: _,
+                            length,
+                            offset,
+                        } => {
+                            let actual_read = read - offset - length;
+                            // Since it may not be possible to set the decoder appropriately
+                            // from the BOM or external encoding, no error is returned as long as
+                            // some data can be decoded.
+                            if actual_read > 0 {
+                                self.buffer_next += actual_read;
+                            } else {
+                                return Err(From::from(e));
+                            }
+                        }
+                        _ => return Err(From::from(e)),
+                    },
+                }
             }
         }
         Ok(())
@@ -286,11 +288,10 @@ impl<'a> InputSource<'a> {
             self.decoded.reserve(INPUT_CHUNK);
         }
         while self.buffer_next < self.buffer.len() {
-            match self.decoder.decode(
-                &self.buffer[self.buffer_next..],
-                &mut self.decoded,
-                self.eof,
-            ) {
+            match self
+                .decoder
+                .decode(&self.buffer[self.buffer_next..], &mut self.decoded, false)
+            {
                 Ok((read, write)) => {
                     self.buffer_next += read;
                     if write <= self.decoded_next {
@@ -336,7 +337,8 @@ impl<'a> InputSource<'a> {
 
         self.decoded.shrink_to(INPUT_CHUNK);
         self.buffer_end = self.buffer.len() - self.buffer_next;
-        self.buffer.drain(..self.buffer_next);
+        self.buffer.copy_within(self.buffer_next.., 0);
+        self.buffer.truncate(self.buffer_end.max(INPUT_CHUNK));
         self.buffer_next = 0;
         self.buffer.shrink_to(INPUT_CHUNK);
 
@@ -380,7 +382,7 @@ impl Default for InputSource<'_> {
             buffer_end: 0,
             decoded_next: 0,
             total_read: 0,
-            eof: true,
+            eof: false,
             compact: false,
             system_id: None,
             public_id: None,
