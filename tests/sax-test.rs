@@ -188,5 +188,4 @@ fn xmlconf_tests() {
         "{}",
         handler.log.borrow()
     );
-    // panic!("{}", handler.log.borrow());
 }

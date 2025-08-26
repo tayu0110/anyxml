@@ -287,11 +287,12 @@ impl<'a> InputSource<'a> {
         if self.decoded.capacity() < 4 {
             self.decoded.reserve(INPUT_CHUNK);
         }
-        while self.buffer_next < self.buffer.len() {
-            match self
-                .decoder
-                .decode(&self.buffer[self.buffer_next..], &mut self.decoded, false)
-            {
+        while self.buffer_next < self.buffer_end {
+            match self.decoder.decode(
+                &self.buffer[self.buffer_next..self.buffer_end],
+                &mut self.decoded,
+                false,
+            ) {
                 Ok((read, write)) => {
                     self.buffer_next += read;
                     if write <= self.decoded_next {
@@ -336,8 +337,9 @@ impl<'a> InputSource<'a> {
         }
 
         self.decoded.shrink_to(INPUT_CHUNK);
-        self.buffer_end = self.buffer.len() - self.buffer_next;
-        self.buffer.copy_within(self.buffer_next.., 0);
+        self.buffer
+            .copy_within(self.buffer_next..self.buffer_end, 0);
+        self.buffer_end -= self.buffer_next;
         self.buffer.truncate(self.buffer_end.max(INPUT_CHUNK));
         self.buffer_next = 0;
         self.buffer.shrink_to(INPUT_CHUNK);

@@ -393,14 +393,19 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
     pub(crate) fn push_source(
         &mut self,
         source: Box<InputSource<'a>>,
-        base_uri: Arc<URIStr>,
+        mut base_uri: Arc<URIStr>,
         entity_name: Option<Arc<str>>,
         system_id: Arc<URIStr>,
         public_id: Option<Arc<str>>,
     ) -> Result<(), XMLError> {
         self.source_stack.push(replace(&mut self.source, source));
+        // The only instance where `base_uri` is not an absolute URI should be
+        // the pseudo-base URI used within the library...
+        if !base_uri.is_absolute() {
+            base_uri = self.base_uri.clone();
+        }
         self.base_uri_stack
-            .push(replace(&mut self.base_uri, base_uri));
+            .push(replace(&mut self.base_uri, base_uri.clone()));
         self.entity_name_stack
             .push(replace(&mut self.entity_name, entity_name));
         self.locator_stack.push(Locator {
@@ -409,7 +414,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             line: AtomicUsize::new(self.locator.line()),
             column: AtomicUsize::new(self.locator.column()),
         });
-        self.locator.set_system_id(system_id);
+        self.locator
+            .set_system_id(base_uri.resolve(&system_id).into());
         self.locator.set_public_id(public_id);
         self.locator.set_line(1);
         self.locator.set_column(1);

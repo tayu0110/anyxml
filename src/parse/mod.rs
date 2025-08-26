@@ -2671,6 +2671,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
             self.skip_whitespaces()?;
 
+            att_value.clear();
             self.parse_att_value(&mut att_value)?;
             let declared = self.normalize_att_value(&name, &att_name, &mut att_value);
 
