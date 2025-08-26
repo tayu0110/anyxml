@@ -2584,6 +2584,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
             );
             return Err(XMLError::ParserInvalidProcessingInstruction);
         }
+        // skip '?>'
+        self.source.advance(2)?;
+        self.locator.update_column(|c| c + 2);
 
         if !self.fatal_error_occurred {
             self.content_handler

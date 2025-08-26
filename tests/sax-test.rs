@@ -84,3 +84,16 @@ fn well_formed_tests() {
         }
     }
 }
+
+#[test]
+fn xmlconf_tests() {
+    const XMLCONF_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/resources/xmlconf");
+    assert!(
+        std::fs::exists(XMLCONF_DIR).unwrap_or(false),
+        "Please execute `deno run -A resources/get-xmlconf.ts on the crate root.`"
+    );
+
+    let xmlconf = URIString::parse_file_path(format!("{XMLCONF_DIR}/xmlconf.xml")).unwrap();
+    let mut reader = XMLReaderBuilder::new().build();
+    reader.parse_uri(xmlconf, None).unwrap();
+}
