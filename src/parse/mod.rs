@@ -1131,7 +1131,15 @@ impl XMLReader<DefaultParserSpec<'_>> {
         let mut s = self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
         self.grow()?;
         let mut pe = false;
-        while self.source.content_bytes().starts_with(b"%") {
+        if self.source.content_bytes().starts_with(b"%") {
+            if s == 0 {
+                fatal_error!(
+                    self,
+                    ParserInvalidEntityDecl,
+                    "Whitespaces are required before '%' in a parameter entity declaration."
+                );
+            }
+
             pe = true;
             // skip '%'
             self.source.advance(1)?;
