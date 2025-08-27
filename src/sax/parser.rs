@@ -13,6 +13,7 @@ use crate::{
     error::XMLError,
     sax::{
         AttlistDeclMap, ElementDeclMap, EntityMap, Locator,
+        error::fatal_error,
         handler::{
             ContentHandler, DTDHandler, DeclHandler, DefaultSAXHandler, EntityResolver,
             ErrorHandler, LexicalHandler,
@@ -281,7 +282,9 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
             self.base_uri = base_uri.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
-        self.parse_document()
+        self.parse_document().inspect_err(|&err| {
+            fatal_error!(self, err, "Unrecoverable error: {}", err);
+        })
     }
 
     pub fn parse_reader(
@@ -314,7 +317,9 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
             self.base_uri = base_uri.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
-        self.parse_document()
+        self.parse_document().inspect_err(|&err| {
+            fatal_error!(self, err, "Unrecoverable error: {}", err);
+        })
     }
 
     pub fn reset(&mut self) -> Result<(), XMLError> {

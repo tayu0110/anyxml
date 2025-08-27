@@ -157,9 +157,9 @@ impl ContentHandler for XMLConfWalker {
                         _ => {}
                     }
                 }
-                if recommendation == "XML1.1" {
+                if recommendation == "XML1.1" || recommendation == "NS1.1" {
                     // skip
-                    // writeln!(self.log.borrow_mut(), "{id}: XML1.1 is not supported").ok();
+                    // writeln!(self.log.borrow_mut(), "{id}: {recommendation} is not supported").ok();
                     return;
                 }
                 if !edition.is_empty() {
