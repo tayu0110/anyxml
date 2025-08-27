@@ -1319,6 +1319,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         // > encountered is binding; at user option, an XML processor MAY issue a
         // > warning if entities are declared multiple times.
         self.entities.insert(name, decl).ok();
+        self.has_parameter_entity |= pe;
 
         Ok(())
     }

@@ -350,11 +350,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             }
         } else {
             if self.config.is_enable(ParserOption::Validation) {
-                // is it correct ???
-                // I don't really understand the meaning of [WFC: Entity Declared],
-                // so if I'm wrong, please let me know...
-                if !self.has_external_subset || self.standalone == Some(true) {
-                    // [WFC: Entity Declared]
+                // [WFC: Entity Declared]
+                if self.standalone == Some(true)
+                    || (!self.has_internal_subset && !self.has_external_subset)
+                    || (!self.has_external_subset && self.has_parameter_entity)
+                {
                     fatal_error!(
                         self,
                         ParserEntityNotFound,
@@ -370,7 +370,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                 }
             } else {
                 // [WFC: Entity Declared]
-                if self.standalone == Some(true) {
+                if self.standalone == Some(true)
+                    || (!self.has_internal_subset && !self.has_external_subset)
+                    || (!self.has_external_subset && !self.has_parameter_entity)
+                {
                     fatal_error!(
                         self,
                         ParserEntityNotFound,

@@ -145,6 +145,7 @@ pub struct XMLReader<Spec: ParserSpec> {
     pub(crate) standalone: Option<bool>,
     pub(crate) has_internal_subset: bool,
     pub(crate) has_external_subset: bool,
+    pub(crate) has_parameter_entity: bool,
     // (prefix, namespace name, before overwrite)
     // Namespaces declared closer to the document element appear earlier in the list.
     // The second `usize` is the position of the namespace that bound the same prefix until
@@ -245,6 +246,7 @@ impl<Spec: ParserSpec> XMLReader<Spec> {
         self.standalone = None;
         self.has_internal_subset = false;
         self.has_external_subset = false;
+        self.has_parameter_entity = false;
         self.namespaces.clear();
         // 'xml' prefix
         let xml: Arc<str> = "xml".into();
@@ -380,6 +382,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             standalone: None,
             has_internal_subset: false,
             has_external_subset: false,
+            has_parameter_entity: false,
             namespaces: vec![],
             prefix_map: HashMap::new(),
             entities: Default::default(),
