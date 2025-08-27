@@ -145,6 +145,7 @@ impl ContentHandler for XMLConfWalker {
                 let mut uri = String::new();
                 let mut recommendation = String::new();
                 let mut edition = String::new();
+                let mut entities = String::new();
                 for att in atts {
                     match att.qname.as_ref() {
                         "TYPE" => r#type = att.value.to_string(),
@@ -152,6 +153,7 @@ impl ContentHandler for XMLConfWalker {
                         "URI" => uri = att.value.to_string(),
                         "RECOMMENDATION" => recommendation = att.value.to_string(),
                         "EDITION" => edition = att.value.to_string(),
+                        "ENTITIES" => entities = att.value.to_string(),
                         _ => {}
                     }
                 }
@@ -181,9 +183,14 @@ impl ContentHandler for XMLConfWalker {
                     .resolve(&URIString::parse(uri).unwrap());
 
                 let handler = Arc::new(TestSAXHandler::new());
-                let mut reader = XMLReaderBuilder::new()
-                    .set_error_handler(handler.clone() as _)
-                    .build();
+                let mut reader = XMLReaderBuilder::new().set_error_handler(handler.clone() as _);
+                if entities.contains("parameter") {
+                    reader = reader.enable_option(ParserOption::ExternalParameterEntities);
+                }
+                if entities.contains("general") {
+                    reader = reader.enable_option(ParserOption::ExternalGeneralEntities);
+                }
+                let mut reader = reader.build();
                 reader.parse_uri(uri, None).ok();
 
                 match r#type.as_str() {
@@ -245,7 +252,9 @@ fn xmlconf_tests() {
 
     assert!(
         handler.unexpected_success.get() == 0 && handler.unexpected_failure.get() == 0,
-        "{}",
-        handler.log.borrow()
+        "{}\n=== Unexpected Success: {}, Unexpected Failure: {} ===\n",
+        handler.log.borrow(),
+        handler.unexpected_success.get(),
+        handler.unexpected_failure.get(),
     );
 }

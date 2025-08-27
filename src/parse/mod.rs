@@ -343,7 +343,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if self.config.is_enable(ParserOption::Validation)
-            || self.config.is_enable(ParserOption::ExternalGeneralEntities)
+            || self
+                .config
+                .is_enable(ParserOption::ExternalParameterEntities)
         {
             if let Some(decl) = self.entities.get(&name) {
                 match decl {
@@ -3347,7 +3349,15 @@ impl XMLReader<DefaultParserSpec<'_>> {
             );
         }
         let encoding = self.parse_encoding_decl(false)?;
-        self.source.switch_encoding(&encoding)?;
+        if self.source.switch_encoding(&encoding).is_err() {
+            fatal_error!(
+                self,
+                ParserUnsupportedEncoding,
+                "Switching encoding to '{}' is failed.",
+                encoding
+            );
+            return Err(XMLError::ParserUnsupportedEncoding);
+        }
         self.encoding = Some(encoding);
         self.skip_whitespaces()?;
         self.grow()?;
