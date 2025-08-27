@@ -3250,35 +3250,23 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 }
             }
         } else {
-            if self.config.is_enable(ParserOption::Validation) {
-                // is it correct ???
-                // I don't really understand the meaning of [WFC: Entity Declared],
-                // so if I'm wrong, please let me know...
-                if !self.has_external_subset || self.standalone == Some(true) {
-                    // [WFC: Entity Declared]
-                    fatal_error!(
-                        self,
-                        ParserEntityNotFound,
-                        "The entity '{}' is not declared.",
-                        name
-                    );
-                } else {
-                    // [VC: Entity Declared]
-                    error!(
-                        self,
-                        ParserEntityNotFound, "The entity '{}' is not declared.", name
-                    );
-                }
-            } else {
+            if self.standalone == Some(true)
+                || (!self.has_internal_subset && !self.has_external_subset)
+                || (!self.has_external_subset && !self.has_parameter_entity)
+            {
                 // [WFC: Entity Declared]
-                if self.standalone == Some(true) {
-                    fatal_error!(
-                        self,
-                        ParserEntityNotFound,
-                        "The entity '{}' is not declared.",
-                        name
-                    );
-                }
+                fatal_error!(
+                    self,
+                    ParserEntityNotFound,
+                    "The entity '{}' is not declared.",
+                    name
+                );
+            } else if self.config.is_enable(ParserOption::Validation) {
+                // [VC: Entity Declared]
+                error!(
+                    self,
+                    ParserEntityNotFound, "The entity '{}' is not declared.", name
+                );
             }
 
             if !self.fatal_error_occurred {
