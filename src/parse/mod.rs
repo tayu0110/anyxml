@@ -32,6 +32,15 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.set_compact_mode();
         self.parse_element()?;
         self.parse_misc()?;
+        self.grow()?;
+        if !self.source.is_empty() {
+            fatal_error!(
+                self,
+                ParserUnexpectedDocumentContent,
+                "Unnecessary document content remains. (Elements, character data, etc.)"
+            );
+            return Err(XMLError::ParserUnexpectedDocumentContent);
+        }
         self.content_handler().end_document();
         Ok(())
     }

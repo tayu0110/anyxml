@@ -72,6 +72,7 @@ pub enum XMLError {
     ParserEntityIncorrectNesting,
     ParserUnacceptableNamespaceName,
     ParserUndefinedNamespace,
+    ParserUnexpectedDocumentContent,
     ParserUnexpectedEOF,
     // I/O errors
     IOUnknownError,
