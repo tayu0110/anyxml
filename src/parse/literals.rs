@@ -624,35 +624,15 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                                 unreachable!("Internal error: Reference name: {name}");
                             }
                         }
-                    } else if self.config.is_enable(ParserOption::Validation) {
-                        // is it correct ???
-                        // I don't really understand the meaning of [WFC: Entity Declared],
-                        // so if I'm wrong, please let me know...
-                        if !self.has_external_subset || self.standalone == Some(true) {
-                            // [WFC: Entity Declared]
-                            fatal_error!(
-                                self,
-                                ParserEntityNotFound,
-                                "The entity '{}' is not declared.",
-                                name
-                            );
-                        } else {
-                            // [VC: Entity Declared]
-                            error!(
-                                self,
-                                ParserEntityNotFound, "The entity '{}' is not declared.", name
-                            );
-                        }
                     } else {
-                        // [WFC: Entity Declared]
-                        if self.standalone == Some(true) {
-                            fatal_error!(
-                                self,
-                                ParserEntityNotFound,
-                                "The entity '{}' is not declared.",
-                                name
-                            );
-                        }
+                        // In the case of an Unparsed Entity, it should be an error,
+                        // but since no declaration is found at this point, it is
+                        // processed as a Parsed Entity for now.
+                        // If it is an Unparsed Entity, an error should occur when
+                        // this entity is expanded, so there should be no problem.
+                        buffer.push('&');
+                        buffer.push_str(&name);
+                        buffer.push(';');
                     }
                 }
                 [c, ..] if *c == quote as u8 => {
