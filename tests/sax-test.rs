@@ -184,13 +184,10 @@ impl ContentHandler for XMLConfWalker {
 
                 let handler = Arc::new(TestSAXHandler::new());
                 let mut reader = XMLReaderBuilder::new().set_error_handler(handler.clone() as _);
-                if entities.contains("parameter") {
+                if entities != "none" {
                     reader = reader
                         .enable_option(ParserOption::ExternalParameterEntities)
                         .enable_option(ParserOption::ExternalGeneralEntities);
-                }
-                if entities.contains("general") {
-                    reader = reader.enable_option(ParserOption::ExternalGeneralEntities);
                 }
                 let mut reader = reader.build();
                 reader.parse_uri(uri, None).ok();
