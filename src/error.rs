@@ -87,6 +87,7 @@ pub enum XMLError {
     ParserEntityNotFound,
     ParserEntityRecursion,
     ParserEntityIncorrectNesting,
+    ParserUndeclaredEntityReference,
     ParserUnacceptableNamespaceName,
     ParserUndefinedNamespace,
     ParserUnexpectedDocumentContent,

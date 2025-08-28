@@ -159,6 +159,7 @@ pub enum EntityDecl {
     InternalGeneralEntity {
         base_uri: Arc<URIStr>,
         replacement_text: Box<str>,
+        in_external_markup: bool,
     },
     InternalParameterEntity {
         base_uri: Arc<URIStr>,
@@ -168,6 +169,7 @@ pub enum EntityDecl {
         base_uri: Arc<URIStr>,
         system_id: Box<URIStr>,
         public_id: Option<Box<str>>,
+        in_external_markup: bool,
     },
     ExternalGeneralUnparsedEntity {
         base_uri: Arc<URIStr>,
@@ -186,26 +188,31 @@ static PREDEFINED_ENTITY_LT: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
         base_uri: URIString::parse("#predefined").unwrap().into(),
         replacement_text: "&#60;".into(), // '<'
+        in_external_markup: false,
     });
 static PREDEFINED_ENTITY_GT: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
         base_uri: URIString::parse("#predefined").unwrap().into(),
         replacement_text: "&#62;".into(), // '>'
+        in_external_markup: false,
     });
 static PREDEFINED_ENTITY_AMP: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
         base_uri: URIString::parse("#predefined").unwrap().into(),
         replacement_text: "&#38;".into(), // '&'
+        in_external_markup: false,
     });
 static PREDEFINED_ENTITY_APOS: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
         base_uri: URIString::parse("#predefined").unwrap().into(),
         replacement_text: "&#39;".into(), // '''
+        in_external_markup: false,
     });
 static PREDEFINED_ENTITY_QUOT: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
         base_uri: URIString::parse("#predefined").unwrap().into(),
         replacement_text: "&#34;".into(), // '"'
+        in_external_markup: false,
     });
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

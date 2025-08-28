@@ -1185,6 +1185,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     EntityDecl::InternalGeneralEntity {
                         base_uri,
                         replacement_text: buffer.into_boxed_str(),
+                        in_external_markup: base_entity_stack_depth > 0,
                     }
                 }
             }
@@ -1274,6 +1275,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         base_uri,
                         system_id: system_id.into(),
                         public_id: public_id.map(From::from),
+                        in_external_markup: base_entity_stack_depth > 0,
                     }
                 }
             }
@@ -3136,44 +3138,62 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 EntityDecl::InternalGeneralEntity {
                     base_uri,
                     replacement_text,
+                    in_external_markup,
                 } => {
-                    let source = InputSource::from_content(replacement_text.as_ref());
-                    let name: Arc<str> = name.into();
-                    self.push_source(
-                        Box::new(source),
-                        base_uri.clone(),
-                        Some(name.clone()),
-                        URIString::parse(format!("#internal-entity.{name}"))?.into(),
-                        None,
-                    )?;
-
-                    if !self.fatal_error_occurred {
-                        self.lexical_handler.start_entity(&name);
-                    }
-
-                    self.parse_content()?;
-                    self.grow()?;
-
-                    if !self.source.is_empty() {
+                    if *in_external_markup && self.standalone == Some(true) {
+                        // [WFC: Entity Declared]
                         fatal_error!(
                             self,
-                            ParserEntityIncorrectNesting,
-                            "The entity '{}' is nested incorrectly.",
-                            name
+                            ParserUndeclaredEntityReference,
+                            "standalone='yes', but it does not reference any entities declared in the internal DTD."
                         );
-                    }
+                    } else {
+                        let source = InputSource::from_content(replacement_text.as_ref());
+                        let name: Arc<str> = name.into();
+                        self.push_source(
+                            Box::new(source),
+                            base_uri.clone(),
+                            Some(name.clone()),
+                            URIString::parse(format!("#internal-entity.{name}"))?.into(),
+                            None,
+                        )?;
 
-                    self.pop_source()?;
-                    if !self.fatal_error_occurred {
-                        self.lexical_handler.end_entity();
+                        if !self.fatal_error_occurred {
+                            self.lexical_handler.start_entity(&name);
+                        }
+
+                        self.parse_content()?;
+                        self.grow()?;
+
+                        if !self.source.is_empty() {
+                            fatal_error!(
+                                self,
+                                ParserEntityIncorrectNesting,
+                                "The entity '{}' is nested incorrectly.",
+                                name
+                            );
+                        }
+
+                        self.pop_source()?;
+                        if !self.fatal_error_occurred {
+                            self.lexical_handler.end_entity();
+                        }
                     }
                 }
                 EntityDecl::ExternalGeneralParsedEntity {
                     base_uri,
                     system_id,
                     public_id,
+                    in_external_markup,
                 } => {
-                    if self.config.is_enable(ParserOption::ExternalGeneralEntities)
+                    if *in_external_markup && self.standalone == Some(true) {
+                        // [WFC: Entity Declared]
+                        fatal_error!(
+                            self,
+                            ParserUndeclaredEntityReference,
+                            "standalone='yes', but it does not reference any entities declared in the internal DTD."
+                        );
+                    } else if self.config.is_enable(ParserOption::ExternalGeneralEntities)
                         || self.config.is_enable(ParserOption::Validation)
                     {
                         match self.entity_resolver.resolve_entity(

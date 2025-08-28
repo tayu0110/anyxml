@@ -289,37 +289,49 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                 EntityDecl::InternalGeneralEntity {
                     base_uri,
                     replacement_text,
+                    in_external_markup,
                 } => {
-                    let source = InputSource::from_content(replacement_text.as_ref());
-                    let name: Arc<str> = name.into();
-                    self.push_source(
-                        Box::new(source),
-                        base_uri.clone(),
-                        Some(name.clone()),
-                        URIString::parse(format!("#internal-entity.{name}"))?.into(),
-                        None,
-                    )?;
-
-                    if !self.fatal_error_occurred {
-                        self.lexical_handler.start_entity(&name);
-                    }
-
-                    self.parse_att_value_internal(buffer, quote, orig_entity_stack)?;
-                    self.source.grow()?;
-
-                    if !self.source.is_empty() {
+                    if *in_external_markup && self.standalone == Some(true) {
+                        // [WFC: No Recursion]
                         fatal_error!(
                             self,
-                            ParserEntityIncorrectNesting,
-                            "The entity '{}' is nested incorrectly.",
+                            ParserEntityRecursion,
+                            "The entity '{}' appears recursively.",
                             name
                         );
-                        return Err(XMLError::ParserEntityIncorrectNesting);
-                    }
+                        return Err(XMLError::ParserEntityRecursion);
+                    } else {
+                        let source = InputSource::from_content(replacement_text.as_ref());
+                        let name: Arc<str> = name.into();
+                        self.push_source(
+                            Box::new(source),
+                            base_uri.clone(),
+                            Some(name.clone()),
+                            URIString::parse(format!("#internal-entity.{name}"))?.into(),
+                            None,
+                        )?;
 
-                    self.pop_source()?;
-                    if !self.fatal_error_occurred {
-                        self.lexical_handler.end_entity();
+                        if !self.fatal_error_occurred {
+                            self.lexical_handler.start_entity(&name);
+                        }
+
+                        self.parse_att_value_internal(buffer, quote, orig_entity_stack)?;
+                        self.source.grow()?;
+
+                        if !self.source.is_empty() {
+                            fatal_error!(
+                                self,
+                                ParserEntityIncorrectNesting,
+                                "The entity '{}' is nested incorrectly.",
+                                name
+                            );
+                            return Err(XMLError::ParserEntityIncorrectNesting);
+                        }
+
+                        self.pop_source()?;
+                        if !self.fatal_error_occurred {
+                            self.lexical_handler.end_entity();
+                        }
                     }
                 }
                 EntityDecl::ExternalGeneralParsedEntity { .. } => {
