@@ -3173,7 +3173,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     system_id,
                     public_id,
                 } => {
-                    if self.config.is_enable(ParserOption::ExternalGeneralEntities) {
+                    if self.config.is_enable(ParserOption::ExternalGeneralEntities)
+                        || self.config.is_enable(ParserOption::Validation)
+                    {
                         match self.entity_resolver.resolve_entity(
                             &name,
                             public_id.as_deref(),
@@ -3290,9 +3292,19 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.state = ParserState::Parsing;
         self.source.set_compact_mode();
         self.parse_content()?;
+        self.grow()?;
+        if !self.source.is_empty() {
+            fatal_error!(
+                self,
+                ParserUnexpectedDocumentContent,
+                "Unnecessary external parsed content remains. (Elements, character data, etc.)"
+            );
+            return Err(XMLError::ParserUnexpectedDocumentContent);
+        }
         // Restore version and encoding.
         self.encoding = encoding;
         self.version = version;
+
         Ok(())
     }
 
