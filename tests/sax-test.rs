@@ -8,7 +8,7 @@ use std::{
 };
 
 use anyxml::{
-    error::XMLErrorLevel,
+    error::{XMLErrorDomain, XMLErrorLevel},
     sax::{
         Locator,
         handler::{ContentHandler, ErrorHandler},
@@ -21,6 +21,8 @@ struct TestSAXHandler {
     warning: Cell<usize>,
     error: Cell<usize>,
     fatal_error: Cell<usize>,
+    ns_error: Cell<usize>,
+    validity_error: Cell<usize>,
     buffer: RefCell<String>,
 }
 
@@ -30,6 +32,8 @@ impl TestSAXHandler {
             warning: Cell::new(0),
             error: Cell::new(0),
             fatal_error: Cell::new(0),
+            ns_error: Cell::new(0),
+            validity_error: Cell::new(0),
             buffer: RefCell::new(String::new()),
         }
     }
@@ -38,6 +42,8 @@ impl TestSAXHandler {
         self.warning.update(|_| 0);
         self.error.update(|_| 0);
         self.fatal_error.update(|_| 0);
+        self.ns_error.update(|_| 0);
+        self.validity_error.update(|_| 0);
         self.buffer.borrow_mut().clear();
     }
 }
@@ -51,7 +57,11 @@ impl ErrorHandler for TestSAXHandler {
 
     fn error(&self, error: anyxml::sax::error::SAXParseError) {
         assert_eq!(error.level, XMLErrorLevel::Error);
-        self.error.update(|c| c + 1);
+        match error.domain {
+            XMLErrorDomain::Parser => self.error.update(|c| c + 1),
+            XMLErrorDomain::Namespace => self.ns_error.update(|c| c + 1),
+            XMLErrorDomain::DTDValid => self.error.update(|c| c + 1),
+        }
         writeln!(self.buffer.borrow_mut(), "{}", error).ok();
     }
 
@@ -194,7 +204,11 @@ impl ContentHandler for XMLConfWalker {
 
                 match r#type.as_str() {
                     "not-wf" => {
-                        if handler.fatal_error.get() == 0 {
+                        if handler.fatal_error.get() > 0
+                            || (recommendation.starts_with("NS1.0") && handler.ns_error.get() > 0)
+                        {
+                            // ok
+                        } else {
                             self.unexpected_success.update(|c| c + 1);
                             writeln!(self.log.borrow_mut(), "{id}: unexpected success").ok();
                             writeln!(self.log.borrow_mut(), "{}", handler.buffer.borrow()).ok();

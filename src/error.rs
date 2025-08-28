@@ -20,6 +20,23 @@ impl std::fmt::Display for XMLErrorLevel {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum XMLErrorDomain {
+    Parser,
+    Namespace,
+    DTDValid,
+}
+
+impl std::fmt::Display for XMLErrorDomain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::Parser => write!(f, "parser"),
+            Self::Namespace => write!(f, "namespace"),
+            Self::DTDValid => write!(f, "dtd-valid"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XMLError {
     // general errors
     InternalError,

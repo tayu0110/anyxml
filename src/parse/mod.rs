@@ -11,7 +11,7 @@ use crate::{
     error::XMLError,
     sax::{
         Attribute, AttributeType, ContentSpec, DefaultDecl, EntityDecl,
-        error::{error, fatal_error, warning},
+        error::{error, fatal_error, ns_error, warning},
         parser::{ParserOption, ParserState, XMLReader},
         source::InputSource,
     },
@@ -102,7 +102,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
         let s = self.skip_whitespaces()?;
         self.grow()?;
         if self.source.is_empty() {
-            fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF");
             return Err(XMLError::ParserUnexpectedEOF);
         }
 
@@ -621,10 +620,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 );
                                 self.locator.update_column(|c| c + 1);
                             }
-                            None => {
-                                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
-                                return Err(XMLError::ParserUnexpectedEOF);
-                            }
+                            None => return Err(XMLError::ParserUnexpectedEOF),
                         }
                     }
                 }
@@ -943,10 +939,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 );
                 return Err(XMLError::ParserInvalidElementDecl);
             }
-            _ => {
-                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
-                return Err(XMLError::ParserUnexpectedEOF);
-            }
+            _ => return Err(XMLError::ParserUnexpectedEOF),
         }
 
         if self.entity_name_stack.len() != base_entity_stack_depth {
@@ -1079,10 +1072,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 );
                 return Err(XMLError::ParserInvalidElementDecl);
             }
-            _ => {
-                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
-                return Err(XMLError::ParserUnexpectedEOF);
-            }
+            _ => return Err(XMLError::ParserUnexpectedEOF),
         }
 
         if self.entity_name_stack.len() != base_entity_stack_depth {
@@ -1295,10 +1285,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 );
                 return Err(XMLError::ParserInvalidEntityDecl);
             }
-            [] => {
-                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
-                return Err(XMLError::ParserUnexpectedEOF);
-            }
+            [] => return Err(XMLError::ParserUnexpectedEOF),
         };
 
         if self.entity_name_stack.len() != base_entity_stack_depth {
@@ -1416,7 +1403,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if !self.source.content_bytes().starts_with(b">") {
-            fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
             return Err(XMLError::ParserUnexpectedEOF);
         }
         // skip '>'
@@ -2213,7 +2199,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 // If we call `grow` just before and `source` is empty,
                 // `source` has probably reached EOF.
                 return if self.source.is_empty() {
-                    fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                     Err(XMLError::ParserUnexpectedEOF)
                 } else {
                     fatal_error!(
@@ -2325,7 +2310,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
             // If we call `grow` just before and `source` is empty,
             // `source` has probably reached EOF.
             return if self.source.is_empty() {
-                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                 Err(XMLError::ParserUnexpectedEOF)
             } else {
                 fatal_error!(
@@ -2362,7 +2346,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
             return Err(XMLError::PraserTooLongEncodingName);
         } else if cur == content.len() {
             return if self.source.is_empty() {
-                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                 Err(XMLError::ParserUnexpectedEOF)
             } else {
                 fatal_error!(
@@ -2464,7 +2447,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     );
                 }
                 None => {
-                    fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                     return Err(XMLError::ParserUnexpectedEOF);
                 }
             }
@@ -2585,10 +2567,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         c as u32
                     );
                 }
-                None => {
-                    fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
-                    return Err(XMLError::ParserUnexpectedEOF);
-                }
+                None => return Err(XMLError::ParserUnexpectedEOF),
             }
             if self.source.content_bytes().len() < 2 {
                 self.grow()?;
@@ -2648,7 +2627,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
         let mut s = self.skip_whitespaces()?;
         self.grow()?;
         if self.source.content_bytes().is_empty() {
-            fatal_error!(self, ParserUnexpectedEOF, "Unexpceted EOF.");
             return Err(XMLError::ParserUnexpectedEOF);
         }
 
@@ -2708,7 +2686,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     // when utilizing other specifications.
                     let prefix = if att_name == "xmlns" {
                         if att_value == XML_NS_NAMESPACE || att_value == XML_XML_NAMESPACE {
-                            error!(
+                            ns_error!(
                                 self,
                                 ParserUnacceptableNamespaceName,
                                 "Namespace '{}' cannot be declared as default namespace.",
@@ -2720,13 +2698,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         if att_value.is_empty()
                             && matches!(self.version, XMLVersion::XML10 | XMLVersion::Unknown)
                         {
-                            error!(
+                            ns_error!(
                                 self,
                                 ParserUnacceptableNamespaceName,
                                 "Empty namespace name is not allowed in Namespace in XML 1.0."
                             );
                         } else if att_value == XML_NS_NAMESPACE {
-                            error!(
+                            ns_error!(
                                 self,
                                 ParserUnacceptableNamespaceName,
                                 "The namespace '{}' cannot be declared explicitly.",
@@ -2735,7 +2713,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         } else if &att_name[prefix_length + 1..] != "xml"
                             && att_value == XML_XML_NAMESPACE
                         {
-                            error!(
+                            ns_error!(
                                 self,
                                 ParserUnacceptableNamespaceName,
                                 "The namespace '{}' cannot bind prefixes other than 'xml'.",
@@ -2744,11 +2722,17 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         } else if &att_name[prefix_length + 1..] == "xml"
                             && att_value != XML_XML_NAMESPACE
                         {
-                            error!(
+                            ns_error!(
                                 self,
                                 ParserUnacceptableNamespaceName,
                                 "The namespace '{}' cannot bind the prefix 'xml'.",
                                 &att_name[prefix_length + 1..]
+                            );
+                        } else if &att_name[prefix_length + 1..] == "xmlns" {
+                            ns_error!(
+                                self,
+                                ParserUnacceptableNamespaceName,
+                                "Any namespaces cannot bind 'xmlns' explicitly."
                             );
                         }
                         &att_name[prefix_length + 1..]
@@ -2810,7 +2794,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
             if self.source.content_bytes().is_empty() {
                 self.grow()?;
                 if self.source.content_bytes().is_empty() {
-                    fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                     return Err(XMLError::ParserUnexpectedEOF);
                 }
             }
@@ -2832,11 +2815,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                 let prefix = &att.qname[..att.qname.len() - len - 1];
                 if let Some(&pos) = self.prefix_map.get(prefix) {
-                    att.uri = Some(self.namespaces[pos].0.clone());
+                    att.uri = Some(self.namespaces[pos].1.clone());
                 } else {
                     // It is unclear what to do when the corresponding namespace cannot be found,
                     // but for now, we will do nothing except for report an error.
-                    error!(
+                    ns_error!(
                         self,
                         ParserUndefinedNamespace,
                         "The namespace name for the prefix '{}' has not been declared.",
@@ -2911,7 +2894,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             &atts,
                         );
                     } else {
-                        error!(
+                        ns_error!(
                             self,
                             ParserUndefinedNamespace,
                             "The prefix '{}' is not bind to any namespaces.",
@@ -3021,7 +3004,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             &name,
                         );
                     } else {
-                        error!(
+                        ns_error!(
                             self,
                             ParserUndefinedNamespace,
                             "The prefix '{}' is not bind to any namespaces.",
@@ -3639,7 +3622,6 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         self.source.grow()?;
         let content = self.source.content_bytes();
         if content.is_empty() {
-            fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
             Err(XMLError::ParserUnexpectedEOF)
         } else if (hex && content[0].is_ascii_hexdigit())
             || (!hex && content[0].is_ascii_digit())
