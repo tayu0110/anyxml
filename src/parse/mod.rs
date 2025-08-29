@@ -1,7 +1,7 @@
 pub mod literals;
 pub mod tokens;
 
-use std::{str::from_utf8_unchecked, sync::Arc};
+use std::{collections::HashSet, str::from_utf8_unchecked, sync::Arc};
 
 use anyxml_uri::uri::URIString;
 
@@ -10,7 +10,7 @@ use crate::{
     XML_NS_NAMESPACE, XML_VERSION_NUM_LIMIT_LENGTH, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::{
-        Attribute, AttributeType, ContentSpec, DefaultDecl, EntityDecl,
+        Attribute, AttributeType, ContentSpec, DefaultDecl, EntityDecl, Notation,
         error::{error, fatal_error, ns_error, validity_error, warning},
         parser::{ParserOption, ParserState, XMLReader},
         source::InputSource,
@@ -765,7 +765,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                     self.skip_whitespaces_with_handle_peref(model_entity_stack_depth, true)?;
                     self.grow()?;
-                    let mut ret = vec![];
+                    let mut ret = HashSet::new();
                     if self.source.content_bytes().starts_with(b"|") {
                         // skip '|'
                         self.source.advance(1)?;
@@ -784,7 +784,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             self.source.advance(1)?;
                             self.locator.update_column(|c| c + 1);
 
-                            ret.push(buffer.as_str().into());
+                            if !ret.insert(buffer.as_str().into())
+                                && self.config.is_enable(ParserOption::Validation)
+                            {
+                                // [VC: No Duplicate Types]
+                                validity_error!(
+                                    self,
+                                    ParserDuplicateMixedContent,
+                                    "'{}' is duplicated as a mixed content of element '{}'.",
+                                    buffer,
+                                    name
+                                );
+                            }
                             buffer.clear();
                             self.skip_whitespaces_with_handle_peref(
                                 model_entity_stack_depth,
@@ -803,7 +814,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 self.grow()?;
                             }
                         }
-                        ret.push(buffer.into_boxed_str());
+                        if !ret.insert(buffer.as_str().into())
+                            && self.config.is_enable(ParserOption::Validation)
+                        {
+                            // [VC: No Duplicate Types]
+                            validity_error!(
+                                self,
+                                ParserDuplicateMixedContent,
+                                "'{}' is duplicated as a mixed content of element '{}'.",
+                                buffer,
+                                name
+                            );
+                        }
                     }
                     if self.entity_name_stack.len() != model_entity_stack_depth {
                         fatal_error!(
@@ -1236,10 +1258,22 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         );
                     }
 
+                    let ndata = ndata.get_or_insert_default();
                     if self.config.is_enable(ParserOption::Namespaces) {
-                        self.parse_ncname(ndata.get_or_insert_default())?;
+                        self.parse_ncname(ndata)?;
                     } else {
-                        self.parse_name(ndata.get_or_insert_default())?;
+                        self.parse_name(ndata)?;
+                    }
+                    if self.config.is_enable(ParserOption::Validation)
+                        && !self.notations.contains_key(ndata.as_str())
+                    {
+                        // [VC: Notation Declared]
+                        validity_error!(
+                            self,
+                            ParserUndeclaredNotation,
+                            "The notation '{}' is undeclared.",
+                            ndata
+                        );
                     }
                     self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 }
@@ -1739,11 +1773,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         self.grow()?;
+        let mut system_id = None::<String>;
+        let mut public_id = None::<String>;
         match self.source.content_bytes() {
             [b'S', b'Y', b'S', b'T', b'E', b'M', ..] => {
                 // If it starts with “SYSTEM,” it is surely an ExternalID.
-                let mut system_id = String::new();
-                self.parse_external_id(&mut system_id, &mut None)?;
+                let system_id = system_id.get_or_insert_default();
+                self.parse_external_id(system_id, &mut None)?;
                 if !self.fatal_error_occurred {
                     let system_id = URIString::parse(system_id)?;
                     self.dtd_handler
@@ -1769,8 +1805,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         "Whitespaces are required after 'PUBLIC' in Notation declaration."
                     );
                 }
-                let mut public_id = String::new();
-                self.parse_pubid_literal(&mut public_id)?;
+                let public_id = public_id.get_or_insert_default();
+                self.parse_pubid_literal(public_id)?;
 
                 let s = self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 self.grow()?;
@@ -1781,8 +1817,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     self.locator.update_column(|c| c + 1);
 
                     if !self.fatal_error_occurred {
-                        self.dtd_handler
-                            .notation_decl(&name, Some(&public_id), None);
+                        self.dtd_handler.notation_decl(&name, Some(public_id), None);
                     }
                     return Ok(());
                 }
@@ -1804,7 +1839,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 if !self.fatal_error_occurred {
                     let system_id = URIString::parse(system_id)?;
                     self.dtd_handler
-                        .notation_decl(&name, Some(&public_id), Some(&system_id));
+                        .notation_decl(&name, Some(public_id), Some(&system_id));
                 }
             }
             _ => {
@@ -1837,6 +1872,27 @@ impl XMLReader<DefaultParserSpec<'_>> {
         // skip '>'
         self.source.advance(1)?;
         self.locator.update_column(|c| c + 1);
+
+        match self.notations.entry(name.as_str().into()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Notation {
+                    name: name.into(),
+                    system_id: system_id.map(From::from),
+                    public_id: public_id.map(From::from),
+                });
+            }
+            std::collections::hash_map::Entry::Occupied(_) => {
+                if self.config.is_enable(ParserOption::Validation) {
+                    // [VC: Unique Notation Name]
+                    validity_error!(
+                        self,
+                        ParserDuplicateNotationDecl,
+                        "The notation '{}' is duplicated.",
+                        name
+                    );
+                }
+            }
+        }
 
         Ok(())
     }

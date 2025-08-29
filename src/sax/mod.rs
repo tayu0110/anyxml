@@ -5,7 +5,7 @@ pub mod source;
 
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         Arc, LazyLock, RwLock,
         atomic::{AtomicUsize, Ordering},
@@ -117,11 +117,11 @@ impl AttlistDeclMap {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContentSpec {
     EMPTY,
     ANY,
-    Mixed(Vec<Box<str>>),
+    Mixed(HashSet<Box<str>>),
     Children(Box<str>),
 }
 
@@ -253,6 +253,13 @@ impl EntityMap {
     pub fn clear(&mut self) {
         self.0.clear();
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
+pub struct Notation {
+    pub name: Box<str>,
+    pub system_id: Option<Box<str>>,
+    pub public_id: Option<Box<str>>,
 }
 
 pub struct Locator {
