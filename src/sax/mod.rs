@@ -149,6 +149,10 @@ impl ElementDeclMap {
         self.0.get(name)
     }
 
+    pub fn contains(&self, name: &str) -> bool {
+        self.0.contains_key(name)
+    }
+
     pub fn clear(&mut self) {
         self.0.clear();
     }

@@ -422,9 +422,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     _ => unreachable!(),
                 }
             } else {
-                error!(
+                // [VC: Entity Declared]
+                validity_error!(
                     self,
-                    ParserEntityNotFound, "The parameter entity '{}' is not declared.", name
+                    ParserEntityNotFound,
+                    "The parameter entity '{}' is not declared.",
+                    name
                 );
                 self.content_handler.skipped_entity(&name);
             }
@@ -2628,6 +2631,16 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.parse_name(&mut name)?;
         }
 
+        if self.config.is_enable(ParserOption::Validation) && !self.elementdecls.contains(&name) {
+            // [VC: Element Valid]
+            validity_error!(
+                self,
+                ParserUndeclaredElement,
+                "The element type '{}' is undeclared.",
+                name
+            );
+        }
+
         let mut s = self.skip_whitespaces()?;
         self.grow()?;
         if self.source.content_bytes().is_empty() {
@@ -2865,14 +2878,17 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 }
             }
         }
-        for att in &atts {
-            if !self.attlistdecls.contains(&name, &att.qname) {
-                validity_error!(
-                    self,
-                    ParserUndeclaredAttribute,
-                    "The attribute '{}' is not declared in DTD.",
-                    att.qname
-                );
+        if self.config.is_enable(ParserOption::Validation) {
+            for att in &atts {
+                if !self.attlistdecls.contains(&name, &att.qname) {
+                    // [VC: Attribute Value Type]
+                    validity_error!(
+                        self,
+                        ParserUndeclaredAttribute,
+                        "The attribute '{}' is not declared in DTD.",
+                        att.qname
+                    );
+                }
             }
         }
 
@@ -3291,9 +3307,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 );
             } else if self.config.is_enable(ParserOption::Validation) {
                 // [VC: Entity Declared]
-                error!(
+                validity_error!(
                     self,
-                    ParserEntityNotFound, "The entity '{}' is not declared.", name
+                    ParserEntityNotFound,
+                    "The entity '{}' is not declared.",
+                    name
                 );
             }
 
