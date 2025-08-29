@@ -2837,6 +2837,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             for (i, att) in atts.iter().enumerate() {
                 for prev in atts.iter().take(i) {
                     if att.local_name == prev.local_name && att.uri == prev.uri {
+                        // [NSC: Attributes Unique]
                         fatal_error!(
                             self,
                             ParserDuplicateAttributes,
@@ -2852,6 +2853,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             for (i, att) in atts.iter().enumerate() {
                 for prev in atts.iter().take(i) {
                     if att.qname == prev.qname {
+                        // [WFC: Unique Att Spec]
                         fatal_error!(
                             self,
                             ParserDuplicateAttributes,
@@ -2861,6 +2863,16 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         break;
                     }
                 }
+            }
+        }
+        for att in &atts {
+            if !self.attlistdecls.contains(&name, &att.qname) {
+                validity_error!(
+                    self,
+                    ParserUndeclaredAttribute,
+                    "The attribute '{}' is not declared in DTD.",
+                    att.qname
+                );
             }
         }
 
