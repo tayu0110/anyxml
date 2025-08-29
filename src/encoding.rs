@@ -208,7 +208,7 @@ impl Decoder for UTF16Decoder {
         if src.is_empty() {
             return Err(DecodeError::InputIsEmpty);
         }
-        if dst.len() < 4 {
+        if dst.capacity() - dst.len() < 4 {
             return Err(DecodeError::OutputTooShort);
         }
 
@@ -249,7 +249,7 @@ impl Decoder for UTF16Decoder {
                 ),
             ) {
                 if let Ok(c) = c {
-                    read += c.len_utf16();
+                    read += c.len_utf16() * 2;
                     write += c.len_utf8();
                     dst.push(c);
                 } else {
@@ -361,7 +361,7 @@ impl Decoder for UTF16BEDecoder {
                 .map(|v| u16::from_be_bytes([v[0], v[1]])),
         ) {
             if let Ok(c) = c {
-                read += c.len_utf16();
+                read += c.len_utf16() * 2;
                 write += c.len_utf8();
                 dst.push(c);
             } else {
@@ -457,7 +457,7 @@ impl Decoder for UTF16LEDecoder {
                 .map(|v| u16::from_le_bytes([v[0], v[1]])),
         ) {
             if let Ok(c) = c {
-                read += c.len_utf16();
+                read += c.len_utf16() * 2;
                 write += c.len_utf8();
                 dst.push(c);
             } else {
@@ -560,7 +560,7 @@ pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>
             Box::new(UTF16Decoder {
                 read: 0,
                 top: [0; 2],
-                be: false,
+                be: true,
             })
         });
         map.insert(UTF16BE_NAME, || Box::new(UTF16BEDecoder));

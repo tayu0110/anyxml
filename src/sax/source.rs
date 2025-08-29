@@ -81,7 +81,7 @@ impl<'a> InputSource<'a> {
                     ret.decoder = Box::new(UTF16BEDecoder);
                 }
                 // UTF-16, little-endian
-                [0xFF, 0xFF, ..] => {
+                [0xFF, 0xFE, ..] => {
                     ret.buffer_next = 2;
                     ret.decoder = Box::new(UTF16LEDecoder);
                 }

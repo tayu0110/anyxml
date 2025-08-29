@@ -11,7 +11,7 @@ use crate::{
     error::XMLError,
     sax::{
         Attribute, AttributeType, ContentSpec, DefaultDecl, EntityDecl,
-        error::{error, fatal_error, ns_error, warning},
+        error::{error, fatal_error, ns_error, validity_error, warning},
         parser::{ParserOption, ParserState, XMLReader},
         source::InputSource,
     },
@@ -874,12 +874,14 @@ impl XMLReader<DefaultParserSpec<'_>> {
         if !self.fatal_error_occurred {
             self.decl_handler.element_decl(&name, &contentspec);
         }
+        // [VC: Unique Element Type Declaration]
         if self.elementdecls.insert(name, contentspec).is_err()
             && self.config.is_enable(ParserOption::Validation)
         {
-            error!(
+            validity_error!(
                 self,
-                ParserDuplicateElementDecl, "An element declaration is duplicated."
+                ParserDuplicateElementDecl,
+                "An element declaration is duplicated."
             );
         }
 

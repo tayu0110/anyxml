@@ -60,7 +60,7 @@ impl ErrorHandler for TestSAXHandler {
         match error.domain {
             XMLErrorDomain::Parser => self.error.update(|c| c + 1),
             XMLErrorDomain::Namespace => self.ns_error.update(|c| c + 1),
-            XMLErrorDomain::DTDValid => self.error.update(|c| c + 1),
+            XMLErrorDomain::DTDValid => self.validity_error.update(|c| c + 1),
         }
         writeln!(self.buffer.borrow_mut(), "{}", error).ok();
     }
@@ -194,7 +194,7 @@ impl ContentHandler for XMLConfWalker {
 
                 let handler = Arc::new(TestSAXHandler::new());
                 let mut reader = XMLReaderBuilder::new().set_error_handler(handler.clone() as _);
-                if entities != "none" {
+                if entities != "none" || matches!(r#type.as_ref(), "valid" | "invalid") {
                     reader = reader.enable_option(ParserOption::Validation)
                 }
                 let mut reader = reader.build();
@@ -221,14 +221,20 @@ impl ContentHandler for XMLConfWalker {
                         // )
                         // .ok();
                     }
-                    _type @ ("valid" | "invalid") => {
+                    "valid" => {
                         // skip
-                        // writeln!(
-                        //     self.log.borrow_mut(),
-                        //     "{id}: test type '{}' is not yet supported.",
-                        //     r#type
-                        // )
-                        // .ok();
+                        if handler.validity_error.get() > 0 {
+                            self.unexpected_failure.update(|c| c + 1);
+                            writeln!(self.log.borrow_mut(), "{id}: unexpected failure").ok();
+                            writeln!(self.log.borrow_mut(), "{}", handler.buffer.borrow()).ok();
+                        }
+                    }
+                    "invalid" => {
+                        if handler.validity_error.get() == 0 {
+                            self.unexpected_success.update(|c| c + 1);
+                            writeln!(self.log.borrow_mut(), "{id}: unexpected success").ok();
+                            writeln!(self.log.borrow_mut(), "{}", handler.buffer.borrow()).ok();
+                        }
                     }
                     r#type => {
                         writeln!(

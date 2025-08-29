@@ -281,4 +281,45 @@ macro_rules! ns_error {
     };
 }
 
-pub(crate) use {error, fatal_error, generic_error, ns_error, warning};
+macro_rules! validity_error {
+    ($reader:expr, $code:ident, $message:literal, $( $args:expr ),*) => {
+        #[allow(unused)]
+        use $crate::error::XMLError::*;
+        $crate::sax::error::generic_error!(
+            error,
+            $reader.error_handler,
+            $code,
+            $crate::error::XMLErrorLevel::Error,
+            $crate::error::XMLErrorDomain::DTDValid,
+            $reader.locator,
+            $message,
+            $( $args ),*
+        );
+    };
+    ($reader:expr, $code:ident, $message:literal) => {
+        $crate::sax::error::validity_error!($reader, $code, $message, );
+    };
+    ($reader:expr, $code:ident, $message:expr) => {
+        $crate::sax::error::generic_error!(
+            error,
+            $reader.error_handler,
+            $crate::error::XMLError::$code,
+            $crate::error::XMLErrorLevel::Error,
+            $crate::error::XMLErrorDomain::DTDValid,
+            $reader.locator,
+            $message
+        );
+    };
+    ($reader:expr, $code:ident) => {
+        $crate::sax::error::generic_error!(
+            error,
+            $reader.error_handler,
+            $crate::error::XMLError::$code,
+            $crate::error::XMLErrorLevel::Error,
+            $crate::error::XMLErrorDomain::DTDValid,
+            $reader.locator
+        );
+    };
+}
+
+pub(crate) use {error, fatal_error, generic_error, ns_error, validity_error, warning};
