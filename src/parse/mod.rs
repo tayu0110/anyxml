@@ -237,6 +237,22 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.lexical_handler.end_dtd();
         }
 
+        if self.config.is_enable(ParserOption::Validation) {
+            for (_, decl) in self.entities.iter() {
+                if let EntityDecl::ExternalGeneralUnparsedEntity { notation_name, .. } = decl
+                    && !self.notations.contains_key(notation_name)
+                {
+                    // [VC: Notation Declared]
+                    validity_error!(
+                        self,
+                        ParserUndeclaredNotation,
+                        "The notation '{}' is undeclared.",
+                        notation_name.as_ref()
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -1300,17 +1316,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     } else {
                         self.parse_name(ndata)?;
                     }
-                    if self.config.is_enable(ParserOption::Validation)
-                        && !self.notations.contains_key(ndata.as_str())
-                    {
-                        // [VC: Notation Declared]
-                        validity_error!(
-                            self,
-                            ParserUndeclaredNotation,
-                            "The notation '{}' is undeclared.",
-                            ndata
-                        );
-                    }
+
+                    // Since notation declarations may appear after this declaration,
+                    // the [VC: Notation Declared] check is performed after reading the entire DTD.
+
                     self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 }
 
@@ -1846,36 +1855,27 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                 let s = self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 self.grow()?;
+                let mut system_id = None::<String>;
                 // If '>' appears, notation declaration finished.
-                if self.source.content_bytes().starts_with(b">") {
-                    // skip '>'
-                    self.source.advance(1)?;
-                    self.locator.update_column(|c| c + 1);
-
-                    if !self.fatal_error_occurred {
-                        self.dtd_handler.notation_decl(&name, Some(public_id), None);
+                if !self.source.content_bytes().starts_with(b">") {
+                    // If notation declaration has not finished,
+                    // whitespaces are required because SystemLiteral follows.
+                    if s == 0 {
+                        fatal_error!(
+                            self,
+                            ParserInvalidPubidLiteral,
+                            "Whitespaces are required before SystemLiteral in Notation declaration."
+                        );
                     }
-                    return Ok(());
-                }
 
-                // If notation declaration has not finished,
-                // whitespaces are required because SystemLiteral follows.
-                if s == 0 {
-                    fatal_error!(
-                        self,
-                        ParserInvalidPubidLiteral,
-                        "Whitespaces are required before SystemLiteral in Notation declaration."
-                    );
+                    self.parse_system_literal(system_id.get_or_insert_default())?;
+                    self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 }
-
-                let mut system_id = String::new();
-                self.parse_system_literal(&mut system_id)?;
-                self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
 
                 if !self.fatal_error_occurred {
-                    let system_id = URIString::parse(system_id)?;
+                    let system_id = system_id.map(URIString::parse).transpose()?;
                     self.dtd_handler
-                        .notation_decl(&name, Some(public_id), Some(&system_id));
+                        .notation_decl(&name, Some(public_id), system_id.as_deref());
                 }
             }
             _ => {

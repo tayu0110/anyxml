@@ -250,6 +250,10 @@ impl EntityMap {
     pub fn clear(&mut self) {
         self.0.clear();
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &EntityDecl)> {
+        self.0.iter().map(|(name, decl)| (name.as_ref(), decl))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
