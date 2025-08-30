@@ -71,14 +71,301 @@ impl std::fmt::Display for TransitionError {
 
 impl std::error::Error for TransitionError {}
 
-#[allow(clippy::upper_case_acronyms)]
-struct NFA<A: Atom> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FAAssembleError {
+    InvalidQuantifier,
+}
+
+impl std::fmt::Display for FAAssembleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for FAAssembleError {}
+
+pub struct NFA<A: Atom> {
     id: usize,
     initial_state: usize,
     states: Vec<FAFragment<A>>,
 }
 
 impl<A: Atom> NFA<A> {
+    fn assemble(ast: &ASTNode<A>) -> Result<NFA<A>, FAAssembleError> {
+        // ranges: (point, is_end)
+        fn collect_character_ranges<A: Atom>(ast: &ASTNode<A>, ranges: &mut Vec<(A, bool)>) {
+            match ast {
+                ASTNode::Charcters {
+                    start,
+                    end,
+                    negation: _,
+                } => {
+                    ranges.push((*start, false));
+                    ranges.push((*end, true));
+                }
+                ASTNode::Catenation(front, back) => {
+                    collect_character_ranges(front, ranges);
+                    collect_character_ranges(back, ranges);
+                }
+                ASTNode::Alternation(left, right) => {
+                    collect_character_ranges(left, ranges);
+                    collect_character_ranges(right, ranges);
+                }
+                ASTNode::ZeroOrOne(node) => {
+                    collect_character_ranges(node, ranges);
+                }
+                ASTNode::ZeroOrMore(node) => {
+                    collect_character_ranges(node, ranges);
+                }
+                ASTNode::OneOrMore(node) => {
+                    collect_character_ranges(node, ranges);
+                }
+                ASTNode::Repeat {
+                    node,
+                    at_least: _,
+                    at_most: _,
+                } => {
+                    collect_character_ranges(node, ranges);
+                }
+                ASTNode::RepeatExact(node, _) => {
+                    collect_character_ranges(node, ranges);
+                }
+            }
+        }
+
+        let mut ranges = vec![(A::MIN, false), (A::MAX, true)];
+        collect_character_ranges(ast, &mut ranges);
+        ranges.sort_unstable();
+        ranges.dedup();
+        let ranges = ranges
+            .windows(2)
+            .filter_map(|v| {
+                let (mut start, f) = v[0];
+                let (mut end, g) = v[1];
+                if start == end {
+                    Some((start, end))
+                } else {
+                    if f {
+                        start = start.next()?;
+                    }
+                    if !g {
+                        end = end.previous()?;
+                    }
+                    (start <= end).then_some((start, end))
+                }
+            })
+            .collect::<Vec<_>>();
+
+        fn build_states<A: Atom>(
+            ast: &ASTNode<A>,
+            ranges: &[(A, A)],
+            states: &mut Vec<FAFragment<A>>,
+        ) -> Result<(usize, usize), FAAssembleError> {
+            match ast {
+                &ASTNode::Charcters {
+                    start,
+                    end,
+                    negation,
+                } => {
+                    let mut pos = ranges.partition_point(|p| p.0 < start);
+                    let mut from = FAFragment::default();
+                    let to = FAFragment {
+                        is_accepted: true,
+                        ..Default::default()
+                    };
+                    if negation {
+                        for &(f, t) in ranges.iter().take(pos) {
+                            from.rule_map.push((f, t, states.len() + 1));
+                        }
+                        while pos < ranges.len() && ranges[pos].1 <= end {
+                            pos += 1;
+                        }
+                        for &(f, t) in ranges.iter().skip(pos) {
+                            from.rule_map.push((f, t, states.len() + 1));
+                        }
+                    } else {
+                        while pos < ranges.len() && ranges[pos].1 <= end {
+                            let (s, e) = ranges[pos];
+                            from.rule_map.push((s, e, states.len() + 1));
+                            pos += 1;
+                        }
+                    }
+                    states.push(from);
+                    states.push(to);
+                    Ok((states.len() - 2, states.len() - 1))
+                }
+                ASTNode::Catenation(front, back) => {
+                    // [sf -> ... -> ef] -> [sb -> ... -> eb]
+                    let (sf, ef) = build_states(front, ranges, states)?;
+                    let (sb, eb) = build_states(back, ranges, states)?;
+                    states[ef].rule_map.push((A::EPSILON, A::EPSILON, sb));
+                    states[ef].is_accepted = false;
+                    Ok((sf, eb))
+                }
+                ASTNode::Alternation(left, right) => {
+                    //       ┌─> [sl -> ... -> el] ─┐
+                    // start ┤                      ├─> end
+                    //       └─> [sr -> ... -> er] ─┘
+                    let (sl, el) = build_states(left, ranges, states)?;
+                    let (sr, er) = build_states(right, ranges, states)?;
+                    let mut start = FAFragment::default();
+                    start.rule_map.push((A::EPSILON, A::EPSILON, sl));
+                    start.rule_map.push((A::EPSILON, A::EPSILON, sr));
+                    states.push(start);
+                    let mut end = FAFragment::default();
+                    let len = states.len();
+                    states[el].rule_map.push((A::EPSILON, A::EPSILON, len));
+                    states[el].is_accepted = false;
+                    states[er].rule_map.push((A::EPSILON, A::EPSILON, len));
+                    states[er].is_accepted = false;
+                    end.is_accepted = true;
+                    states.push(end);
+                    Ok((states.len() - 2, states.len() - 1))
+                }
+                ASTNode::ZeroOrOne(node) => {
+                    // [start -> ... -> end]
+                    //   │               ^
+                    //   └───────────────┘
+                    let (start, end) = build_states(node, ranges, states)?;
+                    states[start].rule_map.push((A::EPSILON, A::EPSILON, end));
+                    Ok((start, end))
+                }
+                ASTNode::ZeroOrMore(node) => {
+                    // [start -> ... -> end] -> new_end
+                    //   │ ^             │         ^
+                    //   │ └─────────────┘         │
+                    //   └─────────────────────────┘
+                    let (start, end) = build_states(node, ranges, states)?;
+                    let mut new_end = FAFragment::default();
+                    states[end].is_accepted = false;
+                    new_end.is_accepted = true;
+                    let len = states.len();
+                    states[start].rule_map.push((A::EPSILON, A::EPSILON, len));
+                    states[end].rule_map.push((A::EPSILON, A::EPSILON, len));
+                    states[end].rule_map.push((A::EPSILON, A::EPSILON, start));
+                    states.push(new_end);
+                    Ok((start, states.len() - 1))
+                }
+                ASTNode::OneOrMore(node) => {
+                    // [start -> ... -> end] -> [start2 -> ... -> end2] -> new_end
+                    //                            │ ^               │         ^
+                    //                            │ └───────────────┘         │
+                    //                            └───────────────────────────┘
+                    let (start, end) = build_states(node, ranges, states)?;
+                    let (start2, end2) = build_states(node, ranges, states)?;
+                    states[end].is_accepted = false;
+                    states[end2].is_accepted = false;
+                    states[end].rule_map.push((A::EPSILON, A::EPSILON, start2));
+                    let new_end = FAFragment {
+                        is_accepted: true,
+                        ..Default::default()
+                    };
+                    let len = states.len();
+                    states[start2].rule_map.push((A::EPSILON, A::EPSILON, len));
+                    states[end2].rule_map.push((A::EPSILON, A::EPSILON, len));
+                    states[end2].rule_map.push((A::EPSILON, A::EPSILON, start2));
+                    states.push(new_end);
+                    Ok((start, states.len() - 1))
+                }
+                ASTNode::Repeat {
+                    node,
+                    at_least,
+                    at_most,
+                } => {
+                    let new_start = FAFragment::default();
+                    states.push(new_start);
+                    let new_start = states.len() - 1;
+                    let new_end = FAFragment {
+                        is_accepted: true,
+                        ..Default::default()
+                    };
+                    states.push(new_end);
+                    let new_end = states.len() - 1;
+
+                    let mut start = new_start;
+                    for _ in 0..*at_least {
+                        let (new_start, new_end) = build_states(node, ranges, states)?;
+                        states[start]
+                            .rule_map
+                            .push((A::EPSILON, A::EPSILON, new_start));
+                        states[new_end].is_accepted = false;
+                        start = new_end;
+                    }
+                    if let &Some(at_most) = at_most {
+                        if *at_least > at_most {
+                            return Err(FAAssembleError::InvalidQuantifier);
+                        }
+                        for _ in *at_least..at_most {
+                            let (new_start, end) = build_states(node, ranges, states)?;
+                            states[start]
+                                .rule_map
+                                .push((A::EPSILON, A::EPSILON, new_start));
+                            states[start]
+                                .rule_map
+                                .push((A::EPSILON, A::EPSILON, new_end));
+                            states[end].is_accepted = false;
+                            start = end;
+                        }
+                        states[start]
+                            .rule_map
+                            .push((A::EPSILON, A::EPSILON, new_end));
+                    } else {
+                        let (new_start, end) = build_states(node, ranges, states)?;
+                        states[start]
+                            .rule_map
+                            .push((A::EPSILON, A::EPSILON, new_start));
+                        states[start]
+                            .rule_map
+                            .push((A::EPSILON, A::EPSILON, new_end));
+                        states[end].rule_map.push((A::EPSILON, A::EPSILON, new_end));
+                        states[end]
+                            .rule_map
+                            .push((A::EPSILON, A::EPSILON, new_start));
+                        states[end].is_accepted = false;
+                    }
+
+                    Ok((new_start, new_end))
+                }
+                ASTNode::RepeatExact(node, n) => {
+                    let new_start = FAFragment::default();
+                    states.push(new_start);
+                    let new_start = states.len() - 1;
+                    let new_end = FAFragment {
+                        is_accepted: true,
+                        ..Default::default()
+                    };
+                    states.push(new_end);
+                    let new_end = states.len() - 1;
+
+                    let mut start = new_start;
+                    for _ in 0..*n {
+                        let (new_start, end) = build_states(node, ranges, states)?;
+                        states[start]
+                            .rule_map
+                            .push((A::EPSILON, A::EPSILON, new_start));
+                        states[end].is_accepted = false;
+                        start = end;
+                    }
+
+                    states[start]
+                        .rule_map
+                        .push((A::EPSILON, A::EPSILON, new_end));
+
+                    Ok((new_start, new_end))
+                }
+            }
+        }
+
+        let mut states = vec![];
+        let (initial_state, _) = build_states(ast, &ranges, &mut states)?;
+
+        Ok(NFA {
+            id: AUTOMATON_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            initial_state,
+            states,
+        })
+    }
+
     fn convert_to_dfa(mut self) -> DFA<A> {
         self.states.iter_mut().for_each(|frag| {
             frag.rule_map
@@ -203,10 +490,12 @@ impl<A: Atom> NFA<A> {
             &mut HashMap::new(),
         );
 
-        DFA {
+        let mut dfa = DFA {
             id: self.id,
             states,
-        }
+        };
+        dfa.minimize();
+        dfa
     }
 }
 
@@ -228,6 +517,19 @@ impl<A: Atom> DFA<A> {
                 rule_map: vec![],
             }],
         }
+    }
+
+    /// Build a DFA from the AST. If the build fails, return `Err`.
+    ///
+    /// If `None` is entered, this function always returns `Ok`.  
+    /// In this case, the DFA has only one state that is both the input state and the accepting state.  
+    /// For example, it is likely that the regular expression converted to AST would be an empty string.
+    pub fn assemble(ast: Option<&ASTNode<A>>) -> Result<DFA<A>, FAAssembleError> {
+        let Some(ast) = ast else {
+            return Ok(DFA::empty());
+        };
+
+        Ok(NFA::assemble(ast)?.convert_to_dfa())
     }
 
     /// Returns the initial state.
@@ -343,308 +645,4 @@ impl<A: Atom> DFA<A> {
             }
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FAAssembleError {
-    InvalidQuantifier,
-}
-
-impl std::fmt::Display for FAAssembleError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-
-impl std::error::Error for FAAssembleError {}
-
-/// Build a DFA from the AST. If the build fails, return `Err`.
-///
-/// If `None` is entered, this function always returns `Ok`.  
-/// In this case, the DFA has only one state that is both the input state and the accepting state.  
-/// For example, it is likely that the regular expression converted to AST would be an empty string.
-pub fn assemble<A: Atom>(ast: Option<&ASTNode<A>>) -> Result<DFA<A>, FAAssembleError> {
-    let Some(ast) = ast else {
-        return Ok(DFA::empty());
-    };
-
-    let nfa = build_nfa(ast)?;
-    let mut dfa = nfa.convert_to_dfa();
-    dfa.minimize();
-    Ok(dfa)
-}
-
-fn build_nfa<A: Atom>(ast: &ASTNode<A>) -> Result<NFA<A>, FAAssembleError> {
-    // ranges: (point, is_end)
-    fn collect_character_ranges<A: Atom>(ast: &ASTNode<A>, ranges: &mut Vec<(A, bool)>) {
-        match ast {
-            ASTNode::Charcters {
-                start,
-                end,
-                negation: _,
-            } => {
-                ranges.push((*start, false));
-                ranges.push((*end, true));
-            }
-            ASTNode::Catenation(front, back) => {
-                collect_character_ranges(front, ranges);
-                collect_character_ranges(back, ranges);
-            }
-            ASTNode::Alternation(left, right) => {
-                collect_character_ranges(left, ranges);
-                collect_character_ranges(right, ranges);
-            }
-            ASTNode::ZeroOrOne(node) => {
-                collect_character_ranges(node, ranges);
-            }
-            ASTNode::ZeroOrMore(node) => {
-                collect_character_ranges(node, ranges);
-            }
-            ASTNode::OneOrMore(node) => {
-                collect_character_ranges(node, ranges);
-            }
-            ASTNode::Repeat {
-                node,
-                at_least: _,
-                at_most: _,
-            } => {
-                collect_character_ranges(node, ranges);
-            }
-            ASTNode::RepeatExact(node, _) => {
-                collect_character_ranges(node, ranges);
-            }
-        }
-    }
-
-    let mut ranges = vec![(A::MIN, false), (A::MAX, true)];
-    collect_character_ranges(ast, &mut ranges);
-    ranges.sort_unstable();
-    ranges.dedup();
-    let ranges = ranges
-        .windows(2)
-        .filter_map(|v| {
-            let (mut start, f) = v[0];
-            let (mut end, g) = v[1];
-            if start == end {
-                Some((start, end))
-            } else {
-                if f {
-                    start = start.next()?;
-                }
-                if !g {
-                    end = end.previous()?;
-                }
-                (start <= end).then_some((start, end))
-            }
-        })
-        .collect::<Vec<_>>();
-
-    fn build_states<A: Atom>(
-        ast: &ASTNode<A>,
-        ranges: &[(A, A)],
-        states: &mut Vec<FAFragment<A>>,
-    ) -> Result<(usize, usize), FAAssembleError> {
-        match ast {
-            &ASTNode::Charcters {
-                start,
-                end,
-                negation,
-            } => {
-                let mut pos = ranges.partition_point(|p| p.0 < start);
-                let mut from = FAFragment::default();
-                let to = FAFragment {
-                    is_accepted: true,
-                    ..Default::default()
-                };
-                if negation {
-                    for &(f, t) in ranges.iter().take(pos) {
-                        from.rule_map.push((f, t, states.len() + 1));
-                    }
-                    while pos < ranges.len() && ranges[pos].1 <= end {
-                        pos += 1;
-                    }
-                    for &(f, t) in ranges.iter().skip(pos) {
-                        from.rule_map.push((f, t, states.len() + 1));
-                    }
-                } else {
-                    while pos < ranges.len() && ranges[pos].1 <= end {
-                        let (s, e) = ranges[pos];
-                        from.rule_map.push((s, e, states.len() + 1));
-                        pos += 1;
-                    }
-                }
-                states.push(from);
-                states.push(to);
-                Ok((states.len() - 2, states.len() - 1))
-            }
-            ASTNode::Catenation(front, back) => {
-                // [sf -> ... -> ef] -> [sb -> ... -> eb]
-                let (sf, ef) = build_states(front, ranges, states)?;
-                let (sb, eb) = build_states(back, ranges, states)?;
-                states[ef].rule_map.push((A::EPSILON, A::EPSILON, sb));
-                states[ef].is_accepted = false;
-                Ok((sf, eb))
-            }
-            ASTNode::Alternation(left, right) => {
-                //       ┌─> [sl -> ... -> el] ─┐
-                // start ┤                      ├─> end
-                //       └─> [sr -> ... -> er] ─┘
-                let (sl, el) = build_states(left, ranges, states)?;
-                let (sr, er) = build_states(right, ranges, states)?;
-                let mut start = FAFragment::default();
-                start.rule_map.push((A::EPSILON, A::EPSILON, sl));
-                start.rule_map.push((A::EPSILON, A::EPSILON, sr));
-                states.push(start);
-                let mut end = FAFragment::default();
-                let len = states.len();
-                states[el].rule_map.push((A::EPSILON, A::EPSILON, len));
-                states[el].is_accepted = false;
-                states[er].rule_map.push((A::EPSILON, A::EPSILON, len));
-                states[er].is_accepted = false;
-                end.is_accepted = true;
-                states.push(end);
-                Ok((states.len() - 2, states.len() - 1))
-            }
-            ASTNode::ZeroOrOne(node) => {
-                // [start -> ... -> end]
-                //   │               ^
-                //   └───────────────┘
-                let (start, end) = build_states(node, ranges, states)?;
-                states[start].rule_map.push((A::EPSILON, A::EPSILON, end));
-                Ok((start, end))
-            }
-            ASTNode::ZeroOrMore(node) => {
-                // [start -> ... -> end] -> new_end
-                //   │ ^             │         ^
-                //   │ └─────────────┘         │
-                //   └─────────────────────────┘
-                let (start, end) = build_states(node, ranges, states)?;
-                let mut new_end = FAFragment::default();
-                states[end].is_accepted = false;
-                new_end.is_accepted = true;
-                let len = states.len();
-                states[start].rule_map.push((A::EPSILON, A::EPSILON, len));
-                states[end].rule_map.push((A::EPSILON, A::EPSILON, len));
-                states[end].rule_map.push((A::EPSILON, A::EPSILON, start));
-                states.push(new_end);
-                Ok((start, states.len() - 1))
-            }
-            ASTNode::OneOrMore(node) => {
-                // [start -> ... -> end] -> [start2 -> ... -> end2] -> new_end
-                //                            │ ^               │         ^
-                //                            │ └───────────────┘         │
-                //                            └───────────────────────────┘
-                let (start, end) = build_states(node, ranges, states)?;
-                let (start2, end2) = build_states(node, ranges, states)?;
-                states[end].is_accepted = false;
-                states[end2].is_accepted = false;
-                states[end].rule_map.push((A::EPSILON, A::EPSILON, start2));
-                let new_end = FAFragment {
-                    is_accepted: true,
-                    ..Default::default()
-                };
-                let len = states.len();
-                states[start2].rule_map.push((A::EPSILON, A::EPSILON, len));
-                states[end2].rule_map.push((A::EPSILON, A::EPSILON, len));
-                states[end2].rule_map.push((A::EPSILON, A::EPSILON, start2));
-                states.push(new_end);
-                Ok((start, states.len() - 1))
-            }
-            ASTNode::Repeat {
-                node,
-                at_least,
-                at_most,
-            } => {
-                let new_start = FAFragment::default();
-                states.push(new_start);
-                let new_start = states.len() - 1;
-                let new_end = FAFragment {
-                    is_accepted: true,
-                    ..Default::default()
-                };
-                states.push(new_end);
-                let new_end = states.len() - 1;
-
-                let mut start = new_start;
-                for _ in 0..*at_least {
-                    let (new_start, new_end) = build_states(node, ranges, states)?;
-                    states[start]
-                        .rule_map
-                        .push((A::EPSILON, A::EPSILON, new_start));
-                    states[new_end].is_accepted = false;
-                    start = new_end;
-                }
-                if let &Some(at_most) = at_most {
-                    if *at_least > at_most {
-                        return Err(FAAssembleError::InvalidQuantifier);
-                    }
-                    for _ in *at_least..at_most {
-                        let (new_start, end) = build_states(node, ranges, states)?;
-                        states[start]
-                            .rule_map
-                            .push((A::EPSILON, A::EPSILON, new_start));
-                        states[start]
-                            .rule_map
-                            .push((A::EPSILON, A::EPSILON, new_end));
-                        states[end].is_accepted = false;
-                        start = end;
-                    }
-                    states[start]
-                        .rule_map
-                        .push((A::EPSILON, A::EPSILON, new_end));
-                } else {
-                    let (new_start, end) = build_states(node, ranges, states)?;
-                    states[start]
-                        .rule_map
-                        .push((A::EPSILON, A::EPSILON, new_start));
-                    states[start]
-                        .rule_map
-                        .push((A::EPSILON, A::EPSILON, new_end));
-                    states[end].rule_map.push((A::EPSILON, A::EPSILON, new_end));
-                    states[end]
-                        .rule_map
-                        .push((A::EPSILON, A::EPSILON, new_start));
-                    states[end].is_accepted = false;
-                }
-
-                Ok((new_start, new_end))
-            }
-            ASTNode::RepeatExact(node, n) => {
-                let new_start = FAFragment::default();
-                states.push(new_start);
-                let new_start = states.len() - 1;
-                let new_end = FAFragment {
-                    is_accepted: true,
-                    ..Default::default()
-                };
-                states.push(new_end);
-                let new_end = states.len() - 1;
-
-                let mut start = new_start;
-                for _ in 0..*n {
-                    let (new_start, end) = build_states(node, ranges, states)?;
-                    states[start]
-                        .rule_map
-                        .push((A::EPSILON, A::EPSILON, new_start));
-                    states[end].is_accepted = false;
-                    start = end;
-                }
-
-                states[start]
-                    .rule_map
-                    .push((A::EPSILON, A::EPSILON, new_end));
-
-                Ok((new_start, new_end))
-            }
-        }
-    }
-
-    let mut states = vec![];
-    let (initial_state, _) = build_states(ast, &ranges, &mut states)?;
-
-    Ok(NFA {
-        id: AUTOMATON_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-        initial_state,
-        states,
-    })
 }

@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     ast::ASTNode,
-    fa::{DFA, assemble},
+    fa::DFA,
     unicode::{
         GENERAL_CATEGORY_CC, GENERAL_CATEGORY_CF, GENERAL_CATEGORY_CO, GENERAL_CATEGORY_LL,
         GENERAL_CATEGORY_LM, GENERAL_CATEGORY_LO, GENERAL_CATEGORY_LT, GENERAL_CATEGORY_LU,
@@ -52,7 +52,7 @@ impl XSRegexp {
     pub fn compile(mut regexp: &str) -> Result<XSRegexp, RegexpError> {
         let ast = parse_regexp(&mut regexp, false)?;
         Ok(Self {
-            fa: LazyLock::new(Box::new(move || assemble(ast.as_ref()).unwrap())),
+            fa: LazyLock::new(Box::new(move || DFA::assemble(ast.as_ref()).unwrap())),
         })
     }
 
