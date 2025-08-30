@@ -8,6 +8,7 @@ edition = "2024"
 
 [dependencies]
 anyxml-uri = { path = "./anyxml-uri" }
+anyxml-automata = { path = "./anyxml-automata" }
 
 [[test]]
 name = "sax-test"

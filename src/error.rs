@@ -71,6 +71,7 @@ pub enum XMLError {
     ParserInvalidDoctypeDecl,
     ParserInvalidElementDecl,
     ParserDuplicateElementDecl,
+    ParserAmbiguousElementContentModel,
     ParserDuplicateMixedContent,
     ParserInvalidAttlistDecl,
     ParserDuplicateAttlistDecl,

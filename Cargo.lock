@@ -6,6 +6,7 @@ version = 4
 name = "anyxml"
 version = "0.1.0"
 dependencies = [
+ "anyxml-automata",
  "anyxml-uri",
 ]
 

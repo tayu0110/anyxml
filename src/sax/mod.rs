@@ -1,3 +1,4 @@
+pub mod contentspec;
 pub mod error;
 pub mod handler;
 pub mod parser;
@@ -5,7 +6,7 @@ pub mod source;
 
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{
         Arc, LazyLock, RwLock,
         atomic::{AtomicUsize, Ordering},
@@ -14,7 +15,7 @@ use std::{
 
 use anyxml_uri::uri::{URIStr, URIString};
 
-use crate::error::XMLError;
+use crate::{error::XMLError, sax::contentspec::ContentSpec};
 
 pub struct Attribute {
     pub uri: Option<Arc<str>>,
@@ -117,15 +118,7 @@ impl AttlistDeclMap {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ContentSpec {
-    EMPTY,
-    ANY,
-    Mixed(HashSet<Box<str>>),
-    Children(Box<str>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ElementDeclMap(HashMap<Box<str>, ContentSpec>);
 
 impl ElementDeclMap {

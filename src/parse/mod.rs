@@ -10,7 +10,8 @@ use crate::{
     XML_NS_NAMESPACE, XML_VERSION_NUM_LIMIT_LENGTH, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::{
-        Attribute, AttributeType, ContentSpec, DefaultDecl, EntityDecl, Notation,
+        Attribute, AttributeType, DefaultDecl, EntityDecl, Notation,
+        contentspec::{ContentSpec, ElementContent, ElementContentStateID},
         error::{error, fatal_error, ns_error, validity_error, warning},
         parser::{ParserOption, ParserState, XMLReader},
         source::InputSource,
@@ -866,9 +867,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     // [48] cp       ::= (Name | choice | seq) ('?' | '*' | '+')?
                     // [49] choice   ::= '(' S? cp ( S? '|' S? cp )+ S? ')'	[VC: Proper Group/PE Nesting]
                     // [50] seq      ::= '(' S? cp ( S? ',' S? cp )* S? ')' [VC: Proper Group/PE Nesting]
-                    let mut buffer = "(".to_owned();
-                    self.parse_children(&mut buffer)?;
-                    ContentSpec::Children(buffer.into())
+                    let mut content = ElementContent::new();
+                    let mut buffer = String::new();
+                    self.parse_children(&mut buffer, &mut content)?;
+                    if content.compile().unwrap() {
+                        error!(
+                            self,
+                            ParserAmbiguousElementContentModel,
+                            "The element content of '{}' is ambiguous.",
+                            name
+                        );
+                    }
+                    ContentSpec::Children(content)
                 }
             }
         };
@@ -926,9 +936,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
     /// [49] choice   ::= '(' S? cp ( S? '|' S? cp )+ S? ')' [VC: Proper Group/PE Nesting]
     /// [50] seq      ::= '(' S? cp ( S? ',' S? cp )* S? ')' [VC: Proper Group/PE Nesting]
     /// ```
-    pub(crate) fn parse_children(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+    pub(crate) fn parse_children(
+        &mut self,
+        buffer: &mut String,
+        model: &mut ElementContent,
+    ) -> Result<(), XMLError> {
         let base_entity_stack_depth = self.entity_name_stack.len();
-        self.parse_cp(buffer)?;
+        let mut id = self.parse_cp(buffer, model)?;
         self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
 
         self.grow()?;
@@ -938,10 +952,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     // skip '|'
                     self.source.advance(1)?;
                     self.locator.update_column(|c| c + 1);
-                    buffer.push('|');
 
                     self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
-                    self.parse_cp(buffer)?;
+                    let id2 = self.parse_cp(buffer, model)?;
+                    id = model.create_alternation(id, id2);
                     self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 }
             }
@@ -950,10 +964,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     // skip ','
                     self.source.advance(1)?;
                     self.locator.update_column(|c| c + 1);
-                    buffer.push(',');
 
                     self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
-                    self.parse_cp(buffer)?;
+                    let id2 = self.parse_cp(buffer, model)?;
+                    id = model.create_catenation(id, id2);
                     self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 }
             }
@@ -1004,24 +1018,35 @@ impl XMLReader<DefaultParserSpec<'_>> {
     /// ```text
     /// [48] cp       ::= (Name | choice | seq) ('?' | '*' | '+')?
     /// ```
-    pub(crate) fn parse_cp(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+    pub(crate) fn parse_cp(
+        &mut self,
+        buffer: &mut String,
+        model: &mut ElementContent,
+    ) -> Result<ElementContentStateID, XMLError> {
         self.grow()?;
 
         let base_entity_stack_depth = self.entity_name_stack.len();
-        if self.source.content_bytes().starts_with(b"(") {
-            self.parse_choice_or_seq(buffer)?;
+        let mut id = if self.source.content_bytes().starts_with(b"(") {
+            self.parse_choice_or_seq(buffer, model)?
         } else {
             // parse Name
+            buffer.clear();
             if self.config.is_enable(ParserOption::Namespaces) {
                 self.parse_qname(buffer)?;
             } else {
                 self.parse_name(buffer)?;
             }
-        }
+            model.create_name(buffer.as_str())
+        };
 
         self.grow()?;
         if let [c @ (b'?' | b'*' | b'+'), ..] = self.source.content_bytes() {
-            buffer.push(*c as char);
+            id = match c {
+                b'?' => model.create_zero_or_one(id),
+                b'*' => model.create_zero_or_more(id),
+                b'+' => model.create_one_or_more(id),
+                _ => unreachable!(),
+            };
             self.source.advance(1)?;
             self.locator.update_column(|c| c + 1);
         }
@@ -1035,14 +1060,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
             return Err(XMLError::ParserEntityIncorrectNesting);
         }
 
-        Ok(())
+        Ok(id)
     }
 
     /// ```text
     /// [49] choice   ::= '(' S? cp ( S? '|' S? cp )+ S? ')' [VC: Proper Group/PE Nesting]
     /// [50] seq      ::= '(' S? cp ( S? ',' S? cp )* S? ')' [VC: Proper Group/PE Nesting]
     /// ```
-    pub(crate) fn parse_choice_or_seq(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+    pub(crate) fn parse_choice_or_seq(
+        &mut self,
+        buffer: &mut String,
+        model: &mut ElementContent,
+    ) -> Result<ElementContentStateID, XMLError> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"(") {
             fatal_error!(
@@ -1055,12 +1084,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
         // skip '('
         self.source.advance(1)?;
         self.locator.update_column(|c| c + 1);
-        buffer.push('(');
 
         let base_entity_stack_depth = self.entity_name_stack.len();
         self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
 
-        self.parse_cp(buffer)?;
+        let mut id = self.parse_cp(buffer, model)?;
 
         self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
 
@@ -1071,10 +1099,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     // skip '|'
                     self.source.advance(1)?;
                     self.locator.update_column(|c| c + 1);
-                    buffer.push('|');
 
                     self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
-                    self.parse_cp(buffer)?;
+                    let id2 = self.parse_cp(buffer, model)?;
+                    id = model.create_alternation(id, id2);
                     self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 }
             }
@@ -1083,10 +1111,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     // skip ','
                     self.source.advance(1)?;
                     self.locator.update_column(|c| c + 1);
-                    buffer.push(',');
 
                     self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
-                    self.parse_cp(buffer)?;
+                    let id2 = self.parse_cp(buffer, model)?;
+                    id = model.create_catenation(id, id2);
                     self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
                 }
             }
@@ -1122,9 +1150,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
         // skip ')'
         self.source.advance(1)?;
         self.locator.update_column(|c| c + 1);
-        buffer.push(')');
 
-        Ok(())
+        Ok(id)
     }
 
     /// ```text
