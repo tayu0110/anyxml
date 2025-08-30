@@ -14,8 +14,27 @@ use anyxml_automata::{
 pub enum ContentSpec {
     EMPTY,
     ANY,
-    Mixed(HashSet<Box<str>>),
+    Mixed(Arc<HashSet<Box<str>>>),
     Children(ElementContent),
+}
+
+impl ContentSpec {
+    pub fn new_validator(&mut self) -> ContentSpecValidator {
+        match self {
+            ContentSpec::EMPTY => ContentSpecValidator::EMPTY,
+            ContentSpec::ANY => ContentSpecValidator::ANY,
+            ContentSpec::Mixed(set) => ContentSpecValidator::Mixed(set.clone()),
+            ContentSpec::Children(model) => {
+                let validator = model.new_validator();
+                ContentSpecValidator::Children {
+                    unrecoverable: false,
+                    state: vec![validator.initial_state()],
+                    name_ids: model.name_ids.clone().unwrap(),
+                    validator,
+                }
+            }
+        }
+    }
 }
 
 static ELEMENT_CONTENT_ID: AtomicUsize = AtomicUsize::new(0);
@@ -61,6 +80,15 @@ pub enum ElementContentCompileError {
 pub enum ElementContentValidator {
     NFA(Arc<NFA<NameID>>),
     DFA(Arc<DFA<NameID>>),
+}
+
+impl ElementContentValidator {
+    fn initial_state(&self) -> State<NameID> {
+        match self {
+            ElementContentValidator::NFA(nfa) => nfa.initial_state(),
+            ElementContentValidator::DFA(dfa) => dfa.initial_state(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -210,6 +238,8 @@ impl ElementContent {
         let root = parent.into_iter().position(|p| p == usize::MAX).unwrap();
         let mut memo = HashMap::new();
         let ast = self.build_syntax_tree(root, &mut memo);
+
+        // build NFA and check if it is deterministic
         let nfa = NFA::assemble(Some(&ast)).unwrap();
         let is_deterministic = nfa.is_deterministic();
         self.compiled = Some(ElementContentValidator::NFA(Arc::new(nfa)));
@@ -270,6 +300,24 @@ impl ElementContent {
             }
         }
     }
+
+    fn new_validator(&mut self) -> ElementContentValidator {
+        match &self.compiled {
+            Some(ElementContentValidator::NFA(nfa)) => {
+                let dfa = Arc::new(nfa.build_dfa());
+                self.compiled = Some(ElementContentValidator::DFA(dfa.clone()));
+                ElementContentValidator::DFA(dfa.clone())
+            }
+            Some(ElementContentValidator::DFA(dfa)) => ElementContentValidator::DFA(dfa.clone()),
+            None => {
+                self.compile().ok();
+                if self.compiled.is_none() {
+                    panic!("internal error: element content cannot compiled.");
+                }
+                self.new_validator()
+            }
+        }
+    }
 }
 
 pub enum ContentSpecValidationError {
@@ -278,10 +326,11 @@ pub enum ContentSpecValidationError {
     NotReachedAcceptedState,
 }
 
+#[derive(Debug)]
 pub enum ContentSpecValidator {
     EMPTY,
     ANY,
-    Mixed(HashSet<Box<str>>),
+    Mixed(Arc<HashSet<Box<str>>>),
     Children {
         unrecoverable: bool,
         state: Vec<State<NameID>>,

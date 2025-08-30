@@ -13,6 +13,7 @@ use crate::{
     error::XMLError,
     sax::{
         AttlistDeclMap, ElementDeclMap, EntityMap, Locator, Notation,
+        contentspec::ContentSpecValidator,
         error::fatal_error,
         handler::{
             ContentHandler, DTDHandler, DeclHandler, DefaultSAXHandler, EntityResolver,
@@ -144,6 +145,7 @@ pub struct XMLReader<Spec: ParserSpec> {
     pub(crate) version: XMLVersion,
     pub(crate) encoding: Option<String>,
     pub(crate) standalone: Option<bool>,
+    pub(crate) dtd_name: String,
     pub(crate) has_internal_subset: bool,
     pub(crate) has_external_subset: bool,
     pub(crate) has_parameter_entity: bool,
@@ -158,6 +160,7 @@ pub struct XMLReader<Spec: ParserSpec> {
     pub(crate) notations: HashMap<Box<str>, Notation>,
     pub(crate) elementdecls: ElementDeclMap,
     pub(crate) attlistdecls: AttlistDeclMap,
+    pub(crate) validation_stack: Vec<Option<(Box<str>, ContentSpecValidator)>>,
 }
 
 impl<Spec: ParserSpec> XMLReader<Spec> {
@@ -246,6 +249,7 @@ impl<Spec: ParserSpec> XMLReader<Spec> {
         self.version = XMLVersion::default();
         self.encoding = None;
         self.standalone = None;
+        self.dtd_name.clear();
         self.has_internal_subset = false;
         self.has_external_subset = false;
         self.has_parameter_entity = false;
@@ -260,6 +264,7 @@ impl<Spec: ParserSpec> XMLReader<Spec> {
         self.notations.clear();
         self.elementdecls.clear();
         self.attlistdecls.clear();
+        self.validation_stack.clear();
     }
 }
 
@@ -387,6 +392,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             version: XMLVersion::default(),
             encoding: None,
             standalone: None,
+            dtd_name: String::new(),
             has_internal_subset: false,
             has_external_subset: false,
             has_parameter_entity: false,
@@ -396,6 +402,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             notations: Default::default(),
             elementdecls: Default::default(),
             attlistdecls: Default::default(),
+            validation_stack: vec![],
         }
     }
 }

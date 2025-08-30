@@ -142,6 +142,10 @@ impl ElementDeclMap {
         self.0.get(name)
     }
 
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut ContentSpec> {
+        self.0.get_mut(name)
+    }
+
     pub fn contains(&self, name: &str) -> bool {
         self.0.contains_key(name)
     }

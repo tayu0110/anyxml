@@ -84,6 +84,7 @@ pub enum XMLError {
     ParserInvalidStartOrEmptyTag,
     ParserInvalidEndTag,
     ParserMismatchElementType,
+    ParserMismatchElementContentModel,
     ParserUndeclaredElement,
     ParserInvalidAttribute,
     ParserUndeclaredAttribute,

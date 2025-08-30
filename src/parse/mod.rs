@@ -1,7 +1,7 @@
 pub mod literals;
 pub mod tokens;
 
-use std::{collections::HashSet, str::from_utf8_unchecked, sync::Arc};
+use std::{collections::HashSet, mem::take, str::from_utf8_unchecked, sync::Arc};
 
 use anyxml_uri::uri::URIString;
 
@@ -93,12 +93,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
             );
         }
 
-        let mut name = String::new();
+        let mut name = take(&mut self.dtd_name);
         if self.config.is_enable(ParserOption::Namespaces) {
             self.parse_qname(&mut name)?;
         } else {
             self.parse_name(&mut name)?;
         }
+        self.dtd_name = name;
 
         let s = self.skip_whitespaces()?;
         self.grow()?;
@@ -136,15 +137,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
             || self.config.is_enable(ParserOption::Validation))
             && let Ok(ext) = self
                 .entity_resolver
-                .get_external_subset(&name, Some(&self.base_uri))
+                .get_external_subset(&self.dtd_name, Some(&self.base_uri))
         {
             system_id = ext.system_id().map(ToOwned::to_owned);
             public_id = ext.public_id().map(str::to_owned);
             external_subset = Some(ext);
         }
         if !self.fatal_error_occurred {
-            self.lexical_handler
-                .start_dtd(&name, public_id.as_deref(), system_id.as_deref());
+            self.lexical_handler.start_dtd(
+                &self.dtd_name,
+                public_id.as_deref(),
+                system_id.as_deref(),
+            );
         }
 
         self.grow()?;
@@ -860,7 +864,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         return Err(XMLError::ParserInvalidElementDecl);
                     }
 
-                    ContentSpec::Mixed(ret)
+                    ContentSpec::Mixed(Arc::new(ret))
                 } else {
                     // Element Content
                     // [47] children ::= (choice | seq) ('?' | '*' | '+')?
@@ -1007,7 +1011,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         self.grow()?;
         if let [c @ (b'?' | b'*' | b'+'), ..] = self.source.content_bytes() {
-            buffer.push(*c as char);
+            match c {
+                b'?' => model.create_zero_or_one(id),
+                b'*' => model.create_zero_or_more(id),
+                b'+' => model.create_one_or_more(id),
+                _ => unreachable!(),
+            };
             self.source.advance(1)?;
             self.locator.update_column(|c| c + 1);
         }
@@ -2714,7 +2723,43 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.parse_name(&mut name)?;
         }
 
-        if self.config.is_enable(ParserOption::Validation) && !self.elementdecls.contains(&name) {
+        match self.validation_stack.last_mut() {
+            Some(Some((parent, validator))) => {
+                if self.config.is_enable(ParserOption::Validation)
+                    && validator.push_name(&name).is_err()
+                {
+                    // [VC: Element Valid]
+                    validity_error!(
+                        self,
+                        ParserMismatchElementContentModel,
+                        "Element '{}' appears in a position where it is not allowed as the content of element '{}'.",
+                        name,
+                        parent
+                    );
+                }
+            }
+            Some(None) => {
+                // The parent element is not declared.
+            }
+            None => {
+                // This is root element or the validation option is disabled.
+                // If the validation option is enabled, Check if element name is equal to dtd name.
+                // [VC: Root Element Type]
+                if self.config.is_enable(ParserOption::Validation) && name != self.dtd_name {
+                    validity_error!(
+                        self,
+                        ParserMismatchElementType,
+                        "The document type declaration name does not match the document element type."
+                    );
+                }
+            }
+        }
+
+        if let Some(contentspec) = self.elementdecls.get_mut(&name) {
+            let validator = contentspec.new_validator();
+            self.validation_stack
+                .push(Some((name.as_str().into(), validator)));
+        } else if self.config.is_enable(ParserOption::Validation) {
             // [VC: Element Valid]
             validity_error!(
                 self,
@@ -2722,6 +2767,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 "The element type '{}' is undeclared.",
                 name
             );
+            self.validation_stack.push(None);
         }
 
         let mut s = self.skip_whitespaces()?;
@@ -3153,6 +3199,21 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
             if old_position < usize::MAX {
                 *self.prefix_map.get_mut(&pre).unwrap() = old_position;
+            }
+        }
+
+        if self.config.is_enable(ParserOption::Validation)
+            && let Some(Some((context_name, validator))) = self.validation_stack.pop()
+            && !self.fatal_error_occurred
+        {
+            assert_eq!(context_name.as_ref(), name);
+            if validator.finish().is_err() {
+                validity_error!(
+                    self,
+                    ParserMismatchElementContentModel,
+                    "The content of element '{}' is insufficient.",
+                    name
+                );
             }
         }
 
