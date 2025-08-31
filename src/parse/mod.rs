@@ -3176,7 +3176,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         if self.config.is_enable(ParserOption::Validation) {
             let mut notation_attribute = false;
             for att in &atts {
-                let Some((atttype, _)) = self.attlistdecls.get(&name, &att.qname) else {
+                let Some((atttype, default_decl)) = self.attlistdecls.get(&name, &att.qname) else {
                     // [VC: Attribute Value Type]
                     validity_error!(
                         self,
@@ -3394,6 +3394,22 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             );
                         }
                     }
+                }
+
+                if !matches!(atttype, AttributeType::ID)
+                    && let DefaultDecl::FIXED(def) = default_decl
+                    && &att.value != def
+                {
+                    // [VC: Fixed Attribute Default]
+                    validity_error!(
+                        self,
+                        ParserMismatchFixedDefaultAttributeValue,
+                        "The attribute '{}' of the element '{}' is fixed as '{}', but specified '{}'.",
+                        att.qname,
+                        name,
+                        def,
+                        att.value
+                    );
                 }
             }
         }

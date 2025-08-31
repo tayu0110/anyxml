@@ -106,6 +106,7 @@ pub enum XMLError {
     ParserMultipleNotationAttributePerElement,
     ParserUnacceptableNotationAttribute,
     ParserUnacceptableEnumerationAttribute,
+    ParserMismatchFixedDefaultAttributeValue,
     ParserInvalidCharacterReference,
     ParserInvalidEntityReference,
     ParserEntityNotFound,
