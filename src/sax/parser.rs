@@ -161,6 +161,9 @@ pub struct XMLReader<Spec: ParserSpec> {
     pub(crate) elementdecls: ElementDeclMap,
     pub(crate) attlistdecls: AttlistDeclMap,
     pub(crate) validation_stack: Vec<Option<(Box<str>, ContentSpecValidator)>>,
+    // key: element name
+    // value: attribute name declared as ID,
+    pub(crate) id_attributes: HashMap<Box<str>, Box<str>>,
 }
 
 impl<Spec: ParserSpec> XMLReader<Spec> {
@@ -265,6 +268,7 @@ impl<Spec: ParserSpec> XMLReader<Spec> {
         self.elementdecls.clear();
         self.attlistdecls.clear();
         self.validation_stack.clear();
+        self.id_attributes.clear();
     }
 }
 
@@ -403,6 +407,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             elementdecls: Default::default(),
             attlistdecls: Default::default(),
             validation_stack: vec![],
+            id_attributes: HashMap::new(),
         }
     }
 }

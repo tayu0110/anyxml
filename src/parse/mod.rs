@@ -1469,7 +1469,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     att_name,
                     name
                 );
-            } else {
+            } else if self.config.is_enable(ParserOption::Validation) {
                 let (atttype, default_decl) = self.attlistdecls.get(&name, &att_name).unwrap();
                 // check validity constraints
                 match atttype {
@@ -1483,8 +1483,20 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             );
                         }
 
-                        // [VC: One ID per Element Type] cannot be validated until all attribute list
-                        // declarations are read, so it is not checked here.
+                        match self.id_attributes.entry(name.as_str().into()) {
+                            std::collections::hash_map::Entry::Occupied(_) => {
+                                // [VC: One ID per Element Type]
+                                validity_error!(
+                                    self,
+                                    ParserMultipleIDAttributePerElement,
+                                    "ID attribute declarations appear multiple times on element '{}'.",
+                                    name
+                                );
+                            }
+                            std::collections::hash_map::Entry::Vacant(entry) => {
+                                entry.insert(att_name.as_str().into());
+                            }
+                        }
                     }
                     AttributeType::IDREF => match &default_decl {
                         DefaultDecl::FIXED(def) | DefaultDecl::None(def) => {

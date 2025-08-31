@@ -116,6 +116,13 @@ impl AttlistDeclMap {
     pub fn clear(&mut self) {
         self.0.clear();
     }
+
+    #[allow(clippy::type_complexity)]
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (&(Cow<'_, str>, Cow<'_, str>), &(AttributeType, DefaultDecl))> {
+        self.0.iter()
+    }
 }
 
 #[derive(Debug, Clone, Default)]
