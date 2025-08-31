@@ -121,11 +121,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         let quote = self.check_literal_start()?;
 
         self.source.grow()?;
-        let orig_entity_stack = self.entity_name_stack.len();
-        self.parse_att_value_internal(buffer, quote, orig_entity_stack)?;
+        let orig_source_id = self.source.source_id();
+        self.parse_att_value_internal(buffer, quote, orig_source_id)?;
         // `Ok` is returned only when entity references are nested correctly.
         // Therefore, it is not necessary to check whether the stack state is correct.
-        assert_eq!(orig_entity_stack, self.entity_name_stack.len());
+        assert_eq!(orig_source_id, self.source.source_id());
 
         self.check_literal_end(quote)
     }
@@ -134,7 +134,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         &mut self,
         buffer: &mut String,
         quote: char,
-        orig_entity_stack: usize,
+        orig_source_id: usize,
     ) -> Result<(), XMLError> {
         self.source.grow()?;
         'outer: while !self.source.content_bytes().is_empty() {
@@ -208,10 +208,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                         buffer.push(self.parse_char_ref()?);
                     } else {
                         // general refenrence
-                        self.parse_entity_ref_in_att_value(buffer, quote, orig_entity_stack)?;
+                        self.parse_entity_ref_in_att_value(buffer, quote, orig_source_id)?;
                     }
                 }
-                c if c == quote as u8 && self.entity_name_stack.len() != orig_entity_stack => {
+                c if c == quote as u8 && self.source.source_id() != orig_source_id => {
                     // Within the included entity, quotes must also be treated as part of the data.
                     // Reference: 4.4.5 Included in Literal
                     buffer.push(quote);
@@ -223,9 +223,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             self.source.grow()?;
         }
 
-        if self.source.content_bytes().is_empty()
-            && self.entity_name_stack.len() == orig_entity_stack
-        {
+        if self.source.content_bytes().is_empty() && self.source.source_id() == orig_source_id {
             fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
         }
         Ok(())
@@ -271,11 +269,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         self.locator.update_column(|c| c + 1);
 
         if let Some(decl) = self.entities.get(name.as_str()) {
-            if self
-                .entity_name_stack
-                .iter()
-                .any(|ent| ent.as_deref() == Some(name.as_str()))
-            {
+            if self.entity_recursion_check(name.as_str()) {
                 // [WFC: No Recursion]
                 fatal_error!(
                     self,
@@ -427,11 +421,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                     self.locator.update_column(|c| c + 1);
 
                     if let Some(decl) = self.entities.get(name.as_str()) {
-                        if self
-                            .entity_name_stack
-                            .iter()
-                            .any(|ent| ent.as_deref() == Some(name.as_str()))
-                        {
+                        if self.entity_recursion_check(name.as_str()) {
                             // [WFC: No Recursion]
                             fatal_error!(
                                 self,

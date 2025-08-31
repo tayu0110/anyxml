@@ -137,7 +137,7 @@ pub struct XMLReader<Spec: ParserSpec> {
     source_stack: Vec<Box<Spec::Reader>>,
     locator_stack: Vec<Locator>,
     base_uri_stack: Vec<Arc<URIStr>>,
-    pub(crate) entity_name_stack: Vec<Option<Arc<str>>>,
+    entity_name_stack: Vec<Option<Arc<str>>>,
 
     // Parser Context
     pub(crate) state: ParserState,
@@ -467,6 +467,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         self.locator.set_column(locator.column());
 
         Ok(())
+    }
+
+    /// Return `true` if it is already inside an entity named `name`.  \
+    /// Otherwise, return `false`.
+    pub(crate) fn entity_recursion_check(&self, name: &str) -> bool {
+        self.entity_name_stack
+            .iter()
+            .any(|prev| prev.as_deref() == Some(name))
     }
 }
 

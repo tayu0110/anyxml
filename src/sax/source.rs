@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::{io::Read, sync::atomic::AtomicUsize};
 
 use anyxml_uri::uri::{URIStr, URIString};
 
@@ -9,6 +9,8 @@ use crate::{
 
 const INPUT_CHUNK: usize = 4096;
 const GROW_THRESHOLD: usize = 64;
+
+static SOURCE_ID: AtomicUsize = AtomicUsize::new(0);
 
 pub struct InputSource<'a> {
     source: Box<dyn Read + 'a>,
@@ -31,6 +33,11 @@ pub struct InputSource<'a> {
     /// Basically, this should be set to `true`, but if parsing is started with an unknown encoding,
     /// it is necessary to re-decode all byte sequences later, so it should be set to `false`.
     compact: bool,
+    /// A unique identifier for the source.
+    ///
+    /// To determine whether markup spans different sources,
+    /// even sources created from the same file or character data are assigned different IDs.
+    source_id: usize,
 
     system_id: Option<Box<URIStr>>,
     public_id: Option<Box<str>>,
@@ -148,6 +155,7 @@ impl<'a> InputSource<'a> {
             total_read: str.len(),
             eof: true,
             compact: true,
+            source_id: SOURCE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             system_id: None,
             public_id: None,
         }
@@ -271,8 +279,17 @@ impl<'a> InputSource<'a> {
         self.decoded.len() - self.decoded_next == 0 && self.buffer_end - self.buffer_next == 0
     }
 
+    /// The encoding name of the decoder currently in use.
     pub fn encoding_name(&self) -> &'static str {
         self.decoder.name()
+    }
+
+    /// A unique identifier for the source.
+    ///
+    /// To determine whether markup spans different sources,
+    /// even sources created from the same file or character data are assigned different IDs.
+    pub fn source_id(&self) -> usize {
+        self.source_id
     }
 
     pub(crate) fn switch_encoding(&mut self, to: &str) -> Result<(), XMLError> {
@@ -386,6 +403,7 @@ impl Default for InputSource<'_> {
             total_read: 0,
             eof: false,
             compact: false,
+            source_id: SOURCE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             system_id: None,
             public_id: None,
         }
