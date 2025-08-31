@@ -266,6 +266,21 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     );
                 }
             }
+
+            for ((elem_name, attr_name), (atttype, _, _)) in self.attlistdecls.iter() {
+                if matches!(atttype, AttributeType::NOTATION(_))
+                    && let Some(ContentSpec::EMPTY) = self.elementdecls.get(elem_name)
+                {
+                    // [VC: No Notation on Empty Element]
+                    validity_error!(
+                        self,
+                        ParserNotationAttlistDeclOnEmptyElement,
+                        "Notation Type attribute '{}' is declared on the empty type element '{}'.",
+                        attr_name,
+                        elem_name
+                    );
+                }
+            }
         }
 
         Ok(())
