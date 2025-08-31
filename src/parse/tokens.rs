@@ -157,4 +157,89 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             Ok(prefix)
         }
     }
+
+    pub fn validate_nmtoken(&self, nmtoken: &str) -> Result<(), XMLError> {
+        if nmtoken.is_empty() {
+            return Err(XMLError::ParserEmptyNmtoken);
+        }
+        nmtoken
+            .chars()
+            .all(|c| self.is_name_char(c))
+            .then_some(())
+            .ok_or(XMLError::ParserInvalidNameChar)
+    }
+
+    pub fn validate_name(&self, name: &str) -> Result<(), XMLError> {
+        if name.is_empty() {
+            return Err(XMLError::ParserEmptyName);
+        }
+
+        name.strip_prefix(|c| self.is_name_start_char(c))
+            .ok_or(XMLError::ParserInvalidNameStartChar)?
+            .chars()
+            .all(|c| self.is_name_char(c))
+            .then_some(())
+            .ok_or(XMLError::ParserInvalidNameChar)
+    }
+
+    pub fn validate_ncname(&self, name: &str) -> Result<(), XMLError> {
+        if name.is_empty() {
+            return Err(XMLError::ParserEmptyNCName);
+        }
+
+        name.strip_prefix(|c| c != ':' && self.is_name_start_char(c))
+            .ok_or(XMLError::ParserInvalidNCNameStartChar)?
+            .chars()
+            .all(|c| c != ':' && self.is_name_char(c))
+            .then_some(())
+            .ok_or(XMLError::ParserInvalidNCNameChar)
+    }
+
+    pub fn validate_qname(&self, mut name: &str) -> Result<(), XMLError> {
+        if name.is_empty() {
+            return Err(XMLError::ParserEmptyQName);
+        }
+
+        if name.starts_with(':') {
+            return Err(XMLError::ParserEmptyQNamePrefix);
+        }
+
+        name = name
+            .strip_prefix(|c| self.is_name_start_char(c))
+            .ok_or(XMLError::ParserInvalidNCNameStartChar)?;
+        name = name.trim_start_matches(|c| c != ':' && self.is_name_char(c));
+
+        if name.is_empty() {
+            // This is an UnprefixedName
+            return Ok(());
+        }
+        name = name
+            .strip_prefix(|c| c == ':')
+            .ok_or(XMLError::ParserInvalidQNameSeparator)?;
+        if name.is_empty() {
+            return Err(XMLError::ParserEmptyQNameLocalPart);
+        }
+        self.validate_ncname(name)
+    }
+
+    pub fn validate_nmtokens(&self, nmtokens: &str) -> Result<(), XMLError> {
+        if nmtokens.is_empty() {
+            return Err(XMLError::ParserEmptyNmtokens);
+        }
+        self.validate_names(nmtokens, |nmtoken| self.validate_nmtoken(nmtoken))
+    }
+
+    pub fn validate_names(
+        &self,
+        names: &str,
+        name_validation: impl Fn(&str) -> Result<(), XMLError>,
+    ) -> Result<(), XMLError> {
+        if names.is_empty() {
+            return Err(XMLError::ParserEmptyNames);
+        }
+        for name in names.split('\x20') {
+            name_validation(name)?;
+        }
+        Ok(())
+    }
 }

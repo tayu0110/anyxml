@@ -1469,6 +1469,103 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     att_name,
                     name
                 );
+            } else {
+                let (atttype, default_decl) = self.attlistdecls.get(&name, &att_name).unwrap();
+                // check validity constraints
+                match atttype {
+                    AttributeType::ID => {
+                        if !matches!(default_decl, DefaultDecl::REQUIRED | DefaultDecl::IMPLIED) {
+                            // [VC: ID Attribute Default]
+                            validity_error!(
+                                self,
+                                ParserInvalidIDAttributeDefault,
+                                "ID attribute default must be '#REQUIRED' or '#IMPLIED'."
+                            );
+                        }
+
+                        // [VC: One ID per Element Type] cannot be validated until all attribute list
+                        // declarations are read, so it is not checked here.
+                    }
+                    AttributeType::IDREF => match &default_decl {
+                        DefaultDecl::FIXED(def) | DefaultDecl::None(def) => {
+                            if self.config.is_enable(ParserOption::Namespaces)
+                                && self.validate_ncname(def).is_err()
+                            {
+                                // [VC: IDREF]
+                                validity_error!(
+                                    self,
+                                    ParserInvalidIDREFAttributeDefault,
+                                    "IDREF attribute default must match to NCName."
+                                );
+                            } else if !self.config.is_enable(ParserOption::Namespaces)
+                                && self.validate_name(def).is_err()
+                            {
+                                // [VC: IDREF]
+                                validity_error!(
+                                    self,
+                                    ParserInvalidIDREFAttributeDefault,
+                                    "IDREF attribute default must match to Name."
+                                );
+                            }
+                        }
+                        _ => {}
+                    },
+                    AttributeType::IDREFS => match &default_decl {
+                        DefaultDecl::FIXED(def) | DefaultDecl::None(def) => {
+                            if (self.config.is_enable(ParserOption::Namespaces)
+                                && self
+                                    .validate_names(def, |name| self.validate_ncname(name))
+                                    .is_err())
+                                || (!self.config.is_enable(ParserOption::Namespaces)
+                                    && self
+                                        .validate_names(def, |name| self.validate_name(name))
+                                        .is_err())
+                            {
+                                // [VC: IDREF]
+                                validity_error!(
+                                    self,
+                                    ParserInvalidIDREFAttributeDefault,
+                                    "IDREFS attribute default must match to Names."
+                                );
+                            }
+                        }
+                        _ => {}
+                    },
+                    AttributeType::ENTITY | AttributeType::ENTITIES => {
+                        // [VC: Entity Name]
+                        // Since we need to verify whether all referenced entities are declared
+                        // after all entities have been parsed, we skip this step.
+                    }
+                    AttributeType::NMTOKEN => match default_decl {
+                        DefaultDecl::FIXED(def) | DefaultDecl::None(def) => {
+                            if let Err(err) = self.validate_nmtoken(def) {
+                                // [VC: Name Token]
+                                validity_error!(
+                                    self,
+                                    err,
+                                    "NMTOKEN attribute default must match to Nmtoken."
+                                );
+                            }
+                        }
+                        _ => {}
+                    },
+                    AttributeType::NMTOKENS => {
+                        match default_decl {
+                            DefaultDecl::FIXED(def) | DefaultDecl::None(def) => {
+                                if let Err(err) = self.validate_nmtokens(def) {
+                                    // [VC: Name Token]
+                                    validity_error!(
+                                        self,
+                                        err,
+                                        "NMTOKENS attribute default must match to Nmtokens."
+                                    );
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
             }
             s = self.skip_whitespaces_with_handle_peref(base_entity_stack_depth, true)?;
             if self.source.content_bytes().is_empty() {
@@ -1760,11 +1857,23 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                 let mut buffer = String::new();
                 self.parse_att_value(&mut buffer)?;
+                self.normalize_att_value(
+                    "",
+                    "",
+                    &mut buffer,
+                    Some(matches!(atttype, AttributeType::CDATA)),
+                );
                 DefaultDecl::FIXED(buffer.into_boxed_str())
             }
             _ => {
                 let mut buffer = String::new();
                 self.parse_att_value(&mut buffer)?;
+                self.normalize_att_value(
+                    "",
+                    "",
+                    &mut buffer,
+                    Some(matches!(atttype, AttributeType::CDATA)),
+                );
                 DefaultDecl::None(buffer.into_boxed_str())
             }
         };
@@ -2816,7 +2925,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
             att_value.clear();
             self.parse_att_value(&mut att_value)?;
-            let declared = self.normalize_att_value(&name, &att_name, &mut att_value);
+            let declared = self.normalize_att_value(&name, &att_name, &mut att_value, None);
 
             if self.config.is_enable(ParserOption::Namespaces) {
                 let mut uri = None;
@@ -3876,6 +3985,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
     /// Returns `true` if normalized according to the declaration,
     /// and `false` if no declaration is found.
     ///
+    /// If `is_cdata` is specified as `Some(true)` or `Some(false)`,
+    /// determines whether the attribute value is of type CDATA based on the specified boolean value.  \
+    /// In this case, `elem_name` and `attr_name` are not used.
+    ///
     /// Since normalization that does not depend on attribute list declarations is
     /// performed along with attribute value parsing, this function only performs
     /// normalization  that depends on attribute list declarations.
@@ -3884,44 +3997,45 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         elem_name: &str,
         attr_name: &str,
         att_value: &mut String,
+        is_cdata: Option<bool>,
     ) -> bool {
-        let Some((att_type, _)) = self.attlistdecls.get(elem_name, attr_name) else {
+        let is_cdata = if let Some(is_cdata) = is_cdata {
+            is_cdata
+        } else if let Some((att_type, _)) = self.attlistdecls.get(elem_name, attr_name) {
+            matches!(att_type, AttributeType::CDATA)
+        } else {
             return false;
         };
 
-        match att_type {
-            AttributeType::CDATA => {
-                // CDATA attribute values do not require space character normalization.
-            }
-            _ => {
-                unsafe {
-                    // # Safety
-                    // As long as the algorithm works correctly, only space characters
-                    // are normalized, so there are no violations of UTF-8 constraints.
-                    let bytes = att_value.as_bytes_mut();
-                    let mut filled = 0;
-                    let mut before_space = true;
-                    for i in 0..bytes.len() {
-                        if bytes[i] != 0x20 {
-                            bytes[filled] = bytes[i];
+        // CDATA attribute values do not require space character normalization.
+        if !is_cdata {
+            unsafe {
+                // # Safety
+                // As long as the algorithm works correctly, only space characters
+                // are normalized, so there are no violations of UTF-8 constraints.
+                let bytes = att_value.as_bytes_mut();
+                let mut filled = 0;
+                let mut before_space = true;
+                for i in 0..bytes.len() {
+                    if bytes[i] != 0x20 {
+                        bytes[filled] = bytes[i];
+                        filled += 1;
+                        before_space = false;
+                    } else {
+                        if !before_space {
+                            bytes[filled] = 0x20;
                             filled += 1;
-                            before_space = false;
-                        } else {
-                            if !before_space {
-                                bytes[filled] = 0x20;
-                                filled += 1;
-                            }
-                            before_space = true;
                         }
+                        before_space = true;
                     }
-                    // trim the tail of 0x20
-                    if filled > 0 && filled < bytes.len() && bytes[filled] == 0x20 {
-                        filled -= 1;
-                    }
-                    // To avoid violating UTF-8 constraints, fill with all NULL characters.
-                    bytes[filled..].fill(0);
-                    att_value.truncate(filled);
                 }
+                // trim the tail of 0x20
+                if filled > 0 && filled < bytes.len() && bytes[filled] == 0x20 {
+                    filled -= 1;
+                }
+                // To avoid violating UTF-8 constraints, fill with all NULL characters.
+                bytes[filled..].fill(0);
+                att_value.truncate(filled);
             }
         }
         true
