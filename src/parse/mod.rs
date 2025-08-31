@@ -3187,17 +3187,23 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     continue;
                 };
                 match atttype {
+                    AttributeType::CDATA => {
+                        // no constraints
+                    }
                     AttributeType::ID => {
                         if self.config.is_enable(ParserOption::Namespaces)
                             && let Err(err) = self.validate_ncname(&att.value)
                         {
+                            // [VC: ID]
                             validity_error!(self, err, "ID attribute must match to NCName.");
                         } else if !self.config.is_enable(ParserOption::Namespaces)
                             && let Err(err) = self.validate_name(&att.value)
                         {
+                            // [VC: ID]
                             validity_error!(self, err, "ID attribute must match to Name.");
                         } else {
                             if !self.specified_ids.insert(att.value.clone()) {
+                                // [VC: ID]
                                 validity_error!(
                                     self,
                                     ParserDuplicateIDAttribute,
@@ -3212,10 +3218,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         if self.config.is_enable(ParserOption::Namespaces)
                             && let Err(err) = self.validate_ncname(&att.value)
                         {
+                            // [VC: IDREF]
                             validity_error!(self, err, "IDREF attribute must match to NCName.");
                         } else if !self.config.is_enable(ParserOption::Namespaces)
                             && let Err(err) = self.validate_name(&att.value)
                         {
+                            // [VC: IDREF]
                             validity_error!(self, err, "IDREF attribute must match to Name.");
                         } else if !self.specified_ids.contains(&att.value) {
                             self.unresolved_ids.insert(att.value.clone());
@@ -3226,11 +3234,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             && let Err(err) =
                                 self.validate_names(&att.value, |name| self.validate_ncname(name))
                         {
+                            // [VC: IDREF]
                             validity_error!(self, err, "IDREFS attribute must match to Names.");
                         } else if !self.config.is_enable(ParserOption::Namespaces)
                             && let Err(err) =
                                 self.validate_names(&att.value, |name| self.validate_name(name))
                         {
+                            // [VC: IDREF]
                             validity_error!(self, err, "IDREFS attribute must match to Names.");
                         } else {
                             for idref in att.value.split('\x20') {
@@ -3327,6 +3337,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     }
                     AttributeType::NMTOKEN => {
                         if let Err(err) = self.validate_nmtoken(&att.value) {
+                            // [VC: Name Token]
                             validity_error!(
                                 self,
                                 err,
@@ -3338,6 +3349,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     }
                     AttributeType::NMTOKENS => {
                         if let Err(err) = self.validate_nmtokens(&att.value) {
+                            // [VC: Name Token]
                             validity_error!(
                                 self,
                                 err,
@@ -3382,7 +3394,6 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             );
                         }
                     }
-                    _ => {}
                 }
             }
         }
