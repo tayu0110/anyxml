@@ -73,6 +73,7 @@ pub enum XMLError {
     ParserInvalidSDDecl,
     ParserInvalidComment,
     ParserInvalidCDSect,
+    ParserInvalidStandaloneDocument,
     ParserInvalidProcessingInstruction,
     ParserUnacceptablePITarget,
     ParserUnacceptablePatternInCharData,

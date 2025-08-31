@@ -1430,6 +1430,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.locator.update_column(|c| c + 9);
 
         let base_source_id = self.source.source_id();
+        let is_external_markup = self.is_external_markup();
         if self.skip_whitespaces_with_handle_peref(true)? == 0 {
             fatal_error!(
                 self,
@@ -1462,10 +1463,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.decl_handler
                     .attribute_decl(&name, &att_name, &atttype, &default_decl);
             }
-            if !self
-                .attlistdecls
-                .insert(name.as_str(), att_name.as_str(), atttype, default_decl)
-            {
+            if !self.attlistdecls.insert(
+                name.as_str(),
+                att_name.as_str(),
+                atttype,
+                default_decl,
+                is_external_markup,
+            ) {
                 warning!(
                     self,
                     ParserDuplicateAttlistDecl,
@@ -1474,7 +1478,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     name
                 );
             } else if self.config.is_enable(ParserOption::Validation) {
-                let (atttype, default_decl) = self.attlistdecls.get(&name, &att_name).unwrap();
+                let (atttype, default_decl, _) = self.attlistdecls.get(&name, &att_name).unwrap();
                 // check validity constraints
                 match atttype {
                     AttributeType::ID => {
@@ -2982,7 +2986,11 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
             att_value.clear();
             self.parse_att_value(&mut att_value)?;
-            let declared = self.normalize_att_value(&name, &att_name, &mut att_value, None);
+            let (declared, modified) = {
+                let before_normalize = att_value.len();
+                let declared = self.normalize_att_value(&name, &att_name, &mut att_value, None);
+                (declared, before_normalize != att_value.len())
+            };
 
             if self.config.is_enable(ParserOption::Namespaces) {
                 let mut uri = None;
@@ -3086,6 +3094,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 if declared {
                     att.set_declared();
                 }
+                if modified {
+                    att.set_declaration_dependent_normalization();
+                }
                 atts.push(att);
             } else {
                 let mut att = Attribute {
@@ -3098,6 +3109,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 att.set_specified();
                 if declared {
                     att.set_declared();
+                }
+                if modified {
+                    att.set_declaration_dependent_normalization();
                 }
                 atts.push(att);
             }
@@ -3176,7 +3190,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         if self.config.is_enable(ParserOption::Validation) {
             let mut notation_attribute = false;
             for att in &atts {
-                let Some((atttype, default_decl)) = self.attlistdecls.get(&name, &att.qname) else {
+                let Some((atttype, default_decl, is_external_markup)) =
+                    self.attlistdecls.get(&name, &att.qname)
+                else {
                     // [VC: Attribute Value Type]
                     validity_error!(
                         self,
@@ -3396,6 +3412,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     }
                 }
 
+                // Since valid documents do not have default values for ID attributes,
+                // ID attributes are excluded from validation of #FIXED default attribute values.
                 if !matches!(atttype, AttributeType::ID)
                     && let DefaultDecl::FIXED(def) = default_decl
                     && &att.value != def
@@ -3409,6 +3427,19 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         name,
                         def,
                         att.value
+                    );
+                }
+
+                if !matches!(atttype, AttributeType::CDATA)
+                    && *is_external_markup
+                    && self.standalone == Some(true)
+                    && att.has_declaration_dependent_normalization()
+                {
+                    // [VC: Standalone Document Declaration]
+                    validity_error!(
+                        self,
+                        ParserInvalidStandaloneDocument,
+                        "standalone='yes', but an attribute declaration affecting attribute value normalization was found."
                     );
                 }
             }
@@ -4281,7 +4312,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
     ) -> bool {
         let is_cdata = if let Some(is_cdata) = is_cdata {
             is_cdata
-        } else if let Some((att_type, _)) = self.attlistdecls.get(elem_name, attr_name) {
+        } else if let Some((att_type, _, _)) = self.attlistdecls.get(elem_name, attr_name) {
             matches!(att_type, AttributeType::CDATA)
         } else {
             return false;

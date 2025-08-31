@@ -25,6 +25,7 @@ pub struct Attribute {
     // 0: is declared in DTD
     // 1: is specified explicitly (in other words, `value` is not the default value provided by DTD)
     // 2: is namespace declaration attribute
+    // 3: has declaration dependency normalization
     pub(crate) flag: u8,
 }
 
@@ -38,6 +39,9 @@ impl Attribute {
     pub(crate) fn set_nsdecl(&mut self) {
         self.flag |= 1 << 2;
     }
+    pub(crate) fn set_declaration_dependent_normalization(&mut self) {
+        self.flag |= 1 << 3;
+    }
 
     pub fn is_declared(&self) -> bool {
         self.flag & (1 << 0) != 0
@@ -47,6 +51,10 @@ impl Attribute {
     }
     pub fn is_nsdecl(&self) -> bool {
         self.flag & (1 << 2) != 0
+    }
+    /// Check if this attribute's value is modified by
+    pub(crate) fn has_declaration_dependent_normalization(&self) -> bool {
+        self.flag & (1 << 3) != 0
     }
 }
 
@@ -73,9 +81,11 @@ pub enum DefaultDecl {
     None(Box<str>),
 }
 
+#[allow(clippy::type_complexity)]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AttlistDeclMap(
-    HashMap<(Cow<'static, str>, Cow<'static, str>), (AttributeType, DefaultDecl)>,
+    // (attribute type, default value declaration, is external markup declaration)
+    HashMap<(Cow<'static, str>, Cow<'static, str>), (AttributeType, DefaultDecl, bool)>,
 );
 
 impl AttlistDeclMap {
@@ -87,13 +97,14 @@ impl AttlistDeclMap {
         attr_name: impl Into<String>,
         att_type: AttributeType,
         default_decl: DefaultDecl,
+        is_external_markup: bool,
     ) -> bool {
         use std::collections::hash_map::Entry::*;
         let elem_name: String = elem_name.into();
         let attr_name: String = attr_name.into();
         match self.0.entry((Cow::Owned(elem_name), Cow::Owned(attr_name))) {
             Vacant(entry) => {
-                entry.insert((att_type, default_decl));
+                entry.insert((att_type, default_decl, is_external_markup));
                 true
             }
             Occupied(_) => false,
@@ -104,7 +115,7 @@ impl AttlistDeclMap {
         &'a self,
         elem_name: &'a str,
         attr_name: &'a str,
-    ) -> Option<&'a (AttributeType, DefaultDecl)> {
+    ) -> Option<&'a (AttributeType, DefaultDecl, bool)> {
         self.0
             .get(&(Cow::Borrowed(elem_name), Cow::Borrowed(attr_name)))
     }
@@ -120,7 +131,12 @@ impl AttlistDeclMap {
     #[allow(clippy::type_complexity)]
     pub fn iter(
         &self,
-    ) -> impl Iterator<Item = (&(Cow<'_, str>, Cow<'_, str>), &(AttributeType, DefaultDecl))> {
+    ) -> impl Iterator<
+        Item = (
+            &(Cow<'_, str>, Cow<'_, str>),
+            &(AttributeType, DefaultDecl, bool),
+        ),
+    > {
         self.0.iter()
     }
 }
