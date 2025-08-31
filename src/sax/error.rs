@@ -42,6 +42,8 @@ impl std::error::Error for SAXParseError {}
 
 macro_rules! generic_error {
     ($method:ident, $handler:expr, $code:expr, $level:expr, $domain:expr, $locator:expr, $message:literal, $( $args:expr ),*) => {
+        #[allow(unused)]
+        use $crate::error::XMLError::*;
         $handler.$method($crate::sax::error::SAXParseError {
             error: $code,
             level: $level,
@@ -283,8 +285,6 @@ macro_rules! ns_error {
 
 macro_rules! validity_error {
     ($reader:expr, $code:ident, $message:literal, $( $args:expr ),*) => {
-        #[allow(unused)]
-        use $crate::error::XMLError::*;
         $crate::sax::error::generic_error!(
             error,
             $reader.error_handler,

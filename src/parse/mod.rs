@@ -1657,14 +1657,25 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.skip_whitespaces_with_handle_peref(true)?;
                 let mut buffer = String::new();
                 self.parse_nmtoken(&mut buffer)?;
-                let mut ret = vec![];
+                let mut ret = HashSet::new();
                 self.skip_whitespaces_with_handle_peref(true)?;
                 self.grow()?;
                 while self.source.content_bytes().starts_with(b"|") {
                     self.source.advance(1)?;
                     self.locator.update_column(|c| c + 1);
                     self.skip_whitespaces_with_handle_peref(true)?;
-                    ret.push(buffer.as_str().into());
+                    if !ret.insert(buffer.as_str().into())
+                        && self.config.is_enable(ParserOption::Validation)
+                    {
+                        // [VC: No Duplicate Tokens]
+                        validity_error!(
+                            self,
+                            ParserDuplicateTokensInAttlistDecl,
+                            "'{}' is duplicate in an attlist declaration for the attribute '{}'.",
+                            buffer,
+                            att_name
+                        );
+                    }
                     buffer.clear();
                     self.parse_nmtoken(&mut buffer)?;
                     self.skip_whitespaces_with_handle_peref(true)?;
@@ -1672,7 +1683,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         self.grow()?;
                     }
                 }
-                ret.push(buffer.into_boxed_str());
+                if !ret.insert(buffer.as_str().into())
+                    && self.config.is_enable(ParserOption::Validation)
+                {
+                    // [VC: No Duplicate Tokens]
+                    validity_error!(
+                        self,
+                        ParserDuplicateTokensInAttlistDecl,
+                        "'{}' is duplicate in an attlist declaration for the attribute '{}'.",
+                        buffer,
+                        att_name
+                    );
+                }
 
                 if self.source.source_id() != enum_source_id {
                     fatal_error!(
@@ -1744,13 +1766,24 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 }
                 self.skip_whitespaces_with_handle_peref(true)?;
                 self.grow()?;
-                let mut ret = vec![];
+                let mut ret = HashSet::new();
                 while self.source.content_bytes().starts_with(b"|") {
                     // skip '|'
                     self.source.advance(1)?;
                     self.locator.update_column(|c| c + 1);
                     self.skip_whitespaces_with_handle_peref(true)?;
-                    ret.push(buffer.as_str().into());
+                    if !ret.insert(buffer.as_str().into())
+                        && self.config.is_enable(ParserOption::Validation)
+                    {
+                        // [VC: No Duplicate Tokens]
+                        validity_error!(
+                            self,
+                            ParserDuplicateTokensInAttlistDecl,
+                            "'{}' is duplicate in an attlist declaration for the attribute '{}'.",
+                            buffer,
+                            att_name
+                        );
+                    }
                     if self.config.is_enable(ParserOption::Namespaces) {
                         self.parse_ncname(&mut buffer)?;
                     } else {
@@ -1761,7 +1794,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         self.grow()?;
                     }
                 }
-                ret.push(buffer.into_boxed_str());
+                if !ret.insert(buffer.as_str().into())
+                    && self.config.is_enable(ParserOption::Validation)
+                {
+                    // [VC: No Duplicate Tokens]
+                    validity_error!(
+                        self,
+                        ParserDuplicateTokensInAttlistDecl,
+                        "'{}' is duplicate in an attlist declaration for the attribute '{}'.",
+                        buffer,
+                        att_name
+                    );
+                }
 
                 if self.source.source_id() != enum_source_id {
                     fatal_error!(
@@ -3297,6 +3341,28 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 self,
                                 err,
                                 "'{}' of NMTOKENS attribute '{}' does not match to Nmtokens.",
+                                att.value,
+                                att.qname
+                            );
+                        }
+                    }
+                    AttributeType::NOTATION(set) => {
+                        if !set.contains(&att.value) {
+                            validity_error!(
+                                self,
+                                ParserUnacceptableNotationAttribute,
+                                "'{}' is not allowed as a value for attribute '{}'.",
+                                att.value,
+                                att.qname
+                            );
+                        }
+                    }
+                    AttributeType::Enumeration(set) => {
+                        if !set.contains(&att.value) {
+                            validity_error!(
+                                self,
+                                ParserUnacceptableEnumerationAttribute,
+                                "'{}' is not allowed as a value for attribute '{}'.",
                                 att.value,
                                 att.qname
                             );

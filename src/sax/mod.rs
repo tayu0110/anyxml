@@ -6,7 +6,7 @@ pub mod source;
 
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         Arc, LazyLock, RwLock,
         atomic::{AtomicUsize, Ordering},
@@ -50,7 +50,7 @@ impl Attribute {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum AttributeType {
     #[default]
     CDATA,
@@ -61,8 +61,8 @@ pub enum AttributeType {
     ENTITIES,
     NMTOKEN,
     NMTOKENS,
-    NOTATION(Vec<Box<str>>),
-    Enumeration(Vec<Box<str>>),
+    NOTATION(HashSet<Box<str>>),
+    Enumeration(HashSet<Box<str>>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
