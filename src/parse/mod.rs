@@ -558,12 +558,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.skip_whitespaces_with_handle_peref(true)?;
                 self.grow()?;
                 if self.source.source_id() != base_source_id {
-                    fatal_error!(
+                    // [VC: Proper Conditional Section/PE Nesting]
+                    validity_error!(
                         self,
                         ParserEntityIncorrectNesting,
                         "A parameter entity in the conditional section is nested incorrectly."
                     );
-                    return Err(XMLError::ParserEntityIncorrectNesting);
                 }
 
                 if !self.source.content_bytes().starts_with(b"[") {
@@ -600,12 +600,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.skip_whitespaces_with_handle_peref(true)?;
                 self.grow()?;
                 if self.source.source_id() != base_source_id {
-                    fatal_error!(
+                    // [VC: Proper Conditional Section/PE Nesting]
+                    validity_error!(
                         self,
                         ParserEntityIncorrectNesting,
                         "A parameter entity in the conditional section is nested incorrectly."
                     );
-                    return Err(XMLError::ParserEntityIncorrectNesting);
                 }
 
                 if !self.source.content_bytes().starts_with(b"[") {
@@ -854,12 +854,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         }
                     }
                     if self.source.source_id() != model_source_id {
-                        fatal_error!(
+                        // [VC: Proper Group/PE Nesting]
+                        validity_error!(
                             self,
                             ParserEntityIncorrectNesting,
                             "A parameter entity in an element declaration is nested incorrectly."
                         );
-                        return Err(XMLError::ParserEntityIncorrectNesting);
                     }
                     if self.source.content_bytes().starts_with(b")*") {
                         // skip ')*'
@@ -910,12 +910,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         self.skip_whitespaces_with_handle_peref(true)?;
         if self.source.source_id() != base_source_id {
-            fatal_error!(
+            // [VC: Proper Declaration/PE Nesting]
+            validity_error!(
                 self,
                 ParserEntityIncorrectNesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
-            return Err(XMLError::ParserEntityIncorrectNesting);
         }
 
         self.grow()?;
@@ -1009,12 +1009,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if self.source.source_id() != base_source_id {
-            fatal_error!(
+            // [VC: Proper Group/PE Nesting]
+            validity_error!(
                 self,
                 ParserEntityIncorrectNesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
-            return Err(XMLError::ParserEntityIncorrectNesting);
         }
 
         if !self.source.content_bytes().starts_with(b")") {
@@ -1082,12 +1082,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if self.source.source_id() != base_source_id {
-            fatal_error!(
+            // [VC: Proper Group/PE Nesting]
+            validity_error!(
                 self,
                 ParserEntityIncorrectNesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
-            return Err(XMLError::ParserEntityIncorrectNesting);
         }
 
         Ok(id)
@@ -1161,12 +1161,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if self.source.source_id() != base_source_id {
-            fatal_error!(
+            // [VC: Proper Group/PE Nesting]
+            validity_error!(
                 self,
                 ParserEntityIncorrectNesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
-            return Err(XMLError::ParserEntityIncorrectNesting);
         }
 
         if !self.source.content_bytes().starts_with(b")") {
@@ -1210,6 +1210,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         // of '<', so it must be saved at this point before the parameter entity is resolved.
         let base_uri = self.base_uri.clone();
         let base_source_id = self.source.source_id();
+        let is_external_markup = self.is_external_markup();
 
         let mut s = self.skip_whitespaces_with_handle_peref(true)?;
         self.grow()?;
@@ -1269,7 +1270,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     EntityDecl::InternalGeneralEntity {
                         base_uri,
                         replacement_text: buffer.into_boxed_str(),
-                        in_external_markup: base_source_id > 0,
+                        in_external_markup: is_external_markup,
                     }
                 }
             }
@@ -1363,7 +1364,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         base_uri,
                         system_id: system_id.into(),
                         public_id: public_id.map(From::from),
-                        in_external_markup: base_source_id > 0,
+                        in_external_markup: is_external_markup,
                     }
                 }
             }
@@ -1379,12 +1380,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
         };
 
         if self.source.source_id() != base_source_id {
-            fatal_error!(
+            // [VC: Proper Declaration/PE Nesting]
+            validity_error!(
                 self,
                 ParserEntityIncorrectNesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
-            return Err(XMLError::ParserEntityIncorrectNesting);
         }
         if !self.source.content_bytes().starts_with(b">") {
             fatal_error!(
@@ -1592,12 +1593,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if self.source.source_id() != base_source_id {
-            fatal_error!(
+            // [VC: Proper Declaration/PE Nesting]
+            validity_error!(
                 self,
                 ParserEntityIncorrectNesting,
-                "A parameter entity in an element declaration is nested incorrectly."
+                "A parameter entity in an attribute declaration is nested incorrectly."
             );
-            return Err(XMLError::ParserEntityIncorrectNesting);
         }
 
         if !self.source.content_bytes().starts_with(b">") {
@@ -2011,12 +2012,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         self.skip_whitespaces_with_handle_peref(true)?;
         if self.source.source_id() != base_source_id {
-            fatal_error!(
+            // [VC: Proper Declaration/PE Nesting]
+            validity_error!(
                 self,
                 ParserEntityIncorrectNesting,
                 "A parameter entity in a notation declaration is nested incorrectly."
             );
-            return Err(XMLError::ParserEntityIncorrectNesting);
         }
         if !self.source.content_bytes().starts_with(b">") {
             fatal_error!(

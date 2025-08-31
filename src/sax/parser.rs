@@ -476,6 +476,24 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             .iter()
             .any(|prev| prev.as_deref() == Some(name))
     }
+
+    /// Returns `true` if the current entity is either an external DTD subset or a parameter entity.
+    ///
+    /// If this method returns `true` when the markup declaration appears,
+    /// then that markup declaration is an external markup declaration.
+    ///
+    /// # Reference
+    /// [2.9 Standalone Document Declaration](https://www.w3.org/TR/2008/REC-xml-20081126/#sec-rmd)
+    /// ```text
+    /// [Definition: An external markup declaration is defined as a markup declaration occurring in the external subset or in a parameter entity (external or internal, the latter being included because non-validating processors are not required to read them).]
+    /// ```
+    pub(crate) fn is_external_markup(&self) -> bool {
+        self.state == ParserState::InExternalSubset
+            || self
+                .entity_name
+                .as_deref()
+                .is_some_and(|name| name.starts_with('%'))
+    }
 }
 
 pub struct XMLReaderBuilder<'a> {

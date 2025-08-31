@@ -286,14 +286,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                     in_external_markup,
                 } => {
                     if *in_external_markup && self.standalone == Some(true) {
-                        // [WFC: No Recursion]
+                        // [WFC: Entity Declared]
                         fatal_error!(
                             self,
-                            ParserEntityRecursion,
-                            "The entity '{}' appears recursively.",
-                            name
+                            ParserUndeclaredEntityReference,
+                            "standalone='yes', but it does not reference any entities declared in the internal DTD."
                         );
-                        return Err(XMLError::ParserEntityRecursion);
                     } else {
                         let source = InputSource::from_content(replacement_text.as_ref());
                         let name: Arc<str> = name.into();
