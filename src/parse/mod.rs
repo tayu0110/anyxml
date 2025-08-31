@@ -3195,6 +3195,113 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             }
                         }
                     }
+                    AttributeType::ENTITY => {
+                        if self.config.is_enable(ParserOption::Namespaces)
+                            && let Err(err) = self.validate_ncname(&att.value)
+                        {
+                            // [VC: Entity Name]
+                            validity_error!(self, err, "ENTITY attribute must match to NCName.");
+                        } else if !self.config.is_enable(ParserOption::Namespaces)
+                            && let Err(err) = self.validate_name(&att.value)
+                        {
+                            // [VC: Entity Name]
+                            validity_error!(self, err, "ENTITY attribute must match to Name.");
+                        } else if let Some(entity) = self.entities.get(&att.value) {
+                            if !matches!(entity, EntityDecl::ExternalGeneralUnparsedEntity { .. }) {
+                                // [VC: Entity Name]
+                                validity_error!(
+                                    self,
+                                    ParserUndeclaredEntityReference,
+                                    "The entity '{}' referred by the attribute '{}' is not an unparsed entity.",
+                                    att.value,
+                                    att.qname
+                                );
+                            }
+                        } else {
+                            // [VC: Entity Name]
+                            validity_error!(
+                                self,
+                                ParserUndeclaredEntityReference,
+                                "ENTITY attribute value '{}' cannot refer to any entities.",
+                                att.value
+                            );
+                        }
+                    }
+                    AttributeType::ENTITIES => {
+                        if self.config.is_enable(ParserOption::Namespaces)
+                            && let Err(err) =
+                                self.validate_names(&att.value, |name| self.validate_ncname(name))
+                        {
+                            // [VC: Entity Name]
+                            validity_error!(
+                                self,
+                                err,
+                                "'{}' of ENTITY attribute '{}' doex not match to Names.",
+                                att.value,
+                                att.qname
+                            );
+                        } else if !self.config.is_enable(ParserOption::Namespaces)
+                            && let Err(err) =
+                                self.validate_names(&att.value, |name| self.validate_name(name))
+                        {
+                            // [VC: Entity Name]
+                            validity_error!(
+                                self,
+                                err,
+                                "'{}' of ENTITY attribute '{}' doex not match to Names.",
+                                att.value,
+                                att.qname
+                            );
+                        } else {
+                            for entity in att.value.split('\x20') {
+                                if let Some(decl) = self.entities.get(entity) {
+                                    if !matches!(
+                                        decl,
+                                        EntityDecl::ExternalGeneralUnparsedEntity { .. }
+                                    ) {
+                                        // [VC: Entity Name]
+                                        validity_error!(
+                                            self,
+                                            ParserUndeclaredEntityReference,
+                                            "The entity '{}' referred by the attribute '{}' is not an unparsed entity.",
+                                            entity,
+                                            att.qname
+                                        );
+                                    }
+                                } else {
+                                    // [VC: Entity Name]
+                                    validity_error!(
+                                        self,
+                                        ParserUndeclaredEntityReference,
+                                        "ENTITY attribute value '{}' cannot refer to any entities.",
+                                        entity
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    AttributeType::NMTOKEN => {
+                        if let Err(err) = self.validate_nmtoken(&att.value) {
+                            validity_error!(
+                                self,
+                                err,
+                                "'{}' of NMTOKEN attribute '{}' does not match to Nmtoken.",
+                                att.value,
+                                att.qname
+                            );
+                        }
+                    }
+                    AttributeType::NMTOKENS => {
+                        if let Err(err) = self.validate_nmtokens(&att.value) {
+                            validity_error!(
+                                self,
+                                err,
+                                "'{}' of NMTOKENS attribute '{}' does not match to Nmtokens.",
+                                att.value,
+                                att.qname
+                            );
+                        }
+                    }
                     _ => {}
                 }
             }
