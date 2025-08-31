@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::Read,
     mem::replace,
     sync::{Arc, RwLock, atomic::AtomicUsize},
@@ -163,7 +163,9 @@ pub struct XMLReader<Spec: ParserSpec> {
     pub(crate) validation_stack: Vec<Option<(Box<str>, ContentSpecValidator)>>,
     // key: element name
     // value: attribute name declared as ID,
-    pub(crate) id_attributes: HashMap<Box<str>, Box<str>>,
+    pub(crate) idattr_decls: HashMap<Box<str>, Box<str>>,
+    pub(crate) specified_ids: HashSet<Box<str>>,
+    pub(crate) unresolved_ids: HashSet<Box<str>>,
 }
 
 impl<Spec: ParserSpec> XMLReader<Spec> {
@@ -268,7 +270,9 @@ impl<Spec: ParserSpec> XMLReader<Spec> {
         self.elementdecls.clear();
         self.attlistdecls.clear();
         self.validation_stack.clear();
-        self.id_attributes.clear();
+        self.idattr_decls.clear();
+        self.specified_ids.clear();
+        self.unresolved_ids.clear();
     }
 }
 
@@ -407,7 +411,9 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             elementdecls: Default::default(),
             attlistdecls: Default::default(),
             validation_stack: vec![],
-            id_attributes: HashMap::new(),
+            idattr_decls: HashMap::new(),
+            specified_ids: HashSet::new(),
+            unresolved_ids: HashSet::new(),
         }
     }
 }

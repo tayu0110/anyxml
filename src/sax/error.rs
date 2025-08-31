@@ -303,7 +303,7 @@ macro_rules! validity_error {
         $crate::sax::error::generic_error!(
             error,
             $reader.error_handler,
-            $crate::error::XMLError::$code,
+            $code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::DTDValid,
             $reader.locator,
@@ -314,7 +314,7 @@ macro_rules! validity_error {
         $crate::sax::error::generic_error!(
             error,
             $reader.error_handler,
-            $crate::error::XMLError::$code,
+            $code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::DTDValid,
             $reader.locator

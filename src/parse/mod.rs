@@ -42,6 +42,21 @@ impl XMLReader<DefaultParserSpec<'_>> {
             );
             return Err(XMLError::ParserUnexpectedDocumentContent);
         }
+
+        if !self.fatal_error_occurred
+            && self.config.is_enable(ParserOption::Validation)
+            && !self.unresolved_ids.is_empty()
+        {
+            // [VC: IDREF]
+            for idref in self.unresolved_ids.drain() {
+                validity_error!(
+                    self,
+                    ParserUnresolvableIDReference,
+                    "IDREF '{}' has no referenced ID.",
+                    idref
+                );
+            }
+        }
         self.content_handler().end_document();
         Ok(())
     }
@@ -1478,12 +1493,12 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             // [VC: ID Attribute Default]
                             validity_error!(
                                 self,
-                                ParserInvalidIDAttributeDefault,
+                                ParserInvalidIDAttributeValue,
                                 "ID attribute default must be '#REQUIRED' or '#IMPLIED'."
                             );
                         }
 
-                        match self.id_attributes.entry(name.as_str().into()) {
+                        match self.idattr_decls.entry(name.as_str().into()) {
                             std::collections::hash_map::Entry::Occupied(_) => {
                                 // [VC: One ID per Element Type]
                                 validity_error!(
@@ -1506,7 +1521,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 // [VC: IDREF]
                                 validity_error!(
                                     self,
-                                    ParserInvalidIDREFAttributeDefault,
+                                    ParserInvalidIDREFAttributeValue,
                                     "IDREF attribute default must match to NCName."
                                 );
                             } else if !self.config.is_enable(ParserOption::Namespaces)
@@ -1515,7 +1530,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 // [VC: IDREF]
                                 validity_error!(
                                     self,
-                                    ParserInvalidIDREFAttributeDefault,
+                                    ParserInvalidIDREFAttributeValue,
                                     "IDREF attribute default must match to Name."
                                 );
                             }
@@ -1536,7 +1551,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 // [VC: IDREF]
                                 validity_error!(
                                     self,
-                                    ParserInvalidIDREFAttributeDefault,
+                                    ParserInvalidIDREFAttributeValue,
                                     "IDREFS attribute default must match to Names."
                                 );
                             }
@@ -3130,7 +3145,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
         if self.config.is_enable(ParserOption::Validation) {
             for att in &atts {
-                if !self.attlistdecls.contains(&name, &att.qname) {
+                let Some((atttype, _)) = self.attlistdecls.get(&name, &att.qname) else {
                     // [VC: Attribute Value Type]
                     validity_error!(
                         self,
@@ -3138,6 +3153,63 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         "The attribute '{}' is not declared in DTD.",
                         att.qname
                     );
+                    continue;
+                };
+                match atttype {
+                    AttributeType::ID => {
+                        if self.config.is_enable(ParserOption::Namespaces)
+                            && let Err(err) = self.validate_ncname(&att.value)
+                        {
+                            validity_error!(self, err, "ID attribute must match to NCName.");
+                        } else if !self.config.is_enable(ParserOption::Namespaces)
+                            && let Err(err) = self.validate_name(&att.value)
+                        {
+                            validity_error!(self, err, "ID attribute must match to Name.");
+                        } else {
+                            if !self.specified_ids.insert(att.value.clone()) {
+                                validity_error!(
+                                    self,
+                                    ParserDuplicateIDAttribute,
+                                    "ID '{}' is specified multiple times in the document.",
+                                    att.value
+                                );
+                            }
+                            self.unresolved_ids.remove(&att.value);
+                        }
+                    }
+                    AttributeType::IDREF => {
+                        if self.config.is_enable(ParserOption::Namespaces)
+                            && let Err(err) = self.validate_ncname(&att.value)
+                        {
+                            validity_error!(self, err, "IDREF attribute must match to NCName.");
+                        } else if !self.config.is_enable(ParserOption::Namespaces)
+                            && let Err(err) = self.validate_name(&att.value)
+                        {
+                            validity_error!(self, err, "IDREF attribute must match to Name.");
+                        } else if !self.specified_ids.contains(&att.value) {
+                            self.unresolved_ids.insert(att.value.clone());
+                        }
+                    }
+                    AttributeType::IDREFS => {
+                        if self.config.is_enable(ParserOption::Namespaces)
+                            && let Err(err) =
+                                self.validate_names(&att.value, |name| self.validate_ncname(name))
+                        {
+                            validity_error!(self, err, "IDREFS attribute must match to Names.");
+                        } else if !self.config.is_enable(ParserOption::Namespaces)
+                            && let Err(err) =
+                                self.validate_names(&att.value, |name| self.validate_name(name))
+                        {
+                            validity_error!(self, err, "IDREFS attribute must match to Names.");
+                        } else {
+                            for idref in att.value.split('\x20') {
+                                if !self.specified_ids.contains(idref) {
+                                    self.unresolved_ids.insert(idref.into());
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -4042,7 +4114,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                     }
                 }
                 // trim the tail of 0x20
-                if filled > 0 && filled < bytes.len() && bytes[filled] == 0x20 {
+                while filled > 0 && bytes[filled - 1] == 0x20 {
                     filled -= 1;
                 }
                 // To avoid violating UTF-8 constraints, fill with all NULL characters.
