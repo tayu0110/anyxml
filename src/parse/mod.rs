@@ -3174,6 +3174,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
         }
         if self.config.is_enable(ParserOption::Validation) {
+            let mut notation_attribute = false;
             for att in &atts {
                 let Some((atttype, _)) = self.attlistdecls.get(&name, &att.qname) else {
                     // [VC: Attribute Value Type]
@@ -3348,6 +3349,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     }
                     AttributeType::NOTATION(set) => {
                         if !set.contains(&att.value) {
+                            // [VC: Notation Attributes]
                             validity_error!(
                                 self,
                                 ParserUnacceptableNotationAttribute,
@@ -3356,9 +3358,21 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 att.qname
                             );
                         }
+                        if notation_attribute {
+                            // [VC: One Notation Per Element Type]
+                            validity_error!(
+                                self,
+                                ParserMultipleNotationAttributePerElement,
+                                "Attribute `{}` appeared as a multiple-occurrence notation attribute in the element '{}'.",
+                                att.qname,
+                                name
+                            );
+                        }
+                        notation_attribute = true;
                     }
                     AttributeType::Enumeration(set) => {
                         if !set.contains(&att.value) {
+                            // [VC: Validity constraint: Enumeration]
                             validity_error!(
                                 self,
                                 ParserUnacceptableEnumerationAttribute,
