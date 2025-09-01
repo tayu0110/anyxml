@@ -13,7 +13,7 @@ use crate::{
     error::XMLError,
     sax::{
         AttlistDeclMap, ElementDeclMap, EntityMap, Locator, Notation,
-        contentspec::ContentSpecValidator,
+        contentspec::ContentSpecValidationContext,
         error::fatal_error,
         handler::{
             ContentHandler, DTDHandler, DeclHandler, DefaultSAXHandler, EntityResolver,
@@ -160,7 +160,7 @@ pub struct XMLReader<Spec: ParserSpec> {
     pub(crate) notations: HashMap<Box<str>, Notation>,
     pub(crate) elementdecls: ElementDeclMap,
     pub(crate) attlistdecls: AttlistDeclMap,
-    pub(crate) validation_stack: Vec<Option<(Box<str>, ContentSpecValidator)>>,
+    pub(crate) validation_stack: Vec<Option<(Box<str>, ContentSpecValidationContext)>>,
     // key: element name
     // value: attribute name declared as ID,
     pub(crate) idattr_decls: HashMap<Box<str>, Box<str>>,

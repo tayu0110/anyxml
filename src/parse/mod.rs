@@ -746,6 +746,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.locator.update_column(|c| c + 9);
 
         let base_source_id = self.source.source_id();
+        let is_external_markup = self.is_external_markup();
         if self.skip_whitespaces_with_handle_peref(true)? == 0 {
             fatal_error!(
                 self,
@@ -907,7 +908,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     // [48] cp       ::= (Name | choice | seq) ('?' | '*' | '+')?
                     // [49] choice   ::= '(' S? cp ( S? '|' S? cp )+ S? ')'	[VC: Proper Group/PE Nesting]
                     // [50] seq      ::= '(' S? cp ( S? ',' S? cp )* S? ')' [VC: Proper Group/PE Nesting]
-                    let mut content = ElementContent::new();
+                    let mut content = ElementContent::new(is_external_markup);
                     let mut buffer = String::new();
                     self.parse_children(&mut buffer, &mut content)?;
                     if content.compile().unwrap() {
@@ -2909,18 +2910,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         match self.validation_stack.last_mut() {
-            Some(Some((parent, validator))) => {
-                if self.config.is_enable(ParserOption::Validation)
-                    && validator.push_name(&name).is_err()
-                {
-                    // [VC: Element Valid]
-                    validity_error!(
-                        self,
-                        ParserMismatchElementContentModel,
-                        "Element '{}' appears in a position where it is not allowed as the content of element '{}'.",
-                        name,
-                        parent
-                    );
+            Some(Some((_, validator))) => {
+                if self.config.is_enable(ParserOption::Validation) {
+                    validator.push_name(&name);
                 }
             }
             Some(None) => {
@@ -3642,15 +3634,27 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if self.config.is_enable(ParserOption::Validation)
-            && let Some(Some((context_name, validator))) = self.validation_stack.pop()
+            && let Some(Some((context_name, mut validator))) = self.validation_stack.pop()
             && !self.fatal_error_occurred
         {
             assert_eq!(context_name.as_ref(), name);
-            if validator.finish().is_err() {
+            if validator.is_external_element_content()
+                && validator.whitespace()
+                && self.standalone == Some(true)
+            {
+                // [VC: Standalone Document Declaration]
+                validity_error!(
+                    self,
+                    ParserInvalidStandaloneDocument,
+                    "standalone='yes', but the element '{}' containing whitespace is declared to have element content in the external markup.",
+                    name
+                );
+            }
+            if !validator.finish() {
                 validity_error!(
                     self,
                     ParserMismatchElementContentModel,
-                    "The content of element '{}' is insufficient.",
+                    "The content of element '{}' does not match to its content model.",
                     name
                 );
             }
@@ -4019,6 +4023,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         let mut buffer = String::new();
+        let mut non_whitespace = 0usize;
         'outer: loop {
             while !self.source.content_bytes().is_empty()
                 && !matches!(self.source.content_bytes()[0], b'<' | b'&')
@@ -4046,10 +4051,14 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         }
                         self.locator.update_column(|c| c + 1);
                         buffer.push(']');
+                        non_whitespace += 1;
                     }
                     Some(c) if self.is_char(c) => {
                         self.locator.update_column(|c| c + 1);
                         buffer.push(c);
+                        if !self.is_whitespace(c) {
+                            non_whitespace += c.len_utf8();
+                        }
                     }
                     Some(c) => {
                         fatal_error!(
@@ -4060,15 +4069,29 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         );
                         self.locator.update_column(|c| c + 1);
                         buffer.push(c);
+                        non_whitespace += c.len_utf8();
                     }
                     _ => unreachable!(),
                 }
 
                 if buffer.len() >= CHARDATA_CHUNK_LENGTH {
                     if !self.fatal_error_occurred {
-                        self.content_handler.characters(&buffer);
+                        if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
+                            if non_whitespace != buffer.len() {
+                                validator.push_whitespaces();
+                            }
+                            if non_whitespace == 0 && validator.is_element_content() {
+                                self.content_handler.ignorable_whitespace(&buffer);
+                            } else {
+                                validator.push_pcdata();
+                                self.content_handler.characters(&buffer);
+                            }
+                        } else {
+                            self.content_handler.characters(&buffer);
+                        }
                     }
                     buffer.clear();
+                    non_whitespace = 0;
                 }
 
                 // Since it is necessary to check whether ']]>' is included,
@@ -4084,13 +4107,28 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.grow()?;
             if self.source.content_bytes().starts_with(b"&#") {
                 // Resolve character references here and include them in the character data.
-                buffer.push(self.parse_char_ref()?);
+                let c = self.parse_char_ref()?;
+                buffer.push(c);
+                non_whitespace += c.len_utf8();
 
                 if buffer.len() >= CHARDATA_CHUNK_LENGTH {
                     if !self.fatal_error_occurred {
-                        self.content_handler.characters(&buffer);
+                        if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
+                            if non_whitespace != buffer.len() {
+                                validator.push_whitespaces();
+                            }
+                            if non_whitespace == 0 && validator.is_element_content() {
+                                self.content_handler.ignorable_whitespace(&buffer);
+                            } else {
+                                validator.push_pcdata();
+                                self.content_handler.characters(&buffer);
+                            }
+                        } else {
+                            self.content_handler.characters(&buffer);
+                        }
                     }
                     buffer.clear();
+                    non_whitespace = 0;
                 }
             } else {
                 // Do not process references other than character references or markup here,
@@ -4100,7 +4138,19 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if !buffer.is_empty() && !self.fatal_error_occurred {
-            self.content_handler.characters(&buffer);
+            if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
+                if non_whitespace != buffer.len() {
+                    validator.push_whitespaces();
+                }
+                if non_whitespace == 0 && validator.is_element_content() {
+                    self.content_handler.ignorable_whitespace(&buffer);
+                } else {
+                    validator.push_pcdata();
+                    self.content_handler.characters(&buffer);
+                }
+            } else {
+                self.content_handler.characters(&buffer);
+            }
         }
 
         Ok(())

@@ -19,24 +19,35 @@ pub enum ContentSpec {
 }
 
 impl ContentSpec {
-    pub fn new_validator(&mut self) -> ContentSpecValidator {
-        match self {
-            ContentSpec::EMPTY => ContentSpecValidator::EMPTY,
-            ContentSpec::ANY => ContentSpecValidator::ANY,
-            ContentSpec::Mixed(set) => ContentSpecValidator::Mixed(set.clone()),
+    pub fn new_validator(&mut self) -> ContentSpecValidationContext {
+        let (validator, is_external_element_content) = match self {
+            ContentSpec::EMPTY => (ContentSpecValidator::EMPTY, false),
+            ContentSpec::ANY => (ContentSpecValidator::ANY, false),
+            ContentSpec::Mixed(set) => (ContentSpecValidator::Mixed(set.clone()), false),
             ContentSpec::Children(model) => {
                 let validator = model.new_validator();
-                ContentSpecValidator::Children {
-                    unrecoverable: false,
-                    state: vec![validator.initial_state()],
-                    name_ids: model.name_ids.clone().unwrap(),
-                    validator,
-                }
+                (
+                    ContentSpecValidator::Children {
+                        unrecoverable: false,
+                        state: vec![validator.initial_state()],
+                        name_ids: model.name_ids.clone().unwrap(),
+                        validator,
+                    },
+                    model.id >= MAX_ELEMENT_CONTENT_ID,
+                )
             }
+        };
+
+        ContentSpecValidationContext {
+            invalid: false,
+            whitespace: false,
+            is_external_element_content,
+            validator,
         }
     }
 }
 
+const MAX_ELEMENT_CONTENT_ID: usize = 1 << (usize::BITS - 1);
 static ELEMENT_CONTENT_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone)]
@@ -93,6 +104,7 @@ impl ElementContentValidator {
 
 #[derive(Debug, Clone)]
 pub struct ElementContent {
+    // if id >= MAX_ELEMENT_CONTENT_ID, this is created from an external markup.
     id: usize,
     states: Vec<ElementContentState>,
     name_ids: Option<Arc<HashMap<Box<str>, usize>>>,
@@ -100,8 +112,15 @@ pub struct ElementContent {
 }
 
 impl ElementContent {
-    pub(crate) fn new() -> Self {
-        let id = ELEMENT_CONTENT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    pub(crate) fn new(is_external_markup: bool) -> Self {
+        let mut id = ELEMENT_CONTENT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        assert!(
+            id < MAX_ELEMENT_CONTENT_ID,
+            "Too many element content object."
+        );
+        if is_external_markup {
+            id |= MAX_ELEMENT_CONTENT_ID;
+        }
         Self {
             id,
             states: vec![],
@@ -327,6 +346,46 @@ pub enum ContentSpecValidationError {
 }
 
 #[derive(Debug)]
+pub struct ContentSpecValidationContext {
+    invalid: bool,
+    whitespace: bool,
+    is_external_element_content: bool,
+    validator: ContentSpecValidator,
+}
+
+impl ContentSpecValidationContext {
+    pub fn push_name(&mut self, name: &str) {
+        self.invalid |= self.validator.push_name(name).is_err();
+    }
+
+    pub fn push_pcdata(&mut self) {
+        self.invalid |= self.validator.push_pcdata().is_err();
+    }
+
+    pub fn push_whitespaces(&mut self) {
+        self.whitespace = true;
+        self.invalid |= self.validator.push_whitespaces().is_err();
+    }
+
+    pub fn finish(&mut self) -> bool {
+        self.invalid |= self.validator.finish().is_err();
+        !self.invalid
+    }
+
+    pub(crate) fn whitespace(&self) -> bool {
+        self.whitespace
+    }
+
+    pub(crate) fn is_element_content(&self) -> bool {
+        matches!(self.validator, ContentSpecValidator::Children { .. })
+    }
+
+    pub(crate) fn is_external_element_content(&self) -> bool {
+        self.is_external_element_content
+    }
+}
+
+#[derive(Debug)]
 pub enum ContentSpecValidator {
     EMPTY,
     ANY,
@@ -396,6 +455,13 @@ impl ContentSpecValidator {
             ContentSpecValidator::EMPTY | ContentSpecValidator::Children { .. } => {
                 Err(ContentSpecValidationError::UnacceptablePCDATA)
             }
+        }
+    }
+
+    pub fn push_whitespaces(&self) -> Result<(), ContentSpecValidationError> {
+        match self {
+            ContentSpecValidator::EMPTY => Err(ContentSpecValidationError::UnacceptablePCDATA),
+            _ => Ok(()),
         }
     }
 

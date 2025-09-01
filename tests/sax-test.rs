@@ -48,6 +48,30 @@ impl TestSAXHandler {
     }
 }
 
+impl ContentHandler for TestSAXHandler {
+    fn start_element(
+        &self,
+        _uri: Option<&str>,
+        _local_name: Option<&str>,
+        qname: &str,
+        _atts: &[anyxml::sax::Attribute],
+    ) {
+        eprintln!("startElement('{qname}')");
+    }
+
+    fn end_element(&self, _uri: Option<&str>, _local_name: Option<&str>, qname: &str) {
+        eprintln!("endElement('{qname}')");
+    }
+
+    fn characters(&self, data: &str) {
+        eprintln!("characters('{data}')");
+    }
+
+    fn ignorable_whitespace(&self, data: &str) {
+        eprintln!("ignorableWhitespace({})", data.len());
+    }
+}
+
 impl ErrorHandler for TestSAXHandler {
     fn fatal_error(&self, error: anyxml::sax::error::SAXParseError) {
         assert_eq!(error.level, XMLErrorLevel::FatalError);
@@ -197,6 +221,9 @@ impl ContentHandler for XMLConfWalker {
                 if entities != "none" || matches!(r#type.as_ref(), "valid" | "invalid") {
                     reader = reader.enable_option(ParserOption::Validation)
                 }
+                // if uri.as_escaped_str().contains("el06.xml") {
+                //     reader = reader.set_content_handler(Arc::new(TestSAXHandler::new()));
+                // }
                 let mut reader = reader.build();
                 reader.parse_uri(uri, None).ok();
 
