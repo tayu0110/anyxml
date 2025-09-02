@@ -367,6 +367,10 @@ impl ContentSpecValidationContext {
         self.invalid |= self.validator.push_whitespaces().is_err();
     }
 
+    pub fn push_misc(&mut self) {
+        self.invalid |= self.validator.push_whitespaces().is_err();
+    }
+
     pub fn finish(&mut self) -> bool {
         self.invalid |= self.validator.finish().is_err();
         !self.invalid

@@ -282,7 +282,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                     for notation in notations {
                         if !self.notations.contains_key(notation) {
-                            // [VC: Validity constraint: Notation Attributes]
+                            // [VC: Notation Attributes]
                             validity_error!(
                                 self,
                                 ParserUndeclaredNotation,
@@ -2793,9 +2793,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
             // [VC: Element Valid]
-            // Markup matching the `Misc` category is allowed as element content and should be
-            // treated the same as whitespace.
-            validator.push_whitespaces();
+            // Markup matching the `Misc` category is allowed as element content.
+            validator.push_misc();
         }
 
         self.grow()?;
@@ -2896,9 +2895,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
             // [VC: Element Valid]
-            // Markup matching the `Misc` category is allowed as element content and should be
-            // treated the same as whitespace.
-            validator.push_whitespaces();
+            // Markup matching the `Misc` category is allowed as element content.
+            validator.push_misc();
         }
 
         let mut target = String::new();
