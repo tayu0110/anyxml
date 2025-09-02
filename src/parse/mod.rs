@@ -3850,6 +3850,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 [b'&', ..] => self.parse_entity_ref_in_content()?,
                 _ => self.parse_char_data()?,
             }
+
+            if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
+                // If we reach this point, we should have read at least one markup or character data.
+                // Since Misc does not affect the validation of elements other than those of type EMPTY,
+                // it is safe to assume that Misc appears here.
+                validator.push_misc();
+            }
         }
     }
 

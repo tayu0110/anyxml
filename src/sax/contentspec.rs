@@ -367,6 +367,8 @@ impl ContentSpecValidationContext {
         self.invalid |= self.validator.push_whitespaces().is_err();
     }
 
+    /// In element content validation, it can be treated almost the same as whitespace.  \
+    /// However, in standalone document validation, whitespace and other Miscs are treated differently.
     pub fn push_misc(&mut self) {
         self.invalid |= self.validator.push_whitespaces().is_err();
     }
