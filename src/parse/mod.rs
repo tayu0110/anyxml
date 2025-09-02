@@ -2776,6 +2776,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.source.advance(4)?;
         self.locator.update_column(|c| c + 4);
 
+        if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
+            // [VC: Element Valid]
+            // Markup matching the `Misc` category is allowed as element content and should be
+            // treated the same as whitespace.
+            validator.push_whitespaces();
+        }
+
         self.grow()?;
         let mut buffer = String::new();
         while !self.source.content_bytes().starts_with(b"-->") {
@@ -2871,6 +2878,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
         // skip '<?'
         self.source.advance(2)?;
         self.locator.update_column(|c| c + 2);
+
+        if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
+            // [VC: Element Valid]
+            // Markup matching the `Misc` category is allowed as element content and should be
+            // treated the same as whitespace.
+            validator.push_whitespaces();
+        }
 
         let mut target = String::new();
         if self.config.is_enable(ParserOption::Namespaces) {
@@ -4314,6 +4328,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
         if !self.fatal_error_occurred {
             self.lexical_handler.start_cdata();
+        }
+
+        if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
+            // [VC: Element Valid]
+            // CDATA sections are treated as character data that is not allowed
+            // within element content, regardless of their contents.
+            validator.push_pcdata();
         }
 
         self.grow()?;
