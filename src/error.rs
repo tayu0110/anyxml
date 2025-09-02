@@ -89,6 +89,7 @@ pub enum XMLError {
     ParserInvalidIDAttributeValue,
     ParserInvalidIDREFAttributeValue,
     ParserNotationAttlistDeclOnEmptyElement,
+    ParserSyntaxticallyIncorrectAttributeDefault,
     ParserInvalidEntityDecl,
     ParserDuplicateEntityDecl,
     ParserInvalidNotationDecl,

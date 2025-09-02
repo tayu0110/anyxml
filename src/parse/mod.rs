@@ -1955,6 +1955,94 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
         };
 
+        if let DefaultDecl::FIXED(def) | DefaultDecl::None(def) = &default_decl {
+            match &atttype {
+                AttributeType::IDREF | AttributeType::ENTITY => {
+                    if (self.config.is_enable(ParserOption::Namespaces)
+                        && self.validate_ncname(def).is_err())
+                        || (!self.config.is_enable(ParserOption::Namespaces)
+                            && self.validate_name(def).is_err())
+                    {
+                        // [VC: Attribute Default Value Syntactically Correct]
+                        validity_error!(
+                            self,
+                            ParserSyntaxticallyIncorrectAttributeDefault,
+                            "'{}' is syntaxtically incorrect as {} type attribute value.",
+                            def,
+                            if matches!(atttype, AttributeType::IDREF) {
+                                "IDREF"
+                            } else {
+                                "ENTITY"
+                            }
+                        );
+                    }
+                }
+                AttributeType::IDREFS | AttributeType::ENTITIES => {
+                    if (self.config.is_enable(ParserOption::Namespaces)
+                        && self
+                            .validate_names(def, |name| self.validate_ncname(name))
+                            .is_err())
+                        || (!self.config.is_enable(ParserOption::Namespaces)
+                            && self
+                                .validate_names(def, |name| self.validate_name(name))
+                                .is_err())
+                    {
+                        // [VC: Attribute Default Value Syntactically Correct]
+                        validity_error!(
+                            self,
+                            ParserSyntaxticallyIncorrectAttributeDefault,
+                            "'{}' is syntaxtically incorrect as {} type attribute value.",
+                            def,
+                            if matches!(atttype, AttributeType::IDREFS) {
+                                "IDREFS"
+                            } else {
+                                "ENTITIES"
+                            }
+                        );
+                    }
+                }
+                AttributeType::NMTOKEN => {
+                    if self.validate_nmtoken(def).is_err() {
+                        // [VC: Attribute Default Value Syntactically Correct]
+                        validity_error!(
+                            self,
+                            ParserSyntaxticallyIncorrectAttributeDefault,
+                            "'{}' is syntaxtically incorrect as NMTOKEN type attribute value.",
+                            def
+                        );
+                    }
+                }
+                AttributeType::NMTOKENS => {
+                    if self.validate_nmtokens(def).is_err() {
+                        // [VC: Attribute Default Value Syntactically Correct]
+                        validity_error!(
+                            self,
+                            ParserSyntaxticallyIncorrectAttributeDefault,
+                            "'{}' is syntaxtically incorrect as NMTOKENS type attribute value.",
+                            def
+                        );
+                    }
+                }
+                AttributeType::Enumeration(set) | AttributeType::NOTATION(set) => {
+                    if !set.contains(def.as_ref()) {
+                        // [VC: Attribute Default Value Syntactically Correct]
+                        validity_error!(
+                            self,
+                            ParserSyntaxticallyIncorrectAttributeDefault,
+                            "'{}' is syntaxtically incorrect as {} type attribute value.",
+                            def,
+                            if matches!(atttype, AttributeType::Enumeration(_)) {
+                                "Enumeration"
+                            } else {
+                                "NOTATION"
+                            }
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+
         Ok((atttype, default_decl))
     }
 
@@ -3490,6 +3578,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 flag: 0,
                             };
                             att.set_declared();
+
+                            // TODO: Namespace handling
                         }
                     }
                     _ => {}
