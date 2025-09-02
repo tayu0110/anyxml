@@ -5,7 +5,6 @@ pub mod parser;
 pub mod source;
 
 use std::{
-    borrow::Cow,
     collections::{HashMap, HashSet},
     sync::{
         Arc, LazyLock, RwLock,
@@ -85,7 +84,7 @@ pub enum DefaultDecl {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AttlistDeclMap(
     // (attribute type, default value declaration, is external markup declaration)
-    HashMap<(Cow<'static, str>, Cow<'static, str>), (AttributeType, DefaultDecl, bool)>,
+    HashMap<Box<str>, HashMap<Box<str>, (AttributeType, DefaultDecl, bool)>>,
 );
 
 impl AttlistDeclMap {
@@ -93,31 +92,41 @@ impl AttlistDeclMap {
     /// the same name is already registered.
     pub fn insert(
         &mut self,
-        elem_name: impl Into<String>,
-        attr_name: impl Into<String>,
+        elem_name: impl Into<Box<str>>,
+        attr_name: impl Into<Box<str>>,
         att_type: AttributeType,
         default_decl: DefaultDecl,
         is_external_markup: bool,
     ) -> bool {
         use std::collections::hash_map::Entry::*;
-        let elem_name: String = elem_name.into();
-        let attr_name: String = attr_name.into();
-        match self.0.entry((Cow::Owned(elem_name), Cow::Owned(attr_name))) {
+        let elem_name: Box<str> = elem_name.into();
+        let attr_name: Box<str> = attr_name.into();
+        match self.0.entry(elem_name) {
             Vacant(entry) => {
-                entry.insert((att_type, default_decl, is_external_markup));
-                true
+                entry.insert(HashMap::from([(
+                    attr_name,
+                    (att_type, default_decl, is_external_markup),
+                )]));
             }
-            Occupied(_) => false,
+            Occupied(mut entry) => {
+                let map = entry.get_mut();
+                match map.entry(attr_name) {
+                    Vacant(entry) => {
+                        entry.insert((att_type, default_decl, is_external_markup));
+                    }
+                    Occupied(_) => return false,
+                }
+            }
         }
+        true
     }
 
-    pub fn get<'a>(
-        &'a self,
-        elem_name: &'a str,
-        attr_name: &'a str,
-    ) -> Option<&'a (AttributeType, DefaultDecl, bool)> {
-        self.0
-            .get(&(Cow::Borrowed(elem_name), Cow::Borrowed(attr_name)))
+    pub fn get(
+        &self,
+        elem_name: &str,
+        attr_name: &str,
+    ) -> Option<&(AttributeType, DefaultDecl, bool)> {
+        self.0.get(elem_name)?.get(attr_name)
     }
 
     pub fn contains(&self, elem_name: &str, attr_name: &str) -> bool {
@@ -128,16 +137,22 @@ impl AttlistDeclMap {
         self.0.clear();
     }
 
-    #[allow(clippy::type_complexity)]
-    pub fn iter(
+    pub fn attlist(
         &self,
-    ) -> impl Iterator<
-        Item = (
-            &(Cow<'_, str>, Cow<'_, str>),
-            &(AttributeType, DefaultDecl, bool),
-        ),
-    > {
-        self.0.iter()
+        elem_name: &str,
+    ) -> Option<impl Iterator<Item = (&str, &(AttributeType, DefaultDecl, bool))>> {
+        self.0
+            .get(elem_name)
+            .map(|map| map.iter().map(|(attr, value)| (attr.as_ref(), value)))
+    }
+
+    pub fn iter_all(
+        &self,
+    ) -> impl Iterator<Item = (&str, &str, &(AttributeType, DefaultDecl, bool))> {
+        self.0.iter().flat_map(|(elem, map)| {
+            map.iter()
+                .map(move |(attr, value)| (elem.as_ref(), attr.as_ref(), value))
+        })
     }
 }
 

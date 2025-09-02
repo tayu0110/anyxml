@@ -267,7 +267,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 }
             }
 
-            for ((elem_name, attr_name), (atttype, _, _)) in self.attlistdecls.iter() {
+            for (elem_name, attr_name, (atttype, _, _)) in self.attlistdecls.iter_all() {
                 if matches!(atttype, AttributeType::NOTATION(_))
                     && let Some(ContentSpec::EMPTY) = self.elementdecls.get(elem_name)
                 {
@@ -3448,6 +3448,51 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         ParserInvalidStandaloneDocument,
                         "standalone='yes', but an attribute declaration affecting attribute value normalization was found."
                     );
+                }
+            }
+        }
+        if let Some(decls) = self.attlistdecls.attlist(&name) {
+            for (attr, (_, default_decl, is_external_markup)) in decls {
+                match default_decl {
+                    DefaultDecl::REQUIRED => {
+                        if self.config.is_enable(ParserOption::Validation)
+                            && atts.iter().all(|att| att.qname.as_ref() != attr)
+                        {
+                            validity_error!(
+                                self,
+                                ParserRequiredAttributeNotFound,
+                                "#REQUIRED attribute '{}' of the element '{}' is not specified.",
+                                attr,
+                                name
+                            );
+                        }
+                    }
+                    DefaultDecl::None(def) | DefaultDecl::FIXED(def) => {
+                        if atts.iter().all(|att| att.qname.as_ref() != attr) {
+                            if self.config.is_enable(ParserOption::Validation)
+                                && *is_external_markup
+                                && self.standalone == Some(true)
+                            {
+                                // [VC: Standalone Document Declaration]
+                                validity_error!(
+                                    self,
+                                    ParserInvalidStandaloneDocument,
+                                    "standalone='yes', but an unspecified attribute '{}' of the element '{}' is declared to have a default value in the external markup.",
+                                    attr,
+                                    name
+                                );
+                            }
+                            let mut att = Attribute {
+                                uri: None,
+                                local_name: None,
+                                qname: attr.into(),
+                                value: def.clone(),
+                                flag: 0,
+                            };
+                            att.set_declared();
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
