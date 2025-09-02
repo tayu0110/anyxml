@@ -268,17 +268,31 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
 
             for (elem_name, attr_name, (atttype, _, _)) in self.attlistdecls.iter_all() {
-                if matches!(atttype, AttributeType::NOTATION(_))
-                    && let Some(ContentSpec::EMPTY) = self.elementdecls.get(elem_name)
-                {
-                    // [VC: No Notation on Empty Element]
-                    validity_error!(
-                        self,
-                        ParserNotationAttlistDeclOnEmptyElement,
-                        "Notation Type attribute '{}' is declared on the empty type element '{}'.",
-                        attr_name,
-                        elem_name
-                    );
+                if let AttributeType::NOTATION(notations) = atttype {
+                    if let Some(ContentSpec::EMPTY) = self.elementdecls.get(elem_name) {
+                        // [VC: No Notation on Empty Element]
+                        validity_error!(
+                            self,
+                            ParserNotationAttlistDeclOnEmptyElement,
+                            "Notation Type attribute '{}' is declared on the empty type element '{}'.",
+                            attr_name,
+                            elem_name
+                        );
+                    }
+
+                    for notation in notations {
+                        if !self.notations.contains_key(notation) {
+                            // [VC: Validity constraint: Notation Attributes]
+                            validity_error!(
+                                self,
+                                ParserUndeclaredNotation,
+                                "The notation '{}' referenced in the notation type list for attribute '{}' of the element '{}' is not declared.",
+                                notation,
+                                attr_name,
+                                elem_name
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -1804,6 +1818,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             att_name
                         );
                     }
+                    buffer.clear();
                     if self.config.is_enable(ParserOption::Namespaces) {
                         self.parse_ncname(&mut buffer)?;
                     } else {
