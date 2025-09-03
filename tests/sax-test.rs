@@ -276,7 +276,9 @@ impl ContentHandler for XMLConfWalker {
                         }
                     }
                     "error" => {
-                        if (handler.error.get() == 0 && handler.validity_error.get() == 0)
+                        if (handler.error.get() == 0
+                            && handler.validity_error.get() == 0
+                            && handler.ns_error.get() == 0)
                             || handler.fatal_error.get() > 0
                         {
                             self.unexpected_success.update(|c| c + 1);

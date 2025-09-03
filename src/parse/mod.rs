@@ -3242,6 +3242,25 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         }
                         &att_name[prefix_length + 1..]
                     };
+                    match URIString::parse(&att_value) {
+                        Ok(uri) if !uri.is_absolute() => {
+                            ns_error!(
+                                self,
+                                ParserNamespaceNameNotAbsoluteURI,
+                                "The namespace name '{}' is not a valid absolute URI.",
+                                att_value
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(_) => {
+                            ns_error!(
+                                self,
+                                ParserNamespaceNameNotURI,
+                                "The namespace name '{}' is not a valid URI.",
+                                att_value
+                            );
+                        }
+                    }
                     let pos = self.namespaces.len();
                     if let Some((pre, old)) = self.prefix_map.get_key_value(prefix) {
                         self.namespaces
