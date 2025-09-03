@@ -429,7 +429,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 Box::new(source),
                                 base_uri.clone(),
                                 Some(name.clone()),
-                                URIString::parse(format!("#internal-parameter-entity.{name}"))?
+                                URIString::parse(format!("?internal-parameter-entity.{name}"))?
                                     .into(),
                                 None,
                             )?;
@@ -3936,7 +3936,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             Box::new(source),
                             base_uri.clone(),
                             Some(name.clone()),
-                            URIString::parse(format!("#internal-entity.{name}"))?.into(),
+                            URIString::parse(format!("?internal-entity.{name}"))?.into(),
                             None,
                         )?;
 

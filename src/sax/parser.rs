@@ -433,6 +433,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         if !base_uri.is_absolute() {
             base_uri = self.base_uri.clone();
         }
+        base_uri = base_uri.resolve(&system_id).into();
         self.base_uri_stack
             .push(replace(&mut self.base_uri, base_uri.clone()));
         self.entity_name_stack
@@ -443,8 +444,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             line: AtomicUsize::new(self.locator.line()),
             column: AtomicUsize::new(self.locator.column()),
         });
-        self.locator
-            .set_system_id(base_uri.resolve(&system_id).into());
+        self.locator.set_system_id(base_uri);
         self.locator.set_public_id(public_id);
         self.locator.set_line(1);
         self.locator.set_column(1);

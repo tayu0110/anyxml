@@ -30,7 +30,11 @@ impl URIStr {
     pub fn resolve(&self, reference: &Self) -> URIString {
         use Component::*;
 
-        assert!(self.is_absolute());
+        assert!(
+            self.is_absolute(),
+            "'{}' is not absolute",
+            self.as_escaped_str()
+        );
 
         let mut ref_components = reference.components().peekable();
         if ref_components

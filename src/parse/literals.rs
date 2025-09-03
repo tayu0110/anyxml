@@ -299,7 +299,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                             Box::new(source),
                             base_uri.clone(),
                             Some(name.clone()),
-                            URIString::parse(format!("#internal-entity.{name}"))?.into(),
+                            URIString::parse(format!("?internal-entity.{name}"))?.into(),
                             None,
                         )?;
 
@@ -447,7 +447,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                                     Box::new(source),
                                     base_uri.clone(),
                                     Some(name.clone()),
-                                    URIString::parse(format!("#internal-entity.{name}"))?.into(),
+                                    URIString::parse(format!("?internal-entity.{name}"))?.into(),
                                     None,
                                 )?;
 
@@ -488,7 +488,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                                                 base_uri.clone(),
                                                 Some(name.clone()),
                                                 URIString::parse(format!(
-                                                    "#internal-entity.{name}"
+                                                    "?internal-entity.{name}"
                                                 ))?
                                                 .into(),
                                                 None,

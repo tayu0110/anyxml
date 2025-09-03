@@ -231,25 +231,25 @@ static PREDEFINED_ENTITY_LT: LazyLock<EntityDecl> =
     });
 static PREDEFINED_ENTITY_GT: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
-        base_uri: URIString::parse("#predefined").unwrap().into(),
+        base_uri: URIString::parse("?predefined").unwrap().into(),
         replacement_text: "&#62;".into(), // '>'
         in_external_markup: false,
     });
 static PREDEFINED_ENTITY_AMP: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
-        base_uri: URIString::parse("#predefined").unwrap().into(),
+        base_uri: URIString::parse("?predefined").unwrap().into(),
         replacement_text: "&#38;".into(), // '&'
         in_external_markup: false,
     });
 static PREDEFINED_ENTITY_APOS: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
-        base_uri: URIString::parse("#predefined").unwrap().into(),
+        base_uri: URIString::parse("?predefined").unwrap().into(),
         replacement_text: "&#39;".into(), // '''
         in_external_markup: false,
     });
 static PREDEFINED_ENTITY_QUOT: LazyLock<EntityDecl> =
     LazyLock::new(|| EntityDecl::InternalGeneralEntity {
-        base_uri: URIString::parse("#predefined").unwrap().into(),
+        base_uri: URIString::parse("?predefined").unwrap().into(),
         replacement_text: "&#34;".into(), // '"'
         in_external_markup: false,
     });
