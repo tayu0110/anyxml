@@ -457,7 +457,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 let name: Arc<str> = name.into();
                                 self.push_source(
                                     Box::new(source),
-                                    self.base_uri.clone(),
+                                    base_uri.clone(),
                                     Some(name.clone()),
                                     system_id.as_ref().into(),
                                     public_id.as_deref().map(Arc::from),
@@ -3989,7 +3989,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 let name: Arc<str> = name.into();
                                 self.push_source(
                                     Box::new(source),
-                                    self.base_uri.clone(),
+                                    base_uri.clone(),
                                     Some(name.clone()),
                                     system_id.as_ref().into(),
                                     public_id.as_deref().map(Arc::from),
