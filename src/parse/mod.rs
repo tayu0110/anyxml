@@ -329,7 +329,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.grow()?;
             match self.source.content_bytes() {
                 [b'%', ..] => {
-                    self.parse_pe_reference()?;
+                    let entity_push = self.parse_pe_reference()?;
                     let source_id = self.source.source_id();
                     self.parse_ext_subset_decl()?;
                     if self.source.source_id() != source_id {
@@ -340,7 +340,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         );
                         return Err(XMLError::ParserEntityIncorrectNesting);
                     }
-                    self.pop_source()?;
+                    if entity_push {
+                        self.pop_source()?;
+                    }
                     if !self.fatal_error_occurred {
                         self.lexical_handler.end_entity();
                     }
@@ -359,6 +361,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
     }
 
+    /// If an entity is pushed, return `true`, otherwise return `false`.
+    ///
     /// # Note
     /// This method adds InputSource to the context depending on whether the configuration
     /// or reference resolution succeeds. If InputSource is added to the context,
@@ -375,7 +379,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
     ///                                     [WFC: No Recursion]
     ///                                     [WFC: In DTD]
     /// ```
-    pub(crate) fn parse_pe_reference(&mut self) -> Result<(), XMLError> {
+    pub(crate) fn parse_pe_reference(&mut self) -> Result<bool, XMLError> {
         // skip '%'
         self.source.advance(1)?;
         self.locator.update_column(|c| c + 1);
@@ -411,6 +415,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             return Err(XMLError::ParserEntityRecursion);
         }
 
+        let mut entity_push = false;
         if self.config.is_enable(ParserOption::Validation)
             || self
                 .config
@@ -433,6 +438,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                     .into(),
                                 None,
                             )?;
+                            entity_push = true;
 
                             if !self.fatal_error_occurred {
                                 self.lexical_handler.start_entity(&name);
@@ -462,6 +468,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                     system_id.as_ref().into(),
                                     public_id.as_deref().map(Arc::from),
                                 )?;
+                                entity_push = true;
 
                                 if !self.fatal_error_occurred {
                                     self.lexical_handler.start_entity(&name);
@@ -495,7 +502,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         } else if !self.fatal_error_occurred {
             self.content_handler.skipped_entity(&name);
         }
-        Ok(())
+        Ok(entity_push)
     }
 
     /// Skip white space while handling parameter entity references.
@@ -716,7 +723,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
         loop {
             self.grow()?;
             match self.source.content_bytes() {
-                [b'%', ..] => self.parse_pe_reference()?,
+                [b'%', ..] => {
+                    self.parse_pe_reference()?;
+                }
                 [b'<', b'?', ..] => self.parse_pi()?,
                 [b'<', b'!', b'-', b'-', ..] => self.parse_comment()?,
                 [b'<', b'!', b'E', b'L', ..] => self.parse_element_decl()?,

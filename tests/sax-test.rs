@@ -254,12 +254,12 @@ impl ContentHandler for XMLConfWalker {
                 if entities != "none" || matches!(r#type.as_ref(), "valid" | "invalid") {
                     reader = reader.enable_option(ParserOption::Validation)
                 }
-                if uri.as_escaped_str().contains("E18.xml") {
-                    reader = reader
-                        .set_content_handler(Arc::new(TestSAXHandler::new()))
-                        .set_decl_handler(Arc::new(TestSAXHandler::new()))
-                        .set_entity_resolver(Arc::new(TestSAXHandler::new()));
-                }
+                // if uri.as_escaped_str().contains("E18.xml") {
+                //     reader = reader
+                //         .set_content_handler(Arc::new(TestSAXHandler::new()))
+                //         .set_decl_handler(Arc::new(TestSAXHandler::new()))
+                //         .set_entity_resolver(Arc::new(TestSAXHandler::new()));
+                // }
                 let mut reader = reader.build();
                 reader.parse_uri(uri, None).ok();
 
@@ -276,16 +276,15 @@ impl ContentHandler for XMLConfWalker {
                         }
                     }
                     "error" => {
-                        // skip
-                        // writeln!(
-                        //     self.log.borrow_mut(),
-                        //     "{id}: test type 'error' is not yet supported.",
-                        //     r#type
-                        // )
-                        // .ok();
+                        if (handler.error.get() == 0 && handler.validity_error.get() == 0)
+                            || handler.fatal_error.get() > 0
+                        {
+                            self.unexpected_success.update(|c| c + 1);
+                            writeln!(self.log.borrow_mut(), "{id}: unexpected success").ok();
+                            writeln!(self.log.borrow_mut(), "{}", handler.buffer.borrow()).ok();
+                        }
                     }
                     "valid" => {
-                        // skip
                         if handler.validity_error.get() > 0 {
                             self.unexpected_failure.update(|c| c + 1);
                             writeln!(self.log.borrow_mut(), "{id}: unexpected failure").ok();
