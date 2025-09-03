@@ -2302,6 +2302,30 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 return Err(XMLError::ParserInvalidExternalID);
             }
         }
+
+        // According to the definition in Section 4.2.2 of the specification,
+        // if a system identifier is a URI reference with a fragment, it is an error.
+        //
+        // There is no specification for handling invalid URI references,
+        // but here it is treated as an error.
+        match URIString::parse(system_id.as_str()) {
+            Ok(uri) if uri.fragment().is_some() => {
+                error!(
+                    self,
+                    ParserSystemLiteralWithFragment,
+                    "The system ID '{}' has a fragment, but it is not allowed.",
+                    system_id
+                );
+            }
+            Ok(_) => {}
+            Err(err) => {
+                let err = XMLError::from(err);
+                error!(
+                    self,
+                    err, "The system ID '{}' cannot be recognized as a URI.", system_id
+                );
+            }
+        }
         Ok(())
     }
 

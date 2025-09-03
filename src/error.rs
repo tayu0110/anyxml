@@ -61,6 +61,7 @@ pub enum XMLError {
     ParserInvalidQNameSeparator,
     ParserIncorrectLiteralQuotation,
     ParserInvalidSystemLiteral,
+    ParserSystemLiteralWithFragment,
     ParserInvalidPubidLiteral,
     ParserInvalidAttValue,
     ParserInvalidExternalID,
