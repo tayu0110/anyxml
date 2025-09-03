@@ -60,6 +60,7 @@ impl<'a> InputSource<'a> {
             for _ in 0..INPUT_CHUNK {
                 let read = ret.source.read(&mut ret.buffer[ret.buffer_end..])?;
                 ret.buffer_end += read;
+                ret.total_read += read;
                 if read == 0 || ret.buffer_end == INPUT_CHUNK {
                     break;
                 }
@@ -258,12 +259,14 @@ impl<'a> InputSource<'a> {
 
     pub fn advance(&mut self, mut len: usize) -> Result<(), XMLError> {
         while len > 0 {
-            self.grow()?;
             let l = len.min(self.decoded.len() - self.decoded_next);
             assert!(l > 0);
             assert!(self.decoded.is_char_boundary(self.decoded_next + l));
             self.decoded_next += l;
             len -= l;
+            if self.decoded.len() - self.decoded_next == 0 {
+                self.grow()?;
+            }
         }
         Ok(())
     }
