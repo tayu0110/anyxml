@@ -1,10 +1,23 @@
 [workspace]
 members = ["anyxml-automata", "anyxml-uri"]
+package.edition = "2024"
+package.authors = ["tayu0110"]
+package.license = "MIT"
+package.repository = "https://github.com/tayu0110/anyxml.git"
+package.description = "A fully spec-conformant XML library"
+package.keywords = ["xml", "dtd"]
+package.rust-version = "1.89.0"
 
 [package]
 name = "anyxml"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 anyxml-uri = { path = "./anyxml-uri" }
