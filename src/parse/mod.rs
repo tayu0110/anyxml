@@ -253,17 +253,47 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if self.config.is_enable(ParserOption::Validation) {
-            for (_, decl) in self.entities.iter() {
-                if let EntityDecl::ExternalGeneralUnparsedEntity { notation_name, .. } = decl
-                    && !self.notations.contains_key(notation_name)
-                {
-                    // [VC: Notation Declared]
-                    validity_error!(
-                        self,
-                        ParserUndeclaredNotation,
-                        "The notation '{}' is undeclared.",
-                        notation_name.as_ref()
-                    );
+            for (name, decl) in self.entities.iter() {
+                match decl {
+                    EntityDecl::ExternalGeneralUnparsedEntity { notation_name, .. } => {
+                        if !self.notations.contains_key(notation_name) {
+                            // [VC: Notation Declared]
+                            validity_error!(
+                                self,
+                                ParserUndeclaredNotation,
+                                "The notation '{}' is undeclared.",
+                                notation_name.as_ref()
+                            );
+                        }
+                    }
+                    EntityDecl::InternalGeneralEntity {
+                        replacement_text, ..
+                    }
+                    | EntityDecl::InternalParameterEntity {
+                        replacement_text, ..
+                    } => {
+                        let mut text = replacement_text.as_ref();
+                        while let Some((_, rem)) = text.split_once('&') {
+                            text = rem;
+                            if let Some((entity, rem)) = text.split_once(';') {
+                                text = rem;
+                                if matches!(
+                                    self.entities.get(entity),
+                                    Some(EntityDecl::ExternalGeneralUnparsedEntity { .. })
+                                ) {
+                                    // 4.4.9 Error
+                                    error!(
+                                        self,
+                                        ParserInvalidEntityReference,
+                                        "The unparsed entity '{}' appears in EntityValue of the entity '{}'.",
+                                        entity,
+                                        name
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
 

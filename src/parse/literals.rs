@@ -7,7 +7,7 @@ use crate::{
     error::XMLError,
     sax::{
         EntityDecl,
-        error::{error, fatal_error},
+        error::{error, fatal_error, validity_error},
         parser::{ParserOption, XMLReader},
         source::InputSource,
     },
@@ -524,36 +524,15 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                             }
                         }
                     } else {
-                        if self.config.is_enable(ParserOption::Validation) {
-                            // is it correct ???
-                            // I don't really understand the meaning of [WFC: Entity Declared],
-                            // so if I'm wrong, please let me know...
-                            if !self.has_external_subset || self.standalone == Some(true) {
-                                // [WFC: Entity Declared]
-                                fatal_error!(
-                                    self,
-                                    ParserEntityNotFound,
-                                    "The entity '{}' is not declared.",
-                                    name
-                                );
-                            } else {
-                                // [VC: Entity Declared]
-                                error!(
-                                    self,
-                                    ParserEntityNotFound, "The entity '{}' is not declared.", name
-                                );
-                            }
-                        } else {
-                            // [WFC: Entity Declared]
-                            if self.standalone == Some(true) {
-                                fatal_error!(
-                                    self,
-                                    ParserEntityNotFound,
-                                    "The entity '{}' is not declared.",
-                                    name
-                                );
-                            }
-                        }
+                        // [VC: Entity Declared]
+                        // Since only parameter entities are targeted,
+                        // [WFC: Entity Declared] need not be considered.
+                        validity_error!(
+                            self,
+                            ParserEntityNotFound,
+                            "The entity '{}' is not declared.",
+                            name
+                        );
                         if !self.fatal_error_occurred {
                             self.content_handler.skipped_entity(&name);
                         }
@@ -584,44 +563,16 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                     self.source.advance(1)?;
                     self.locator.update_column(|c| c + 1);
 
-                    if let Some(decl) = self.entities.get(name.as_str()) {
-                        // Since general entities are not expanded here,
-                        // recursion checking is not necessary.
-
-                        match decl {
-                            EntityDecl::InternalGeneralEntity { .. }
-                            | EntityDecl::ExternalGeneralParsedEntity { .. } => {
-                                // 4.4.7 Bypassed
-                                buffer.push('&');
-                                buffer.push_str(&name);
-                                buffer.push(';');
-                            }
-                            EntityDecl::ExternalGeneralUnparsedEntity { .. } => {
-                                // 4.4.9 Error
-                                error!(
-                                    self,
-                                    ParserInvalidEntityReference,
-                                    "The unparsed entity '{}' must not appear in EntityValue.",
-                                    name
-                                );
-                            }
-                            EntityDecl::InternalParameterEntity { .. }
-                            | EntityDecl::ExternalParameterEntity { .. } => {
-                                // The fact that we have reached this point suggests that the general
-                                // entity has been mistakenly registered as a parameter entity somewhere.
-                                unreachable!("Internal error: Reference name: {name}");
-                            }
-                        }
-                    } else {
-                        // In the case of an Unparsed Entity, it should be an error,
-                        // but since no declaration is found at this point, it is
-                        // processed as a Parsed Entity for now.
-                        // If it is an Unparsed Entity, an error should occur when
-                        // this entity is expanded, so there should be no problem.
-                        buffer.push('&');
-                        buffer.push_str(&name);
-                        buffer.push(';');
-                    }
+                    // If the appearing entity reference is an Unparsed Entity, it must be
+                    // treated as an error. However, since there may be entities declared
+                    // after the entity declaration containing this literal entity value,
+                    // it is bypassed here, just like other general entities.
+                    //
+                    // 4.4.7 Bypassed
+                    // 4.4.9 Error
+                    buffer.push('&');
+                    buffer.push_str(&name);
+                    buffer.push(';');
                 }
                 [c, ..] if *c == quote as u8 => {
                     if in_entity {
