@@ -304,7 +304,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                         )?;
 
                         if !self.fatal_error_occurred {
-                            self.content_handler.start_entity(&name);
+                            self.handler.start_entity(&name);
                         }
 
                         self.parse_att_value_internal(buffer, quote, orig_entity_stack)?;
@@ -322,7 +322,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
 
                         self.pop_source()?;
                         if !self.fatal_error_occurred {
-                            self.content_handler.end_entity();
+                            self.handler.end_entity();
                         }
                     }
                 }
@@ -373,7 +373,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             }
 
             if !self.fatal_error_occurred {
-                self.content_handler.skipped_entity(&name);
+                self.handler.skipped_entity(&name);
             }
         }
         Ok(())
@@ -475,7 +475,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                                         .config
                                         .is_enable(ParserOption::ExternalParameterEntities)
                                 {
-                                    match self.content_handler.resolve_entity(
+                                    match self.handler.resolve_entity(
                                         &name,
                                         public_id.as_deref(),
                                         base_uri,
@@ -514,12 +514,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                                                 err, "The entity '{}' cannot be resolved.", name
                                             );
                                             if !self.fatal_error_occurred {
-                                                self.content_handler.skipped_entity(&name);
+                                                self.handler.skipped_entity(&name);
                                             }
                                         }
                                     }
                                 } else if !self.fatal_error_occurred {
-                                    self.content_handler.skipped_entity(&name);
+                                    self.handler.skipped_entity(&name);
                                 }
                             }
                         }
@@ -534,7 +534,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                             name
                         );
                         if !self.fatal_error_occurred {
-                            self.content_handler.skipped_entity(&name);
+                            self.handler.skipped_entity(&name);
                         }
                     }
                 }

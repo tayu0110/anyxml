@@ -118,7 +118,7 @@ pub enum ParserState {
 
 pub struct XMLReader<Spec: ParserSpec> {
     pub(crate) source: Box<Spec::Reader>,
-    pub(crate) content_handler: Arc<dyn SAXHandler>,
+    pub(crate) handler: Arc<dyn SAXHandler>,
     pub(crate) locator: Arc<Locator>,
     pub(crate) config: ParserConfig,
     default_base_uri: Option<Arc<URIStr>>,
@@ -187,11 +187,11 @@ impl<Spec: ParserSpec> XMLReader<Spec> {
     }
 
     pub fn content_handler(&self) -> Arc<dyn SAXHandler> {
-        self.content_handler.clone()
+        self.handler.clone()
     }
 
     pub fn set_content_handler(&mut self, handler: Arc<dyn SAXHandler>) -> Arc<dyn SAXHandler> {
-        replace(&mut self.content_handler, handler)
+        replace(&mut self.handler, handler)
     }
 
     pub fn reset_context(&mut self) {
@@ -238,7 +238,7 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
         self.reset_context();
         self.encoding = encoding.map(|enc| enc.to_owned());
         self.base_uri = self.default_base_uri()?;
-        self.source = Box::new(self.content_handler.resolve_entity(
+        self.source = Box::new(self.handler.resolve_entity(
             "[document]",
             None,
             &self.base_uri,
@@ -293,7 +293,7 @@ impl<'a> XMLReader<DefaultParserSpec<'a>> {
     pub fn reset(&mut self) -> Result<(), XMLError> {
         self.source = Box::new(InputSource::default());
         let handler = Arc::new(DefaultSAXHandler);
-        self.content_handler = handler.clone();
+        self.handler = handler.clone();
         self.config = ParserConfig::default();
         self.default_base_uri = None;
         self.base_uri = URIString::parse("")?.into();
@@ -328,7 +328,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
         let base_uri: Arc<URIStr> = URIString::parse("").unwrap().into();
         Self {
             source: Box::new(InputSource::default()),
-            content_handler: handler.clone(),
+            handler: handler.clone(),
             locator: Arc::new(Locator::new(base_uri.clone(), None, 1, 1)),
             config: ParserConfig::default(),
             default_base_uri: None,
@@ -459,7 +459,7 @@ impl<'a> XMLReaderBuilder<'a> {
     }
 
     pub fn set_content_handler(mut self, handler: Arc<dyn SAXHandler>) -> Self {
-        self.reader.content_handler = handler;
+        self.reader.handler = handler;
         self
     }
 

@@ -23,9 +23,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
     /// [1] document ::= prolog element Misc*
     /// ```
     pub(crate) fn parse_document(&mut self) -> Result<(), XMLError> {
-        self.content_handler
-            .set_document_locator(self.locator.clone());
-        self.content_handler.start_document();
+        self.handler.set_document_locator(self.locator.clone());
+        self.handler.start_document();
         self.state = ParserState::Parsing;
         self.parse_prolog()?;
         // At this point, the encoding should have been changed if necessary,
@@ -141,7 +140,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             if self.config.is_enable(ParserOption::ExternalGeneralEntities)
                 || self.config.is_enable(ParserOption::Validation)
             {
-                external_subset = Some(self.content_handler.resolve_entity(
+                external_subset = Some(self.handler.resolve_entity(
                     "[dtd]",
                     public_id.as_deref(),
                     &self.base_uri,
@@ -151,7 +150,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         } else if (self.config.is_enable(ParserOption::ExternalGeneralEntities)
             || self.config.is_enable(ParserOption::Validation))
             && let Ok(ext) = self
-                .content_handler
+                .handler
                 .get_external_subset(&self.dtd_name, Some(&self.base_uri))
         {
             system_id = ext.system_id().map(ToOwned::to_owned);
@@ -159,11 +158,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
             external_subset = Some(ext);
         }
         if !self.fatal_error_occurred {
-            self.content_handler.start_dtd(
-                &self.dtd_name,
-                public_id.as_deref(),
-                system_id.as_deref(),
-            );
+            self.handler
+                .start_dtd(&self.dtd_name, public_id.as_deref(), system_id.as_deref());
         }
 
         self.grow()?;
@@ -221,7 +217,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             )?;
 
             if !self.fatal_error_occurred {
-                self.content_handler.start_entity("[dtd]");
+                self.handler.start_entity("[dtd]");
             }
 
             self.parse_ext_subset()?;
@@ -238,18 +234,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.pop_source()?;
 
             if !self.fatal_error_occurred {
-                self.content_handler.end_entity();
+                self.handler.end_entity();
             }
         } else if system_id.is_some()
             && !self.config.is_enable(ParserOption::Validation)
             && !self.config.is_enable(ParserOption::ExternalGeneralEntities)
             && !self.fatal_error_occurred
         {
-            self.content_handler.skipped_entity("[dtd]");
+            self.handler.skipped_entity("[dtd]");
         }
 
         if !self.fatal_error_occurred {
-            self.content_handler.end_dtd();
+            self.handler.end_dtd();
         }
 
         if self.config.is_enable(ParserOption::Validation) {
@@ -374,7 +370,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         self.pop_source()?;
                     }
                     if !self.fatal_error_occurred {
-                        self.content_handler.end_entity();
+                        self.handler.end_entity();
                     }
                 }
                 [b'<', b'?', ..] => self.parse_pi()?,
@@ -471,10 +467,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             entity_push = true;
 
                             if !self.fatal_error_occurred {
-                                self.content_handler.start_entity(&name);
+                                self.handler.start_entity(&name);
                             }
                         } else if !self.fatal_error_occurred {
-                            self.content_handler.skipped_entity(&name);
+                            self.handler.skipped_entity(&name);
                         }
                     }
                     EntityDecl::ExternalParameterEntity {
@@ -482,7 +478,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         system_id,
                         public_id,
                     } => {
-                        match self.content_handler.resolve_entity(
+                        match self.handler.resolve_entity(
                             &name,
                             public_id.as_deref(),
                             base_uri.as_ref(),
@@ -501,7 +497,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 entity_push = true;
 
                                 if !self.fatal_error_occurred {
-                                    self.content_handler.start_entity(&name);
+                                    self.handler.start_entity(&name);
                                 }
                             }
                             Err(err) => {
@@ -512,7 +508,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                     name
                                 );
                                 if !self.fatal_error_occurred {
-                                    self.content_handler.skipped_entity(&name);
+                                    self.handler.skipped_entity(&name);
                                 }
                             }
                         }
@@ -527,10 +523,10 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     "The parameter entity '{}' is not declared.",
                     name
                 );
-                self.content_handler.skipped_entity(&name);
+                self.handler.skipped_entity(&name);
             }
         } else if !self.fatal_error_occurred {
-            self.content_handler.skipped_entity(&name);
+            self.handler.skipped_entity(&name);
         }
         Ok(entity_push)
     }
@@ -578,7 +574,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     break Ok(s);
                 }
                 if !self.fatal_error_occurred {
-                    self.content_handler.end_entity();
+                    self.handler.end_entity();
                 }
                 s += 1 + self.skip_whitespaces()?;
                 self.grow()?;
@@ -766,7 +762,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     if self.source.source_id() != source_id {
                         self.pop_source()?;
                         if !self.fatal_error_occurred {
-                            self.content_handler.end_entity();
+                            self.handler.end_entity();
                         }
                     } else {
                         break Ok(());
@@ -1001,7 +997,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.locator.update_column(|c| c + 1);
 
         if !self.fatal_error_occurred {
-            self.content_handler.element_decl(&name, &contentspec);
+            self.handler.element_decl(&name, &contentspec);
         }
         // [VC: Unique Element Type Declaration]
         if self.elementdecls.insert(name, contentspec).is_err()
@@ -1400,18 +1396,15 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 let system_id = URIString::parse(system_id)?;
                 if !pe && !self.fatal_error_occurred {
                     if let Some(ndata) = ndata.as_deref() {
-                        self.content_handler.unparsed_entity_decl(
+                        self.handler.unparsed_entity_decl(
                             &name,
                             public_id.as_deref(),
                             &system_id,
                             ndata,
                         );
                     } else {
-                        self.content_handler.external_entity_decl(
-                            &name,
-                            public_id.as_deref(),
-                            &system_id,
-                        );
+                        self.handler
+                            .external_entity_decl(&name, public_id.as_deref(), &system_id);
                     }
                 }
 
@@ -1529,7 +1522,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             att_name.clear();
             let (atttype, default_decl) = self.parse_att_def(false, &mut att_name)?;
             if !self.fatal_error_occurred {
-                self.content_handler
+                self.handler
                     .attribute_decl(&name, &att_name, &atttype, &default_decl);
             }
             if !self.attlistdecls.insert(
@@ -2155,8 +2148,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 self.parse_external_id(system_id, &mut None)?;
                 if !self.fatal_error_occurred {
                     let system_id = URIString::parse(system_id)?;
-                    self.content_handler
-                        .notation_decl(&name, None, Some(&system_id));
+                    self.handler.notation_decl(&name, None, Some(&system_id));
                 }
             }
             [b'P', b'U', b'B', b'L', b'I', b'C', ..] => {
@@ -2202,11 +2194,8 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                 if !self.fatal_error_occurred {
                     let system_id = system_id.map(URIString::parse).transpose()?;
-                    self.content_handler.notation_decl(
-                        &name,
-                        Some(public_id),
-                        system_id.as_deref(),
-                    );
+                    self.handler
+                        .notation_decl(&name, Some(public_id), system_id.as_deref());
                 }
             }
             _ => {
@@ -2444,7 +2433,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if !self.fatal_error_occurred {
-            self.content_handler
+            self.handler
                 .declaration(&version_str, encoding.as_deref(), standalone);
         }
         self.version = version;
@@ -2913,7 +2902,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
             if buffer.len() >= CHARDATA_CHUNK_LENGTH {
                 if !self.fatal_error_occurred {
-                    self.content_handler.comment(&buffer);
+                    self.handler.comment(&buffer);
                 }
                 buffer.clear();
             }
@@ -2923,7 +2912,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if !buffer.is_empty() && !self.fatal_error_occurred {
-            self.content_handler.comment(&buffer);
+            self.handler.comment(&buffer);
         }
 
         if !self.source.content_bytes().starts_with(b"-->") {
@@ -2989,7 +2978,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             self.locator.update_column(|c| c + 2);
 
             if !self.fatal_error_occurred {
-                self.content_handler.processing_instruction(&target, None);
+                self.handler.processing_instruction(&target, None);
             }
 
             return Ok(());
@@ -3053,8 +3042,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.locator.update_column(|c| c + 2);
 
         if !self.fatal_error_occurred {
-            self.content_handler
-                .processing_instruction(&target, Some(&data));
+            self.handler.processing_instruction(&target, Some(&data));
         }
 
         Ok(())
@@ -3715,9 +3703,9 @@ impl XMLReader<DefaultParserSpec<'_>> {
             for att in atts.iter().filter(|att| att.is_nsdecl()) {
                 let len = att.local_name.as_deref().unwrap().len();
                 if len == att.qname.len() {
-                    self.content_handler.start_prefix_mapping(None, &att.value);
+                    self.handler.start_prefix_mapping(None, &att.value);
                 } else {
-                    self.content_handler.start_prefix_mapping(
+                    self.handler.start_prefix_mapping(
                         Some(&att.qname[..att.qname.len() - len - 1]),
                         &att.value,
                     );
@@ -3726,7 +3714,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             if self.config.is_enable(ParserOption::Namespaces) {
                 if prefix_length > 0 {
                     if let Some(&pos) = self.prefix_map.get(&name[..prefix_length]) {
-                        self.content_handler.start_element(
+                        self.handler.start_element(
                             Some(&self.namespaces[pos].0),
                             Some(&name[prefix_length + 1..]),
                             &name,
@@ -3743,19 +3731,18 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 } else {
                     // default namespace
                     if let Some(&pos) = self.prefix_map.get("") {
-                        self.content_handler.start_element(
+                        self.handler.start_element(
                             Some(&self.namespaces[pos].0),
                             Some(&name),
                             &name,
                             &atts,
                         );
                     } else {
-                        self.content_handler
-                            .start_element(None, Some(&name), &name, &atts);
+                        self.handler.start_element(None, Some(&name), &name, &atts);
                     }
                 }
             } else {
-                self.content_handler.start_element(None, None, &name, &atts);
+                self.handler.start_element(None, None, &name, &atts);
             }
         }
 
@@ -3837,7 +3824,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             if self.config.is_enable(ParserOption::Namespaces) {
                 if prefix_length > 0 {
                     if let Some(&pos) = self.prefix_map.get(&name[..prefix_length]) {
-                        self.content_handler.end_element(
+                        self.handler.end_element(
                             Some(&self.namespaces[pos].0),
                             Some(&name[prefix_length + 1..]),
                             &name,
@@ -3853,17 +3840,14 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 } else {
                     // default namespace
                     if let Some(&pos) = self.prefix_map.get("") {
-                        self.content_handler.end_element(
-                            Some(&self.namespaces[pos].0),
-                            Some(&name),
-                            &name,
-                        );
+                        self.handler
+                            .end_element(Some(&self.namespaces[pos].0), Some(&name), &name);
                     } else {
-                        self.content_handler.end_element(None, Some(&name), &name);
+                        self.handler.end_element(None, Some(&name), &name);
                     }
                 }
             } else {
-                self.content_handler.end_element(None, None, &name);
+                self.handler.end_element(None, None, &name);
             }
         }
 
@@ -3871,7 +3855,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         while self.namespaces.len() > old_ns_stack_depth {
             let (pre, _, old_position) = self.namespaces.pop().unwrap();
             if !self.fatal_error_occurred {
-                self.content_handler
+                self.handler
                     .end_prefix_mapping((!pre.is_empty()).then_some(pre.as_ref()));
             }
 
@@ -4026,7 +4010,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                         )?;
 
                         if !self.fatal_error_occurred {
-                            self.content_handler.start_entity(&name);
+                            self.handler.start_entity(&name);
                         }
 
                         self.parse_content()?;
@@ -4043,7 +4027,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                         self.pop_source()?;
                         if !self.fatal_error_occurred {
-                            self.content_handler.end_entity();
+                            self.handler.end_entity();
                         }
                     }
                 }
@@ -4063,7 +4047,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     } else if self.config.is_enable(ParserOption::ExternalGeneralEntities)
                         || self.config.is_enable(ParserOption::Validation)
                     {
-                        match self.content_handler.resolve_entity(
+                        match self.handler.resolve_entity(
                             &name,
                             public_id.as_deref(),
                             base_uri.as_ref(),
@@ -4081,7 +4065,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 )?;
 
                                 if !self.fatal_error_occurred {
-                                    self.content_handler.start_entity(&name);
+                                    self.handler.start_entity(&name);
                                 }
 
                                 self.parse_ext_parsed_ent()?;
@@ -4098,7 +4082,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
                                 self.pop_source()?;
                                 if !self.fatal_error_occurred {
-                                    self.content_handler.end_entity();
+                                    self.handler.end_entity();
                                 }
                             }
                             Err(err) => {
@@ -4111,7 +4095,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                             }
                         }
                     } else if !self.fatal_error_occurred {
-                        self.content_handler.skipped_entity(&name);
+                        self.handler.skipped_entity(&name);
                     }
                 }
                 EntityDecl::ExternalGeneralUnparsedEntity { .. } => {
@@ -4153,7 +4137,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
             }
 
             if !self.fatal_error_occurred {
-                self.content_handler.skipped_entity(&name);
+                self.handler.skipped_entity(&name);
             }
         }
         Ok(())
@@ -4335,13 +4319,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 validator.push_whitespaces();
                             }
                             if non_whitespace == 0 && validator.is_element_content() {
-                                self.content_handler.ignorable_whitespace(&buffer);
+                                self.handler.ignorable_whitespace(&buffer);
                             } else {
                                 validator.push_pcdata();
-                                self.content_handler.characters(&buffer);
+                                self.handler.characters(&buffer);
                             }
                         } else {
-                            self.content_handler.characters(&buffer);
+                            self.handler.characters(&buffer);
                         }
                     }
                     buffer.clear();
@@ -4372,13 +4356,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
                                 validator.push_whitespaces();
                             }
                             if non_whitespace == 0 && validator.is_element_content() {
-                                self.content_handler.ignorable_whitespace(&buffer);
+                                self.handler.ignorable_whitespace(&buffer);
                             } else {
                                 validator.push_pcdata();
-                                self.content_handler.characters(&buffer);
+                                self.handler.characters(&buffer);
                             }
                         } else {
-                            self.content_handler.characters(&buffer);
+                            self.handler.characters(&buffer);
                         }
                     }
                     buffer.clear();
@@ -4397,13 +4381,13 @@ impl XMLReader<DefaultParserSpec<'_>> {
                     validator.push_whitespaces();
                 }
                 if non_whitespace == 0 && validator.is_element_content() {
-                    self.content_handler.ignorable_whitespace(&buffer);
+                    self.handler.ignorable_whitespace(&buffer);
                 } else {
                     validator.push_pcdata();
-                    self.content_handler.characters(&buffer);
+                    self.handler.characters(&buffer);
                 }
             } else {
-                self.content_handler.characters(&buffer);
+                self.handler.characters(&buffer);
             }
         }
 
@@ -4432,7 +4416,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.locator.update_column(|c| c + 9);
 
         if !self.fatal_error_occurred {
-            self.content_handler.start_cdata();
+            self.handler.start_cdata();
         }
 
         if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
@@ -4477,7 +4461,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
 
             if buffer.len() >= CHARDATA_CHUNK_LENGTH {
                 if !self.fatal_error_occurred {
-                    self.content_handler.characters(&buffer);
+                    self.handler.characters(&buffer);
                 }
                 buffer.clear();
             }
@@ -4488,7 +4472,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         }
 
         if !buffer.is_empty() && !self.fatal_error_occurred {
-            self.content_handler.characters(&buffer);
+            self.handler.characters(&buffer);
         }
 
         if !self.source.content_bytes().starts_with(b"]]>") {
@@ -4500,7 +4484,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
         self.locator.update_column(|c| c + 3);
 
         if !self.fatal_error_occurred {
-            self.content_handler.end_cdata();
+            self.handler.end_cdata();
         }
 
         Ok(())
