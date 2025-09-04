@@ -11,7 +11,7 @@ use anyxml::{
     error::{XMLErrorDomain, XMLErrorLevel},
     sax::{
         Locator,
-        handler::{ContentHandler, DeclHandler, DefaultSAXHandler, EntityResolver, ErrorHandler},
+        handler::{DefaultSAXHandler, EntityResolver, SAXHandler},
         parser::{ParserOption, XMLReaderBuilder},
     },
 };
@@ -48,7 +48,7 @@ impl TestSAXHandler {
     }
 }
 
-impl ContentHandler for TestSAXHandler {
+impl SAXHandler for TestSAXHandler {
     fn start_element(
         &self,
         uri: Option<&str>,
@@ -74,9 +74,7 @@ impl ContentHandler for TestSAXHandler {
         eprintln!("ignorableWhitespace({})", data.len());
         DefaultSAXHandler.characters(data);
     }
-}
 
-impl DeclHandler for TestSAXHandler {
     fn external_entity_decl(
         &self,
         name: &str,
@@ -86,26 +84,7 @@ impl DeclHandler for TestSAXHandler {
         eprintln!("externalEntityDecl({name}, {public_id:?}, {system_id:?})");
         DefaultSAXHandler.external_entity_decl(name, public_id, system_id);
     }
-}
 
-impl EntityResolver for TestSAXHandler {
-    fn resolve_entity(
-        &self,
-        name: &str,
-        public_id: Option<&str>,
-        base_uri: &anyxml_uri::uri::URIStr,
-        system_id: &anyxml_uri::uri::URIStr,
-    ) -> Result<anyxml::sax::source::InputSource<'static>, anyxml::error::XMLError> {
-        eprintln!(
-            "resolveEntity({name}, {public_id:?}, {}, {})",
-            base_uri.as_escaped_str(),
-            system_id.as_escaped_str()
-        );
-        DefaultSAXHandler.resolve_entity(name, public_id, base_uri, system_id)
-    }
-}
-
-impl ErrorHandler for TestSAXHandler {
     fn fatal_error(&self, error: anyxml::sax::error::SAXParseError) {
         assert_eq!(error.level, XMLErrorLevel::FatalError);
         self.fatal_error.update(|c| c + 1);
@@ -129,12 +108,29 @@ impl ErrorHandler for TestSAXHandler {
     }
 }
 
+impl EntityResolver for TestSAXHandler {
+    fn resolve_entity(
+        &self,
+        name: &str,
+        public_id: Option<&str>,
+        base_uri: &anyxml_uri::uri::URIStr,
+        system_id: &anyxml_uri::uri::URIStr,
+    ) -> Result<anyxml::sax::source::InputSource<'static>, anyxml::error::XMLError> {
+        eprintln!(
+            "resolveEntity({name}, {public_id:?}, {}, {})",
+            base_uri.as_escaped_str(),
+            system_id.as_escaped_str()
+        );
+        DefaultSAXHandler.resolve_entity(name, public_id, base_uri, system_id)
+    }
+}
+
 #[test]
 fn well_formed_tests() {
     let handler = Arc::new(TestSAXHandler::new());
 
     let mut reader = XMLReaderBuilder::new()
-        .set_error_handler(handler.clone() as _)
+        .set_content_handler(handler.clone() as _)
         .build();
 
     for ent in read_dir("resources/well-formed").unwrap() {
@@ -181,7 +177,7 @@ impl XMLConfWalker {
     ];
 }
 
-impl ContentHandler for XMLConfWalker {
+impl SAXHandler for XMLConfWalker {
     fn set_document_locator(&self, locator: Arc<Locator>) {
         *self.locator.borrow_mut() = Some(locator);
     }
@@ -272,16 +268,10 @@ impl ContentHandler for XMLConfWalker {
                     .resolve(&URIString::parse(uri).unwrap());
 
                 let handler = Arc::new(TestSAXHandler::new());
-                let mut reader = XMLReaderBuilder::new().set_error_handler(handler.clone() as _);
+                let mut reader = XMLReaderBuilder::new().set_content_handler(handler.clone() as _);
                 if entities != "none" || matches!(r#type.as_ref(), "valid" | "invalid") {
                     reader = reader.enable_option(ParserOption::Validation)
                 }
-                // if uri.as_escaped_str().contains("E18.xml") {
-                //     reader = reader
-                //         .set_content_handler(Arc::new(TestSAXHandler::new()))
-                //         .set_decl_handler(Arc::new(TestSAXHandler::new()))
-                //         .set_entity_resolver(Arc::new(TestSAXHandler::new()));
-                // }
                 let mut reader = reader.build();
                 reader.parse_uri(uri, None).ok();
 
@@ -336,6 +326,7 @@ impl ContentHandler for XMLConfWalker {
         }
     }
 }
+impl EntityResolver for XMLConfWalker {}
 
 #[test]
 fn xmlconf_tests() {

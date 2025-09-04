@@ -99,7 +99,7 @@ macro_rules! fatal_error {
         use $crate::error::XMLError::*;
         $crate::sax::error::generic_error!(
             fatal_error,
-            $reader.error_handler,
+            $reader.content_handler,
             $code,
             $crate::error::XMLErrorLevel::FatalError,
             $crate::error::XMLErrorDomain::Parser,
@@ -112,7 +112,7 @@ macro_rules! fatal_error {
     ($reader:expr, $code:ident, $message:literal) => {
         $crate::sax::error::generic_error!(
             fatal_error,
-            $reader.error_handler,
+            $reader.content_handler,
             $crate::error::XMLError::$code,
             $crate::error::XMLErrorLevel::FatalError,
             $crate::error::XMLErrorDomain::Parser,
@@ -124,7 +124,7 @@ macro_rules! fatal_error {
     ($reader:expr, $code:ident, $message:expr) => {
         $crate::sax::error::generic_error!(
             fatal_error,
-            $reader.error_handler,
+            $reader.content_handler,
             $crate::error::XMLError::$code,
             $crate::error::XMLErrorLevel::FatalError,
             $crate::error::XMLErrorDomain::Parser,
@@ -136,7 +136,7 @@ macro_rules! fatal_error {
     ($reader:expr, $code:ident) => {
         $crate::sax::error::generic_error!(
             fatal_error,
-            $reader.error_handler,
+            $reader.content_handler,
             $crate::error::XMLError::$code,
             $crate::error::XMLErrorLevel::FatalError,
             $crate::error::XMLErrorDomain::Parser,
@@ -152,7 +152,7 @@ macro_rules! error {
         use $crate::error::XMLError::*;
         $crate::sax::error::generic_error!(
             error,
-            $reader.error_handler,
+            $reader.content_handler,
             $code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::Parser,
@@ -164,7 +164,7 @@ macro_rules! error {
     ($reader:expr, $code:ident, $message:literal) => {
         $crate::sax::error::generic_error!(
             error,
-            $reader.error_handler,
+            $reader.content_handler,
             $crate::error::XMLError::$code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::Parser,
@@ -175,7 +175,7 @@ macro_rules! error {
     ($reader:expr, $code:ident, $message:expr) => {
         $crate::sax::error::generic_error!(
             error,
-            $reader.error_handler,
+            $reader.content_handler,
             $crate::error::XMLError::$code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::Parser,
@@ -186,7 +186,7 @@ macro_rules! error {
     ($reader:expr, $code:ident) => {
         $crate::sax::error::generic_error!(
             error,
-            $reader.error_handler,
+            $reader.content_handler,
             $crate::error::XMLError::$code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::Parser,
@@ -199,7 +199,7 @@ macro_rules! warning {
     ($reader:expr, $code:ident, $message:literal, $( $args:expr ),+) => {
         $crate::sax::error::generic_error!(
             warning,
-            $reader.error_handler,
+            $reader.content_handler,
             $crate::error::XMLError::$code,
             $crate::error::XMLErrorLevel::Warning,
             $crate::error::XMLErrorDomain::Parser,
@@ -211,7 +211,7 @@ macro_rules! warning {
     ($reader:expr, $code:ident, $message:literal) => {
         $crate::sax::error::generic_error!(
             warning,
-            $reader.error_handler,
+            $reader.content_handler,
             $crate::error::XMLError::$code,
             $crate::error::XMLErrorLevel::Warning,
             $crate::error::XMLErrorDomain::Parser,
@@ -222,7 +222,7 @@ macro_rules! warning {
     ($reader:expr, $code:ident, $message:expr) => {
         $crate::sax::error::generic_error!(
             warning,
-            $reader.error_handler,
+            $reader.content_handler,
             $crate::error::XMLError::$code,
             $crate::error::XMLErrorLevel::Warning,
             $crate::error::XMLErrorDomain::Parser,
@@ -233,7 +233,7 @@ macro_rules! warning {
     ($reader:expr, $code:ident) => {
         $crate::sax::error::generic_error!(
             warning,
-            $reader.error_handler,
+            $reader.content_handler,
             $crate::error::XMLError::$code,
             $crate::error::XMLErrorLevel::Warning,
             $crate::error::XMLErrorDomain::Parser,
@@ -248,7 +248,7 @@ macro_rules! ns_error {
         use $crate::error::XMLError::*;
         $crate::sax::error::generic_error!(
             error,
-            $reader.error_handler,
+            $reader.content_handler,
             $code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::Namespace,
@@ -263,7 +263,7 @@ macro_rules! ns_error {
     ($reader:expr, $code:ident, $message:expr) => {
         $crate::sax::error::generic_error!(
             error,
-            $reader.error_handler,
+            $reader.content_handler,
             $crate::error::XMLError::$code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::Namespace,
@@ -274,7 +274,7 @@ macro_rules! ns_error {
     ($reader:expr, $code:ident) => {
         $crate::sax::error::generic_error!(
             error,
-            $reader.error_handler,
+            $reader.content_handler,
             $crate::error::XMLError::$code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::Namespace,
@@ -287,7 +287,7 @@ macro_rules! validity_error {
     ($reader:expr, $code:ident, $message:literal, $( $args:expr ),*) => {
         $crate::sax::error::generic_error!(
             error,
-            $reader.error_handler,
+            $reader.content_handler,
             $code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::DTDValid,
@@ -302,7 +302,7 @@ macro_rules! validity_error {
     ($reader:expr, $code:ident, $message:expr) => {
         $crate::sax::error::generic_error!(
             error,
-            $reader.error_handler,
+            $reader.content_handler,
             $code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::DTDValid,
@@ -313,7 +313,7 @@ macro_rules! validity_error {
     ($reader:expr, $code:ident) => {
         $crate::sax::error::generic_error!(
             error,
-            $reader.error_handler,
+            $reader.content_handler,
             $code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::DTDValid,
