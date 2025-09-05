@@ -13,12 +13,13 @@ use crate::{
         Attribute, AttributeType, DefaultDecl, EntityDecl, Notation,
         contentspec::{ContentSpec, ElementContent, ElementContentStateID},
         error::{error, fatal_error, ns_error, validity_error, warning},
+        handler::SAXHandler,
         parser::{ParserOption, ParserState, XMLReader},
         source::InputSource,
     },
 };
 
-impl XMLReader<DefaultParserSpec<'_>> {
+impl<H: SAXHandler> XMLReader<DefaultParserSpec<'_>, H> {
     /// ```text
     /// [1] document ::= prolog element Misc*
     /// ```
@@ -56,7 +57,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
                 );
             }
         }
-        self.content_handler().end_document();
+        self.handler().end_document();
         Ok(())
     }
 
@@ -4491,7 +4492,7 @@ impl XMLReader<DefaultParserSpec<'_>> {
     }
 }
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
     /// ```text
     /// [66] CharRef ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';' [WFC: Legal Character]
     /// ```

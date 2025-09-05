@@ -1,10 +1,10 @@
 use crate::{
     ParserSpec,
     error::XMLError,
-    sax::{error::fatal_error, parser::XMLReader, source::InputSource},
+    sax::{error::fatal_error, handler::SAXHandler, parser::XMLReader, source::InputSource},
 };
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
     pub fn is_char(&self, c: char) -> bool {
         self.version.is_char(c)
     }

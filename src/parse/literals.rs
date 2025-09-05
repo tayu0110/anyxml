@@ -8,12 +8,13 @@ use crate::{
     sax::{
         EntityDecl,
         error::{error, fatal_error, validity_error},
+        handler::SAXHandler,
         parser::{ParserOption, XMLReader},
         source::InputSource,
     },
 };
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
     fn check_literal_start(&mut self) -> Result<char, XMLError> {
         match self.source.next_char()? {
             Some(c @ ('"' | '\'')) => {
@@ -120,7 +121,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
     pub(crate) fn parse_att_value(&mut self, buffer: &mut String) -> Result<(), XMLError> {
         let quote = self.check_literal_start()?;
 
-        self.source.grow()?;
+        self.grow()?;
         let orig_source_id = self.source.source_id();
         self.parse_att_value_internal(buffer, quote, orig_source_id)?;
         // `Ok` is returned only when entity references are nested correctly.
@@ -136,7 +137,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         quote: char,
         orig_source_id: usize,
     ) -> Result<(), XMLError> {
-        self.source.grow()?;
+        self.grow()?;
         'outer: while !self.source.content_bytes().is_empty() {
             while !matches!(self.source.content_bytes()[0], b'<' | b'&')
                 && self.source.content_bytes()[0] != quote as u8
@@ -181,7 +182,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                 }
 
                 if self.source.content_bytes().is_empty() {
-                    self.source.grow()?;
+                    self.grow()?;
                     if self.source.content_bytes().is_empty() {
                         break 'outer;
                     }
@@ -200,7 +201,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                     self.locator.update_column(|c| c + 1);
                 }
                 b'&' => {
-                    self.source.grow()?;
+                    self.grow()?;
                     if self.source.content_bytes().starts_with(b"&#") {
                         // character reference
                         // Even if it is a whitespace character, it will not be normalized.
@@ -220,7 +221,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                 }
                 _ => break,
             }
-            self.source.grow()?;
+            self.grow()?;
         }
 
         if self.source.content_bytes().is_empty() && self.source.source_id() == orig_source_id {
@@ -235,7 +236,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         quote: char,
         orig_entity_stack: usize,
     ) -> Result<(), XMLError> {
-        self.source.grow()?;
+        self.grow()?;
         if !self.source.content_bytes().starts_with(b"&") {
             fatal_error!(
                 self,
@@ -255,7 +256,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
             self.parse_name(&mut name)?;
         }
 
-        self.source.grow()?;
+        self.grow()?;
         if !self.source.content_bytes().starts_with(b";") {
             fatal_error!(
                 self,
@@ -308,7 +309,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                         }
 
                         self.parse_att_value_internal(buffer, quote, orig_entity_stack)?;
-                        self.source.grow()?;
+                        self.grow()?;
 
                         if !self.source.is_empty() {
                             fatal_error!(
@@ -392,7 +393,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
         in_entity: bool,
     ) -> Result<(), XMLError> {
         loop {
-            self.source.grow()?;
+            self.grow()?;
             match self.source.content_bytes() {
                 [b'%', ..] => {
                     // skip '%'
@@ -405,7 +406,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                     } else {
                         self.parse_name(&mut name)?;
                     }
-                    self.source.grow()?;
+                    self.grow()?;
                     if !self.source.content_bytes().starts_with(b";") {
                         fatal_error!(
                             self,
@@ -452,7 +453,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                                 )?;
 
                                 self.parse_entity_value_internal(buffer, quote, true)?;
-                                self.source.grow()?;
+                                self.grow()?;
 
                                 if !self.source.is_empty() {
                                     fatal_error!(
@@ -495,7 +496,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                                             )?;
 
                                             self.parse_entity_value_internal(buffer, quote, true)?;
-                                            self.source.grow()?;
+                                            self.grow()?;
 
                                             if !self.source.is_empty() {
                                                 fatal_error!(
@@ -550,7 +551,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>> XMLReader<Spec> {
                     } else {
                         self.parse_name(&mut name)?;
                     }
-                    self.source.grow()?;
+                    self.grow()?;
                     if !self.source.content_bytes().starts_with(b";") {
                         fatal_error!(
                             self,

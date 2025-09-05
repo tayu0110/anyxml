@@ -127,11 +127,9 @@ impl EntityResolver for TestSAXHandler {
 
 #[test]
 fn well_formed_tests() {
-    let handler = Arc::new(TestSAXHandler::new());
+    let handler = TestSAXHandler::new();
 
-    let mut reader = XMLReaderBuilder::new()
-        .set_content_handler(handler.clone() as _)
-        .build();
+    let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
 
     for ent in read_dir("resources/well-formed").unwrap() {
         if let Ok(ent) = ent
@@ -140,13 +138,13 @@ fn well_formed_tests() {
             let uri = URIString::parse_file_path(ent.path().canonicalize().unwrap()).unwrap();
             reader.parse_uri(&uri, None).ok();
             assert_eq!(
-                handler.fatal_error.get(),
+                reader.handler().fatal_error.get(),
                 0,
                 "uri: {}\nerrors:\n{}",
                 uri.as_escaped_str(),
-                handler.buffer.borrow(),
+                reader.handler().buffer.borrow(),
             );
-            handler.reset();
+            reader.handler().reset();
         }
     }
 }
@@ -267,14 +265,15 @@ impl SAXHandler for XMLConfWalker {
                     .system_id()
                     .resolve(&URIString::parse(uri).unwrap());
 
-                let handler = Arc::new(TestSAXHandler::new());
-                let mut reader = XMLReaderBuilder::new().set_content_handler(handler.clone() as _);
+                let handler = TestSAXHandler::new();
+                let mut reader = XMLReaderBuilder::new().set_handler(handler);
                 if entities != "none" || matches!(r#type.as_ref(), "valid" | "invalid") {
                     reader = reader.enable_option(ParserOption::Validation)
                 }
                 let mut reader = reader.build();
                 reader.parse_uri(uri, None).ok();
 
+                let handler = reader.handler();
                 match r#type.as_str() {
                     "not-wf" => {
                         if handler.fatal_error.get() > 0
@@ -336,14 +335,15 @@ fn xmlconf_tests() {
         "Please execute `deno run -A resources/get-xmlconf.ts on the crate root.`"
     );
 
-    let handler = Arc::new(XMLConfWalker::default());
+    let handler = XMLConfWalker::default();
     let xmlconf = URIString::parse_file_path(format!("{XMLCONF_DIR}/xmlconf.xml")).unwrap();
     let mut reader = XMLReaderBuilder::new()
-        .set_content_handler(handler.clone() as _)
+        .set_handler(handler)
         .enable_option(ParserOption::ExternalGeneralEntities)
         .build();
     reader.parse_uri(xmlconf, None).unwrap();
 
+    let handler = reader.handler();
     assert!(
         handler.unexpected_success.get() == 0 && handler.unexpected_failure.get() == 0,
         "{}\n=== Unexpected Success: {}, Unexpected Failure: {} ===\n",
