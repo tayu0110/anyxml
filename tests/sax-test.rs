@@ -49,7 +49,7 @@ impl TestSAXHandler {
 
 impl SAXHandler for TestSAXHandler {
     fn start_element(
-        &self,
+        &mut self,
         uri: Option<&str>,
         local_name: Option<&str>,
         qname: &str,
@@ -59,23 +59,23 @@ impl SAXHandler for TestSAXHandler {
         DefaultSAXHandler.start_element(uri, local_name, qname, atts);
     }
 
-    fn end_element(&self, uri: Option<&str>, local_name: Option<&str>, qname: &str) {
+    fn end_element(&mut self, uri: Option<&str>, local_name: Option<&str>, qname: &str) {
         eprintln!("endElement('{qname}')");
         DefaultSAXHandler.end_element(uri, local_name, qname);
     }
 
-    fn characters(&self, data: &str) {
+    fn characters(&mut self, data: &str) {
         eprintln!("characters('{data}')");
         DefaultSAXHandler.characters(data);
     }
 
-    fn ignorable_whitespace(&self, data: &str) {
+    fn ignorable_whitespace(&mut self, data: &str) {
         eprintln!("ignorableWhitespace({})", data.len());
         DefaultSAXHandler.characters(data);
     }
 
     fn external_entity_decl(
-        &self,
+        &mut self,
         name: &str,
         public_id: Option<&str>,
         system_id: &anyxml_uri::uri::URIStr,
@@ -84,13 +84,13 @@ impl SAXHandler for TestSAXHandler {
         DefaultSAXHandler.external_entity_decl(name, public_id, system_id);
     }
 
-    fn fatal_error(&self, error: anyxml::sax::error::SAXParseError) {
+    fn fatal_error(&mut self, error: anyxml::sax::error::SAXParseError) {
         assert_eq!(error.level, XMLErrorLevel::FatalError);
         self.fatal_error.update(|c| c + 1);
         writeln!(self.buffer.borrow_mut(), "{}", error).ok();
     }
 
-    fn error(&self, error: anyxml::sax::error::SAXParseError) {
+    fn error(&mut self, error: anyxml::sax::error::SAXParseError) {
         assert_eq!(error.level, XMLErrorLevel::Error);
         match error.domain {
             XMLErrorDomain::Parser => self.error.update(|c| c + 1),
@@ -100,7 +100,7 @@ impl SAXHandler for TestSAXHandler {
         writeln!(self.buffer.borrow_mut(), "{}", error).ok();
     }
 
-    fn warning(&self, error: anyxml::sax::error::SAXParseError) {
+    fn warning(&mut self, error: anyxml::sax::error::SAXParseError) {
         assert_eq!(error.level, XMLErrorLevel::Warning);
         self.warning.update(|c| c + 1);
         writeln!(self.buffer.borrow_mut(), "{}", error).ok();
@@ -109,7 +109,7 @@ impl SAXHandler for TestSAXHandler {
 
 impl EntityResolver for TestSAXHandler {
     fn resolve_entity(
-        &self,
+        &mut self,
         name: &str,
         public_id: Option<&str>,
         base_uri: &anyxml_uri::uri::URIStr,
@@ -175,12 +175,12 @@ impl XMLConfWalker {
 }
 
 impl SAXHandler for XMLConfWalker {
-    fn set_document_locator(&self, locator: Arc<Locator>) {
+    fn set_document_locator(&mut self, locator: Arc<Locator>) {
         *self.locator.borrow_mut() = Some(locator);
     }
 
     fn start_element(
-        &self,
+        &mut self,
         _uri: Option<&str>,
         _local_name: Option<&str>,
         qname: &str,

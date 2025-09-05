@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 pub mod encoding;
 pub mod error;
 mod parse;
@@ -110,7 +112,9 @@ impl XMLVersion {
         _is_name_char(*self, c.into())
     }
 
+    /// ```text
     /// [13] PubidChar ::= #x20 | #xD | #xA | [a-zA-Z0-9] | [-'()+,./:=?;!*#@$_%]
+    /// ```
     pub fn is_pubid_char(&self, c: impl Into<u32>) -> bool {
         fn _is_pubid_char(_version: XMLVersion, c: u32) -> bool {
             matches!(c,

@@ -13,51 +13,51 @@ use crate::{
 pub trait SAXHandler: EntityResolver {
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn characters(&self, data: &str) {
+    fn characters(&mut self, data: &str) {
         let _ = data;
     }
 
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn declaration(&self, version: &str, encoding: Option<&str>, standalone: Option<bool>) {
+    fn declaration(&mut self, version: &str, encoding: Option<&str>, standalone: Option<bool>) {
         let _ = (version, encoding, standalone);
     }
 
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn ignorable_whitespace(&self, data: &str) {
+    fn ignorable_whitespace(&mut self, data: &str) {
         let _ = data;
     }
 
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn processing_instruction(&self, target: &str, data: Option<&str>) {
+    fn processing_instruction(&mut self, target: &str, data: Option<&str>) {
         let _ = (target, data);
     }
 
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn set_document_locator(&self, locator: Arc<Locator>) {
+    fn set_document_locator(&mut self, locator: Arc<Locator>) {
         let _ = locator;
     }
 
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn skipped_entity(&self, name: &str) {
+    fn skipped_entity(&mut self, name: &str) {
         let _ = name;
     }
 
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn start_document(&self) {}
+    fn start_document(&mut self) {}
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn end_document(&self) {}
+    fn end_document(&mut self) {}
 
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn start_element(
-        &self,
+        &mut self,
         uri: Option<&str>,
         local_name: Option<&str>,
         qname: &str,
@@ -67,25 +67,25 @@ pub trait SAXHandler: EntityResolver {
     }
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn end_element(&self, uri: Option<&str>, local_name: Option<&str>, qname: &str) {
+    fn end_element(&mut self, uri: Option<&str>, local_name: Option<&str>, qname: &str) {
         let _ = (uri, local_name, qname);
     }
 
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn start_prefix_mapping(&self, prefix: Option<&str>, uri: &str) {
+    fn start_prefix_mapping(&mut self, prefix: Option<&str>, uri: &str) {
         let _ = (prefix, uri);
     }
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn end_prefix_mapping(&self, prefix: Option<&str>) {
+    fn end_prefix_mapping(&mut self, prefix: Option<&str>) {
         let _ = prefix;
     }
 
     /// # Reference
     /// [`DeclHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/DeclHandler.html)
     fn attribute_decl(
-        &self,
+        &mut self,
         element_name: &str,
         attribute_name: &str,
         attribute_type: &AttributeType,
@@ -96,32 +96,32 @@ pub trait SAXHandler: EntityResolver {
 
     /// # Reference
     /// [`DeclHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/DeclHandler.html)
-    fn element_decl(&self, name: &str, contentspec: &ContentSpec) {
+    fn element_decl(&mut self, name: &str, contentspec: &ContentSpec) {
         let _ = (name, contentspec);
     }
 
     /// # Reference
     /// [`DeclHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/DeclHandler.html)
-    fn external_entity_decl(&self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
+    fn external_entity_decl(&mut self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
         let _ = (name, public_id, system_id);
     }
 
     /// # Reference
     /// [`DeclHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/DeclHandler.html)
-    fn internal_entity_decl(&self, name: &str, value: &str) {
+    fn internal_entity_decl(&mut self, name: &str, value: &str) {
         let _ = (name, value);
     }
 
     /// # Reference
     /// [`DTDHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/DTDHandler.html)
-    fn notation_decl(&self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
+    fn notation_decl(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
         let _ = (name, public_id, system_id);
     }
 
     /// # Reference
     /// [`DTDHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/DTDHandler.html)
     fn unparsed_entity_decl(
-        &self,
+        &mut self,
         name: &str,
         public_id: Option<&str>,
         system_id: &URIStr,
@@ -132,59 +132,59 @@ pub trait SAXHandler: EntityResolver {
 
     /// # Reference
     /// [`ErrorHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ErrorHandler.html)
-    fn error(&self, error: SAXParseError) {
+    fn error(&mut self, error: SAXParseError) {
         let _ = error;
     }
 
     /// # Reference
     /// [`ErrorHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ErrorHandler.html)
-    fn fatal_error(&self, error: SAXParseError) {
+    fn fatal_error(&mut self, error: SAXParseError) {
         let _ = error;
     }
 
     /// # Reference
     /// [`ErrorHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ErrorHandler.html)
-    fn warning(&self, error: SAXParseError) {
+    fn warning(&mut self, error: SAXParseError) {
         let _ = error;
     }
 
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
-    fn comment(&self, data: &str) {
+    fn comment(&mut self, data: &str) {
         let _ = data;
     }
 
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
-    fn start_cdata(&self) {}
+    fn start_cdata(&mut self) {}
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
-    fn end_cdata(&self) {}
+    fn end_cdata(&mut self) {}
 
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
-    fn start_dtd(&self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
+    fn start_dtd(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
         let _ = (name, public_id, system_id);
     }
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
-    fn end_dtd(&self) {}
+    fn end_dtd(&mut self) {}
 
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
-    fn start_entity(&self, name: &str) {
+    fn start_entity(&mut self, name: &str) {
         let _ = name;
     }
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
-    fn end_entity(&self) {}
+    fn end_entity(&mut self) {}
 }
 
 pub trait EntityResolver {
     /// # Reference
     /// [`EntityResolver2` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/EntityResolver2.html)
     fn get_external_subset(
-        &self,
+        &mut self,
         name: &str,
         base_uri: Option<&URIStr>,
     ) -> Result<InputSource<'static>, XMLError> {
@@ -200,7 +200,7 @@ pub trait EntityResolver {
     /// # Reference
     /// [`EntityResolver2` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/EntityResolver2.html)
     fn resolve_entity(
-        &self,
+        &mut self,
         name: &str,
         public_id: Option<&str>,
         base_uri: &URIStr,
@@ -218,15 +218,15 @@ pub trait EntityResolver {
 pub struct DefaultSAXHandler;
 
 impl SAXHandler for DefaultSAXHandler {
-    fn error(&self, error: SAXParseError) {
+    fn error(&mut self, error: SAXParseError) {
         eprintln!("{error}")
     }
 
-    fn fatal_error(&self, error: SAXParseError) {
+    fn fatal_error(&mut self, error: SAXParseError) {
         eprintln!("{error}")
     }
 
-    fn warning(&self, error: SAXParseError) {
+    fn warning(&mut self, error: SAXParseError) {
         eprintln!("{error}")
     }
 }

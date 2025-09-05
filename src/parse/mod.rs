@@ -57,7 +57,7 @@ impl<H: SAXHandler> XMLReader<DefaultParserSpec<'_>, H> {
                 );
             }
         }
-        self.handler().end_document();
+        self.handler.end_document();
         Ok(())
     }
 

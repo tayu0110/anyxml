@@ -277,7 +277,9 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
             self.base_uri = base_uri.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
-        todo!()
+        self.parse_document().inspect_err(|&err| {
+            fatal_error!(self, err, "Unrecoverable error: {}", err);
+        })
     }
 
     pub fn parse_str(&mut self, str: &str, uri: Option<&URIStr>) -> Result<(), XMLError> {
