@@ -1,3 +1,4 @@
+pub mod attributes;
 pub mod contentspec;
 pub mod error;
 pub mod handler;
@@ -15,47 +16,6 @@ use std::{
 use anyxml_uri::uri::{URIStr, URIString};
 
 use crate::{error::XMLError, sax::contentspec::ContentSpec};
-
-pub struct Attribute {
-    pub uri: Option<Arc<str>>,
-    pub local_name: Option<Box<str>>,
-    pub qname: Box<str>,
-    pub value: Box<str>,
-    // 0: is declared in DTD
-    // 1: is specified explicitly (in other words, `value` is not the default value provided by DTD)
-    // 2: is namespace declaration attribute
-    // 3: has declaration dependency normalization
-    pub(crate) flag: u8,
-}
-
-impl Attribute {
-    pub(crate) fn set_declared(&mut self) {
-        self.flag |= 1 << 0;
-    }
-    pub(crate) fn set_specified(&mut self) {
-        self.flag |= 1 << 1;
-    }
-    pub(crate) fn set_nsdecl(&mut self) {
-        self.flag |= 1 << 2;
-    }
-    pub(crate) fn set_declaration_dependent_normalization(&mut self) {
-        self.flag |= 1 << 3;
-    }
-
-    pub fn is_declared(&self) -> bool {
-        self.flag & (1 << 0) != 0
-    }
-    pub fn is_specified(&self) -> bool {
-        self.flag & (1 << 1) != 0
-    }
-    pub fn is_nsdecl(&self) -> bool {
-        self.flag & (1 << 2) != 0
-    }
-    /// Check if this attribute's value is modified by
-    pub(crate) fn has_declaration_dependent_normalization(&self) -> bool {
-        self.flag & (1 << 3) != 0
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum AttributeType {
@@ -80,7 +40,6 @@ pub enum DefaultDecl {
     None(Box<str>),
 }
 
-#[allow(clippy::type_complexity)]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AttlistDeclMap(
     // (attribute type, default value declaration, is external markup declaration)

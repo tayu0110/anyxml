@@ -26,3 +26,6 @@ anyxml-automata = { path = "./anyxml-automata", version = "0.1.0" }
 [[test]]
 name = "sax-test"
 path = "tests/sax-test.rs"
+
+[lints.clippy]
+type_complexity = "allow"

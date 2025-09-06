@@ -5,8 +5,8 @@ use anyxml_uri::uri::URIStr;
 use crate::{
     error::XMLError,
     sax::{
-        Attribute, AttributeType, ContentSpec, DefaultDecl, Locator, error::SAXParseError,
-        source::InputSource,
+        AttributeType, ContentSpec, DefaultDecl, Locator, attributes::Attribute,
+        error::SAXParseError, source::InputSource,
     },
 };
 

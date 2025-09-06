@@ -19,7 +19,7 @@ This approach reduces opportunities to use `Rc`/`Arc` or internal mutability.
 use std::fmt::Write as _;
 
 use anyxml::sax::{
-    Attribute,
+    attributes::Attribute,
     handler::{EntityResolver, SAXHandler},
     parser::XMLReaderBuilder,
 };

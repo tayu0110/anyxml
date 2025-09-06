@@ -6,7 +6,8 @@ use crate::{
     ParserSpec, XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::{
-        Attribute, AttributeType, DefaultDecl, EntityDecl,
+        AttributeType, DefaultDecl, EntityDecl,
+        attributes::Attribute,
         error::{fatal_error, ns_error, validity_error},
         handler::SAXHandler,
         parser::{ParserOption, XMLReader},

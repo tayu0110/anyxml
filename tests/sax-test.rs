@@ -9,6 +9,7 @@ use anyxml::{
     error::{XMLErrorDomain, XMLErrorLevel},
     sax::{
         Locator,
+        attributes::Attribute,
         handler::{DefaultSAXHandler, EntityResolver, SAXHandler},
         parser::{ParserOption, XMLReaderBuilder},
     },
@@ -53,7 +54,7 @@ impl SAXHandler for TestSAXHandler {
         uri: Option<&str>,
         local_name: Option<&str>,
         qname: &str,
-        atts: &[anyxml::sax::Attribute],
+        atts: &[Attribute],
     ) {
         eprintln!("startElement('{qname}')");
         DefaultSAXHandler.start_element(uri, local_name, qname, atts);
@@ -184,7 +185,7 @@ impl SAXHandler for XMLConfWalker {
         _uri: Option<&str>,
         _local_name: Option<&str>,
         qname: &str,
-        atts: &[anyxml::sax::Attribute],
+        atts: &[Attribute],
     ) {
         match qname {
             "TESTSUITE" => {
