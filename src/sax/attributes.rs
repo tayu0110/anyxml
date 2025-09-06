@@ -52,6 +52,14 @@ pub struct Attributes {
 }
 
 impl Attributes {
+    pub(crate) fn new() -> Self {
+        Self {
+            attributes: vec![],
+            index_by_qname: HashMap::new(),
+            index_by_expanded_name: HashMap::new(),
+        }
+    }
+
     pub fn get_index_by_qname(&self, qname: &str) -> Option<usize> {
         self.index_by_qname.get(qname).copied()
     }
@@ -109,7 +117,7 @@ impl Attributes {
         self.attributes.iter()
     }
 
-    pub(crate) fn push(&mut self, attribute: Attribute) -> Result<usize, XMLError> {
+    pub(crate) fn push(&mut self, attribute: Attribute) -> Result<usize, (Attribute, XMLError)> {
         use std::collections::hash_map::Entry::*;
 
         let index = self.attributes.len();
@@ -127,7 +135,9 @@ impl Attributes {
                         Vacant(entry) => {
                             entry.insert(index);
                         }
-                        Occupied(_) => return Err(XMLError::ParserDuplicateAttributes),
+                        Occupied(_) => {
+                            return Err((attribute, XMLError::ParserDuplicateAttributes));
+                        }
                     }
                 }
             }
@@ -141,9 +151,35 @@ impl Attributes {
                     self.attributes.push(attribute);
                     Ok(index)
                 }
-                Occupied(_) => Err(XMLError::ParserDuplicateAttributes),
+                Occupied(_) => Err((attribute, XMLError::ParserDuplicateAttributes)),
             }
         }
+    }
+
+    pub(crate) fn set_namespace(
+        &mut self,
+        index: usize,
+        mut resolve_prefix: impl FnMut(&str) -> Option<Arc<str>>,
+    ) {
+        let attribute = &mut self.attributes[index];
+        let prefix = if let Some(local_name) = attribute.local_name.clone() {
+            if local_name.len() == attribute.qname.len() {
+                // According to the namespace specification, attribute names without prefixes
+                // do not belong to the default namespace, but rather belong to no namespace.
+                // Therefore, we need to do nothing.
+                attribute.uri = None;
+                return;
+            }
+            let prefix_len = attribute.qname.len() - local_name.len() - 1;
+            &attribute.qname[..prefix_len]
+        } else if let Some((prefix, local_name)) = attribute.qname.split_once(':') {
+            attribute.local_name = Some(local_name.into());
+            prefix
+        } else {
+            attribute.local_name = Some(attribute.qname.clone());
+            return;
+        };
+        attribute.uri = resolve_prefix(prefix);
     }
 }
 

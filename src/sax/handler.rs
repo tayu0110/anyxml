@@ -5,7 +5,7 @@ use anyxml_uri::uri::URIStr;
 use crate::{
     error::XMLError,
     sax::{
-        AttributeType, ContentSpec, DefaultDecl, Locator, attributes::Attribute,
+        AttributeType, ContentSpec, DefaultDecl, Locator, attributes::Attributes,
         error::SAXParseError, source::InputSource,
     },
 };
@@ -61,7 +61,7 @@ pub trait SAXHandler: EntityResolver {
         uri: Option<&str>,
         local_name: Option<&str>,
         qname: &str,
-        atts: &[Attribute],
+        atts: &Attributes,
     ) {
         let _ = (uri, local_name, qname, atts);
     }

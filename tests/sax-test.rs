@@ -9,7 +9,7 @@ use anyxml::{
     error::{XMLErrorDomain, XMLErrorLevel},
     sax::{
         Locator,
-        attributes::Attribute,
+        attributes::Attributes,
         handler::{DefaultSAXHandler, EntityResolver, SAXHandler},
         parser::{ParserOption, XMLReaderBuilder},
     },
@@ -54,7 +54,7 @@ impl SAXHandler for TestSAXHandler {
         uri: Option<&str>,
         local_name: Option<&str>,
         qname: &str,
-        atts: &[Attribute],
+        atts: &Attributes,
     ) {
         eprintln!("startElement('{qname}')");
         DefaultSAXHandler.start_element(uri, local_name, qname, atts);
@@ -185,11 +185,11 @@ impl SAXHandler for XMLConfWalker {
         _uri: Option<&str>,
         _local_name: Option<&str>,
         qname: &str,
-        atts: &[Attribute],
+        atts: &Attributes,
     ) {
         match qname {
             "TESTSUITE" => {
-                for att in atts {
+                for att in atts.iter() {
                     if att.qname.as_ref() == "PROFILE" {
                         writeln!(
                             self.log.borrow_mut(),
@@ -201,7 +201,7 @@ impl SAXHandler for XMLConfWalker {
                 }
             }
             "TESTCASES" => {
-                for att in atts {
+                for att in atts.iter() {
                     if att.qname.as_ref() == "PROFILE" {
                         writeln!(
                             self.log.borrow_mut(),
@@ -225,7 +225,7 @@ impl SAXHandler for XMLConfWalker {
                 let mut recommendation = String::new();
                 let mut edition = String::new();
                 let mut entities = String::new();
-                for att in atts {
+                for att in atts.iter() {
                     match att.qname.as_ref() {
                         "TYPE" => r#type = att.value.to_string(),
                         "ID" => id = att.value.to_string(),

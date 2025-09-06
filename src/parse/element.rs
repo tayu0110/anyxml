@@ -7,7 +7,7 @@ use crate::{
     error::XMLError,
     sax::{
         AttributeType, DefaultDecl, EntityDecl,
-        attributes::Attribute,
+        attributes::{Attribute, Attributes},
         error::{fatal_error, ns_error, validity_error},
         handler::SAXHandler,
         parser::{ParserOption, XMLReader},
@@ -235,7 +235,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserUnexpectedEOF);
         }
 
-        let mut atts = vec![];
+        let mut atts = Attributes::new();
         let mut att_name = String::new();
         let mut att_value = String::new();
         let xml_ns_namespace: Arc<str> = XML_NS_NAMESPACE.into();
@@ -280,7 +280,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 (declared, before_normalize != att_value.len())
             };
 
-            if self.config.is_enable(ParserOption::Namespaces) {
+            let mut att = if self.config.is_enable(ParserOption::Namespaces) {
                 let mut uri = None;
                 if (prefix_length == 5 && &att_name[..prefix_length] == "xmlns")
                     || att_name == "xmlns"
@@ -394,33 +394,46 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     value: att_value.as_str().into(),
                     flag: 0,
                 };
-                att.set_specified();
                 if att.uri.is_some() {
                     att.set_nsdecl();
                 }
-                if declared {
-                    att.set_declared();
-                }
-                if modified {
-                    att.set_declaration_dependent_normalization();
-                }
-                atts.push(att);
+                att
             } else {
-                let mut att = Attribute {
+                Attribute {
                     uri: None,
                     local_name: None,
                     qname: att_name.as_str().into(),
                     value: att_value.as_str().into(),
                     flag: 0,
-                };
-                att.set_specified();
-                if declared {
-                    att.set_declared();
                 }
-                if modified {
-                    att.set_declaration_dependent_normalization();
+            };
+            att.set_specified();
+            if declared {
+                att.set_declared();
+            }
+            if modified {
+                att.set_declaration_dependent_normalization();
+            }
+            if let Err((att, _)) = atts.push(att) {
+                // check attribute constraints
+                if self.config.is_enable(ParserOption::Namespaces) {
+                    // [NSC: Attributes Unique]
+                    fatal_error!(
+                        self,
+                        ParserDuplicateAttributes,
+                        "The attribute '{{{}}}{}' is duplicated",
+                        att.uri.as_deref().unwrap_or("(null)"),
+                        att.local_name.as_deref().unwrap()
+                    );
+                } else {
+                    // [WFC: Unique Att Spec]
+                    fatal_error!(
+                        self,
+                        ParserDuplicateAttributes,
+                        "The attribute '{}' is duplicated.",
+                        att.qname
+                    );
                 }
-                atts.push(att);
             }
 
             s = self.skip_whitespaces()?;
@@ -434,69 +447,31 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
 
         // resolve namespaces for attribtues
         if self.config.is_enable(ParserOption::Namespaces) {
-            for att in &mut atts {
+            for i in 0..atts.len() {
+                let att = &atts[i];
                 if att.is_nsdecl() {
                     continue;
                 }
-                let len = att.local_name.as_deref().unwrap().len();
-                if len == att.qname.len() {
-                    // According to the namespace specification, attribute names without prefixes
-                    // do not belong to the default namespace, but rather belong to no namespace.
-                    // Therefore, we need to do nothing.
-                    continue;
-                }
-
-                let prefix = &att.qname[..att.qname.len() - len - 1];
-                if let Some(&pos) = self.prefix_map.get(prefix) {
-                    att.uri = Some(self.namespaces[pos].1.clone());
-                } else {
-                    // It is unclear what to do when the corresponding namespace cannot be found,
-                    // but for now, we will do nothing except for report an error.
-                    ns_error!(
-                        self,
-                        ParserUndefinedNamespace,
-                        "The namespace name for the prefix '{}' has not been declared.",
-                        prefix
-                    );
-                }
-            }
-        }
-        // check attribute constraints
-        if self.config.is_enable(ParserOption::Namespaces) {
-            for (i, att) in atts.iter().enumerate() {
-                for prev in atts.iter().take(i) {
-                    if att.local_name == prev.local_name && att.uri == prev.uri {
-                        // [NSC: Attributes Unique]
-                        fatal_error!(
+                atts.set_namespace(i, |prefix| {
+                    if let Some(&pos) = self.prefix_map.get(prefix) {
+                        Some(self.namespaces[pos].1.clone())
+                    } else {
+                        // It is unclear what to do when the corresponding namespace cannot be found,
+                        // but for now, we will do nothing except for report an error.
+                        ns_error!(
                             self,
-                            ParserDuplicateAttributes,
-                            "The attribute '{{{}}}{}' is duplicated",
-                            att.uri.as_deref().unwrap_or("(null)"),
-                            att.local_name.as_deref().unwrap()
+                            ParserUndefinedNamespace,
+                            "The namespace name for the prefix '{}' has not been declared.",
+                            prefix
                         );
-                        break;
+                        None
                     }
-                }
-            }
-        } else {
-            for (i, att) in atts.iter().enumerate() {
-                for prev in atts.iter().take(i) {
-                    if att.qname == prev.qname {
-                        // [WFC: Unique Att Spec]
-                        fatal_error!(
-                            self,
-                            ParserDuplicateAttributes,
-                            "The attribute '{}' is duplicated.",
-                            att.qname
-                        );
-                        break;
-                    }
-                }
+                });
             }
         }
         if self.config.is_enable(ParserOption::Validation) {
             let mut notation_attribute = false;
-            for att in &atts {
+            for att in atts.iter() {
                 let Some((atttype, default_decl, is_external_markup)) =
                     self.attlistdecls.get(name, &att.qname)
                 else {

@@ -19,7 +19,7 @@ This approach reduces opportunities to use `Rc`/`Arc` or internal mutability.
 use std::fmt::Write as _;
 
 use anyxml::sax::{
-    attributes::Attribute,
+    attributes::Attributes,
     handler::{EntityResolver, SAXHandler},
     parser::XMLReaderBuilder,
 };
@@ -42,7 +42,7 @@ impl SAXHandler for ExampleHandler {
         _uri: Option<&str>,
         _local_name: Option<&str>,
         qname: &str,
-        atts: &[Attribute]
+        atts: &Attributes,
     ) {
         writeln!(self.buffer, "start element {qname}").ok();
     }
