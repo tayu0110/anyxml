@@ -307,4 +307,102 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             self.skip_whitespaces()?;
         }
     }
+
+    /// ```text
+    /// [75] ExternalID ::= 'SYSTEM' S SystemLiteral
+    ///                     | 'PUBLIC' S PubidLiteral S SystemLiteral
+    /// [76] NDataDecl  ::= S 'NDATA' S Name        [VC: Notation Declared]
+    /// ```
+    fn parse_external_id(
+        &mut self,
+        system_id: &mut String,
+        public_id: &mut Option<String>,
+    ) -> Result<(), XMLError> {
+        self.grow()?;
+        match self.source.content_bytes() {
+            [b'S', b'Y', b'S', b'T', b'E', b'M', ..] => {
+                // skip 'SYSTEM'
+                self.source.advance(6)?;
+                self.locator.update_column(|c| c + 6);
+                let s = if self.state == ParserState::InExternalSubset {
+                    self.skip_whitespaces_with_handle_peref(true)?
+                } else {
+                    self.skip_whitespaces()?
+                };
+                if s == 0 {
+                    fatal_error!(
+                        self,
+                        ParserInvalidExternalID,
+                        "Whitespaces are required after 'SYSTEM' in ExternalID."
+                    );
+                }
+                *public_id = None;
+                self.parse_system_literal(system_id)?;
+            }
+            [b'P', b'U', b'B', b'L', b'I', b'C', ..] => {
+                // skip 'PUBLIC'
+                self.source.advance(6)?;
+                self.locator.update_column(|c| c + 6);
+                let s = if self.state == ParserState::InExternalSubset {
+                    self.skip_whitespaces_with_handle_peref(true)?
+                } else {
+                    self.skip_whitespaces()?
+                };
+                if s == 0 {
+                    fatal_error!(
+                        self,
+                        ParserInvalidExternalID,
+                        "Whitespaces are required after 'PUBLIC' in ExternalID."
+                    );
+                }
+                self.parse_pubid_literal(public_id.get_or_insert_default())?;
+                let s = if self.state == ParserState::InExternalSubset {
+                    self.skip_whitespaces_with_handle_peref(true)?
+                } else {
+                    self.skip_whitespaces()?
+                };
+                if s == 0 {
+                    fatal_error!(
+                        self,
+                        ParserInvalidExternalID,
+                        "Whitespaces are required after PubidLiteral in ExternalID."
+                    );
+                }
+                self.parse_system_literal(system_id)?;
+            }
+            _ => {
+                fatal_error!(
+                    self,
+                    ParserInvalidExternalID,
+                    "ExternalID must start with 'SYSTEM' or 'PUBLIC'."
+                );
+                return Err(XMLError::ParserInvalidExternalID);
+            }
+        }
+
+        // According to the definition in Section 4.2.2 of the specification,
+        // if a system identifier is a URI reference with a fragment, it is an error.
+        //
+        // There is no specification for handling invalid URI references,
+        // but here it is treated as an error.
+        match URIString::parse(system_id.as_str()) {
+            Ok(uri) if uri.fragment().is_some() => {
+                error!(
+                    self,
+                    ParserSystemLiteralWithFragment,
+                    "The system ID '{}' has a fragment, but it is not allowed.",
+                    system_id
+                );
+            }
+            Ok(_) => {}
+            Err(err) => {
+                let err = XMLError::from(err);
+                error!(
+                    self,
+                    err, "The system ID '{}' cannot be recognized as a URI.", system_id
+                );
+            }
+        }
+        Ok(())
+    }
 }
