@@ -471,7 +471,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         }
         if self.config.is_enable(ParserOption::Validation) {
             let mut notation_attribute = false;
-            for att in atts.iter() {
+            for att in &atts {
                 let Some((atttype, default_decl, is_external_markup)) =
                     self.attlistdecls.get(name, &att.qname)
                 else {

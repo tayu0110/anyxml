@@ -113,7 +113,7 @@ impl Attributes {
         self.get_value(index)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Attribute> {
+    pub fn iter(&self) -> std::slice::Iter<'_, Attribute> {
         self.attributes.iter()
     }
 
@@ -188,5 +188,14 @@ impl Index<usize> for Attributes {
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.attributes[index]
+    }
+}
+
+impl<'a> IntoIterator for &'a Attributes {
+    type IntoIter = std::slice::Iter<'a, Attribute>;
+    type Item = &'a Attribute;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
