@@ -1,4 +1,7 @@
-use std::sync::{Arc, LazyLock};
+use std::{
+    mem::take,
+    sync::{Arc, LazyLock},
+};
 
 use anyxml_uri::uri::URIString;
 
@@ -8,7 +11,7 @@ use crate::{
     sax::{
         AttributeType, DefaultDecl, EntityDecl,
         attributes::{Attribute, Attributes},
-        error::{fatal_error, ns_error, validity_error},
+        error::{error, fatal_error, ns_error, validity_error},
         handler::SAXHandler,
         parser::{ParserOption, XMLReader},
         source::InputSource,
@@ -300,6 +303,57 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             }
         }
 
+        let attlistdecls = take(&mut self.attlistdecls);
+        if let Some(decls) = attlistdecls.attlist(name) {
+            for (attr, (_, default_decl, is_external_markup)) in decls {
+                match default_decl {
+                    DefaultDecl::REQUIRED => {
+                        if self.config.is_enable(ParserOption::Validation)
+                            && !atts.contains_qname(attr)
+                        {
+                            // [VC: Required Attribute]
+                            validity_error!(
+                                self,
+                                ParserRequiredAttributeNotFound,
+                                "#REQUIRED attribute '{}' of the element '{}' is not specified.",
+                                attr,
+                                name
+                            );
+                        }
+                    }
+                    DefaultDecl::None(def) | DefaultDecl::FIXED(def) => {
+                        if !atts.contains_qname(attr) {
+                            if self.config.is_enable(ParserOption::Validation)
+                                && *is_external_markup
+                                && self.standalone == Some(true)
+                            {
+                                // [VC: Standalone Document Declaration]
+                                validity_error!(
+                                    self,
+                                    ParserInvalidStandaloneDocument,
+                                    "standalone='yes', but an unspecified attribute '{}' of the element '{}' is declared to have a default value in the external markup.",
+                                    attr,
+                                    name
+                                );
+                            }
+                            let prefix_length = attr.find(':').unwrap_or(0);
+                            self.add_attribute(
+                                &mut atts,
+                                attr,
+                                def,
+                                prefix_length,
+                                false,
+                                true,
+                                false,
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.attlistdecls = attlistdecls;
+
         // resolve namespaces for attribtues
         if self.config.is_enable(ParserOption::Namespaces) {
             for i in 0..atts.len() {
@@ -581,53 +635,6 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 }
             }
         }
-        if let Some(decls) = self.attlistdecls.attlist(name) {
-            for (attr, (_, default_decl, is_external_markup)) in decls {
-                match default_decl {
-                    DefaultDecl::REQUIRED => {
-                        if self.config.is_enable(ParserOption::Validation)
-                            && atts.iter().all(|att| att.qname.as_ref() != attr)
-                        {
-                            validity_error!(
-                                self,
-                                ParserRequiredAttributeNotFound,
-                                "#REQUIRED attribute '{}' of the element '{}' is not specified.",
-                                attr,
-                                name
-                            );
-                        }
-                    }
-                    DefaultDecl::None(def) | DefaultDecl::FIXED(def) => {
-                        if atts.iter().all(|att| att.qname.as_ref() != attr) {
-                            if self.config.is_enable(ParserOption::Validation)
-                                && *is_external_markup
-                                && self.standalone == Some(true)
-                            {
-                                // [VC: Standalone Document Declaration]
-                                validity_error!(
-                                    self,
-                                    ParserInvalidStandaloneDocument,
-                                    "standalone='yes', but an unspecified attribute '{}' of the element '{}' is declared to have a default value in the external markup.",
-                                    attr,
-                                    name
-                                );
-                            }
-                            let mut att = Attribute {
-                                uri: None,
-                                local_name: None,
-                                qname: attr.into(),
-                                value: def.clone(),
-                                flag: 0,
-                            };
-                            att.set_declared();
-
-                            // TODO: Namespace handling
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
 
         self.grow()?;
         if !self.source.content_bytes().starts_with(b">")
@@ -846,6 +853,16 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         }
         if modified {
             att.set_declaration_dependent_normalization();
+        }
+        if att.qname.as_ref() == "xml:space"
+            && !matches!(att.value.as_ref(), "default" | "preserve")
+        {
+            error!(
+                self,
+                ParserUnacceptableXMLSpaceAttribute,
+                "The value of 'xml:space' attribute is 'default' or 'preserve', but '{}' is specified.",
+                att.value
+            );
         }
         if let Err((att, _)) = atts.push(att) {
             // check attribute constraints

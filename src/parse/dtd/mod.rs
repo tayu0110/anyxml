@@ -190,51 +190,51 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             self.handler.end_dtd();
         }
 
-        if self.config.is_enable(ParserOption::Validation) {
-            for (name, decl) in self.entities.iter() {
-                match decl {
-                    EntityDecl::ExternalGeneralUnparsedEntity { notation_name, .. } => {
-                        if !self.notations.contains_key(notation_name) {
-                            // [VC: Notation Declared]
-                            validity_error!(
-                                self,
-                                ParserUndeclaredNotation,
-                                "The notation '{}' is undeclared.",
-                                notation_name.as_ref()
-                            );
-                        }
-                    }
-                    EntityDecl::InternalGeneralEntity {
-                        replacement_text, ..
-                    }
-                    | EntityDecl::InternalParameterEntity {
-                        replacement_text, ..
-                    } => {
-                        let mut text = replacement_text.as_ref();
-                        while let Some((_, rem)) = text.split_once('&') {
+        for (name, decl) in self.entities.iter() {
+            match decl {
+                EntityDecl::ExternalGeneralUnparsedEntity { notation_name, .. }
+                    if self.config.is_enable(ParserOption::Validation)
+                        && !self.notations.contains_key(notation_name) =>
+                {
+                    // [VC: Notation Declared]
+                    validity_error!(
+                        self,
+                        ParserUndeclaredNotation,
+                        "The notation '{}' is undeclared.",
+                        notation_name.as_ref()
+                    );
+                }
+                EntityDecl::InternalGeneralEntity {
+                    replacement_text, ..
+                }
+                | EntityDecl::InternalParameterEntity {
+                    replacement_text, ..
+                } => {
+                    let mut text = replacement_text.as_ref();
+                    while let Some((_, rem)) = text.split_once('&') {
+                        text = rem;
+                        if let Some((entity, rem)) = text.split_once(';') {
                             text = rem;
-                            if let Some((entity, rem)) = text.split_once(';') {
-                                text = rem;
-                                if matches!(
-                                    self.entities.get(entity),
-                                    Some(EntityDecl::ExternalGeneralUnparsedEntity { .. })
-                                ) {
-                                    // 4.4.9 Error
-                                    error!(
-                                        self,
-                                        ParserInvalidEntityReference,
-                                        "The unparsed entity '{}' appears in EntityValue of the entity '{}'.",
-                                        entity,
-                                        name
-                                    );
-                                }
+                            if matches!(
+                                self.entities.get(entity),
+                                Some(EntityDecl::ExternalGeneralUnparsedEntity { .. })
+                            ) {
+                                // 4.4.9 Error
+                                error!(
+                                    self,
+                                    ParserInvalidEntityReference,
+                                    "The unparsed entity '{}' appears in EntityValue of the entity '{}'.",
+                                    entity,
+                                    name
+                                );
                             }
                         }
                     }
-                    _ => {}
                 }
+                _ => {}
             }
-
+        }
+        if self.config.is_enable(ParserOption::Validation) {
             for (elem_name, attr_name, (atttype, _, _)) in self.attlistdecls.iter_all() {
                 if let AttributeType::NOTATION(notations) = atttype {
                     if let Some(ContentSpec::EMPTY) = self.elementdecls.get(elem_name) {

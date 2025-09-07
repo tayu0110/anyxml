@@ -83,6 +83,15 @@ impl Attributes {
         self.len() == 0
     }
 
+    pub fn contains_qname(&self, qname: &str) -> bool {
+        self.get_index_by_qname(qname).is_some()
+    }
+
+    pub fn contains_expanded_name(&self, namespace_uri: Option<&str>, local_name: &str) -> bool {
+        self.get_index_by_expanded_name(namespace_uri, local_name)
+            .is_some()
+    }
+
     pub fn get_local_name(&self, index: usize) -> Option<&str> {
         self.attributes.get(index)?.local_name.as_deref()
     }

@@ -112,6 +112,7 @@ pub enum XMLError {
     ParserUnacceptableEnumerationAttribute,
     ParserMismatchFixedDefaultAttributeValue,
     ParserRequiredAttributeNotFound,
+    ParserUnacceptableXMLSpaceAttribute,
     ParserInvalidCharacterReference,
     ParserInvalidEntityReference,
     ParserEntityNotFound,
