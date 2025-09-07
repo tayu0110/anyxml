@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use anyxml_uri::uri::URIString;
 
@@ -14,6 +14,8 @@ use crate::{
         source::InputSource,
     },
 };
+
+static ARC_XML_NS_NAMESPACE: LazyLock<Arc<str>> = LazyLock::new(|| XML_NS_NAMESPACE.into());
 
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
     /// ```text
@@ -238,7 +240,6 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         let mut atts = Attributes::new();
         let mut att_name = String::new();
         let mut att_value = String::new();
-        let xml_ns_namespace: Arc<str> = XML_NS_NAMESPACE.into();
         while !matches!(self.source.content_bytes()[0], b'/' | b'>') {
             if s == 0 {
                 fatal_error!(
@@ -280,161 +281,15 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 (declared, before_normalize != att_value.len())
             };
 
-            let mut att = if self.config.is_enable(ParserOption::Namespaces) {
-                let mut uri = None;
-                if (prefix_length == 5 && &att_name[..prefix_length] == "xmlns")
-                    || att_name == "xmlns"
-                {
-                    // This is a namespace declaration. Register the namespace.
-
-                    // TODO:
-                    // Warn when the namespace name is not a URI or is a relative URI.
-                    // According to the namespace specification, the check is optional,
-                    // so it conforms to the specification as is, but it may cause confusion
-                    // when utilizing other specifications.
-                    let prefix = if att_name == "xmlns" {
-                        if att_value == XML_NS_NAMESPACE || att_value == XML_XML_NAMESPACE {
-                            ns_error!(
-                                self,
-                                ParserUnacceptableNamespaceName,
-                                "Namespace '{}' cannot be declared as default namespace.",
-                                att_value
-                            );
-                        }
-                        ""
-                    } else {
-                        if att_value.is_empty()
-                            && matches!(self.version, XMLVersion::XML10 | XMLVersion::Unknown)
-                        {
-                            ns_error!(
-                                self,
-                                ParserUnacceptableNamespaceName,
-                                "Empty namespace name is not allowed in Namespace in XML 1.0."
-                            );
-                        } else if att_value == XML_NS_NAMESPACE {
-                            ns_error!(
-                                self,
-                                ParserUnacceptableNamespaceName,
-                                "The namespace '{}' cannot be declared explicitly.",
-                                XML_NS_NAMESPACE
-                            );
-                        } else if &att_name[prefix_length + 1..] != "xml"
-                            && att_value == XML_XML_NAMESPACE
-                        {
-                            ns_error!(
-                                self,
-                                ParserUnacceptableNamespaceName,
-                                "The namespace '{}' cannot bind prefixes other than 'xml'.",
-                                att_value
-                            );
-                        } else if &att_name[prefix_length + 1..] == "xml"
-                            && att_value != XML_XML_NAMESPACE
-                        {
-                            ns_error!(
-                                self,
-                                ParserUnacceptableNamespaceName,
-                                "The namespace '{}' cannot bind the prefix 'xml'.",
-                                &att_name[prefix_length + 1..]
-                            );
-                        } else if &att_name[prefix_length + 1..] == "xmlns" {
-                            ns_error!(
-                                self,
-                                ParserUnacceptableNamespaceName,
-                                "Any namespaces cannot bind 'xmlns' explicitly."
-                            );
-                        }
-                        &att_name[prefix_length + 1..]
-                    };
-                    match URIString::parse(&att_value) {
-                        Ok(uri) if !uri.is_absolute() => {
-                            ns_error!(
-                                self,
-                                ParserNamespaceNameNotAbsoluteURI,
-                                "The namespace name '{}' is not a valid absolute URI.",
-                                att_value
-                            );
-                        }
-                        Ok(_) => {}
-                        Err(_) => {
-                            ns_error!(
-                                self,
-                                ParserNamespaceNameNotURI,
-                                "The namespace name '{}' is not a valid URI.",
-                                att_value
-                            );
-                        }
-                    }
-                    let pos = self.namespaces.len();
-                    if let Some((pre, old)) = self.prefix_map.get_key_value(prefix) {
-                        self.namespaces
-                            .push((pre.clone(), att_value.as_str().into(), *old));
-                        *self.prefix_map.get_mut(prefix).unwrap() = pos;
-                    } else {
-                        let prefix: Arc<str> = prefix.into();
-                        self.namespaces.push((
-                            prefix.clone(),
-                            att_value.as_str().into(),
-                            usize::MAX,
-                        ));
-                        self.prefix_map.insert(prefix, pos);
-                    }
-                    uri = Some(xml_ns_namespace.clone());
-                }
-                // The namespace name may be overwritten by declarations that appear later,
-                // so set it to `None` at this point.
-                // Check after reading all attributes of this tag.
-                let mut att = Attribute {
-                    uri,
-                    local_name: if prefix_length > 0 {
-                        Some(att_name[prefix_length + 1..].into())
-                    } else {
-                        Some(att_name.as_str().into())
-                    },
-                    qname: att_name.as_str().into(),
-                    value: att_value.as_str().into(),
-                    flag: 0,
-                };
-                if att.uri.is_some() {
-                    att.set_nsdecl();
-                }
-                att
-            } else {
-                Attribute {
-                    uri: None,
-                    local_name: None,
-                    qname: att_name.as_str().into(),
-                    value: att_value.as_str().into(),
-                    flag: 0,
-                }
-            };
-            att.set_specified();
-            if declared {
-                att.set_declared();
-            }
-            if modified {
-                att.set_declaration_dependent_normalization();
-            }
-            if let Err((att, _)) = atts.push(att) {
-                // check attribute constraints
-                if self.config.is_enable(ParserOption::Namespaces) {
-                    // [NSC: Attributes Unique]
-                    fatal_error!(
-                        self,
-                        ParserDuplicateAttributes,
-                        "The attribute '{{{}}}{}' is duplicated",
-                        att.uri.as_deref().unwrap_or("(null)"),
-                        att.local_name.as_deref().unwrap()
-                    );
-                } else {
-                    // [WFC: Unique Att Spec]
-                    fatal_error!(
-                        self,
-                        ParserDuplicateAttributes,
-                        "The attribute '{}' is duplicated.",
-                        att.qname
-                    );
-                }
-            }
+            self.add_attribute(
+                &mut atts,
+                &att_name,
+                &att_value,
+                prefix_length,
+                true,
+                declared,
+                modified,
+            );
 
             s = self.skip_whitespaces()?;
             if self.source.content_bytes().is_empty() {
@@ -848,6 +703,170 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             self.source.advance(1)?;
             self.locator.update_column(|c| c + 1);
             Ok(false)
+        }
+    }
+
+    fn add_attribute(
+        &mut self,
+        atts: &mut Attributes,
+        att_name: &str,
+        att_value: &str,
+        prefix_length: usize,
+        specified: bool,
+        declared: bool,
+        modified: bool,
+    ) {
+        let mut att = if self.config.is_enable(ParserOption::Namespaces) {
+            let mut uri = None;
+            if (prefix_length == 5 && &att_name[..prefix_length] == "xmlns") || att_name == "xmlns"
+            {
+                // This is a namespace declaration. Register the namespace.
+
+                // TODO:
+                // Warn when the namespace name is not a URI or is a relative URI.
+                // According to the namespace specification, the check is optional,
+                // so it conforms to the specification as is, but it may cause confusion
+                // when utilizing other specifications.
+                let prefix = if att_name == "xmlns" {
+                    if att_value == XML_NS_NAMESPACE || att_value == XML_XML_NAMESPACE {
+                        ns_error!(
+                            self,
+                            ParserUnacceptableNamespaceName,
+                            "Namespace '{}' cannot be declared as default namespace.",
+                            att_value
+                        );
+                    }
+                    ""
+                } else {
+                    if att_value.is_empty()
+                        && matches!(self.version, XMLVersion::XML10 | XMLVersion::Unknown)
+                    {
+                        ns_error!(
+                            self,
+                            ParserUnacceptableNamespaceName,
+                            "Empty namespace name is not allowed in Namespace in XML 1.0."
+                        );
+                    } else if att_value == XML_NS_NAMESPACE {
+                        ns_error!(
+                            self,
+                            ParserUnacceptableNamespaceName,
+                            "The namespace '{}' cannot be declared explicitly.",
+                            XML_NS_NAMESPACE
+                        );
+                    } else if &att_name[prefix_length + 1..] != "xml"
+                        && att_value == XML_XML_NAMESPACE
+                    {
+                        ns_error!(
+                            self,
+                            ParserUnacceptableNamespaceName,
+                            "The namespace '{}' cannot bind prefixes other than 'xml'.",
+                            att_value
+                        );
+                    } else if &att_name[prefix_length + 1..] == "xml"
+                        && att_value != XML_XML_NAMESPACE
+                    {
+                        ns_error!(
+                            self,
+                            ParserUnacceptableNamespaceName,
+                            "The namespace '{}' cannot bind the prefix 'xml'.",
+                            &att_name[prefix_length + 1..]
+                        );
+                    } else if &att_name[prefix_length + 1..] == "xmlns" {
+                        ns_error!(
+                            self,
+                            ParserUnacceptableNamespaceName,
+                            "Any namespaces cannot bind 'xmlns' explicitly."
+                        );
+                    }
+                    &att_name[prefix_length + 1..]
+                };
+                match URIString::parse(att_value) {
+                    Ok(uri) if !uri.is_absolute() => {
+                        ns_error!(
+                            self,
+                            ParserNamespaceNameNotAbsoluteURI,
+                            "The namespace name '{}' is not a valid absolute URI.",
+                            att_value
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(_) => {
+                        ns_error!(
+                            self,
+                            ParserNamespaceNameNotURI,
+                            "The namespace name '{}' is not a valid URI.",
+                            att_value
+                        );
+                    }
+                }
+                let pos = self.namespaces.len();
+                if let Some((pre, old)) = self.prefix_map.get_key_value(prefix) {
+                    self.namespaces.push((pre.clone(), att_value.into(), *old));
+                    *self.prefix_map.get_mut(prefix).unwrap() = pos;
+                } else {
+                    let prefix: Arc<str> = prefix.into();
+                    self.namespaces
+                        .push((prefix.clone(), att_value.into(), usize::MAX));
+                    self.prefix_map.insert(prefix, pos);
+                }
+                uri = Some(ARC_XML_NS_NAMESPACE.clone());
+            }
+            // The namespace name may be overwritten by declarations that appear later,
+            // so set it to `None` at this point.
+            // Check after reading all attributes of this tag.
+            let mut att = Attribute {
+                uri,
+                local_name: if prefix_length > 0 {
+                    Some(att_name[prefix_length + 1..].into())
+                } else {
+                    Some(att_name.into())
+                },
+                qname: att_name.into(),
+                value: att_value.into(),
+                flag: 0,
+            };
+            if att.uri.is_some() {
+                att.set_nsdecl();
+            }
+            att
+        } else {
+            Attribute {
+                uri: None,
+                local_name: None,
+                qname: att_name.into(),
+                value: att_value.into(),
+                flag: 0,
+            }
+        };
+        if specified {
+            att.set_specified();
+        }
+        if declared {
+            att.set_declared();
+        }
+        if modified {
+            att.set_declaration_dependent_normalization();
+        }
+        if let Err((att, _)) = atts.push(att) {
+            // check attribute constraints
+            if self.config.is_enable(ParserOption::Namespaces) {
+                // [NSC: Attributes Unique]
+                fatal_error!(
+                    self,
+                    ParserDuplicateAttributes,
+                    "The attribute '{{{}}}{}' is duplicated",
+                    att.uri.as_deref().unwrap_or("(null)"),
+                    att.local_name.as_deref().unwrap()
+                );
+            } else {
+                // [WFC: Unique Att Spec]
+                fatal_error!(
+                    self,
+                    ParserDuplicateAttributes,
+                    "The attribute '{}' is duplicated.",
+                    att.qname
+                );
+            }
         }
     }
 }
