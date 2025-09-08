@@ -47,6 +47,27 @@ impl ContentSpec {
     }
 }
 
+impl std::fmt::Display for ContentSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EMPTY => write!(f, "EMPTY"),
+            Self::ANY => write!(f, "ANY"),
+            Self::Mixed(mixed) => {
+                write!(f, "(#PCDATA")?;
+                for name in mixed.iter() {
+                    write!(f, "|{name}")?;
+                }
+                if mixed.is_empty() {
+                    write!(f, ")")
+                } else {
+                    write!(f, ")*")
+                }
+            }
+            Self::Children(children) => write!(f, "{children}"),
+        }
+    }
+}
+
 const MAX_ELEMENT_CONTENT_ID: usize = 1 << (usize::BITS - 1);
 static ELEMENT_CONTENT_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -216,11 +237,7 @@ impl ElementContent {
         }
     }
 
-    /// If successfully compiled or already compiled, return `Ok`.  \
-    /// `Ok(false)` indicates that the state remained unchanged because it was already compiled
-    /// or was unambiguous before compilation.  \
-    /// `Ok(true)` indicates that the state changed because it was uncompiled and ambiguous.
-    pub(crate) fn compile(&mut self) -> Result<bool, ElementContentCompileError> {
+    fn get_root_state(&self) -> Result<usize, ElementContentCompileError> {
         // check tree constraint
         let mut parent = vec![usize::MAX; self.states.len()];
         let mut num_edges = 0;
@@ -252,9 +269,16 @@ impl ElementContent {
         {
             return Err(ElementContentCompileError::InvalidSyntaxTree);
         }
+        Ok(parent.into_iter().position(|p| p == usize::MAX).unwrap())
+    }
 
+    /// If successfully compiled or already compiled, return `Ok`.  \
+    /// `Ok(false)` indicates that the state remained unchanged because it was already compiled
+    /// or was unambiguous before compilation.  \
+    /// `Ok(true)` indicates that the state changed because it was uncompiled and ambiguous.
+    pub(crate) fn compile(&mut self) -> Result<bool, ElementContentCompileError> {
         // build ast
-        let root = parent.into_iter().position(|p| p == usize::MAX).unwrap();
+        let root = self.get_root_state()?;
         let mut memo = HashMap::new();
         let ast = self.build_syntax_tree(root, &mut memo);
 
@@ -336,6 +360,109 @@ impl ElementContent {
                 self.new_validator()
             }
         }
+    }
+
+    fn display_to(&self, to: &mut impl std::fmt::Write, state: usize) -> std::fmt::Result {
+        use ElementContentState::*;
+
+        match &self.states[state] {
+            Name(name) => {
+                write!(to, "{name}")
+            }
+            Catenation { previous, next } => {
+                if matches!(self.states[*previous], Alternation(_, _)) {
+                    write!(to, "(")?;
+                    self.display_to(to, *previous)?;
+                    write!(to, ")")?;
+                } else {
+                    self.display_to(to, *previous)?;
+                }
+
+                write!(to, ",")?;
+
+                if matches!(self.states[*next], Alternation(_, _)) {
+                    write!(to, "(")?;
+                    self.display_to(to, *next)?;
+                    write!(to, ")")
+                } else {
+                    self.display_to(to, *next)
+                }
+            }
+            Alternation(left, right) => {
+                if matches!(self.states[*left], Catenation { .. }) {
+                    write!(to, "(")?;
+                    self.display_to(to, *left)?;
+                    write!(to, ")")?;
+                } else {
+                    self.display_to(to, *left)?;
+                }
+
+                write!(to, "|")?;
+
+                if matches!(self.states[*right], Catenation { .. }) {
+                    write!(to, "(")?;
+                    self.display_to(to, *right)?;
+                    write!(to, ")")
+                } else {
+                    self.display_to(to, *right)
+                }
+            }
+            ZeroOrOne(state) => {
+                if matches!(self.states[*state], Name(_)) {
+                    self.display_to(to, *state)?;
+                    write!(to, "?")
+                } else {
+                    write!(to, "(")?;
+                    self.display_to(to, *state)?;
+                    write!(to, ")?")
+                }
+            }
+            ZeroOrMore(state) => {
+                if matches!(self.states[*state], Name(_)) {
+                    self.display_to(to, *state)?;
+                    write!(to, "*")
+                } else {
+                    write!(to, "(")?;
+                    self.display_to(to, *state)?;
+                    write!(to, ")*")
+                }
+            }
+            OneOrMore(state) => {
+                if matches!(self.states[*state], Name(_)) {
+                    self.display_to(to, *state)?;
+                    write!(to, "+")
+                } else {
+                    write!(to, "(")?;
+                    self.display_to(to, *state)?;
+                    write!(to, ")+")
+                }
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for ElementContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ElementContentState::*;
+
+        let Ok(root) = self.get_root_state() else {
+            return write!(f, "invalid element content");
+        };
+
+        let outer = !matches!(
+            self.states[root],
+            OneOrMore(_) | ZeroOrMore(_) | ZeroOrOne(_)
+        );
+        if outer {
+            write!(f, "(")?;
+        }
+
+        self.display_to(f, root)?;
+
+        if outer {
+            write!(f, ")")?;
+        }
+        Ok(())
     }
 }
 

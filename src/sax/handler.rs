@@ -365,7 +365,7 @@ impl SAXHandler for DebugHandler {
     }
 
     fn element_decl(&mut self, name: &str, contentspec: &ContentSpec) {
-        writeln!(self.buffer, "elementDecl({name}, {contentspec:?})").ok();
+        writeln!(self.buffer, "elementDecl({name}, {contentspec})").ok();
         self.child.element_decl(name, contentspec);
     }
 
@@ -386,7 +386,8 @@ impl SAXHandler for DebugHandler {
     fn notation_decl(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
         writeln!(
             self.buffer,
-            "notationDecl({name}, {public_id:?}, {system_id:?})"
+            "notationDecl({name}, {public_id:?}, {:?})",
+            system_id.map(|id| id.as_escaped_str())
         )
         .ok();
         self.child.notation_decl(name, public_id, system_id);
