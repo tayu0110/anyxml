@@ -313,7 +313,10 @@ impl NamespaceStack {
     }
 
     pub fn pop(&mut self) -> Option<Namespace> {
-        let (namespace, previous) = self.namespaces.pop()?;
+        if self.len() == 1 {
+            return None;
+        }
+        let (namespace, previous) = self.namespaces.pop().unwrap();
         if previous < usize::MAX {
             *self.prefix_map.get_mut(&namespace.prefix).unwrap() = previous;
         } else {
@@ -329,7 +332,6 @@ impl NamespaceStack {
     }
 
     pub fn clear(&mut self) {
-        assert!(!self.is_empty());
         self.truncate(1);
     }
 }
