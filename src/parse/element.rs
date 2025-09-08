@@ -99,9 +99,9 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         if !self.fatal_error_occurred {
             if self.config.is_enable(ParserOption::Namespaces) {
                 if prefix_length > 0 {
-                    if let Some(&pos) = self.prefix_map.get(&name[..prefix_length]) {
+                    if let Some(namespace) = self.namespaces.get(&name[..prefix_length]) {
                         self.handler.end_element(
-                            Some(&self.namespaces[pos].0),
+                            Some(&namespace.namespace_name),
                             Some(&name[prefix_length + 1..]),
                             &name,
                         );
@@ -115,9 +115,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     }
                 } else {
                     // default namespace
-                    if let Some(&pos) = self.prefix_map.get("") {
-                        self.handler
-                            .end_element(Some(&self.namespaces[pos].0), Some(&name), &name);
+                    if let Some(namespace) = self.namespaces.get("") {
+                        self.handler.end_element(
+                            Some(&namespace.namespace_name),
+                            Some(&name),
+                            &name,
+                        );
                     } else {
                         self.handler.end_element(None, Some(&name), &name);
                     }
@@ -128,17 +131,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         }
 
         // resume namespace stack
-        while self.namespaces.len() > old_ns_stack_depth {
-            let (pre, _, old_position) = self.namespaces.pop().unwrap();
-            if !self.fatal_error_occurred {
-                self.handler
-                    .end_prefix_mapping((!pre.is_empty()).then_some(pre.as_ref()));
-            }
-
-            if old_position < usize::MAX {
-                *self.prefix_map.get_mut(&pre).unwrap() = old_position;
-            }
-        }
+        self.namespaces.truncate(old_ns_stack_depth);
 
         if self.config.is_enable(ParserOption::Validation)
             && let Some(Some((context_name, mut validator))) = self.validation_stack.pop()
@@ -362,8 +355,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     continue;
                 }
                 atts.set_namespace(i, |prefix| {
-                    if let Some(&pos) = self.prefix_map.get(prefix) {
-                        Some(self.namespaces[pos].1.clone())
+                    if let Some(namespace) = self.namespaces.get(prefix) {
+                        Some(namespace.namespace_name)
                     } else {
                         // It is unclear what to do when the corresponding namespace cannot be found,
                         // but for now, we will do nothing except for report an error.
@@ -662,9 +655,9 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             }
             if self.config.is_enable(ParserOption::Namespaces) {
                 if *prefix_length > 0 {
-                    if let Some(&pos) = self.prefix_map.get(&name[..*prefix_length]) {
+                    if let Some(namespace) = self.namespaces.get(&name[..*prefix_length]) {
                         self.handler.start_element(
-                            Some(&self.namespaces[pos].0),
+                            Some(&namespace.namespace_name),
                             Some(&name[*prefix_length + 1..]),
                             name,
                             &atts,
@@ -679,9 +672,9 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     }
                 } else {
                     // default namespace
-                    if let Some(&pos) = self.prefix_map.get("") {
+                    if let Some(namespace) = self.namespaces.get("") {
                         self.handler.start_element(
-                            Some(&self.namespaces[pos].0),
+                            Some(&namespace.namespace_name),
                             Some(name),
                             name,
                             &atts,
@@ -806,16 +799,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         );
                     }
                 }
-                let pos = self.namespaces.len();
-                if let Some((pre, old)) = self.prefix_map.get_key_value(prefix) {
-                    self.namespaces.push((pre.clone(), att_value.into(), *old));
-                    *self.prefix_map.get_mut(prefix).unwrap() = pos;
-                } else {
-                    let prefix: Arc<str> = prefix.into();
-                    self.namespaces
-                        .push((prefix.clone(), att_value.into(), usize::MAX));
-                    self.prefix_map.insert(prefix, pos);
-                }
+                self.namespaces.push(prefix, att_value);
                 uri = Some(ARC_XML_NS_NAMESPACE.clone());
             }
             // The namespace name may be overwritten by declarations that appear later,

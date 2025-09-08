@@ -15,7 +15,7 @@ use std::{
 
 use anyxml_uri::uri::{URIStr, URIString};
 
-use crate::{error::XMLError, sax::contentspec::ContentSpec};
+use crate::{XML_XML_NAMESPACE, error::XMLError, sax::contentspec::ContentSpec};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum AttributeType {
@@ -250,6 +250,102 @@ impl EntityMap {
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, &EntityDecl)> {
         self.0.iter().map(|(name, decl)| (name.as_ref(), decl))
+    }
+}
+
+static ARC_XML_XML_NAMESPACE_PREFIX: LazyLock<Arc<str>> = LazyLock::new(|| "xml".into());
+static ARC_XML_XML_NAMESPACE: LazyLock<Arc<str>> = LazyLock::new(|| XML_XML_NAMESPACE.into());
+
+#[derive(Debug, Clone)]
+pub struct Namespace {
+    pub prefix: Arc<str>,
+    pub namespace_name: Arc<str>,
+}
+
+pub struct NamespaceStack {
+    // (namespace, before overwrite)
+    // Namespaces declared closer to the document element appear earlier in the list.
+    // The second `usize` is the position of the namespace that bound the same prefix until
+    // the namespace declaration appeared. If there is no such namespace, it is `usize::MAX`.
+    namespaces: Vec<(Namespace, usize)>,
+    // (prefix, position in `namespaces`)
+    prefix_map: HashMap<Arc<str>, usize>,
+}
+
+impl NamespaceStack {
+    pub fn is_declared(&self, prefix: &str) -> bool {
+        self.prefix_map.contains_key(prefix)
+    }
+
+    pub fn len(&self) -> usize {
+        self.namespaces.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn get(&self, prefix: &str) -> Option<Namespace> {
+        let &index = self.prefix_map.get(prefix)?;
+        Some(self.namespaces[index].0.clone())
+    }
+
+    pub fn push(&mut self, prefix: &str, namespace_name: &str) {
+        if let Some(index) = self.prefix_map.get_mut(prefix) {
+            let previous = *index;
+            *index = self.namespaces.len();
+            self.namespaces.push((
+                Namespace {
+                    prefix: self.namespaces[previous].0.prefix.clone(),
+                    namespace_name: namespace_name.into(),
+                },
+                previous,
+            ));
+        } else {
+            let namespace = Namespace {
+                prefix: prefix.into(),
+                namespace_name: namespace_name.into(),
+            };
+            self.prefix_map
+                .insert(namespace.prefix.clone(), self.namespaces.len());
+            self.namespaces.push((namespace, usize::MAX));
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<Namespace> {
+        let (namespace, previous) = self.namespaces.pop()?;
+        if previous < usize::MAX {
+            *self.prefix_map.get_mut(&namespace.prefix).unwrap() = previous;
+        } else {
+            self.prefix_map.remove(&namespace.prefix);
+        }
+        Some(namespace)
+    }
+
+    pub fn truncate(&mut self, depth: usize) {
+        while self.namespaces.len() > depth {
+            self.pop();
+        }
+    }
+
+    pub fn clear(&mut self) {
+        assert!(!self.is_empty());
+        self.truncate(1);
+    }
+}
+
+impl Default for NamespaceStack {
+    fn default() -> Self {
+        Self {
+            namespaces: vec![(
+                Namespace {
+                    prefix: ARC_XML_XML_NAMESPACE_PREFIX.clone(),
+                    namespace_name: ARC_XML_XML_NAMESPACE.clone(),
+                },
+                usize::MAX,
+            )],
+            prefix_map: HashMap::from([(ARC_XML_XML_NAMESPACE_PREFIX.clone(), 0)]),
+        }
     }
 }
 

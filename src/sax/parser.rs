@@ -8,11 +8,11 @@ use std::{
 use anyxml_uri::uri::{URIStr, URIString};
 
 use crate::{
-    DefaultParserSpec, ParserSpec, XML_XML_NAMESPACE, XMLVersion,
+    DefaultParserSpec, ParserSpec, XMLVersion,
     encoding::UTF8_NAME,
     error::XMLError,
     sax::{
-        AttlistDeclMap, ElementDeclMap, EntityMap, Locator, Notation,
+        AttlistDeclMap, ElementDeclMap, EntityMap, Locator, NamespaceStack, Notation,
         contentspec::ContentSpecValidationContext,
         error::fatal_error,
         handler::{DefaultSAXHandler, SAXHandler},
@@ -141,13 +141,7 @@ pub struct XMLReader<Spec: ParserSpec, H: SAXHandler = DefaultSAXHandler> {
     pub(crate) has_internal_subset: bool,
     pub(crate) has_external_subset: bool,
     pub(crate) has_parameter_entity: bool,
-    // (prefix, namespace name, before overwrite)
-    // Namespaces declared closer to the document element appear earlier in the list.
-    // The second `usize` is the position of the namespace that bound the same prefix until
-    // the namespace declaration appeared. If there is no such namespace, it is `usize::MAX`.
-    pub(crate) namespaces: Vec<(Arc<str>, Arc<str>, usize)>,
-    // (prefix, position in `namespaces`)
-    pub(crate) prefix_map: HashMap<Arc<str>, usize>,
+    pub(crate) namespaces: NamespaceStack,
     pub(crate) entities: EntityMap,
     pub(crate) notations: HashMap<Box<str>, Notation>,
     pub(crate) elementdecls: ElementDeclMap,
@@ -212,12 +206,6 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
         self.has_external_subset = false;
         self.has_parameter_entity = false;
         self.namespaces.clear();
-        // 'xml' prefix
-        let xml: Arc<str> = "xml".into();
-        self.namespaces
-            .push((xml.clone(), XML_XML_NAMESPACE.into(), usize::MAX));
-        self.prefix_map.clear();
-        self.prefix_map.insert(xml, 0);
         self.entities.clear();
         self.notations.clear();
         self.elementdecls.clear();
@@ -430,8 +418,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             has_internal_subset: false,
             has_external_subset: false,
             has_parameter_entity: false,
-            namespaces: vec![],
-            prefix_map: HashMap::new(),
+            namespaces: Default::default(),
             entities: Default::default(),
             notations: Default::default(),
             elementdecls: Default::default(),
@@ -489,7 +476,6 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
                 has_external_subset: self.reader.has_external_subset,
                 has_parameter_entity: self.reader.has_parameter_entity,
                 namespaces: self.reader.namespaces,
-                prefix_map: self.reader.prefix_map,
                 entities: self.reader.entities,
                 notations: self.reader.notations,
                 elementdecls: self.reader.elementdecls,
