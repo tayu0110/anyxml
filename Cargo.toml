@@ -22,6 +22,12 @@ rust-version.workspace = true
 [dependencies]
 anyxml-uri = { path = "./anyxml-uri", version = "0.1.0" }
 anyxml-automata = { path = "./anyxml-automata", version = "0.1.0" }
+clap = { version = "4.5.47", features = ["derive"] }
+
+
+[[bin]]
+name = "xmlprocess"
+path = "src/bin/xmlprocess.rs"
 
 [[test]]
 name = "sax-test"
