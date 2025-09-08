@@ -357,7 +357,7 @@ impl SAXHandler for DebugHandler {
     ) {
         writeln!(
             self.buffer,
-            "attributeDecl({element_name}, {attribute_name}, {attribute_type:?}, {default_decl:?})"
+            "attributeDecl({element_name}, {attribute_name}, {attribute_type}, {default_decl:?})"
         )
         .ok();
         self.child
@@ -372,7 +372,8 @@ impl SAXHandler for DebugHandler {
     fn external_entity_decl(&mut self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
         writeln!(
             self.buffer,
-            "externalEntityDecl({name}, {public_id:?}, {system_id:?})"
+            "externalEntityDecl({name}, {public_id:?}, {})",
+            system_id.as_escaped_str()
         )
         .ok();
         self.child.external_entity_decl(name, public_id, system_id);

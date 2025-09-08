@@ -32,6 +32,35 @@ pub enum AttributeType {
     Enumeration(HashSet<Box<str>>),
 }
 
+impl std::fmt::Display for AttributeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CDATA => write!(f, "CDATA"),
+            Self::ID => write!(f, "ID"),
+            Self::IDREF => write!(f, "IDREF"),
+            Self::IDREFS => write!(f, "IDREFS"),
+            Self::ENTITY => write!(f, "ENTITY"),
+            Self::ENTITIES => write!(f, "ENTITIES"),
+            Self::NMTOKEN => write!(f, "NMTOKEN"),
+            Self::NMTOKENS => write!(f, "NMTOKENS"),
+            ty @ (Self::NOTATION(set) | Self::Enumeration(set)) => {
+                if matches!(ty, Self::NOTATION(_)) {
+                    write!(f, "NOTATION")?;
+                }
+                write!(f, "(")?;
+                let mut iter = set.iter();
+                if let Some(name) = iter.next() {
+                    write!(f, "{name}")?;
+                }
+                for name in iter {
+                    write!(f, "|{name}")?;
+                }
+                write!(f, ")")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DefaultDecl {
     REQUIRED,
