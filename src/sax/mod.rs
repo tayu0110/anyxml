@@ -69,6 +69,17 @@ pub enum DefaultDecl {
     None(Box<str>),
 }
 
+impl std::fmt::Display for DefaultDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::REQUIRED => write!(f, "#REQUIRED"),
+            Self::IMPLIED => write!(f, "#IMPLIED"),
+            Self::FIXED(def) => write!(f, "#FIXED \"{def}\""),
+            Self::None(def) => write!(f, "\"{def}\""),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AttlistDeclMap(
     // (attribute type, default value declaration, is external markup declaration)

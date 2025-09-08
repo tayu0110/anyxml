@@ -357,7 +357,7 @@ impl SAXHandler for DebugHandler {
     ) {
         writeln!(
             self.buffer,
-            "attributeDecl({element_name}, {attribute_name}, {attribute_type}, {default_decl:?})"
+            "attributeDecl({element_name}, {attribute_name}, {attribute_type}, {default_decl})"
         )
         .ok();
         self.child
