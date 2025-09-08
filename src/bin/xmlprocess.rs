@@ -19,7 +19,7 @@ struct CmdArgs {
     #[clap(long, help = "disable namespace handling")]
     no_namespace: bool,
     #[clap(help = "path to the target XML document")]
-    file: PathBuf,
+    file: Vec<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,10 +33,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         builder = builder.disable_option(ParserOption::Namespaces);
     }
     let mut reader = builder.build();
-    let uri = URIString::parse_file_path(args.file).map_err(XMLError::from)?;
-    reader.parse_uri(uri, None)?;
-    if args.sax {
-        print!("{}", reader.handler.buffer);
+    for file in args.file {
+        let uri = URIString::parse_file_path(file).map_err(XMLError::from)?;
+        reader.parse_uri(uri, None).ok();
+        if args.sax {
+            print!("{}", reader.handler.buffer);
+        }
     }
 
     Ok(())
