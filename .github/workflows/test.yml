@@ -1,0 +1,41 @@
+name: cargo test --workspace
+on:
+    push:
+        branches: 
+            - master
+            - develop
+
+jobs:
+    test:
+        strategy:
+            matrix:
+                os: [ubuntu-latest, macos-latest]
+
+        runs-on: ${{ matrix.os }}
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v5
+
+            - name: Install Deno
+              uses: denoland/setup-deno@v2
+              with:
+                    deno-version: v2.x
+
+            - name: Download xmlconf test
+              run: deno run -A resources/get-xmlconf.ts
+            
+            - name: Check Rust version
+              run: |
+                rustup --version
+                rustc --version
+                cargo --version
+
+            - name: Build crate
+              run: cargo build && cargo build --release
+            
+            - name: Run `cargo test --workspace`
+              run: cargo test --workspace
+            
+            - name: Run `cargo test --workspace --release`
+              run: cargo test --workspace --release
