@@ -1,12 +1,12 @@
 [package]
 name = "anyxml-automata"
-version = "0.1.0"
+version = "0.1.1"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description.workspace = true
-keywords.workspace = true
+description = "simple automaton library for XML"
+keywords = ["automaton", "xml"]
 rust-version.workspace = true
 
 [dependencies]

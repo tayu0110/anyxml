@@ -54,7 +54,7 @@ dependencies = [
 
 [[package]]
 name = "anyxml"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyxml-automata",
  "anyxml-uri",
@@ -63,11 +63,11 @@ dependencies = [
 
 [[package]]
 name = "anyxml-automata"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "anyxml-uri"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "clap"
