@@ -42,7 +42,7 @@ impl SAXHandler for ExampleHandler {
         _uri: Option<&str>,
         _local_name: Option<&str>,
         qname: &str,
-        atts: &Attributes,
+        _atts: &Attributes,
     ) {
         writeln!(self.buffer, "start element {qname}").ok();
     }
