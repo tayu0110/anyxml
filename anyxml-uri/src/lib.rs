@@ -269,4 +269,21 @@ mod tests {
         let rel = URIString::parse("g#s/../x").unwrap();
         assert_eq!(base.resolve(&rel).as_escaped_str(), "http://a/b/c/g#s/../x");
     }
+
+    #[cfg(target_family = "windows")]
+    #[test]
+    fn windows_path_test() {
+        assert_eq!(
+            URIString::parse_file_path("C:\\Windows\\System32\\")
+                .unwrap()
+                .as_escaped_str(),
+            "file:C:/Windows/System32/"
+        );
+        assert_eq!(
+            URIString::parse_file_path("\\\\localhost\\share\\")
+                .unwrap()
+                .as_escaped_str(),
+            "file://localhost/share/"
+        );
+    }
 }

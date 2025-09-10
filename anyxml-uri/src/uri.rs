@@ -314,7 +314,7 @@ impl URIString {
         #[cfg(target_family = "unix")]
         fn _parse_file_path(path: &Path) -> Result<URIString, ParseRIError> {
             let mut path_str = path.to_str().ok_or(ParseRIError::Unsupported)?.to_owned();
-            if path.is_dir() && !path_str.ends_with("/") {
+            if path.as_os_str().as_encoded_bytes().ends_with(b"\\") && !path_str.ends_with('/') {
                 path_str.push('/');
             }
             if path.is_absolute() {
@@ -322,7 +322,87 @@ impl URIString {
             }
             URIString::parse(path_str)
         }
-        #[cfg(not(target_family = "unix"))]
+        #[cfg(target_family = "windows")]
+        fn _parse_file_path(path: &Path) -> Result<URIString, ParseRIError> {
+            use std::path::{Component::*, Prefix::*};
+
+            let mut path_str = String::new();
+            let mut verbatim = false;
+            for comp in path.components() {
+                match comp {
+                    Prefix(prefix) => match prefix.kind() {
+                        Verbatim(root) => {
+                            path_str.push_str("file:///");
+                            path_str.push_str(
+                                &root
+                                    .to_str()
+                                    .ok_or(ParseRIError::Unsupported)?
+                                    .replace('/', "%2F"),
+                            );
+                            verbatim = true;
+                        }
+                        VerbatimUNC(server, root) => {
+                            path_str.push_str("file://");
+                            path_str.push_str(
+                                &server
+                                    .to_str()
+                                    .ok_or(ParseRIError::Unsupported)?
+                                    .replace('/', "%2F"),
+                            );
+                            path_str.push('/');
+                            path_str.push_str(
+                                &root
+                                    .to_str()
+                                    .ok_or(ParseRIError::Unsupported)?
+                                    .replace('/', "%2F"),
+                            );
+                            verbatim = true;
+                        }
+                        VerbatimDisk(letter) => {
+                            path_str.push_str("file:");
+                            path_str.push(letter as char);
+                            path_str.push(':');
+                            verbatim = true;
+                        }
+                        DeviceNS(device) => {
+                            path_str.push_str("file:///");
+                            path_str.push_str(device.to_str().ok_or(ParseRIError::Unsupported)?);
+                        }
+                        UNC(server, root) => {
+                            path_str.push_str("file://");
+                            path_str.push_str(server.to_str().ok_or(ParseRIError::Unsupported)?);
+                            path_str.push('/');
+                            path_str.push_str(root.to_str().ok_or(ParseRIError::Unsupported)?);
+                        }
+                        Disk(letter) => {
+                            path_str.push_str("file:");
+                            path_str.push(letter as char);
+                            path_str.push(':');
+                        }
+                    },
+                    RootDir => {}
+                    CurDir => path_str.push_str("/."),
+                    ParentDir => path_str.push_str("/.."),
+                    Normal(segment) => {
+                        path_str.push('/');
+                        let segment = segment.to_str().ok_or(ParseRIError::Unsupported)?;
+                        if verbatim {
+                            path_str.push_str(&segment.replace('/', "%2F"));
+                        } else {
+                            path_str.push_str(segment);
+                        }
+                    }
+                }
+            }
+            if (path.as_os_str().as_encoded_bytes().ends_with(b"\\")
+                || (!verbatim && path.as_os_str().as_encoded_bytes().ends_with(b"/")))
+                && !path_str.ends_with('/')
+            {
+                path_str.push('/');
+            }
+            URIString::parse(path_str)
+        }
+        #[cfg(all(not(target_family = "unix"), not(target_family = "windows")))]
         fn _parse_file_path(path: &Path) -> Result<URIString, ParseRIError> {
             todo!()
         }
