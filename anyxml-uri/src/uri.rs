@@ -314,7 +314,9 @@ impl URIString {
         #[cfg(target_family = "unix")]
         fn _parse_file_path(path: &Path) -> Result<URIString, ParseRIError> {
             let mut path_str = path.to_str().ok_or(ParseRIError::Unsupported)?.to_owned();
-            if path.as_os_str().as_encoded_bytes().ends_with(b"\\") && !path_str.ends_with('/') {
+            if (path.is_dir() || (path.as_os_str().as_encoded_bytes().ends_with(b"\\")))
+                && !path_str.ends_with('/')
+            {
                 path_str.push('/');
             }
             if path.is_absolute() {
@@ -394,8 +396,9 @@ impl URIString {
                     }
                 }
             }
-            if (path.as_os_str().as_encoded_bytes().ends_with(b"\\")
-                || (!verbatim && path.as_os_str().as_encoded_bytes().ends_with(b"/")))
+            if (path.is_dir()
+                || (path.as_os_str().as_encoded_bytes().ends_with(b"\\")
+                    || (!verbatim && path.as_os_str().as_encoded_bytes().ends_with(b"/"))))
                 && !path_str.ends_with('/')
             {
                 path_str.push('/');
