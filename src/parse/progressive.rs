@@ -461,7 +461,6 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                     self.state = ParserState::InContent;
                     break Ok(true);
                 }
-                ParserState::Parsing => todo!(),
                 ParserState::Finished => {
                     break if !self.source.content_bytes().is_empty() {
                         fatal_error!(

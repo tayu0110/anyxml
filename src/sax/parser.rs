@@ -117,7 +117,6 @@ pub enum ParserState {
     DocumentElement,
     InContent,
     InMiscAfterDocumentElement,
-    Parsing,
     Finished,
 }
 

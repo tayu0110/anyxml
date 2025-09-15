@@ -283,7 +283,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             self.parse_text_decl()?;
         }
 
-        self.state = ParserState::Parsing;
+        self.state = ParserState::InContent;
         self.source.set_compact_mode();
         self.parse_content()?;
         self.grow()?;

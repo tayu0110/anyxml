@@ -13,7 +13,7 @@ use crate::{
         attributes::{Attribute, Attributes},
         error::{error, fatal_error, ns_error, validity_error},
         handler::SAXHandler,
-        parser::{ParserOption, XMLReader},
+        parser::{ParserOption, ParserState, XMLReader},
         source::InputSource,
     },
 };
@@ -35,6 +35,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         let empty = self.parse_start_or_empty_tag(&mut name, &mut prefix_length)?;
 
         if !empty {
+            self.state = ParserState::InContent;
             self.parse_content()?;
 
             // parse end tag

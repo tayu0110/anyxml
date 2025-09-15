@@ -33,12 +33,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
     pub(crate) fn parse_document(&mut self) -> Result<(), XMLError> {
         self.handler.set_document_locator(self.locator.clone());
         self.handler.start_document();
-        self.state = ParserState::Parsing;
         self.parse_prolog()?;
         // At this point, the encoding should have been changed if necessary,
         // so set it to compact mode.
         self.source.set_compact_mode();
+        self.state = ParserState::DocumentElement;
         self.parse_element()?;
+        self.state = ParserState::InMiscAfterDocumentElement;
         self.parse_misc()?;
         self.grow()?;
         if !self.source.is_empty() {
@@ -50,6 +51,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserUnexpectedDocumentContent);
         }
 
+        self.state = ParserState::Finished;
         if !self.fatal_error_occurred
             && self.config.is_enable(ParserOption::Validation)
             && !self.unresolved_ids.is_empty()
@@ -77,12 +79,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         if self.source.content_bytes().starts_with(b"<?xml") {
             self.parse_xml_decl()?;
         }
-        self.state = ParserState::Parsing;
+        self.state = ParserState::InMiscAfterXMLDeclaration;
         self.parse_misc()?;
         self.grow()?;
         if self.source.content_bytes().starts_with(b"<!DOCTYPE") {
+            self.state = ParserState::InInternalSubset;
             self.parse_doctypedecl()?;
-            self.state = ParserState::Parsing;
+            self.state = ParserState::InMiscAfterDOCTYPEDeclaration;
             self.parse_misc()?;
         }
         Ok(())
