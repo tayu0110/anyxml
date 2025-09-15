@@ -7,7 +7,7 @@ use crate::{
     error::XMLError,
 };
 
-const INPUT_CHUNK: usize = 4096;
+pub(crate) const INPUT_CHUNK: usize = 4096;
 const GROW_THRESHOLD: usize = 64;
 
 static SOURCE_ID: AtomicUsize = AtomicUsize::new(0);
@@ -33,6 +33,9 @@ pub struct InputSource<'a> {
     /// Basically, this should be set to `true`, but if parsing is started with an unknown encoding,
     /// it is necessary to re-decode all byte sequences later, so it should be set to `false`.
     compact: bool,
+    // If `true`, enable `push_bytes` and disable `grow`,
+    // If `false`, enable `grow` and disable `push_bytes`.
+    progressive: bool,
     /// A unique identifier for the source.
     ///
     /// To determine whether markup spans different sources,
@@ -73,73 +76,7 @@ impl<'a> InputSource<'a> {
                 return Ok(ret);
             }
 
-            match ret.buffer[..4] {
-                // Cases where BOM was found:
-                // UCS-4, big-endian machine (1234 order)
-                [0x00, 0x00, 0xFE, 0xFF] => return Err(XMLError::ParserUnsupportedEncoding),
-                // UCS-4, little-endian machine (4321 order)
-                [0xFF, 0xFE, 0x00, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
-                // UCS-4, unusual octet order (2143)
-                [0x00, 0x00, 0xFF, 0xFE] => return Err(XMLError::ParserUnsupportedEncoding),
-                // UCS-4, unusual octet order (3412)
-                [0xFE, 0xFF, 0x00, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
-                // UTF-16, big-endian
-                [0xFE, 0xFF, ..] => {
-                    ret.buffer_next = 2;
-                    ret.decoder = Box::new(UTF16BEDecoder);
-                }
-                // UTF-16, little-endian
-                [0xFF, 0xFE, ..] => {
-                    ret.buffer_next = 2;
-                    ret.decoder = Box::new(UTF16LEDecoder);
-                }
-                // UTF-8
-                [0xEF, 0xBB, 0xBF, ..] => {
-                    ret.buffer_next = 3;
-                    ret.decoder = Box::new(UTF8Decoder);
-                }
-                // Cases where BOM was not found:
-                // UCS-4 or other 32-bit encoding, big-endian machine (1234 order)
-                [0x00, 0x00, 0x00, 0x3C] => return Err(XMLError::ParserUnsupportedEncoding),
-                // UCS-4 or other 32-bit encoding, little-endian machine (4321 order)
-                [0x3C, 0x00, 0x00, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
-                // UCS-4 or other 32-bit encoding, unusual octet order (2143)
-                [0x00, 0x00, 0x3C, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
-                // UCS-4 or other 32-bit encoding, unusual octet order (3412)
-                [0x00, 0x3C, 0x00, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
-                // UTF-16BE or big-endian ISO-10646-UCS-2 or other encoding  with a 16-bit
-                // code unit in big-endian order and ASCII characters encoded as ASCII values
-                // (the encoding declaration must be read to determine which)
-                [0x00, 0x3C, 0x00, 0x3F] => {
-                    ret.decoder = Box::new(UTF16BEDecoder);
-                }
-                // UTF-16LE or little-endian ISO-10646-UCS-2 or other encoding with a 16-bit
-                // code unit in little-endian order and ASCII characters encoded as ASCII values
-                // (the encoding declaration must be read to determine which)
-                [0x3C, 0x00, 0x3F, 0x00] => {
-                    ret.decoder = Box::new(UTF16LEDecoder);
-                }
-                // UTF-8, ISO 646, ASCII, some part of ISO 8859, Shift-JIS, EUC, or any other 7-bit,
-                // 8-bit, or mixed-width encoding which ensures that the characters of ASCII have
-                // their normal positions, width, and values; the actual encoding declaration must
-                // be read to detect which of these applies, but since all of these encodings use
-                // the same bit patterns for the relevant ASCII characters, the encoding declaration
-                // itself may be read reliably
-                [0x3C, 0x3F, 0x78, 0x6D] => {
-                    ret.decoder = Box::new(UTF8Decoder);
-                }
-                // EBCDIC (in some flavor; the full encoding declaration must be read to tell
-                // which code page is in use)
-                [0x4C, 0x6F, 0xA7, 0x94] => return Err(XMLError::ParserUnsupportedEncoding),
-                // cannot detect the specific encoding from the head of the content.
-                // In this case, we assume that it is a UTF-8 document without an XML declaration.
-                _ => {
-                    // Since it is either UTF-8 or an unknown encoding, the encoding is considered
-                    // to be fixed,  and the buffer control mode is also fixed.
-                    ret.compact = true;
-                    ret.decoder = Box::new(UTF8Decoder);
-                }
-            };
+            ret.detect_encoding()?;
         }
         Ok(ret)
     }
@@ -156,6 +93,7 @@ impl<'a> InputSource<'a> {
             total_read: str.len(),
             eof: true,
             compact: true,
+            progressive: false,
             source_id: SOURCE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             system_id: None,
             public_id: None,
@@ -163,6 +101,11 @@ impl<'a> InputSource<'a> {
     }
 
     pub fn grow(&mut self) -> Result<(), XMLError> {
+        if self.progressive {
+            // ignore if this source is progressive mode.
+            return Ok(());
+        }
+
         if !self.eof {
             let rem = self.buffer_end - self.buffer_next;
             if rem < GROW_THRESHOLD {
@@ -236,6 +179,14 @@ impl<'a> InputSource<'a> {
         &self.decoded.as_bytes()[self.decoded_next..]
     }
 
+    pub fn content_str(&self) -> &str {
+        &self.decoded[self.decoded_next..]
+    }
+
+    pub fn total_read(&self) -> usize {
+        self.total_read
+    }
+
     pub fn next_char(&mut self) -> Result<Option<char>, XMLError> {
         Ok(self
             .peek_char()?
@@ -293,6 +244,77 @@ impl<'a> InputSource<'a> {
     /// even sources created from the same file or character data are assigned different IDs.
     pub fn source_id(&self) -> usize {
         self.source_id
+    }
+
+    fn detect_encoding(&mut self) -> Result<(), XMLError> {
+        match self.buffer[..4] {
+            // Cases where BOM was found:
+            // UCS-4, big-endian machine (1234 order)
+            [0x00, 0x00, 0xFE, 0xFF] => return Err(XMLError::ParserUnsupportedEncoding),
+            // UCS-4, little-endian machine (4321 order)
+            [0xFF, 0xFE, 0x00, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
+            // UCS-4, unusual octet order (2143)
+            [0x00, 0x00, 0xFF, 0xFE] => return Err(XMLError::ParserUnsupportedEncoding),
+            // UCS-4, unusual octet order (3412)
+            [0xFE, 0xFF, 0x00, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
+            // UTF-16, big-endian
+            [0xFE, 0xFF, ..] => {
+                self.buffer_next = 2;
+                self.decoder = Box::new(UTF16BEDecoder);
+            }
+            // UTF-16, little-endian
+            [0xFF, 0xFE, ..] => {
+                self.buffer_next = 2;
+                self.decoder = Box::new(UTF16LEDecoder);
+            }
+            // UTF-8
+            [0xEF, 0xBB, 0xBF, ..] => {
+                self.buffer_next = 3;
+                self.decoder = Box::new(UTF8Decoder);
+            }
+            // Cases where BOM was not found:
+            // UCS-4 or other 32-bit encoding, big-endian machine (1234 order)
+            [0x00, 0x00, 0x00, 0x3C] => return Err(XMLError::ParserUnsupportedEncoding),
+            // UCS-4 or other 32-bit encoding, little-endian machine (4321 order)
+            [0x3C, 0x00, 0x00, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
+            // UCS-4 or other 32-bit encoding, unusual octet order (2143)
+            [0x00, 0x00, 0x3C, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
+            // UCS-4 or other 32-bit encoding, unusual octet order (3412)
+            [0x00, 0x3C, 0x00, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
+            // UTF-16BE or big-endian ISO-10646-UCS-2 or other encoding  with a 16-bit
+            // code unit in big-endian order and ASCII characters encoded as ASCII values
+            // (the encoding declaration must be read to determine which)
+            [0x00, 0x3C, 0x00, 0x3F] => {
+                self.decoder = Box::new(UTF16BEDecoder);
+            }
+            // UTF-16LE or little-endian ISO-10646-UCS-2 or other encoding with a 16-bit
+            // code unit in little-endian order and ASCII characters encoded as ASCII values
+            // (the encoding declaration must be read to determine which)
+            [0x3C, 0x00, 0x3F, 0x00] => {
+                self.decoder = Box::new(UTF16LEDecoder);
+            }
+            // UTF-8, ISO 646, ASCII, some part of ISO 8859, Shift-JIS, EUC, or any other 7-bit,
+            // 8-bit, or mixed-width encoding which ensures that the characters of ASCII have
+            // their normal positions, width, and values; the actual encoding declaration must
+            // be read to detect which of these applies, but since all of these encodings use
+            // the same bit patterns for the relevant ASCII characters, the encoding declaration
+            // itself may be read reliably
+            [0x3C, 0x3F, 0x78, 0x6D] => {
+                self.decoder = Box::new(UTF8Decoder);
+            }
+            // EBCDIC (in some flavor; the full encoding declaration must be read to tell
+            // which code page is in use)
+            [0x4C, 0x6F, 0xA7, 0x94] => return Err(XMLError::ParserUnsupportedEncoding),
+            // cannot detect the specific encoding from the head of the content.
+            // In this case, we assume that it is a UTF-8 document without an XML declaration.
+            _ => {
+                // Since it is either UTF-8 or an unknown encoding, the encoding is considered
+                // to be fixed,  and the buffer control mode is also fixed.
+                self.compact = true;
+                self.decoder = Box::new(UTF8Decoder);
+            }
+        };
+        Ok(())
     }
 
     pub(crate) fn switch_encoding(&mut self, to: &str) -> Result<(), XMLError> {
@@ -391,6 +413,73 @@ impl<'a> InputSource<'a> {
     pub fn set_public_id(&mut self, public_id: impl Into<String>) {
         self.public_id = Some(public_id.into().into_boxed_str());
     }
+
+    /// For progressive parser only
+    pub(crate) fn push_bytes(
+        &mut self,
+        bytes: impl AsRef<[u8]>,
+        finish: bool,
+    ) -> Result<(), XMLError> {
+        let bytes = bytes.as_ref();
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        let init = self.total_read < 4;
+        self.buffer.extend(bytes);
+        self.buffer_end += bytes.len();
+        self.total_read += bytes.len();
+        if init && self.total_read >= 4 {
+            self.detect_encoding()?;
+        }
+
+        if self.decoded_next * 2 >= self.decoded.len() {
+            self.decoded.drain(..self.decoded_next);
+            self.decoded_next = 0;
+        }
+
+        while self.buffer_next < self.buffer_end {
+            if self.decoded.capacity() - self.decoded.len() < self.buffer_end - self.buffer_next {
+                let additional = self.decoded.capacity() * 2 - self.decoded.len();
+                self.decoded.reserve(additional);
+            }
+            match self.decoder.decode(
+                &self.buffer[self.buffer_next..self.buffer_end],
+                &mut self.decoded,
+                finish,
+            ) {
+                Ok((read, _)) => {
+                    self.buffer_next += read;
+                }
+                Err(err) => match err {
+                    err @ DecodeError::Malformed {
+                        read,
+                        length,
+                        offset,
+                        ..
+                    } => {
+                        let actual_read = read - length - offset;
+                        if !finish || actual_read > 0 {
+                            self.buffer_next += actual_read;
+                            break;
+                        }
+                        return Err(From::from(err));
+                    }
+                    err => return Err(From::from(err)),
+                },
+            }
+        }
+
+        if self.buffer_next * 2 > self.buffer_end {
+            self.buffer.drain(..self.buffer_next);
+            self.buffer_end -= self.buffer_next;
+            self.buffer_next = 0;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn set_progressive_mode(&mut self) {
+        self.progressive = true;
+    }
 }
 
 impl Default for InputSource<'_> {
@@ -406,6 +495,7 @@ impl Default for InputSource<'_> {
             total_read: 0,
             eof: false,
             compact: false,
+            progressive: false,
             source_id: SOURCE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             system_id: None,
             public_id: None,

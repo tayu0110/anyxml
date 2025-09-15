@@ -36,135 +36,20 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
 
         if !empty {
             self.parse_content()?;
-            self.grow()?;
 
             // parse end tag
-
-            if !self.source.content_bytes().starts_with(b"</") {
-                fatal_error!(
-                    self,
-                    ParserInvalidEndTag,
-                    "'</' is not found at the head of the end tag."
-                );
-                return Err(XMLError::ParserInvalidEndTag);
-            }
-            // skip '</'
-            self.source.advance(2)?;
-            self.locator.update_column(|c| c + 2);
-
-            let mut end_tag_name = String::new();
-            if self.config.is_enable(ParserOption::Namespaces) {
-                self.parse_qname(&mut end_tag_name)?;
-            } else {
-                self.parse_name(&mut end_tag_name)?;
-            }
-
-            if name != end_tag_name {
-                let name = if name.chars().count() > 15 {
-                    format!("{}...", name.chars().take(12).collect::<String>())
-                } else {
-                    name
-                };
-                let end_tag_name = if end_tag_name.chars().count() > 15 {
-                    format!("{}...", end_tag_name.chars().take(12).collect::<String>())
-                } else {
-                    end_tag_name
-                };
-                fatal_error!(
-                    self,
-                    ParserMismatchElementType,
-                    "The start tag ('{}') and end tag ('{}') names do not match.",
-                    name,
-                    end_tag_name
-                );
-                return Err(XMLError::ParserMismatchElementType);
-            }
-
-            self.skip_whitespaces()?;
-            self.grow()?;
-
-            if !self.source.content_bytes().starts_with(b">") {
-                fatal_error!(
-                    self,
-                    ParserInvalidEndTag,
-                    "The end tag does not end with '>'."
-                );
-                return Err(XMLError::ParserInvalidEndTag);
-            }
-            // skip '>'
-            self.source.advance(1)?;
-            self.locator.update_column(|c| c + 1);
+            let end_tag_name = self.parse_end_tag()?;
+            self.check_element_type_match(&name, &end_tag_name)?;
         }
 
-        if !self.fatal_error_occurred {
-            if self.config.is_enable(ParserOption::Namespaces) {
-                if prefix_length > 0 {
-                    if let Some(namespace) = self.namespaces.get(&name[..prefix_length]) {
-                        self.handler.end_element(
-                            Some(&namespace.namespace_name),
-                            Some(&name[prefix_length + 1..]),
-                            &name,
-                        );
-                    } else {
-                        ns_error!(
-                            self,
-                            ParserUndefinedNamespace,
-                            "The prefix '{}' is not bind to any namespaces.",
-                            &name[..prefix_length]
-                        );
-                    }
-                } else {
-                    // default namespace
-                    if let Some(namespace) = self.namespaces.get("") {
-                        self.handler.end_element(
-                            Some(&namespace.namespace_name),
-                            Some(&name),
-                            &name,
-                        );
-                    } else {
-                        self.handler.end_element(None, Some(&name), &name);
-                    }
-                }
-            } else {
-                self.handler.end_element(None, None, &name);
-            }
-        }
-
-        // resume namespace stack
-        self.namespaces.truncate(old_ns_stack_depth);
-
-        if self.config.is_enable(ParserOption::Validation)
-            && let Some(Some((context_name, mut validator))) = self.validation_stack.pop()
-            && !self.fatal_error_occurred
-        {
-            assert_eq!(context_name.as_ref(), name);
-            if validator.is_external_element_content()
-                && validator.whitespace()
-                && self.standalone == Some(true)
-            {
-                // [VC: Standalone Document Declaration]
-                validity_error!(
-                    self,
-                    ParserInvalidStandaloneDocument,
-                    "standalone='yes', but the element '{}' containing whitespace is declared to have element content in the external markup.",
-                    name
-                );
-            }
-            if !validator.finish() {
-                validity_error!(
-                    self,
-                    ParserMismatchElementContentModel,
-                    "The content of element '{}' does not match to its content model.",
-                    name
-                );
-            }
-        }
-
+        self.report_end_element(&name, prefix_length);
+        self.resume_namespace_stack(old_ns_stack_depth);
+        self.finish_content_model_validation(&name);
         Ok(())
     }
 
     /// Return `true` if the tag is empty tag, otherwise `false`.
-    fn parse_start_or_empty_tag(
+    pub(crate) fn parse_start_or_empty_tag(
         &mut self,
         name: &mut String,
         prefix_length: &mut usize,
@@ -703,6 +588,148 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             self.source.advance(1)?;
             self.locator.update_column(|c| c + 1);
             Ok(false)
+        }
+    }
+
+    /// Return the name of parsed end tag.
+    pub(crate) fn parse_end_tag(&mut self) -> Result<String, XMLError> {
+        self.grow()?;
+        if !self.source.content_bytes().starts_with(b"</") {
+            fatal_error!(
+                self,
+                ParserInvalidEndTag,
+                "'</' is not found at the head of the end tag."
+            );
+            return Err(XMLError::ParserInvalidEndTag);
+        }
+        // skip '</'
+        self.source.advance(2)?;
+        self.locator.update_column(|c| c + 2);
+
+        let mut end_tag_name = String::new();
+        if self.config.is_enable(ParserOption::Namespaces) {
+            self.parse_qname(&mut end_tag_name)?;
+        } else {
+            self.parse_name(&mut end_tag_name)?;
+        }
+
+        self.skip_whitespaces()?;
+        self.grow()?;
+
+        if !self.source.content_bytes().starts_with(b">") {
+            fatal_error!(
+                self,
+                ParserInvalidEndTag,
+                "The end tag does not end with '>'."
+            );
+            return Err(XMLError::ParserInvalidEndTag);
+        }
+        // skip '>'
+        self.source.advance(1)?;
+        self.locator.update_column(|c| c + 1);
+        Ok(end_tag_name)
+    }
+
+    pub(crate) fn check_element_type_match(
+        &mut self,
+        start: &str,
+        end: &str,
+    ) -> Result<(), XMLError> {
+        if start != end {
+            let start = if start.chars().count() > 15 {
+                &format!("{}...", start.chars().take(12).collect::<String>())
+            } else {
+                start
+            };
+            let end = if end.chars().count() > 15 {
+                &format!("{}...", end.chars().take(12).collect::<String>())
+            } else {
+                end
+            };
+            // [WFC: Element Type Match]
+            fatal_error!(
+                self,
+                ParserMismatchElementType,
+                "The start tag ('{}') and end tag ('{}') names do not match.",
+                start,
+                end
+            );
+            return Err(XMLError::ParserMismatchElementType);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn report_end_element(&mut self, name: &str, prefix_length: usize) {
+        if !self.fatal_error_occurred {
+            if self.config.is_enable(ParserOption::Namespaces) {
+                if prefix_length > 0 {
+                    if let Some(namespace) = self.namespaces.get(&name[..prefix_length]) {
+                        self.handler.end_element(
+                            Some(&namespace.namespace_name),
+                            Some(&name[prefix_length + 1..]),
+                            name,
+                        );
+                    } else {
+                        ns_error!(
+                            self,
+                            ParserUndefinedNamespace,
+                            "The prefix '{}' is not bind to any namespaces.",
+                            &name[..prefix_length]
+                        );
+                    }
+                } else {
+                    // default namespace
+                    if let Some(namespace) = self.namespaces.get("") {
+                        self.handler
+                            .end_element(Some(&namespace.namespace_name), Some(name), name);
+                    } else {
+                        self.handler.end_element(None, Some(name), name);
+                    }
+                }
+            } else {
+                self.handler.end_element(None, None, name);
+            }
+        }
+    }
+
+    pub(crate) fn resume_namespace_stack(&mut self, old_depth: usize) {
+        while self.namespaces.len() > old_depth
+            && let Some(namespace) = self.namespaces.pop()
+        {
+            if namespace.prefix.is_empty() {
+                self.handler.end_prefix_mapping(None);
+            } else {
+                self.handler.end_prefix_mapping(Some(&namespace.prefix));
+            }
+        }
+    }
+
+    pub(crate) fn finish_content_model_validation(&mut self, name: &str) {
+        if self.config.is_enable(ParserOption::Validation)
+            && let Some(Some((context_name, mut validator))) = self.validation_stack.pop()
+            && !self.fatal_error_occurred
+        {
+            assert_eq!(context_name.as_ref(), name);
+            if validator.is_external_element_content()
+                && validator.whitespace()
+                && self.standalone == Some(true)
+            {
+                // [VC: Standalone Document Declaration]
+                validity_error!(
+                    self,
+                    ParserInvalidStandaloneDocument,
+                    "standalone='yes', but the element '{}' containing whitespace is declared to have element content in the external markup.",
+                    name
+                );
+            }
+            if !validator.finish() {
+                validity_error!(
+                    self,
+                    ParserMismatchElementContentModel,
+                    "The content of element '{}' does not match to its content model.",
+                    name
+                );
+            }
         }
     }
 

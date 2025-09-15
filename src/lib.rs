@@ -21,6 +21,7 @@ const XML_NS_NAMESPACE: &str = "http://www.w3.org/2000/xmlns/";
 
 pub trait ParserSpec {
     type Reader;
+    type SpecificContext;
 }
 
 pub struct DefaultParserSpec<'a> {
@@ -29,12 +30,24 @@ pub struct DefaultParserSpec<'a> {
 
 impl<'a> ParserSpec for DefaultParserSpec<'a> {
     type Reader = InputSource<'a>;
+    type SpecificContext = ();
 }
 
 pub struct ProgressiveParserSpec;
 
 impl ParserSpec for ProgressiveParserSpec {
     type Reader = InputSource<'static>;
+    type SpecificContext = ProgressiveParserSpecificContext;
+}
+
+pub struct ProgressiveParserSpecificContext {
+    pub(crate) seen: usize,
+    pub(crate) quote: u8,
+    pub(crate) in_markup: bool,
+    // (QName, prefix length, namespace stack length)
+    pub(crate) element_stack: Vec<(String, usize, usize)>,
+    // (old element stack length, old xml version, old encoding)
+    pub(crate) entity_stack: Vec<(usize, XMLVersion, Option<String>)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]

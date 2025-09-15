@@ -6,6 +6,7 @@ mod dtd;
 mod element;
 pub mod literals;
 mod pi;
+mod progressive;
 pub mod tokens;
 mod xmldecl;
 

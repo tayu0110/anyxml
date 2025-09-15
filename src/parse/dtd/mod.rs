@@ -28,81 +28,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
     ///                                                             [WFC: External Subset]
     /// ```
     pub(crate) fn parse_doctypedecl(&mut self) -> Result<(), XMLError> {
-        self.grow()?;
-        if !self.source.content_bytes().starts_with(b"<!DOCTYPE") {
-            fatal_error!(
-                self,
-                ParserInvalidDoctypeDecl,
-                "The document type declaration must start with '<!DOCTYPE'."
-            );
-            return Err(XMLError::ParserInvalidDoctypeDecl);
-        }
-        // skip '<!DOCTYPE'
-        self.source.advance(9)?;
-        self.locator.update_column(|c| c + 9);
-
-        if self.skip_whitespaces()? == 0 {
-            fatal_error!(
-                self,
-                ParserInvalidDoctypeDecl,
-                "Whitespaces are required after '<!DOCTYPE'."
-            );
-        }
-
-        let mut name = take(&mut self.dtd_name);
-        if self.config.is_enable(ParserOption::Namespaces) {
-            self.parse_qname(&mut name)?;
-        } else {
-            self.parse_name(&mut name)?;
-        }
-        self.dtd_name = name;
-
-        let s = self.skip_whitespaces()?;
-        self.grow()?;
-        if self.source.is_empty() {
-            return Err(XMLError::ParserUnexpectedEOF);
-        }
-
-        // If the following character is neither ‘[’ nor ‘>’, then there is an ExternalID.
-        let mut system_id = None::<URIString>;
-        let mut public_id = None;
-        let mut external_subset = None;
-        if !matches!(self.source.content_bytes()[0], b'[' | b'>') {
-            if s == 0 {
-                fatal_error!(
-                    self,
-                    ParserInvalidDoctypeDecl,
-                    "Whitespaces are required between Name and ExternalID."
-                );
-            }
-            let mut buf = String::new();
-            self.parse_external_id(&mut buf, &mut public_id)?;
-            system_id = Some(URIString::parse(buf)?);
-            self.skip_whitespaces()?;
-            if self.config.is_enable(ParserOption::ExternalGeneralEntities)
-                || self.config.is_enable(ParserOption::Validation)
-            {
-                external_subset = Some(self.handler.resolve_entity(
-                    "[dtd]",
-                    public_id.as_deref(),
-                    &self.base_uri,
-                    system_id.as_deref().unwrap(),
-                )?);
-            }
-        } else if (self.config.is_enable(ParserOption::ExternalGeneralEntities)
-            || self.config.is_enable(ParserOption::Validation))
-            && let Ok(ext) = self
-                .handler
-                .get_external_subset(&self.dtd_name, Some(&self.base_uri))
-        {
-            system_id = ext.system_id().map(ToOwned::to_owned);
-            public_id = ext.public_id().map(str::to_owned);
-            external_subset = Some(ext);
-        }
-        if !self.fatal_error_occurred {
-            self.handler
-                .start_dtd(&self.dtd_name, public_id.as_deref(), system_id.as_deref());
-        }
+        let (external_subset, system_id, public_id) = self.parse_start_doctypedecl()?;
 
         self.grow()?;
         // try to detect Internal Subset
@@ -268,6 +194,99 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         Ok(())
     }
 
+    /// Parse `doctypedecl` until reach '[' before internal subset or '>'.
+    ///
+    /// If successfully parsed, return (external subset, system id, public id) if exists respectively
+    /// and report `start_dtd` event.
+    pub(crate) fn parse_start_doctypedecl(
+        &mut self,
+    ) -> Result<
+        (
+            Option<InputSource<'static>>,
+            Option<URIString>,
+            Option<String>,
+        ),
+        XMLError,
+    > {
+        self.grow()?;
+        if !self.source.content_bytes().starts_with(b"<!DOCTYPE") {
+            fatal_error!(
+                self,
+                ParserInvalidDoctypeDecl,
+                "The document type declaration must start with '<!DOCTYPE'."
+            );
+            return Err(XMLError::ParserInvalidDoctypeDecl);
+        }
+        // skip '<!DOCTYPE'
+        self.source.advance(9)?;
+        self.locator.update_column(|c| c + 9);
+
+        if self.skip_whitespaces()? == 0 {
+            fatal_error!(
+                self,
+                ParserInvalidDoctypeDecl,
+                "Whitespaces are required after '<!DOCTYPE'."
+            );
+        }
+
+        let mut name = take(&mut self.dtd_name);
+        if self.config.is_enable(ParserOption::Namespaces) {
+            self.parse_qname(&mut name)?;
+        } else {
+            self.parse_name(&mut name)?;
+        }
+        self.dtd_name = name;
+
+        let s = self.skip_whitespaces()?;
+        self.grow()?;
+        if self.source.is_empty() {
+            return Err(XMLError::ParserUnexpectedEOF);
+        }
+
+        // If the following character is neither ‘[’ nor ‘>’, then there is an ExternalID.
+        let mut system_id = None::<URIString>;
+        let mut public_id = None;
+        let mut external_subset = None;
+        if !matches!(self.source.content_bytes()[0], b'[' | b'>') {
+            if s == 0 {
+                fatal_error!(
+                    self,
+                    ParserInvalidDoctypeDecl,
+                    "Whitespaces are required between Name and ExternalID."
+                );
+            }
+            let mut buf = String::new();
+            self.parse_external_id(&mut buf, &mut public_id)?;
+            system_id = Some(URIString::parse(buf)?);
+            self.skip_whitespaces()?;
+            if self.config.is_enable(ParserOption::ExternalGeneralEntities)
+                || self.config.is_enable(ParserOption::Validation)
+            {
+                external_subset = Some(self.handler.resolve_entity(
+                    "[dtd]",
+                    public_id.as_deref(),
+                    &self.base_uri,
+                    system_id.as_deref().unwrap(),
+                )?);
+            }
+        } else if (self.config.is_enable(ParserOption::ExternalGeneralEntities)
+            || self.config.is_enable(ParserOption::Validation))
+            && let Ok(ext) = self
+                .handler
+                .get_external_subset(&self.dtd_name, Some(&self.base_uri))
+        {
+            system_id = ext.system_id().map(ToOwned::to_owned);
+            public_id = ext.public_id().map(str::to_owned);
+            external_subset = Some(ext);
+        }
+        if !self.fatal_error_occurred {
+            self.handler
+                .start_dtd(&self.dtd_name, public_id.as_deref(), system_id.as_deref());
+        }
+
+        Ok((external_subset, system_id, public_id))
+    }
+
     /// ```text
     /// [28a] DeclSep    ::= PEReference | S                [WFC: PE Between Declarations]
     /// [28b] intSubset  ::= (markupdecl | DeclSep)*
@@ -313,7 +332,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
     ///                     | 'PUBLIC' S PubidLiteral S SystemLiteral
     /// [76] NDataDecl  ::= S 'NDATA' S Name        [VC: Notation Declared]
     /// ```
-    fn parse_external_id(
+    pub(super) fn parse_external_id(
         &mut self,
         system_id: &mut String,
         public_id: &mut Option<String>,

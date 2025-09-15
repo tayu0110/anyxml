@@ -8,7 +8,7 @@ use std::{
 use anyxml_uri::uri::{URIStr, URIString};
 
 use crate::{
-    DefaultParserSpec, ParserSpec, XMLVersion,
+    DefaultParserSpec, ParserSpec, ProgressiveParserSpec, XMLVersion,
     encoding::UTF8_NAME,
     error::XMLError,
     sax::{
@@ -16,7 +16,7 @@ use crate::{
         contentspec::ContentSpecValidationContext,
         error::fatal_error,
         handler::{DefaultSAXHandler, SAXHandler},
-        source::InputSource,
+        source::{INPUT_CHUNK, InputSource},
     },
 };
 
@@ -109,9 +109,14 @@ impl std::ops::BitOrAssign<Self> for ParserConfig {
 pub enum ParserState {
     BeforeStart,
     InXMLDeclaration,
+    InMiscAfterXMLDeclaration,
     InInternalSubset,
     InExternalSubset,
     InTextDeclaration,
+    InMiscAfterDOCTYPEDeclaration,
+    DocumentElement,
+    InContent,
+    InMiscAfterDocumentElement,
     Parsing,
     Finished,
 }
@@ -124,6 +129,9 @@ pub struct XMLReader<Spec: ParserSpec, H: SAXHandler = DefaultSAXHandler> {
     default_base_uri: Option<Arc<URIStr>>,
     pub(crate) base_uri: Arc<URIStr>,
     pub(crate) entity_name: Option<Arc<str>>,
+
+    // Parser Specific Context
+    pub(crate) specific_context: Spec::SpecificContext,
 
     // Entity Stack
     source_stack: Vec<Box<Spec::Reader>>,
@@ -188,7 +196,13 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
         replace(&mut self.handler, handler)
     }
 
+    pub fn entity_name(&self) -> Option<Arc<str>> {
+        self.entity_name.clone()
+    }
+
     pub fn reset_context(&mut self) {
+        self.entity_name = None;
+
         // reset Entity Stack
         self.source_stack.clear();
         self.locator_stack.clear();
@@ -292,10 +306,39 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         self.default_base_uri = None;
         self.base_uri = URIString::parse("")?.into();
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
-        self.entity_name = None;
 
         self.reset_context();
         Ok(())
+    }
+}
+
+impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
+    pub fn reset_source(&mut self) {
+        self.source = Box::new(InputSource::default());
+        self.source.set_progressive_mode();
+        self.specific_context.seen = 0;
+        self.specific_context.quote = 0;
+        self.specific_context.in_markup = false;
+        self.specific_context.element_stack.clear();
+        self.reset_context();
+    }
+
+    pub fn parse_chunk(&mut self, chunk: impl AsRef<[u8]>, finish: bool) -> Result<(), XMLError> {
+        (|| {
+            let chunk = chunk.as_ref();
+            for bytes in chunk.chunks(INPUT_CHUNK) {
+                self.source.push_bytes(bytes, false)?;
+                while self.parse_event_once(false)? {}
+            }
+            if finish {
+                self.source.push_bytes([], true)?;
+                while self.parse_event_once(true)? {}
+            }
+            Ok(())
+        })()
+        .inspect_err(|&err| {
+            fatal_error!(self, err, "Unrecoverable error: {}", err);
+        })
     }
 }
 
@@ -405,6 +448,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             default_base_uri: None,
             base_uri,
             entity_name: None,
+            specific_context: (),
             source_stack: vec![],
             locator_stack: vec![],
             base_uri_stack: vec![],
@@ -462,6 +506,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
                 default_base_uri: self.reader.default_base_uri,
                 base_uri: self.reader.base_uri,
                 entity_name: self.reader.entity_name,
+                specific_context: self.reader.specific_context,
                 source_stack: self.reader.source_stack,
                 locator_stack: self.reader.locator_stack,
                 base_uri_stack: self.reader.base_uri_stack,
