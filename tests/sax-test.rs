@@ -10,7 +10,7 @@ use anyxml::{
     sax::{
         Locator,
         attributes::Attributes,
-        handler::{DefaultSAXHandler, EntityResolver, SAXHandler},
+        handler::{DebugHandler, EntityResolver, SAXHandler},
         parser::{ParserOption, XMLReaderBuilder},
     },
 };
@@ -48,43 +48,8 @@ impl TestSAXHandler {
     }
 }
 
+impl EntityResolver for TestSAXHandler {}
 impl SAXHandler for TestSAXHandler {
-    fn start_element(
-        &mut self,
-        uri: Option<&str>,
-        local_name: Option<&str>,
-        qname: &str,
-        atts: &Attributes,
-    ) {
-        eprintln!("startElement('{qname}')");
-        DefaultSAXHandler.start_element(uri, local_name, qname, atts);
-    }
-
-    fn end_element(&mut self, uri: Option<&str>, local_name: Option<&str>, qname: &str) {
-        eprintln!("endElement('{qname}')");
-        DefaultSAXHandler.end_element(uri, local_name, qname);
-    }
-
-    fn characters(&mut self, data: &str) {
-        eprintln!("characters('{data}')");
-        DefaultSAXHandler.characters(data);
-    }
-
-    fn ignorable_whitespace(&mut self, data: &str) {
-        eprintln!("ignorableWhitespace({})", data.len());
-        DefaultSAXHandler.characters(data);
-    }
-
-    fn external_entity_decl(
-        &mut self,
-        name: &str,
-        public_id: Option<&str>,
-        system_id: &anyxml_uri::uri::URIStr,
-    ) {
-        eprintln!("externalEntityDecl({name}, {public_id:?}, {system_id:?})");
-        DefaultSAXHandler.external_entity_decl(name, public_id, system_id);
-    }
-
     fn fatal_error(&mut self, error: anyxml::sax::error::SAXParseError) {
         assert_eq!(error.level, XMLErrorLevel::FatalError);
         self.fatal_error.update(|c| c + 1);
@@ -108,26 +73,12 @@ impl SAXHandler for TestSAXHandler {
     }
 }
 
-impl EntityResolver for TestSAXHandler {
-    fn resolve_entity(
-        &mut self,
-        name: &str,
-        public_id: Option<&str>,
-        base_uri: &anyxml_uri::uri::URIStr,
-        system_id: &anyxml_uri::uri::URIStr,
-    ) -> Result<anyxml::sax::source::InputSource<'static>, anyxml::error::XMLError> {
-        eprintln!(
-            "resolveEntity({name}, {public_id:?}, {}, {})",
-            base_uri.as_escaped_str(),
-            system_id.as_escaped_str()
-        );
-        DefaultSAXHandler.resolve_entity(name, public_id, base_uri, system_id)
-    }
-}
-
 #[test]
 fn well_formed_tests() {
-    let handler = TestSAXHandler::new();
+    let handler = DebugHandler {
+        child: TestSAXHandler::new(),
+        buffer: String::new(),
+    };
 
     let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
 
@@ -138,13 +89,14 @@ fn well_formed_tests() {
             let uri = URIString::parse_file_path(ent.path().canonicalize().unwrap()).unwrap();
             reader.parse_uri(&uri, None).ok();
             assert_eq!(
-                reader.handler().fatal_error.get(),
+                reader.handler.child.fatal_error.get(),
                 0,
                 "uri: {}\nerrors:\n{}",
                 uri.as_escaped_str(),
-                reader.handler().buffer.borrow(),
+                reader.handler.child.buffer.borrow(),
             );
-            reader.handler().reset();
+            reader.handler.buffer.clear();
+            reader.handler.child.reset();
         }
     }
 }
@@ -299,14 +251,17 @@ impl SAXHandler for XMLConfWalker {
                     .system_id()
                     .resolve(&URIString::parse(uri).unwrap());
 
-                let mut reader = XMLReaderBuilder::new().set_handler(TestSAXHandler::new());
+                let mut reader = XMLReaderBuilder::new().set_handler(DebugHandler {
+                    child: TestSAXHandler::new(),
+                    buffer: String::new(),
+                });
                 if entities != "none" || matches!(r#type.as_ref(), "valid" | "invalid") {
                     reader = reader.enable_option(ParserOption::Validation)
                 }
                 let mut reader = reader.build();
                 reader.parse_uri(uri, None).ok();
 
-                let handler = reader.take_handler();
+                let handler = reader.handler.child;
                 match r#type.as_str() {
                     "not-wf" => {
                         if handler.fatal_error.get() > 0

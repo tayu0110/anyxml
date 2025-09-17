@@ -237,7 +237,7 @@ pub struct DebugHandler<Child: SAXHandler = DefaultSAXHandler> {
     pub child: Child,
 }
 
-impl EntityResolver for DebugHandler {
+impl<Child: SAXHandler> EntityResolver for DebugHandler<Child> {
     fn get_external_subset(
         &mut self,
         name: &str,
@@ -271,18 +271,28 @@ impl EntityResolver for DebugHandler {
     }
 }
 
-impl SAXHandler for DebugHandler {
+impl<Child: SAXHandler> SAXHandler for DebugHandler<Child> {
     fn characters(&mut self, data: &str) {
         writeln!(self.buffer, "characters({data})").ok();
         self.child.characters(data);
     }
 
     fn declaration(&mut self, version: &str, encoding: Option<&str>, standalone: Option<bool>) {
-        writeln!(
+        write!(
             self.buffer,
-            "declaration({version}, {encoding:?}, {standalone:?})"
+            "declaration({version}, {}, ",
+            encoding.unwrap_or("None")
         )
         .ok();
+        if let Some(standalone) = standalone {
+            if standalone {
+                writeln!(self.buffer, "yes)").ok();
+            } else {
+                writeln!(self.buffer, "no)").ok();
+            }
+        } else {
+            writeln!(self.buffer, "None)").ok();
+        }
         self.child.declaration(version, encoding, standalone);
     }
 
@@ -292,7 +302,12 @@ impl SAXHandler for DebugHandler {
     }
 
     fn processing_instruction(&mut self, target: &str, data: Option<&str>) {
-        writeln!(self.buffer, "processingInstruction({target}, {data:?})").ok();
+        write!(self.buffer, "processingInstruction({target}, ").ok();
+        if let Some(data) = data {
+            writeln!(self.buffer, "'{data}')").ok();
+        } else {
+            writeln!(self.buffer, "None)").ok();
+        }
         self.child.processing_instruction(target, data);
     }
 
@@ -322,11 +337,20 @@ impl SAXHandler for DebugHandler {
         qname: &str,
         atts: &Attributes,
     ) {
-        write!(self.buffer, "startElement({uri:?}, {local_name:?}, {qname}").ok();
+        write!(
+            self.buffer,
+            "startElement({}, {}, {qname}",
+            uri.unwrap_or("None"),
+            local_name.unwrap_or("None")
+        )
+        .ok();
         for att in atts {
             write!(self.buffer, ", ").ok();
             if let Some(local_name) = att.local_name.as_deref() {
-                write!(self.buffer, "{{{:?}}}{local_name}='{}'", att.uri, att.value).ok();
+                if let Some(uri) = att.uri.as_deref() {
+                    write!(self.buffer, "{{{uri}}}").ok();
+                }
+                write!(self.buffer, "{local_name}='{}'", att.value).ok();
             } else {
                 write!(self.buffer, "{}='{}'", att.qname, att.value).ok();
             }
@@ -335,16 +359,32 @@ impl SAXHandler for DebugHandler {
         self.child.start_element(uri, local_name, qname, atts);
     }
     fn end_element(&mut self, uri: Option<&str>, local_name: Option<&str>, qname: &str) {
-        writeln!(self.buffer, "endElement({uri:?}, {local_name:?}, {qname})").ok();
+        writeln!(
+            self.buffer,
+            "endElement({}, {}, {qname})",
+            uri.unwrap_or("None"),
+            local_name.unwrap_or("None")
+        )
+        .ok();
         self.child.end_element(uri, local_name, qname);
     }
 
     fn start_prefix_mapping(&mut self, prefix: Option<&str>, uri: &str) {
-        writeln!(self.buffer, "startPrefixMapping({prefix:?}, {uri})").ok();
+        writeln!(
+            self.buffer,
+            "startPrefixMapping({}, {uri})",
+            prefix.unwrap_or("None")
+        )
+        .ok();
         self.child.start_prefix_mapping(prefix, uri);
     }
     fn end_prefix_mapping(&mut self, prefix: Option<&str>) {
-        writeln!(self.buffer, "endPrefixMapping({prefix:?})").ok();
+        writeln!(
+            self.buffer,
+            "endPrefixMapping({})",
+            prefix.unwrap_or("None")
+        )
+        .ok();
         self.child.end_prefix_mapping(prefix);
     }
 
@@ -372,7 +412,8 @@ impl SAXHandler for DebugHandler {
     fn external_entity_decl(&mut self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
         writeln!(
             self.buffer,
-            "externalEntityDecl({name}, {public_id:?}, {})",
+            "externalEntityDecl({name}, {}, {})",
+            public_id.unwrap_or("None"),
             system_id.as_escaped_str()
         )
         .ok();
@@ -387,8 +428,9 @@ impl SAXHandler for DebugHandler {
     fn notation_decl(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
         writeln!(
             self.buffer,
-            "notationDecl({name}, {public_id:?}, {:?})",
-            system_id.map(|id| id.as_escaped_str())
+            "notationDecl({name}, {}, {})",
+            public_id.unwrap_or("None"),
+            system_id.map_or("None", |id| id.as_escaped_str())
         )
         .ok();
         self.child.notation_decl(name, public_id, system_id);
@@ -440,8 +482,9 @@ impl SAXHandler for DebugHandler {
     fn start_dtd(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
         writeln!(
             self.buffer,
-            "startDTD({name}, {public_id:?}, {:?})",
-            system_id.map(|id| id.as_escaped_str())
+            "startDTD({name}, {}, {})",
+            public_id.unwrap_or("None"),
+            system_id.map_or("None", |id| id.as_escaped_str())
         )
         .ok();
         self.child.start_dtd(name, public_id, system_id);
