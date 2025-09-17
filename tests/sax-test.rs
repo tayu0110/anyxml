@@ -106,8 +106,9 @@ fn well_formed_tests() {
             assert_eq!(
                 output,
                 reader.handler.buffer,
-                "uri: {}\n{output}",
-                uri.as_escaped_str()
+                "uri: {}\n{}",
+                uri.as_escaped_str(),
+                reader.handler.buffer,
             );
 
             reader.handler.buffer.clear();
@@ -118,7 +119,10 @@ fn well_formed_tests() {
 
 #[test]
 fn progressive_well_formed_tests() {
-    let handler = TestSAXHandler::new();
+    let handler = DebugHandler {
+        child: TestSAXHandler::new(),
+        buffer: String::new(),
+    };
 
     let mut reader = XMLReaderBuilder::new()
         .set_handler(handler)
@@ -129,9 +133,9 @@ fn progressive_well_formed_tests() {
         if let Ok(ent) = ent
             && ent.metadata().unwrap().is_file()
         {
-            let buffer = std::fs::read(ent.path()).unwrap();
-            let uri = URIString::parse_file_path(ent.path().canonicalize().unwrap()).unwrap();
-            eprintln!("uri: {}", uri.as_escaped_str());
+            let path = ent.path();
+            let buffer = std::fs::read(&path).unwrap();
+            let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
             reader.set_default_base_uri(uri.as_ref()).unwrap();
             reader.reset_source().unwrap();
             for b in buffer {
@@ -139,13 +143,28 @@ fn progressive_well_formed_tests() {
             }
             reader.parse_chunk([], true).unwrap();
             assert_eq!(
-                reader.handler().fatal_error.get(),
+                reader.handler.child.fatal_error.get(),
                 0,
                 "uri: {}\nerrors:\n{}",
                 uri.as_escaped_str(),
-                reader.handler().buffer.borrow(),
+                reader.handler.child.buffer.borrow(),
             );
-            reader.handler().reset();
+
+            let outname = path.file_name().unwrap().to_str().unwrap();
+            let outname = format!("resources/well-formed/output/{outname}.sax");
+            let outname = Path::new(outname.as_str());
+            let output = std::fs::read_to_string(outname).unwrap();
+
+            assert_eq!(
+                output,
+                reader.handler.buffer,
+                "\nuri: {}\n{}",
+                uri.as_escaped_str(),
+                reader.handler.buffer,
+            );
+
+            reader.handler.buffer.clear();
+            reader.handler.child.reset();
         }
     }
 }

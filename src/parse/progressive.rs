@@ -30,6 +30,10 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                             Ok(false)
                         };
                     }
+                    if !self.fatal_error_occurred {
+                        self.handler.set_document_locator(self.locator.clone());
+                        self.handler.start_document();
+                    }
                     self.state = ParserState::InXMLDeclaration;
                 }
                 ParserState::InXMLDeclaration => {
@@ -525,7 +529,10 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                 // If the next state is `Finished`, hand off everything to the next state,
                 // including error handling.
                 self.state = next_state;
-                Ok(ControlFlow::Continue(()))
+                if !self.fatal_error_occurred && self.source.content_bytes().is_empty() {
+                    self.handler.end_document();
+                }
+                Ok(ControlFlow::Break(true))
             } else if finish {
                 // Even the shortest markup requires 4 characters,
                 // so if all data has already been inserted at this point,
