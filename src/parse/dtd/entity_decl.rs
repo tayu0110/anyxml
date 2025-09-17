@@ -90,6 +90,9 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 let mut buffer = String::new();
                 self.parse_entity_value(&mut buffer)?;
                 self.skip_whitespaces_with_handle_peref(true)?;
+                if !self.fatal_error_occurred {
+                    self.handler.internal_entity_decl(&name, &buffer);
+                }
                 if pe {
                     EntityDecl::InternalParameterEntity {
                         base_uri,
