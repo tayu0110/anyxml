@@ -40,6 +40,7 @@ impl ParserSpec for ProgressiveParserSpec {
     type SpecificContext = ProgressiveParserSpecificContext;
 }
 
+#[derive(Debug, Default)]
 pub struct ProgressiveParserSpecificContext {
     pub(crate) seen: usize,
     pub(crate) quote: u8,

@@ -149,6 +149,40 @@ fn well_formed_tests() {
     }
 }
 
+#[test]
+fn progressive_well_formed_tests() {
+    let handler = TestSAXHandler::new();
+
+    let mut reader = XMLReaderBuilder::new()
+        .set_handler(handler)
+        .progressive_parser()
+        .build();
+
+    for ent in read_dir("resources/well-formed").unwrap() {
+        if let Ok(ent) = ent
+            && ent.metadata().unwrap().is_file()
+        {
+            let buffer = std::fs::read(ent.path()).unwrap();
+            let uri = URIString::parse_file_path(ent.path().canonicalize().unwrap()).unwrap();
+            eprintln!("uri: {}", uri.as_escaped_str());
+            reader.set_default_base_uri(uri.as_ref()).unwrap();
+            reader.reset_source().unwrap();
+            for b in buffer {
+                reader.parse_chunk([b], false).unwrap();
+            }
+            reader.parse_chunk([], true).unwrap();
+            assert_eq!(
+                reader.handler().fatal_error.get(),
+                0,
+                "uri: {}\nerrors:\n{}",
+                uri.as_escaped_str(),
+                reader.handler().buffer.borrow(),
+            );
+            reader.handler().reset();
+        }
+    }
+}
+
 #[derive(Default)]
 struct XMLConfWalker {
     log: RefCell<String>,

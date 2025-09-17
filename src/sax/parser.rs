@@ -8,7 +8,8 @@ use std::{
 use anyxml_uri::uri::{URIStr, URIString};
 
 use crate::{
-    DefaultParserSpec, ParserSpec, ProgressiveParserSpec, XMLVersion,
+    DefaultParserSpec, ParserSpec, ProgressiveParserSpec, ProgressiveParserSpecificContext,
+    XMLVersion,
     encoding::UTF8_NAME,
     error::XMLError,
     sax::{
@@ -312,14 +313,16 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
 }
 
 impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
-    pub fn reset_source(&mut self) {
+    pub fn reset_source(&mut self) -> Result<(), XMLError> {
         self.source = Box::new(InputSource::default());
         self.source.set_progressive_mode();
+        self.base_uri = self.default_base_uri()?;
         self.specific_context.seen = 0;
         self.specific_context.quote = 0;
         self.specific_context.in_markup = false;
         self.specific_context.element_stack.clear();
         self.reset_context();
+        Ok(())
     }
 
     pub fn parse_chunk(&mut self, chunk: impl AsRef<[u8]>, finish: bool) -> Result<(), XMLError> {
@@ -545,6 +548,45 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
         self
     }
 
+    pub fn progressive_parser(self) -> XMLProgressiveReaderBuilder<H> {
+        let mut source = Box::new(InputSource::default());
+        source.set_progressive_mode();
+        XMLProgressiveReaderBuilder {
+            reader: XMLReader::<ProgressiveParserSpec, H> {
+                source,
+                handler: self.reader.handler,
+                locator: self.reader.locator,
+                config: self.reader.config,
+                default_base_uri: self.reader.default_base_uri,
+                base_uri: self.reader.base_uri,
+                entity_name: self.reader.entity_name,
+                specific_context: ProgressiveParserSpecificContext::default(),
+                source_stack: vec![],
+                locator_stack: self.reader.locator_stack,
+                base_uri_stack: self.reader.base_uri_stack,
+                entity_name_stack: self.reader.entity_name_stack,
+                state: self.reader.state,
+                fatal_error_occurred: self.reader.fatal_error_occurred,
+                version: self.reader.version,
+                encoding: self.reader.encoding,
+                standalone: self.reader.standalone,
+                dtd_name: self.reader.dtd_name,
+                has_internal_subset: self.reader.has_internal_subset,
+                has_external_subset: self.reader.has_external_subset,
+                has_parameter_entity: self.reader.has_parameter_entity,
+                namespaces: self.reader.namespaces,
+                entities: self.reader.entities,
+                notations: self.reader.notations,
+                elementdecls: self.reader.elementdecls,
+                attlistdecls: self.reader.attlistdecls,
+                validation_stack: self.reader.validation_stack,
+                idattr_decls: self.reader.idattr_decls,
+                specified_ids: self.reader.specified_ids,
+                unresolved_ids: self.reader.unresolved_ids,
+            },
+        }
+    }
+
     pub fn build(self) -> XMLReader<DefaultParserSpec<'a>, H> {
         self.reader
     }
@@ -553,5 +595,73 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
 impl<'a> Default for XMLReaderBuilder<'a> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct XMLProgressiveReaderBuilder<H: SAXHandler = DefaultSAXHandler> {
+    reader: XMLReader<ProgressiveParserSpec, H>,
+}
+
+impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
+    pub fn set_default_base_uri(
+        mut self,
+        base_uri: impl Into<Arc<URIStr>>,
+    ) -> Result<Self, XMLError> {
+        self.reader.set_default_base_uri(base_uri)?;
+        Ok(self)
+    }
+
+    pub fn set_handler<I: SAXHandler>(self, handler: I) -> XMLProgressiveReaderBuilder<I> {
+        XMLProgressiveReaderBuilder {
+            reader: XMLReader {
+                source: self.reader.source,
+                handler,
+                locator: self.reader.locator,
+                config: self.reader.config,
+                default_base_uri: self.reader.default_base_uri,
+                base_uri: self.reader.base_uri,
+                entity_name: self.reader.entity_name,
+                specific_context: self.reader.specific_context,
+                source_stack: self.reader.source_stack,
+                locator_stack: self.reader.locator_stack,
+                base_uri_stack: self.reader.base_uri_stack,
+                entity_name_stack: self.reader.entity_name_stack,
+                state: self.reader.state,
+                fatal_error_occurred: self.reader.fatal_error_occurred,
+                version: self.reader.version,
+                encoding: self.reader.encoding,
+                standalone: self.reader.standalone,
+                dtd_name: self.reader.dtd_name,
+                has_internal_subset: self.reader.has_internal_subset,
+                has_external_subset: self.reader.has_external_subset,
+                has_parameter_entity: self.reader.has_parameter_entity,
+                namespaces: self.reader.namespaces,
+                entities: self.reader.entities,
+                notations: self.reader.notations,
+                elementdecls: self.reader.elementdecls,
+                attlistdecls: self.reader.attlistdecls,
+                validation_stack: self.reader.validation_stack,
+                idattr_decls: self.reader.idattr_decls,
+                specified_ids: self.reader.specified_ids,
+                unresolved_ids: self.reader.unresolved_ids,
+            },
+        }
+    }
+
+    pub fn set_parser_config(mut self, config: ParserConfig) -> Self {
+        self.reader.config = config;
+        self
+    }
+    pub fn enable_option(mut self, option: ParserOption) -> Self {
+        self.reader.config.set_option(option, true);
+        self
+    }
+    pub fn disable_option(mut self, option: ParserOption) -> Self {
+        self.reader.config.set_option(option, false);
+        self
+    }
+
+    pub fn build(self) -> XMLReader<ProgressiveParserSpec, H> {
+        self.reader
     }
 }

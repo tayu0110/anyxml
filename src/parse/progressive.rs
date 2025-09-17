@@ -62,13 +62,26 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                     self.specific_context.seen = self.specific_context.seen.max(5);
                     // Since the only '?' characters allowed in an XML declaration are '<?' or '?>',
                     // search for '?' in the closing '?>'.
-                    break if self.source.content_bytes()[self.specific_context.seen..]
-                        .contains(&b'?')
+                    break if let Some(pos) = self.source.content_bytes()
+                        [self.specific_context.seen..]
+                        .iter()
+                        .position(|&b| b == b'?')
                     {
-                        self.parse_xml_decl()?;
-                        self.specific_context.seen = 0;
-                        self.state = ParserState::InMiscAfterXMLDeclaration;
-                        Ok(true)
+                        self.specific_context.seen += pos;
+                        if self.specific_context.seen + 1 < self.source.content_bytes().len() {
+                            if self.source.content_bytes()[self.specific_context.seen + 1] == b'>' {
+                                self.parse_xml_decl()?;
+                                self.source.set_compact_mode();
+                                self.specific_context.seen = 0;
+                                self.state = ParserState::InMiscAfterXMLDeclaration;
+                                Ok(true)
+                            } else {
+                                self.specific_context.seen += 1;
+                                Ok(false)
+                            }
+                        } else {
+                            Ok(false)
+                        }
                     } else {
                         self.specific_context.seen = self.source.content_bytes().len();
                         Ok(false)
@@ -220,10 +233,14 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                                     "The entity '{}' is nested incorrectly.",
                                     name
                                 );
+                                return Err(XMLError::ParserEntityIncorrectNesting);
                             }
                             self.version = old_version;
                             self.encoding = old_encoding;
-                            Err(XMLError::ParserEntityIncorrectNesting)
+                            if !self.fatal_error_occurred {
+                                self.handler.end_entity();
+                            }
+                            Ok(true)
                         } else if finish {
                             Err(XMLError::ParserUnexpectedEOF)
                         } else {
@@ -290,7 +307,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                                     return Ok(true);
                                 }
                                 b'!' => {
-                                    if self.source.content_bytes().len() < 3 {
+                                    if self.source.content_bytes().len() < 4 {
                                         return if finish {
                                             Err(XMLError::ParserUnexpectedEOF)
                                         } else {
@@ -330,6 +347,14 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                                         }
                                     } else {
                                         // CDSect
+                                        if self.source.content_bytes().len() < 9 {
+                                            return if finish {
+                                                Err(XMLError::ParserUnexpectedEOF)
+                                            } else {
+                                                Ok(false)
+                                            };
+                                        }
+
                                         self.specific_context.seen =
                                             self.specific_context.seen.max(9);
                                         while let Some(pos) = self.source.content_bytes()
@@ -375,6 +400,14 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
 
                             if self.source.content_bytes()[1] == b'#' {
                                 // character reference
+
+                                // If the current position is not within a document entity,
+                                // parsing can begin.
+                                if self.entity_name().is_some() {
+                                    self.parse_char_data()?;
+                                    self.specific_context.seen = 0;
+                                    return Ok(true);
+                                }
 
                                 // skip the first of `&`
                                 self.specific_context.seen = self.specific_context.seen.max(1);
@@ -488,7 +521,12 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
     ) -> Result<ControlFlow<bool>, XMLError> {
         self.skip_whitespaces()?;
         if self.source.content_bytes().len() < 2 {
-            return if finish {
+            return if finish && next_state == ParserState::Finished {
+                // If the next state is `Finished`, hand off everything to the next state,
+                // including error handling.
+                self.state = next_state;
+                Ok(ControlFlow::Continue(()))
+            } else if finish {
                 // Even the shortest markup requires 4 characters,
                 // so if all data has already been inserted at this point,
                 // it is no longer well-formed.
@@ -633,10 +671,13 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                             let is_empty_tag =
                                 self.parse_start_or_empty_tag(&mut name, &mut prefix_length)?;
 
-                            if is_empty_tag && self.specific_context.element_stack.is_empty() {
+                            if is_empty_tag {
+                                self.report_end_element(&name, prefix_length);
                                 self.resume_namespace_stack(old_ns_stack_depth);
                                 self.finish_content_model_validation(&name);
-                                self.state = ParserState::InMiscAfterDocumentElement;
+                                if self.specific_context.element_stack.is_empty() {
+                                    self.state = ParserState::InMiscAfterDocumentElement;
+                                }
                             } else {
                                 self.specific_context.element_stack.push((
                                     name,
@@ -690,6 +731,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                     Ok(ControlFlow::Break(false))
                 };
             }
+            self.specific_context.seen = 0;
         }
 
         // skip '&'

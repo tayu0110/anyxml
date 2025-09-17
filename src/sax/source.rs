@@ -382,7 +382,11 @@ impl<'a> InputSource<'a> {
         self.buffer
             .copy_within(self.buffer_next..self.buffer_end, 0);
         self.buffer_end -= self.buffer_next;
-        self.buffer.truncate(self.buffer_end.max(INPUT_CHUNK));
+        if self.progressive {
+            self.buffer.truncate(self.buffer_end);
+        } else {
+            self.buffer.truncate(self.buffer_end.max(INPUT_CHUNK));
+        }
         self.buffer_next = 0;
         self.buffer.shrink_to(INPUT_CHUNK);
 
@@ -420,6 +424,7 @@ impl<'a> InputSource<'a> {
         bytes: impl AsRef<[u8]>,
         finish: bool,
     ) -> Result<(), XMLError> {
+        assert!(self.progressive);
         let bytes = bytes.as_ref();
         if bytes.is_empty() {
             return Ok(());
@@ -428,18 +433,24 @@ impl<'a> InputSource<'a> {
         self.buffer.extend(bytes);
         self.buffer_end += bytes.len();
         self.total_read += bytes.len();
-        if init && self.total_read >= 4 {
-            self.detect_encoding()?;
+        if init {
+            if self.total_read >= 4 {
+                self.detect_encoding()?;
+            } else {
+                return Ok(());
+            }
         }
 
-        if self.decoded_next * 2 >= self.decoded.len() {
+        if self.compact && self.decoded_next * 2 >= self.decoded.len() {
             self.decoded.drain(..self.decoded_next);
             self.decoded_next = 0;
         }
 
         while self.buffer_next < self.buffer_end {
-            if self.decoded.capacity() - self.decoded.len() < self.buffer_end - self.buffer_next {
-                let additional = self.decoded.capacity() * 2 - self.decoded.len();
+            if self.decoded.capacity() - self.decoded.len()
+                < (self.buffer_end - self.buffer_next).max(4)
+            {
+                let additional = (self.decoded.capacity() * 2 - self.decoded.len()).max(4);
                 self.decoded.reserve(additional);
             }
             match self.decoder.decode(
@@ -469,7 +480,7 @@ impl<'a> InputSource<'a> {
             }
         }
 
-        if self.buffer_next * 2 > self.buffer_end {
+        if self.compact && self.buffer_next * 2 > self.buffer_end {
             self.buffer.drain(..self.buffer_next);
             self.buffer_end -= self.buffer_next;
             self.buffer_next = 0;
