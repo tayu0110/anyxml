@@ -48,6 +48,8 @@ impl std::fmt::Display for AttributeType {
                     write!(f, "NOTATION")?;
                 }
                 write!(f, "(")?;
+                let mut set = set.iter().collect::<Vec<_>>();
+                set.sort_unstable();
                 let mut iter = set.iter();
                 if let Some(name) = iter.next() {
                     write!(f, "{name}")?;

@@ -243,12 +243,7 @@ impl<Child: SAXHandler> EntityResolver for DebugHandler<Child> {
         name: &str,
         base_uri: Option<&URIStr>,
     ) -> Result<InputSource<'static>, XMLError> {
-        writeln!(
-            self.buffer,
-            "getExternalSubset({name}, {:?})",
-            base_uri.map(|uri| uri.as_escaped_str())
-        )
-        .ok();
+        writeln!(self.buffer, "getExternalSubset({name})").ok();
         self.child.get_external_subset(name, base_uri)
     }
 
@@ -259,13 +254,9 @@ impl<Child: SAXHandler> EntityResolver for DebugHandler<Child> {
         base_uri: &URIStr,
         system_id: &URIStr,
     ) -> Result<InputSource<'static>, XMLError> {
-        writeln!(
-            self.buffer,
-            "resolveEntity({name}, {public_id:?}, {}, {})",
-            base_uri.as_escaped_str(),
-            system_id.as_escaped_str()
-        )
-        .ok();
+        if name != "[document]" {
+            writeln!(self.buffer, "resolveEntity({name})").ok();
+        }
         self.child
             .resolve_entity(name, public_id, base_uri, system_id)
     }

@@ -54,6 +54,8 @@ impl std::fmt::Display for ContentSpec {
             Self::ANY => write!(f, "ANY"),
             Self::Mixed(mixed) => {
                 write!(f, "(#PCDATA")?;
+                let mut mixed = mixed.iter().collect::<Vec<_>>();
+                mixed.sort_unstable();
                 for name in mixed.iter() {
                     write!(f, "|{name}")?;
                 }
