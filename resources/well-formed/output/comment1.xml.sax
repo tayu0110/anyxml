@@ -1,0 +1,13 @@
+setDocumentLocator()
+startDocument()
+declaration(1.0, UTF-8, None)
+comment( This is a comment before the document element. )
+startElement(None, root, root)
+characters(
+    )
+comment( This is a comment inside of the content. )
+characters(
+)
+endElement(None, root, root)
+comment( This is a comment after the document element. )
+endDocument()

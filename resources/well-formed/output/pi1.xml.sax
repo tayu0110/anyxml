@@ -1,0 +1,13 @@
+setDocumentLocator()
+startDocument()
+declaration(1.0, UTF-8, None)
+processingInstruction(before-document-element, None)
+startElement(None, root, root)
+characters(
+    )
+processingInstruction(inside-of-content, 'data1="foo"')
+characters(
+)
+endElement(None, root, root)
+processingInstruction(after-document-element, 'data2="bar" data3')
+endDocument()

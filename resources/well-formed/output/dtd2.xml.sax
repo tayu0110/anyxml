@@ -1,0 +1,31 @@
+setDocumentLocator()
+startDocument()
+declaration(1.0, UTF-8, None)
+startDTD(root, None, None)
+elementDecl(root, (#PCDATA|child|child2|child3)*)
+elementDecl(child, (#PCDATA))
+elementDecl(child2, EMPTY)
+elementDecl(child3, ANY)
+attributeDecl(root, attr1, CDATA, #REQUIRED)
+attributeDecl(child, attr2, CDATA, #REQUIRED)
+attributeDecl(child, attr3, CDATA, #IMPLIED)
+attributeDecl(child2, attr4, CDATA, #FIXED "hoge")
+attributeDecl(child2, attr5, (bar|foo|hoge), #IMPLIED)
+endDTD()
+startElement(None, root, root, attr1='foo')
+characters(
+    This is a character data.
+    )
+startElement(None, child, child, attr2='bar')
+characters(
+        This is a character data under `child`.
+    )
+endElement(None, child, child)
+characters(
+    )
+startElement(None, child2, child2, attr4='hoge')
+endElement(None, child2, child2)
+characters(
+)
+endElement(None, root, root)
+endDocument()

@@ -1,0 +1,16 @@
+setDocumentLocator()
+startDocument()
+declaration(1.0, UTF-8, None)
+startElement(None, root, root, attr='foo', attr2='bar')
+characters(
+    )
+startElement(None, child, child, attr3='')
+endElement(None, child, child)
+characters(
+    )
+startElement(None, child2, child2, attr4='hoge')
+endElement(None, child2, child2)
+characters(
+)
+endElement(None, root, root)
+endDocument()

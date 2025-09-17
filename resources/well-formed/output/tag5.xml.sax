@@ -1,0 +1,12 @@
+setDocumentLocator()
+startDocument()
+declaration(1.0, UTF-8, None)
+startElement(None, root, root)
+characters(
+    )
+startElement(None, child, child)
+endElement(None, child, child)
+characters(
+)
+endElement(None, root, root)
+endDocument()

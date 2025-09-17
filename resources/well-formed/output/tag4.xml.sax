@@ -1,0 +1,5 @@
+setDocumentLocator()
+startDocument()
+startElement(None, root, root)
+endElement(None, root, root)
+endDocument()

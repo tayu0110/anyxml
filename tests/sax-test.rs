@@ -2,6 +2,7 @@ use std::{
     cell::{Cell, RefCell},
     fmt::Write as _,
     fs::read_dir,
+    path::Path,
     sync::Arc,
 };
 
@@ -86,7 +87,8 @@ fn well_formed_tests() {
         if let Ok(ent) = ent
             && ent.metadata().unwrap().is_file()
         {
-            let uri = URIString::parse_file_path(ent.path().canonicalize().unwrap()).unwrap();
+            let path = ent.path();
+            let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
             reader.parse_uri(&uri, None).ok();
             assert_eq!(
                 reader.handler.child.fatal_error.get(),
@@ -95,6 +97,19 @@ fn well_formed_tests() {
                 uri.as_escaped_str(),
                 reader.handler.child.buffer.borrow(),
             );
+
+            let outname = path.file_name().unwrap().to_str().unwrap();
+            let outname = format!("resources/well-formed/output/{outname}.sax");
+            let outname = Path::new(outname.as_str());
+            let output = std::fs::read_to_string(outname).unwrap();
+
+            assert_eq!(
+                output,
+                reader.handler.buffer,
+                "uri: {}\n{output}",
+                uri.as_escaped_str()
+            );
+
             reader.handler.buffer.clear();
             reader.handler.child.reset();
         }

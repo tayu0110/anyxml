@@ -1,0 +1,23 @@
+setDocumentLocator()
+startDocument()
+declaration(1.0, UTF-8, None)
+startElement(None, root, root)
+characters(
+    )
+startCDATA()
+characters( This is a CDATA Section. )
+endCDATA()
+characters(
+    )
+startCDATA()
+characters( <greeting>Hello, World!</greeting> )
+endCDATA()
+characters(
+    )
+startCDATA()
+characters( <<<<<<</&&&&&&#FFFFFFFFFFFFFF; )
+endCDATA()
+characters(
+)
+endElement(None, root, root)
+endDocument()

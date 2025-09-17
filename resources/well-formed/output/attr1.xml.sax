@@ -1,0 +1,6 @@
+setDocumentLocator()
+startDocument()
+declaration(1.0, UTF-8, None)
+startElement(None, root, root, attr='foo', attr2='bar')
+endElement(None, root, root)
+endDocument()
