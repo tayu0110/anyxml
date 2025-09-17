@@ -98,19 +98,21 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             }
         }
 
-        if let Some(contentspec) = self.elementdecls.get_mut(name) {
-            let validator = contentspec.new_validator();
-            self.validation_stack
-                .push(Some((name.as_str().into(), validator)));
-        } else if self.config.is_enable(ParserOption::Validation) {
-            // [VC: Element Valid]
-            validity_error!(
-                self,
-                ParserUndeclaredElement,
-                "The element type '{}' is undeclared.",
-                name
-            );
-            self.validation_stack.push(None);
+        if self.config.is_enable(ParserOption::Validation) {
+            if let Some(contentspec) = self.elementdecls.get_mut(name) {
+                let validator = contentspec.new_validator();
+                self.validation_stack
+                    .push(Some((name.as_str().into(), validator)));
+            } else {
+                // [VC: Element Valid]
+                validity_error!(
+                    self,
+                    ParserUndeclaredElement,
+                    "The element type '{}' is undeclared.",
+                    name
+                );
+                self.validation_stack.push(None);
+            }
         }
 
         let mut s = self.skip_whitespaces()?;
