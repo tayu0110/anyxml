@@ -358,12 +358,22 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                                     }
 
                                     let end = self.parse_end_tag()?;
-                                    let (start, prefix_length, old_ns_stack_depth) =
-                                        self.specific_context.element_stack.pop().unwrap();
-                                    self.check_element_type_match(&start, &end)?;
-                                    self.report_end_element(&start, prefix_length);
-                                    self.resume_namespace_stack(old_ns_stack_depth);
-                                    self.finish_content_model_validation(&start);
+                                    if let Some((start, prefix_length, old_ns_stack_depth)) =
+                                        self.specific_context.element_stack.pop()
+                                    {
+                                        self.check_element_type_match(&start, &end)?;
+                                        self.report_end_element(&start, prefix_length);
+                                        self.resume_namespace_stack(old_ns_stack_depth);
+                                        self.finish_content_model_validation(&start);
+                                    } else {
+                                        fatal_error!(
+                                            self,
+                                            ParserInvalidEndTag,
+                                            "An end tag '{}' is found, but start tag is not found.",
+                                            end
+                                        );
+                                        return Err(XMLError::ParserInvalidEndTag);
+                                    }
                                     if self.specific_context.element_stack.is_empty() {
                                         self.state = ParserState::InMiscAfterDocumentElement;
                                     }

@@ -191,6 +191,7 @@ struct XMLConfWalker {
     locator: RefCell<Option<Arc<Locator>>>,
     unexpected_failure: Cell<usize>,
     unexpected_success: Cell<usize>,
+    progressive: bool,
 }
 
 impl XMLConfWalker {}
@@ -292,10 +293,23 @@ impl SAXHandler for XMLConfWalker {
                 if entities != "none" || matches!(r#type.as_ref(), "valid" | "invalid") {
                     reader = reader.enable_option(ParserOption::Validation)
                 }
-                let mut reader = reader.build();
-                reader.parse_uri(uri, None).ok();
-
-                let handler = reader.handler.child;
+                let handler = if !self.progressive {
+                    let mut reader = reader.build();
+                    reader.parse_uri(uri, None).ok();
+                    reader.handler.child
+                } else {
+                    let data = std::fs::read_to_string(uri.path()).unwrap();
+                    let mut reader = reader
+                        .set_default_base_uri(uri)
+                        .unwrap()
+                        .progressive_parser()
+                        .build();
+                    for b in data.bytes() {
+                        reader.parse_chunk([b], false).ok();
+                    }
+                    reader.parse_chunk([], true).ok();
+                    reader.handler.child
+                };
                 match r#type.as_str() {
                     "not-wf" => {
                         if handler.fatal_error.get() > 0
@@ -383,9 +397,13 @@ fn progressive_xmlconf_tests() {
     );
 
     let path = format!("{XMLCONF_DIR}/xmlconf.xml");
+    let handler = XMLConfWalker {
+        progressive: true,
+        ..Default::default()
+    };
     let xmlconf = URIString::parse_file_path(path.as_str()).unwrap();
     let mut reader = XMLReaderBuilder::new()
-        .set_handler(XMLConfWalker::default())
+        .set_handler(handler)
         .enable_option(ParserOption::ExternalGeneralEntities)
         .set_default_base_uri(xmlconf)
         .unwrap()
