@@ -273,10 +273,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     self.grow()?;
                 }
             } else if self.source.is_empty() {
-                if self.pop_source().is_err() {
+                if self
+                    .entity_name()
+                    .is_none_or(|name| name.as_ref() == "[dtd]")
+                {
                     // Since there's no popping source, exit the loop.
                     break Ok(s);
                 }
+                self.pop_source()?;
                 if !self.fatal_error_occurred {
                     self.handler.end_entity();
                 }

@@ -298,7 +298,6 @@ impl SAXHandler for XMLConfWalker {
                     reader.parse_uri(uri, None).ok();
                     reader.handler.child
                 } else {
-                    eprintln!("uri: {}", uri.as_escaped_str());
                     let data = std::fs::read(uri.path()).unwrap();
                     let mut reader = reader
                         .set_default_base_uri(uri)

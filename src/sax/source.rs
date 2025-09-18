@@ -336,6 +336,9 @@ impl<'a> InputSource<'a> {
                 false,
             ) {
                 Ok((read, write)) => {
+                    if read == 0 && write == 0 {
+                        break;
+                    }
                     self.buffer_next += read;
                     if write <= self.decoded_next {
                         self.decoded_next -= write;

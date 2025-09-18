@@ -67,7 +67,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 _ => break Ok(()),
             }
 
-            self.skip_whitespaces()?;
+            self.skip_whitespaces_with_handle_peref(false)?;
         }
     }
 
