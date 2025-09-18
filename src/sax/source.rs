@@ -459,6 +459,9 @@ impl<'a> InputSource<'a> {
                 finish,
             ) {
                 Ok((read, _)) => {
+                    if read == 0 {
+                        break;
+                    }
                     self.buffer_next += read;
                 }
                 Err(err) => match err {

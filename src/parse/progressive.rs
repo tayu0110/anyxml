@@ -35,6 +35,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                         self.handler.start_document();
                     }
                     self.state = ParserState::InXMLDeclaration;
+                    break Ok(true);
                 }
                 ParserState::InXMLDeclaration => {
                     let content = self.source.content_bytes();
@@ -222,7 +223,63 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                     // If we are currently in an entity other than a document entity,
                     // `self.source` is not in progressive mode, so data should be appended.
                     // Otherwise, nothing happens.
-                    self.grow()?;
+                    if self.entity_name().is_some() {
+                        self.grow()?;
+                        let event = match self.source.content_bytes() {
+                            [b'<', b'?', ..] => {
+                                self.parse_pi()?;
+                                true
+                            }
+                            [b'<', b'!', b'-', b'-', ..] => {
+                                self.parse_comment()?;
+                                true
+                            }
+                            [b'<', b'!', b'[', b'C', b'D', b'A', b'T', b'A', b'[', ..] => {
+                                self.parse_cdsect()?;
+                                true
+                            }
+                            [b'<', b'/', ..] => false,
+                            [b'<', ..] => {
+                                let old_ns_stack_depth = self.namespaces.len();
+                                let mut name = String::new();
+                                let mut prefix_length = 0;
+                                let is_empty_tag =
+                                    self.parse_start_or_empty_tag(&mut name, &mut prefix_length)?;
+
+                                if is_empty_tag {
+                                    self.report_end_element(&name, prefix_length);
+                                    self.resume_namespace_stack(old_ns_stack_depth);
+                                    self.finish_content_model_validation(&name);
+                                    if self.specific_context.element_stack.is_empty() {
+                                        self.state = ParserState::InMiscAfterDocumentElement;
+                                    }
+                                } else {
+                                    self.specific_context.element_stack.push((
+                                        name,
+                                        prefix_length,
+                                        old_ns_stack_depth,
+                                    ));
+                                    self.state = ParserState::InContent;
+                                }
+                                true
+                            }
+                            [b'&', b'#', ..] => {
+                                // Character references are treated as part of the character data.
+                                self.parse_char_data()?;
+                                true
+                            }
+                            [b'&', ..] => false,
+                            [_b, ..] => {
+                                self.parse_char_data()?;
+                                true
+                            }
+                            [] => false,
+                        };
+
+                        if event {
+                            break Ok(true);
+                        }
+                    }
 
                     if self.source.content_bytes().is_empty() {
                         break if let Some(name) = self.entity_name() {
@@ -290,7 +347,9 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                                     }
                                 }
                                 b'/' => {
-                                    if !self.source.content_bytes().contains(&b'>') {
+                                    if self.entity_name().is_none()
+                                        && !self.source.content_bytes().contains(&b'>')
+                                    {
                                         return if finish {
                                             Err(XMLError::ParserUnexpectedEOF)
                                         } else {

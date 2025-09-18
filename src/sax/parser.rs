@@ -182,6 +182,7 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
         let base_uri: Arc<URIStr> = base_uri.into();
         if base_uri.is_absolute() {
             self.default_base_uri = Some(base_uri);
+            self.base_uri = self.default_base_uri()?;
             Ok(())
         } else {
             Err(XMLError::URIBaseURINotAbsolute)

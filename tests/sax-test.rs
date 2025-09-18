@@ -169,6 +169,22 @@ fn progressive_well_formed_tests() {
     }
 }
 
+// Some tests require unsupported encodings or their types do not match the actual
+// error that occurs, making it difficult to pass all of them, so they are skipped.
+const SKIP_TESTS: &[&str] = &[
+    "pr-xml-euc-jp",               // unsupported encoding
+    "pr-xml-iso-2022-jp",          // unsupported encoding
+    "pr-xml-shift_jis",            // unsupported encoding
+    "weekly-euc-jp",               // unsupported encoding
+    "weekly-iso-2022-jp",          // unsupported encoding
+    "weekly-shift_jis",            // unsupported encoding
+    "ibm-not-wf-P69-ibm69n05.xml", // error type, but requires VC validation
+    "rmt-ns10-006",                // unsupported encoding
+    "invalid-bo-7",                // error type, but a Fatal Error occurs (Illegal XML character)
+    "invalid-bo-8",                // error type, but a Fatal Error occurs (Illegal XML character)
+    "invalid-bo-9",                // error type, but a Fatal Error occurs (Illegal XML character)
+];
+
 #[derive(Default)]
 struct XMLConfWalker {
     log: RefCell<String>,
@@ -177,23 +193,7 @@ struct XMLConfWalker {
     unexpected_success: Cell<usize>,
 }
 
-impl XMLConfWalker {
-    // Some tests require unsupported encodings or their types do not match the actual
-    // error that occurs, making it difficult to pass all of them, so they are skipped.
-    const SKIP_TESTS: &[&str] = &[
-        "pr-xml-euc-jp",               // unsupported encoding
-        "pr-xml-iso-2022-jp",          // unsupported encoding
-        "pr-xml-shift_jis",            // unsupported encoding
-        "weekly-euc-jp",               // unsupported encoding
-        "weekly-iso-2022-jp",          // unsupported encoding
-        "weekly-shift_jis",            // unsupported encoding
-        "ibm-not-wf-P69-ibm69n05.xml", // error type, but requires VC validation
-        "rmt-ns10-006",                // unsupported encoding
-        "invalid-bo-7", // error type, but a Fatal Error occurs (Illegal XML character)
-        "invalid-bo-8", // error type, but a Fatal Error occurs (Illegal XML character)
-        "invalid-bo-9", // error type, but a Fatal Error occurs (Illegal XML character)
-    ];
-}
+impl XMLConfWalker {}
 
 impl SAXHandler for XMLConfWalker {
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
@@ -256,7 +256,7 @@ impl SAXHandler for XMLConfWalker {
                         _ => {}
                     }
                 }
-                if Self::SKIP_TESTS.contains(&id.as_str()) {
+                if SKIP_TESTS.contains(&id.as_str()) {
                     // skip
                     return;
                 }
@@ -363,6 +363,38 @@ fn xmlconf_tests() {
         .enable_option(ParserOption::ExternalGeneralEntities)
         .build();
     reader.parse_uri(xmlconf, None).unwrap();
+
+    let handler = reader.take_handler();
+    assert!(
+        handler.unexpected_success.get() == 0 && handler.unexpected_failure.get() == 0,
+        "{}\n=== Unexpected Success: {}, Unexpected Failure: {} ===\n",
+        handler.log.borrow(),
+        handler.unexpected_success.get(),
+        handler.unexpected_failure.get(),
+    );
+}
+
+#[test]
+fn progressive_xmlconf_tests() {
+    const XMLCONF_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/resources/xmlconf");
+    assert!(
+        std::fs::exists(XMLCONF_DIR).unwrap_or(false),
+        "Please execute `deno run -A resources/get-xmlconf.ts` on the crate root."
+    );
+
+    let path = format!("{XMLCONF_DIR}/xmlconf.xml");
+    let xmlconf = URIString::parse_file_path(path.as_str()).unwrap();
+    let mut reader = XMLReaderBuilder::new()
+        .set_handler(XMLConfWalker::default())
+        .enable_option(ParserOption::ExternalGeneralEntities)
+        .set_default_base_uri(xmlconf)
+        .unwrap()
+        .progressive_parser()
+        .build();
+    for chunk in std::fs::read_to_string(path).unwrap().bytes() {
+        reader.parse_chunk([chunk], false).unwrap();
+    }
+    reader.parse_chunk([], true).unwrap();
 
     let handler = reader.take_handler();
     assert!(
