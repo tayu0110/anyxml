@@ -328,12 +328,15 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
 
     pub fn parse_chunk(&mut self, chunk: impl AsRef<[u8]>, finish: bool) -> Result<(), XMLError> {
         (|| {
+            if self.fatal_error_occurred {
+                return Ok(());
+            }
             let chunk = chunk.as_ref();
             for bytes in chunk.chunks(INPUT_CHUNK) {
                 self.source.push_bytes(bytes, false)?;
                 while self.parse_event_once(false)? {}
             }
-            if finish {
+            if !self.fatal_error_occurred && finish {
                 self.source.push_bytes([], true)?;
                 while self.parse_event_once(true)? {}
             }

@@ -298,13 +298,14 @@ impl SAXHandler for XMLConfWalker {
                     reader.parse_uri(uri, None).ok();
                     reader.handler.child
                 } else {
-                    let data = std::fs::read_to_string(uri.path()).unwrap();
+                    eprintln!("uri: {}", uri.as_escaped_str());
+                    let data = std::fs::read(uri.path()).unwrap();
                     let mut reader = reader
                         .set_default_base_uri(uri)
                         .unwrap()
                         .progressive_parser()
                         .build();
-                    for b in data.bytes() {
+                    for b in data {
                         reader.parse_chunk([b], false).ok();
                     }
                     reader.parse_chunk([], true).ok();

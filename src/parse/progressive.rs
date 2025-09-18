@@ -268,7 +268,14 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                                 self.parse_char_data()?;
                                 true
                             }
-                            [b'&', ..] => false,
+                            [b'&', ..] => {
+                                // When in an entity other than the document entity,
+                                // since `self.source` is not in progressive mode,
+                                // `try_parse_and_push_general_entity` can only succeed or fail,
+                                // so `ControlFlow` does not need to be read.
+                                let _ = self.try_parse_and_push_general_entity(finish)?;
+                                true
+                            }
                             [_b, ..] => {
                                 self.parse_char_data()?;
                                 true

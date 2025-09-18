@@ -424,7 +424,11 @@ impl<'a> InputSource<'a> {
         bytes: impl AsRef<[u8]>,
         finish: bool,
     ) -> Result<(), XMLError> {
-        assert!(self.progressive);
+        assert!(
+            self.progressive,
+            "system_id: {}",
+            self.system_id().map_or("None", |uri| uri.as_escaped_str())
+        );
         let bytes = bytes.as_ref();
         if bytes.is_empty() {
             return Ok(());
