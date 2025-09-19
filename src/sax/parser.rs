@@ -450,7 +450,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
 impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
     fn default() -> Self {
         let base_uri: Arc<URIStr> = URIString::parse("").unwrap().into();
-        Self {
+        let mut res = Self {
             source: Box::new(InputSource::default()),
             handler: DefaultSAXHandler,
             locator: Arc::new(Locator::new(base_uri.clone(), None, 1, 1)),
@@ -481,7 +481,11 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             idattr_decls: HashMap::new(),
             specified_ids: HashSet::new(),
             unresolved_ids: HashSet::new(),
-        }
+        };
+        let base_uri = res.default_base_uri().unwrap();
+        res.base_uri = base_uri;
+        res.locator = Arc::new(Locator::new(res.base_uri.clone(), None, 1, 1));
+        res
     }
 }
 
@@ -503,6 +507,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
         base_uri: impl Into<Arc<URIStr>>,
     ) -> Result<Self, XMLError> {
         self.reader.set_default_base_uri(base_uri)?;
+        self.reader.locator = Arc::new(Locator::new(self.reader.default_base_uri()?, None, 1, 1));
         Ok(self)
     }
 
@@ -616,6 +621,7 @@ impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
         base_uri: impl Into<Arc<URIStr>>,
     ) -> Result<Self, XMLError> {
         self.reader.set_default_base_uri(base_uri)?;
+        self.reader.locator = Arc::new(Locator::new(self.reader.default_base_uri()?, None, 1, 1));
         Ok(self)
     }
 
