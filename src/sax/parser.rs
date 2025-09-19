@@ -339,6 +339,10 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
             if !self.fatal_error_occurred && finish {
                 self.source.push_bytes([], true)?;
                 while self.parse_event_once(true)? {}
+
+                if self.state != ParserState::Finished {
+                    return Err(XMLError::ParserUnexpectedEOF);
+                }
             }
             Ok(())
         })()

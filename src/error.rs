@@ -99,6 +99,7 @@ pub enum XMLError {
     ParserInvalidConditionalSect,
     ParserInvalidStartOrEmptyTag,
     ParserInvalidEndTag,
+    ParserUnclosedStartTag,
     ParserMismatchElementType,
     ParserMismatchElementContentModel,
     ParserUndeclaredElement,

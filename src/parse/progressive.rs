@@ -284,6 +284,13 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                         };
 
                         if event {
+                            if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
+                                // If we reach this point, we should have read at least one markup or character data.
+                                // Since Misc does not affect the validation of elements other than those of type EMPTY,
+                                // it is safe to assume that Misc appears here.
+                                validator.push_misc();
+                            }
+
                             break Ok(true);
                         }
                     }
@@ -351,6 +358,10 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                                         } else {
                                             break;
                                         }
+                                    }
+
+                                    if finish {
+                                        return Err(XMLError::ParserUnexpectedEOF);
                                     }
                                 }
                                 b'/' => {
@@ -425,6 +436,10 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                                                 break;
                                             }
                                         }
+
+                                        if finish {
+                                            return Err(XMLError::ParserUnexpectedEOF);
+                                        }
                                     } else {
                                         // CDSect
                                         if self.source.content_bytes().len() < 9 {
@@ -462,6 +477,10 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                                             } else {
                                                 break;
                                             }
+                                        }
+
+                                        if finish {
+                                            return Err(XMLError::ParserUnexpectedEOF);
                                         }
                                     }
                                 }
