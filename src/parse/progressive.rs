@@ -392,6 +392,21 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                                         );
                                         return Err(XMLError::ParserInvalidEndTag);
                                     }
+
+                                    if let Some((old_element_stack_length, _, _)) =
+                                        self.specific_context.entity_stack.last()
+                                        && self.specific_context.element_stack.len()
+                                            < *old_element_stack_length
+                                    {
+                                        fatal_error!(
+                                            self,
+                                            ParserEntityIncorrectNesting,
+                                            "The entity '{}' is nested incorrectly.",
+                                            self.entity_name().unwrap()
+                                        );
+                                        return Err(XMLError::ParserEntityIncorrectNesting);
+                                    }
+
                                     if self.specific_context.element_stack.is_empty() {
                                         self.state = ParserState::InMiscAfterDocumentElement;
                                     }
