@@ -5,6 +5,11 @@
 The current implementation supports the following features:
 
 - parse XML 1.0 document
+    - [x] DTD parsing
+    - [x] Entity reference substitution (both general entity and parameter entity are supported)
+    - [x] Character reference substitution
+    - [x] Attribute value normalization
+    - [x] Default attribute value handling
 - validate XML 1.0 document using DTD
 - handle namespace conforming to XML Namespace 1.0
 
@@ -71,6 +76,49 @@ start element greeting
 characters 'Hello!!'
 end element greeting
 end document
+"#, handler.buffer);
+```
+
+## Parser (Progressive)
+SAX-like parsers appear to retrieve all data from a specific source at once, but in some cases, applications may want to provide data incrementally.  \
+This crate also supports such functionality, which libxml2 calls as "Push type parser" or "Progressive type parser".
+
+In this crate, this feature is called the "Progressive Parser".  \
+This is because "push" and "pull" are generally used as terms to classify how the parser delivers the parsing results to the application, rather than how the source is provided to the parser.
+
+When parsing XML documents that retrieve external resources, note that the application must set the appropriate base URI for the parser before starting parsing.  \
+By default, the current directory is set as the base URI.
+
+### Example
+```rust
+use std::fmt::Write as _;
+
+use anyxml::sax::{
+    attributes::Attributes,
+    handler::DebugHandler,
+    parser::XMLReaderBuilder,
+};
+
+let mut reader = XMLReaderBuilder::new()
+    .set_handler(DebugHandler::default())
+    .progressive_parser()
+    .build();
+let source = br#"<greeting>Hello!!</greeting>"#;
+
+for chunk in source.chunks(5) {
+    reader.parse_chunk(chunk, false).ok();
+}
+// Note that the last chunk must set `finish` to `true`.
+// As shown below, it's okay for an empty chunk.
+reader.parse_chunk([], true).ok();
+
+let handler = reader.handler;
+assert_eq!(r#"setDocumentLocator()
+startDocument()
+startElement(None, greeting, greeting)
+characters(Hello!!)
+endElement(None, greeting, greeting)
+endDocument()
 "#, handler.buffer);
 ```
 
