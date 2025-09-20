@@ -210,7 +210,7 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
         self.entity_name.clone()
     }
 
-    pub fn reset_context(&mut self) {
+    fn reset_context(&mut self) {
         self.entity_name = None;
 
         // reset Entity Stack
@@ -312,9 +312,7 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
 
     pub fn reset(&mut self) -> Result<(), XMLError> {
         self.source = Box::new(InputSource::default());
-        self.config = ParserConfig::default();
-        self.default_base_uri = None;
-        self.base_uri = URIString::parse("")?.into();
+        self.base_uri = self.default_base_uri()?;
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
 
         self.reset_context();
@@ -323,10 +321,11 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
 }
 
 impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
-    pub fn reset_source(&mut self) -> Result<(), XMLError> {
+    pub fn reset(&mut self) -> Result<(), XMLError> {
         self.source = Box::new(InputSource::default());
         self.source.set_progressive_mode();
         self.base_uri = self.default_base_uri()?;
+        self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
         self.specific_context.seen = 0;
         self.specific_context.quote = 0;
         self.specific_context.sub_state = ParserSubState::None;

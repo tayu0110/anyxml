@@ -137,7 +137,7 @@ fn progressive_well_formed_tests() {
             let buffer = std::fs::read(&path).unwrap();
             let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
             reader.set_default_base_uri(uri.as_ref()).unwrap();
-            reader.reset_source().unwrap();
+            reader.reset().unwrap();
             for b in buffer {
                 reader.parse_chunk([b], false).unwrap();
             }
