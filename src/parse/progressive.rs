@@ -716,6 +716,21 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                         );
                         Err(XMLError::ParserUnexpectedDocumentContent)
                     } else {
+                        if !self.fatal_error_occurred
+                            && self.config.is_enable(ParserOption::Validation)
+                            && !self.unresolved_ids.is_empty()
+                        {
+                            // [VC: IDREF]
+                            for idref in self.unresolved_ids.drain() {
+                                validity_error!(
+                                    self,
+                                    ParserUnresolvableIDReference,
+                                    "IDREF '{}' has no referenced ID.",
+                                    idref
+                                );
+                            }
+                        }
+
                         Ok(false)
                     };
                 }
