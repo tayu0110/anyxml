@@ -91,8 +91,6 @@ By default, the current directory is set as the base URI.
 
 ### Example
 ```rust
-use std::fmt::Write as _;
-
 use anyxml::sax::{
     attributes::Attributes,
     handler::DebugHandler,
