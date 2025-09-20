@@ -153,7 +153,9 @@ fn progressive_well_formed_tests() {
             let outname = path.file_name().unwrap().to_str().unwrap();
             let outname = format!("resources/well-formed/output/{outname}.sax");
             let outname = Path::new(outname.as_str());
-            let output = std::fs::read_to_string(outname).unwrap();
+            // Since std::fs::read_to_string replaces line breaks according to the environment's
+            // standard, use std::fs::read to obtain the raw byte sequence and convert it to a string.
+            let output = String::from_utf8(std::fs::read(outname).unwrap()).unwrap();
 
             assert_eq!(
                 output,
