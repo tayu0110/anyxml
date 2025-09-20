@@ -9,7 +9,7 @@ use crate::{
         EntityDecl,
         error::{error, fatal_error, validity_error},
         handler::SAXHandler,
-        parser::{ParserOption, ParserState, XMLReader},
+        parser::{ParserOption, ParserState, ParserSubState, XMLReader},
         source::InputSource,
     },
 };
@@ -129,78 +129,177 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                                 self.specific_context.seen = self.source.content_bytes().len();
                                 return Ok(false);
                             }
-                        } else if self.specific_context.in_markup {
-                            if let Some(pos) = self.source.content_bytes()
-                                [self.specific_context.seen..]
-                                .iter()
-                                .position(|&b| matches!(b, b'\'' | b'"' | b'>'))
-                            {
-                                self.specific_context.seen += pos;
-                                match self.source.content_bytes()[self.specific_context.seen] {
-                                    b @ (b'\'' | b'"') => {
-                                        self.specific_context.quote = b;
-                                        self.specific_context.seen += 1;
-                                    }
-                                    b'>' => {
-                                        self.specific_context.in_markup = false;
-                                        self.specific_context.seen += 1;
-                                    }
-                                    _ => unreachable!(),
-                                }
-                            } else {
-                                self.specific_context.seen = self.source.content_bytes().len();
-                                return Ok(false);
-                            }
-                        } else if let Some(pos) = self.source.content_bytes()
-                            [self.specific_context.seen..]
-                            .iter()
-                            .position(|&b| matches!(b, b'\'' | b'"' | b']' | b'>' | b'<'))
-                        {
-                            self.specific_context.seen += pos;
-                            match self.source.content_bytes()[self.specific_context.seen] {
-                                b @ (b'\'' | b'"') => {
-                                    self.specific_context.quote = b;
-                                    self.specific_context.seen += 1;
-                                }
-                                b']' => {
-                                    if self.specific_context.seen + 1
-                                        < self.source.content_bytes().len()
+                        } else {
+                            match self.specific_context.sub_state {
+                                ParserSubState::InDeclaration => {
+                                    if let Some(pos) = self.source.content_bytes()
+                                        [self.specific_context.seen..]
+                                        .iter()
+                                        .position(|&b| matches!(b, b'\'' | b'"' | b'>'))
                                     {
-                                        if self.source.content_bytes()
-                                            [self.specific_context.seen + 1]
-                                            == b'>'
+                                        self.specific_context.seen += pos;
+                                        match self.source.content_bytes()
+                                            [self.specific_context.seen]
                                         {
-                                            // end doctypedecl
-                                            self.parse_doctypedecl()?;
-                                            self.specific_context.seen = 0;
-                                            self.specific_context.quote = 0;
-                                            self.specific_context.in_markup = false;
-                                            self.state = ParserState::InMiscAfterDOCTYPEDeclaration;
-                                            return Ok(true);
+                                            b @ (b'\'' | b'"') => {
+                                                self.specific_context.quote = b;
+                                                self.specific_context.seen += 1;
+                                            }
+                                            b'>' => {
+                                                self.specific_context.sub_state =
+                                                    ParserSubState::None;
+                                                self.specific_context.seen += 1;
+                                            }
+                                            _ => unreachable!(),
                                         }
-                                        self.specific_context.seen += 1;
                                     } else {
+                                        self.specific_context.seen =
+                                            self.source.content_bytes().len();
                                         return Ok(false);
                                     }
                                 }
-                                b'>' => {
-                                    // end doctypedecl
-                                    self.parse_doctypedecl()?;
-                                    self.specific_context.seen = 0;
-                                    self.specific_context.quote = 0;
-                                    self.specific_context.in_markup = false;
-                                    self.state = ParserState::InMiscAfterDOCTYPEDeclaration;
-                                    return Ok(true);
+                                ParserSubState::InComment => {
+                                    if let Some(pos) = self.source.content_bytes()
+                                        [self.specific_context.seen..]
+                                        .iter()
+                                        .position(|&b| b == b'-')
+                                    {
+                                        self.specific_context.seen += pos;
+                                        if self.specific_context.seen + 2
+                                            < self.source.content_bytes().len()
+                                        {
+                                            if self.source.content_bytes()
+                                                [self.specific_context.seen + 1]
+                                                == b'-'
+                                                && self.source.content_bytes()
+                                                    [self.specific_context.seen + 2]
+                                                    == b'>'
+                                            {
+                                                self.specific_context.seen += 3;
+                                                self.specific_context.sub_state =
+                                                    ParserSubState::None;
+                                            } else {
+                                                self.specific_context.seen += 1;
+                                            }
+                                        } else {
+                                            break;
+                                        }
+                                    } else {
+                                        self.specific_context.seen =
+                                            self.source.content_bytes().len();
+                                        return Ok(false);
+                                    }
                                 }
-                                b'<' => {
-                                    self.specific_context.in_markup = true;
-                                    self.specific_context.seen += 1;
+                                ParserSubState::InProcessingInstruction => {
+                                    if let Some(pos) = self.source.content_bytes()
+                                        [self.specific_context.seen..]
+                                        .iter()
+                                        .position(|&b| b == b'?')
+                                    {
+                                        self.specific_context.seen += pos;
+                                        if self.specific_context.seen + 1
+                                            < self.source.content_bytes().len()
+                                        {
+                                            if self.source.content_bytes()
+                                                [self.specific_context.seen + 1]
+                                                == b'>'
+                                            {
+                                                self.specific_context.seen += 2;
+                                                self.specific_context.sub_state =
+                                                    ParserSubState::None;
+                                            } else {
+                                                self.specific_context.seen += 1;
+                                            }
+                                        } else {
+                                            break;
+                                        }
+                                    } else {
+                                        self.specific_context.seen =
+                                            self.source.content_bytes().len();
+                                        return Ok(false);
+                                    }
                                 }
-                                _ => unreachable!(),
+                                ParserSubState::None => {
+                                    if let Some(pos) = self.source.content_bytes()
+                                        [self.specific_context.seen..]
+                                        .iter()
+                                        .position(|&b| matches!(b, b']' | b'>' | b'<'))
+                                    {
+                                        self.specific_context.seen += pos;
+                                        match self.source.content_bytes()
+                                            [self.specific_context.seen]
+                                        {
+                                            b']' => {
+                                                if self.specific_context.seen + 1
+                                                    < self.source.content_bytes().len()
+                                                {
+                                                    if self.source.content_bytes()
+                                                        [self.specific_context.seen + 1]
+                                                        == b'>'
+                                                    {
+                                                        // end doctypedecl
+                                                        self.parse_doctypedecl()?;
+                                                        self.specific_context.seen = 0;
+                                                        self.specific_context.quote = 0;
+                                                        self.specific_context.sub_state =
+                                                            ParserSubState::None;
+                                                        self.state =
+                                                    ParserState::InMiscAfterDOCTYPEDeclaration;
+                                                        return Ok(true);
+                                                    }
+                                                    self.specific_context.seen += 1;
+                                                } else {
+                                                    return Ok(false);
+                                                }
+                                            }
+                                            b'>' => {
+                                                // end doctypedecl
+                                                self.parse_doctypedecl()?;
+                                                self.specific_context.seen = 0;
+                                                self.specific_context.quote = 0;
+                                                self.specific_context.sub_state =
+                                                    ParserSubState::None;
+                                                self.state =
+                                                    ParserState::InMiscAfterDOCTYPEDeclaration;
+                                                return Ok(true);
+                                            }
+                                            b'<' => {
+                                                if self.specific_context.seen + 2
+                                                    < self.source.content_bytes().len()
+                                                {
+                                                    match self.source.content_bytes()
+                                                        [self.specific_context.seen + 1..]
+                                                    {
+                                                        [b'?', ..] => {
+                                                            self.specific_context.seen += 2;
+                                                            self.specific_context.sub_state = ParserSubState::InProcessingInstruction;
+                                                        }
+                                                        [b'!', b'-', ..] => {
+                                                            self.specific_context.seen += 3;
+                                                            self.specific_context.sub_state =
+                                                                ParserSubState::InComment;
+                                                        }
+                                                        _ => {
+                                                            // It should also include invalid markup,
+                                                            // but for now, treat it as a declaration.
+                                                            self.specific_context.seen += 1;
+                                                            self.specific_context.sub_state =
+                                                                ParserSubState::InDeclaration;
+                                                        }
+                                                    }
+                                                } else {
+                                                    break;
+                                                }
+                                            }
+                                            _ => unreachable!(),
+                                        }
+                                    } else {
+                                        self.specific_context.seen =
+                                            self.source.content_bytes().len();
+                                        return Ok(false);
+                                    }
+                                }
                             }
-                        } else {
-                            self.specific_context.seen = self.source.content_bytes().len();
-                            return Ok(false);
                         }
                     }
 

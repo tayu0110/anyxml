@@ -121,6 +121,15 @@ pub enum ParserState {
     Finished,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum ParserSubState {
+    #[default]
+    None,
+    InDeclaration,
+    InComment,
+    InProcessingInstruction,
+}
+
 pub struct XMLReader<Spec: ParserSpec, H: SAXHandler = DefaultSAXHandler> {
     pub(crate) source: Box<Spec::Reader>,
     pub handler: H,
@@ -320,7 +329,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
         self.base_uri = self.default_base_uri()?;
         self.specific_context.seen = 0;
         self.specific_context.quote = 0;
-        self.specific_context.in_markup = false;
+        self.specific_context.sub_state = ParserSubState::None;
         self.specific_context.element_stack.clear();
         self.reset_context();
         Ok(())

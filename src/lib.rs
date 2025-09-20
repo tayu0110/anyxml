@@ -7,7 +7,7 @@ pub mod sax;
 
 use std::marker::PhantomData;
 
-use crate::sax::source::InputSource;
+use crate::sax::{parser::ParserSubState, source::InputSource};
 
 /// Maximum length of XML version numbers accepted by the parser
 const XML_VERSION_NUM_LIMIT_LENGTH: usize = 128;
@@ -44,7 +44,7 @@ impl ParserSpec for ProgressiveParserSpec {
 pub struct ProgressiveParserSpecificContext {
     pub(crate) seen: usize,
     pub(crate) quote: u8,
-    pub(crate) in_markup: bool,
+    pub(crate) sub_state: ParserSubState,
     // (QName, prefix length, namespace stack length)
     pub(crate) element_stack: Vec<(String, usize, usize)>,
     // (old element stack length, old xml version, old encoding)
