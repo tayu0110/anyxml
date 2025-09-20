@@ -656,7 +656,20 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                             } else {
                                 // general entity reference
                                 match self.try_parse_and_push_general_entity(finish)? {
-                                    ControlFlow::Break(ret) => break Ok(ret),
+                                    ControlFlow::Break(ret) => {
+                                        if ret
+                                            && let Some(Some((_, validator))) =
+                                                self.validation_stack.last_mut()
+                                        {
+                                            // If the entity reference is not empty, an event should be
+                                            // pushed to the validator later based on its content, so no
+                                            // action is needed here.
+                                            // If the entity reference is empty, nothing is pushed,
+                                            // so we need to push Misc here.
+                                            validator.push_misc();
+                                        }
+                                        break Ok(ret);
+                                    }
                                     ControlFlow::Continue(_) => continue,
                                 }
                             }
