@@ -2,6 +2,7 @@ use std::{collections::HashMap, ops::Index, sync::Arc};
 
 use crate::error::XMLError;
 
+#[derive(Clone)]
 pub struct Attribute {
     pub uri: Option<Arc<str>>,
     pub local_name: Option<Arc<str>>,
@@ -43,6 +44,7 @@ impl Attribute {
     }
 }
 
+#[derive(Clone, Default)]
 pub struct Attributes {
     attributes: Vec<Attribute>,
     index_by_qname: HashMap<Arc<str>, usize>,

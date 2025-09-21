@@ -4,6 +4,7 @@ pub mod encoding;
 pub mod error;
 mod parse;
 pub mod sax;
+pub mod stax;
 
 use std::marker::PhantomData;
 

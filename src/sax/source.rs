@@ -501,6 +501,13 @@ impl<'a> InputSource<'a> {
     pub(crate) fn set_progressive_mode(&mut self) {
         self.progressive = true;
     }
+
+    /// For StAX reader
+    pub(crate) fn decompose(mut self) -> (Box<dyn Read + 'a>, Vec<u8>) {
+        assert_eq!(self.total_read, self.buffer_end);
+        self.buffer.truncate(self.buffer_end);
+        (self.source, self.buffer)
+    }
 }
 
 impl Default for InputSource<'_> {

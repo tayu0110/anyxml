@@ -321,6 +321,18 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
 }
 
 impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
+    /// Specifies the encoding for the data to be parsed.
+    ///
+    /// This must be set before parsing begins, specifically between the parser build or
+    /// [`XMLReader::reset`][struct.XMLReader.html#method.reset-1] and the first execution
+    /// of [`XMLReader::parse_chunk`].  \
+    /// If set at any other time, it will be ignored.
+    pub fn set_encoding(&mut self, encoding: &str) {
+        if self.state == ParserState::BeforeStart {
+            self.encoding = Some(encoding.to_owned());
+        }
+    }
+
     pub fn reset(&mut self) -> Result<(), XMLError> {
         self.source = Box::new(InputSource::default());
         self.source.set_progressive_mode();

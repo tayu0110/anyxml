@@ -5,27 +5,23 @@ use crate::{
 };
 
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
-    pub fn is_char(&self, c: char) -> bool {
+    pub(crate) fn is_char(&self, c: char) -> bool {
         self.version.is_char(c)
     }
 
-    pub fn is_name_start_char(&self, c: char) -> bool {
+    pub(crate) fn is_name_start_char(&self, c: char) -> bool {
         self.version.is_name_start_char(c)
     }
 
-    pub fn is_name_char(&self, c: char) -> bool {
+    pub(crate) fn is_name_char(&self, c: char) -> bool {
         self.version.is_name_char(c)
     }
 
-    pub fn is_pubid_char(&self, c: char) -> bool {
-        self.version.is_pubid_char(c)
-    }
-
-    pub fn is_whitespace(&self, c: char) -> bool {
+    pub(crate) fn is_whitespace(&self, c: char) -> bool {
         self.version.is_whitespace(c)
     }
 
-    pub fn skip_whitespaces(&mut self) -> Result<usize, XMLError> {
+    pub(crate) fn skip_whitespaces(&mut self) -> Result<usize, XMLError> {
         let mut skipped = 0;
         while let Some(w) = self.source.peek_char()? {
             if !self.is_whitespace(w) {
@@ -54,7 +50,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         Ok(skipped)
     }
 
-    pub fn parse_nmtoken(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+    pub(crate) fn parse_nmtoken(&mut self, buffer: &mut String) -> Result<(), XMLError> {
         let orig = buffer.len();
         while let Some(c) = self.source.next_char_if(|c| self.version.is_name_char(c))? {
             buffer.push(c);
@@ -68,7 +64,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         Ok(())
     }
 
-    pub fn parse_name(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+    pub(crate) fn parse_name(&mut self, buffer: &mut String) -> Result<(), XMLError> {
         let Some(c) = self
             .source
             .next_char_if(|c| self.version.is_name_start_char(c))?
@@ -109,7 +105,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         Ok(())
     }
 
-    pub fn parse_ncname(&mut self, buffer: &mut String) -> Result<(), XMLError> {
+    pub(crate) fn parse_ncname(&mut self, buffer: &mut String) -> Result<(), XMLError> {
         let orig = buffer.len();
         self.parse_ncname_allow_empty(buffer)?;
         if buffer.len() == orig {
@@ -120,7 +116,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
     }
 
     /// Return the length of prefix if some errors occurred.
-    pub fn parse_qname(&mut self, buffer: &mut String) -> Result<usize, XMLError> {
+    pub(crate) fn parse_qname(&mut self, buffer: &mut String) -> Result<usize, XMLError> {
         let orig = buffer.len();
         self.parse_ncname_allow_empty(buffer)?;
 
