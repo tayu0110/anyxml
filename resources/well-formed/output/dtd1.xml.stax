@@ -1,0 +1,23 @@
+startDocument()
+declaration(1.0, UTF-8, None)
+documentType()
+startElement(None, None, root, root)
+characters(
+    This is a character data.
+    )
+startElement(None, None, child, child)
+characters(
+        This is a character data under `child`.
+    )
+endElement(None, None, child, child)
+characters(
+    )
+startElement(None, None, child2, child2)
+characters(
+        This is a character data uder `child2`.
+    )
+endElement(None, None, child2, child2)
+characters(
+)
+endElement(None, None, root, root)
+endDocument()

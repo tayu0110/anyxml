@@ -31,6 +31,10 @@ path = "src/bin/xmlprocess.rs"
 name = "sax-test"
 path = "tests/sax-test.rs"
 
+[[test]]
+name = "stax-test"
+path = "tests/stax-test.rs"
+
 [lints.clippy]
 type_complexity = "allow"
 too_many_arguments = "allow"

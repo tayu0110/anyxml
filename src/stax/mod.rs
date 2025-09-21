@@ -94,9 +94,11 @@ impl<'a> XMLStreamReader<'a> {
     pub fn next_event<'b>(&'b mut self) -> Result<XMLEvent<'b>, XMLError> {
         if self.reader.handler.event == XMLEventType::Finished {
             return Ok(XMLEvent::Finished);
+        } else if self.reader.handler.event == XMLEventType::EndEmptyTag {
+            return Ok(self.create_event());
         }
 
-        while !self.reader.parse_event_once(false)? {
+        while !self.reader.parse_event_once(false)? || self.reader.handler.in_dtd {
             let len = self.source.read(&mut self.buffer)?;
             if len == 0 {
                 // this should report `XMLError::ParserUnexpectedEOF` or `EndDocument` event.
@@ -110,6 +112,7 @@ impl<'a> XMLStreamReader<'a> {
     }
 
     fn create_event<'b>(&'b mut self) -> XMLEvent<'b> {
+        self.reader.handler.reported = true;
         match self.reader.handler.event {
             XMLEventType::StartDocument => XMLEvent::StartDocument,
             XMLEventType::EndDocument => {
@@ -122,11 +125,24 @@ impl<'a> XMLStreamReader<'a> {
                 qname: &self.reader.handler.qname,
                 atts: &self.reader.handler.atts,
             }),
-            XMLEventType::EndElement => XMLEvent::EndElement(EndElement {
-                namespace_name: self.reader.handler.namespace_name.as_deref(),
-                local_name: self.reader.handler.local_name.as_deref(),
-                qname: &self.reader.handler.qname,
-            }),
+            XMLEventType::EndElement | XMLEventType::EndEmptyTag => {
+                self.reader.handler.event = XMLEventType::EndElement;
+                XMLEvent::EndElement(EndElement {
+                    namespace_name: self.reader.handler.namespace_name.as_deref(),
+                    local_name: self.reader.handler.local_name.as_deref(),
+                    qname: &self.reader.handler.qname,
+                })
+            }
+            XMLEventType::StartEmptyTag => {
+                self.reader.handler.event = XMLEventType::EndEmptyTag;
+                self.reader.handler.reported = false;
+                XMLEvent::StartElement(StartElement {
+                    namespace_name: self.reader.handler.namespace_name.as_deref(),
+                    local_name: self.reader.handler.local_name.as_deref(),
+                    qname: &self.reader.handler.qname,
+                    atts: &self.reader.handler.atts,
+                })
+            }
             XMLEventType::Declaration => XMLEvent::Declaration(Declaration {
                 version: self.reader.version,
                 encoding: self.reader.encoding.as_deref(),
@@ -143,7 +159,8 @@ impl<'a> XMLStreamReader<'a> {
                     data: self.reader.handler.local_name.as_deref(),
                 })
             }
-            XMLEventType::EntityReference => XMLEvent::EntityReference(&self.reader.handler.qname),
+            XMLEventType::StartEntity => XMLEvent::StartEntity(&self.reader.handler.qname),
+            XMLEventType::EndEntity => XMLEvent::EndEntity,
             XMLEventType::Finished => XMLEvent::Finished,
         }
     }

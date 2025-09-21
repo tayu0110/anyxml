@@ -1,0 +1,37 @@
+startDocument()
+declaration(1.0, UTF-8, None)
+documentType()
+startElement(None, None, root, root, attr1='foo')
+characters(
+    This is a character data.
+    )
+startElement(None, None, child, child, attr2='jpg', attr3='foo')
+characters(
+        )
+startElement(None, None, child2, child2, attr4='hoge')
+endElement(None, None, child2, child2)
+characters(
+        )
+startElement(None, None, child3, child3)
+endElement(None, None, child3, child3)
+characters(
+        )
+startElement(None, None, child4, child4)
+characters(
+            )
+startElement(None, None, child2, child2, attr5='hoge', attr4='hoge')
+endElement(None, None, child2, child2)
+characters(
+            )
+startElement(None, None, child3, child3)
+endElement(None, None, child3, child3)
+characters(
+        )
+endElement(None, None, child4, child4)
+characters(
+    )
+endElement(None, None, child, child)
+characters(
+)
+endElement(None, None, root, root)
+endDocument()

@@ -1,53 +1,17 @@
-use std::{fmt::Write as _, path::PathBuf};
+use std::{fmt::Write as _, fs::read_dir, path::Path};
 
-use anyxml::{
-    error::XMLError,
-    sax::{
-        handler::DebugHandler,
-        parser::{ParserOption, XMLReaderBuilder},
-    },
-    stax::{XMLStreamReader, events::XMLEvent},
-};
+use anyxml::stax::{XMLStreamReader, events::XMLEvent};
 use anyxml_uri::uri::URIString;
-use clap::Parser;
 
-#[derive(clap::Parser)]
-struct CmdArgs {
-    #[clap(long, help = "inspect with SAX API")]
-    sax: bool,
-    #[clap(long, help = "inspect with StAX API")]
-    stax: bool,
-    #[clap(long, help = "validate using DTD")]
-    dtd_valid: bool,
-    #[clap(long, help = "disable namespace handling")]
-    no_namespace: bool,
-    #[clap(help = "path to the target XML document")]
-    file: Vec<PathBuf>,
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = CmdArgs::parse();
-
-    if !args.stax {
-        let mut builder = XMLReaderBuilder::new().set_handler(DebugHandler::default());
-        if args.dtd_valid {
-            builder = builder.enable_option(ParserOption::Validation);
-        }
-        if args.no_namespace {
-            builder = builder.disable_option(ParserOption::Namespaces);
-        }
-        let mut reader = builder.build();
-        for file in args.file {
-            let uri = URIString::parse_file_path(file).map_err(XMLError::from)?;
-            reader.parse_uri(uri, None)?;
-            if args.sax {
-                print!("{}", reader.handler.buffer);
-            }
-        }
-    } else {
-        for file in args.file {
-            let uri = URIString::parse_file_path(file).map_err(XMLError::from)?;
-            let mut reader = XMLStreamReader::parse_uri(uri, None)?;
+#[test]
+fn well_formed_tests() {
+    for ent in read_dir("resources/well-formed").unwrap() {
+        if let Ok(ent) = ent
+            && ent.metadata().unwrap().is_file()
+        {
+            let path = ent.path();
+            let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
+            let mut reader = XMLStreamReader::parse_uri(&uri, None).unwrap();
             let mut buffer = String::new();
             loop {
                 match reader.next_event().unwrap() {
@@ -129,10 +93,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     XMLEvent::Finished => break,
                 }
             }
+            let outname = path.file_name().unwrap().to_str().unwrap();
+            let outname = format!("resources/well-formed/output/{outname}.stax");
+            let outname = Path::new(outname.as_str());
+            let output = std::fs::read_to_string(outname).unwrap();
 
-            print!("{buffer}");
+            assert_eq!(output, buffer, "uri: {}\n{}", uri.as_escaped_str(), buffer,);
         }
     }
-
-    Ok(())
 }

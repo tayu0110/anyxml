@@ -1,0 +1,24 @@
+startDocument()
+declaration(1.0, UTF-8, None)
+startElement(None, None, root, root)
+characters(
+    This is a character data in the document element.
+    )
+startEntity(lt)
+characters(<)
+endEntity()
+characters(not-element/)
+startEntity(gt)
+characters(>)
+endEntity()
+characters(
+    )
+startElement(None, None, child, child)
+characters(
+        This is a character data in the child element.
+    )
+endElement(None, None, child, child)
+characters(
+)
+endElement(None, None, root, root)
+endDocument()

@@ -1,0 +1,16 @@
+startDocument()
+declaration(1.0, UTF-8, None)
+startElement(None, None, root, root)
+characters(
+    )
+cdataSection( This is a CDATA Section. )
+characters(
+    )
+cdataSection( <greeting>Hello, World!</greeting> )
+characters(
+    )
+cdataSection( <<<<<<</&&&&&&#FFFFFFFFFFFFFF; )
+characters(
+)
+endElement(None, None, root, root)
+endDocument()

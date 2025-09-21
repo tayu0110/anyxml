@@ -1,0 +1,4 @@
+startDocument()
+startElement(None, None, root, root)
+endElement(None, None, root, root)
+endDocument()

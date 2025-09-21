@@ -7,6 +7,8 @@ pub(crate) enum XMLEventType {
     EndDocument,
     StartElement,
     EndElement,
+    StartEmptyTag,
+    EndEmptyTag,
     Declaration,
     DocumentType,
     Characters,
@@ -14,7 +16,8 @@ pub(crate) enum XMLEventType {
     Space,
     Comment,
     ProcessingInstruction,
-    EntityReference,
+    StartEntity,
+    EndEntity,
     Finished,
 }
 
@@ -30,7 +33,8 @@ pub enum XMLEvent<'a> {
     Space(&'a str),
     Comment(&'a str),
     ProcessingInstruction(ProcessingInstruction<'a>),
-    EntityReference(&'a str),
+    StartEntity(&'a str),
+    EndEntity,
     Finished,
 }
 
@@ -53,7 +57,7 @@ impl StartElement<'_> {
     pub fn prefix(&self) -> Option<&str> {
         let local_name = self.local_name?;
         let prefix_len = self.qname.len() - local_name.len();
-        (prefix_len > 0).then_some(&self.qname[..prefix_len - 1])
+        (prefix_len > 0).then(|| &self.qname[..prefix_len - 1])
     }
 
     pub fn namespace_uri(&self) -> Option<&str> {
@@ -83,7 +87,7 @@ impl EndElement<'_> {
     pub fn prefix(&self) -> Option<&str> {
         let local_name = self.local_name?;
         let prefix_len = self.qname.len() - local_name.len();
-        (prefix_len > 0).then_some(&self.qname[..prefix_len - 1])
+        (prefix_len > 0).then(|| &self.qname[..prefix_len - 1])
     }
 
     pub fn namespace_uri(&self) -> Option<&str> {

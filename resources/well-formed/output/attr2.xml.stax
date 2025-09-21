@@ -1,0 +1,5 @@
+startDocument()
+declaration(1.0, UTF-8, None)
+startElement(None, None, root, root, attr='foo ', attr2='bar')
+endElement(None, None, root, root)
+endDocument()

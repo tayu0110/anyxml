@@ -17,6 +17,8 @@ pub(crate) struct XMLStreamReaderHandler {
     pub(super) atts: Attributes,
     pub(super) system_id: Option<URIString>,
     pub(super) in_cdsect: bool,
+    pub(super) in_dtd: bool,
+    pub(super) reported: bool,
 }
 
 impl EntityResolver for XMLStreamReaderHandler {}
@@ -24,10 +26,12 @@ impl EntityResolver for XMLStreamReaderHandler {}
 impl SAXHandler for XMLStreamReaderHandler {
     fn start_document(&mut self) {
         self.event = XMLEventType::StartDocument;
+        self.reported = false;
     }
 
     fn end_document(&mut self) {
         self.event = XMLEventType::EndDocument;
+        self.reported = false;
     }
 
     fn start_element(
@@ -55,9 +59,14 @@ impl SAXHandler for XMLStreamReaderHandler {
         self.qname.clear();
         self.qname.push_str(qname);
         self.atts = atts.clone();
+        self.reported = false;
     }
 
     fn end_element(&mut self, uri: Option<&str>, local_name: Option<&str>, qname: &str) {
+        if matches!(self.event, XMLEventType::StartElement) && !self.reported {
+            self.event = XMLEventType::StartEmptyTag;
+            return;
+        }
         self.event = XMLEventType::EndElement;
         if let Some(uri) = uri {
             let buf = self.namespace_name.get_or_insert_default();
@@ -75,10 +84,12 @@ impl SAXHandler for XMLStreamReaderHandler {
         }
         self.qname.clear();
         self.qname.push_str(qname);
+        self.reported = false;
     }
 
     fn declaration(&mut self, _version: &str, _encoding: Option<&str>, _standalone: Option<bool>) {
         self.event = XMLEventType::Declaration;
+        self.reported = false;
     }
 
     fn start_dtd(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
@@ -93,14 +104,22 @@ impl SAXHandler for XMLStreamReaderHandler {
             self.local_name = None;
         }
         self.system_id = system_id.map(|uri| uri.to_owned());
+        self.in_dtd = true;
+        self.reported = false;
+    }
+
+    fn end_dtd(&mut self) {
+        self.in_dtd = false;
+        self.reported = false;
     }
 
     fn characters(&mut self, data: &str) {
         if !matches!(self.event, XMLEventType::Characters | XMLEventType::Space) && !self.in_cdsect
         {
             self.qname.clear();
+            self.event = XMLEventType::Characters;
+            self.reported = false;
         }
-        self.event = XMLEventType::Characters;
         self.qname.push_str(data);
     }
 
@@ -108,8 +127,9 @@ impl SAXHandler for XMLStreamReaderHandler {
         if !matches!(self.event, XMLEventType::Characters | XMLEventType::Space) && !self.in_cdsect
         {
             self.qname.clear();
+            self.event = XMLEventType::Space;
+            self.reported = false;
         }
-        self.event = XMLEventType::Space;
         self.qname.push_str(data);
     }
 
@@ -117,21 +137,30 @@ impl SAXHandler for XMLStreamReaderHandler {
         self.event = XMLEventType::CDATASection;
         self.qname.clear();
         self.in_cdsect = true;
+        self.reported = false;
     }
 
     fn end_cdata(&mut self) {
         self.in_cdsect = false;
+        self.reported = false;
     }
 
     fn comment(&mut self, data: &str) {
+        if self.in_dtd {
+            return;
+        }
         if !matches!(self.event, XMLEventType::Comment) {
             self.qname.clear();
         }
         self.event = XMLEventType::Comment;
         self.qname.push_str(data);
+        self.reported = false;
     }
 
     fn processing_instruction(&mut self, target: &str, data: Option<&str>) {
+        if self.in_dtd {
+            return;
+        }
         self.event = XMLEventType::ProcessingInstruction;
         self.qname.clear();
         self.qname.push_str(target);
@@ -142,11 +171,24 @@ impl SAXHandler for XMLStreamReaderHandler {
         } else {
             self.local_name = None;
         }
+        self.reported = false;
     }
 
     fn start_entity(&mut self, name: &str) {
-        self.event = XMLEventType::EntityReference;
+        if self.in_dtd {
+            return;
+        }
+        self.event = XMLEventType::StartEntity;
         self.qname.clear();
         self.qname.push_str(name);
+        self.reported = false;
+    }
+
+    fn end_entity(&mut self) {
+        if self.in_dtd {
+            return;
+        }
+        self.event = XMLEventType::EndEntity;
+        self.reported = false;
     }
 }

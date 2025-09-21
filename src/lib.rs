@@ -152,3 +152,12 @@ impl XMLVersion {
         matches!(c, 0x20 | 0x9 | 0xD | 0xA)
     }
 }
+
+impl std::fmt::Display for XMLVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            XMLVersion::XML10 => write!(f, "1.0"),
+            XMLVersion::Unknown => write!(f, "1.0"),
+        }
+    }
+}

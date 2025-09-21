@@ -1,0 +1,19 @@
+startDocument()
+declaration(1.0, UTF-8, None)
+startElement(None, None, root, root)
+characters(
+    )
+startElement(None, None, child1, child1)
+endElement(None, None, child1, child1)
+characters(
+    )
+startElement(None, None, child2, child2)
+endElement(None, None, child2, child2)
+characters(
+    )
+startElement(None, None, child3, child3)
+endElement(None, None, child3, child3)
+characters(
+)
+endElement(None, None, root, root)
+endDocument()
