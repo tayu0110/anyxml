@@ -127,6 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         writeln!(buffer, "startEntity({entity})").unwrap()
                     }
                     XMLEvent::EndEntity => writeln!(buffer, "endEntity()").unwrap(),
+                    XMLEvent::FatalError => writeln!(buffer, "fatalError()").unwrap(),
                     XMLEvent::Finished => break,
                 }
             }

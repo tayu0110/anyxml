@@ -18,6 +18,7 @@ pub(crate) enum XMLEventType {
     ProcessingInstruction,
     StartEntity,
     EndEntity,
+    FatalError,
     Finished,
 }
 
@@ -35,6 +36,7 @@ pub enum XMLEvent<'a> {
     ProcessingInstruction(ProcessingInstruction<'a>),
     StartEntity(&'a str),
     EndEntity,
+    FatalError,
     Finished,
 }
 

@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use anyxml_uri::uri::{URIStr, URIString};
 
 use crate::{
     sax::{
+        Locator,
         attributes::Attributes,
         error::SAXParseError,
         handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
@@ -23,10 +26,21 @@ pub(crate) struct XMLStreamReaderHandler<
     pub(super) in_dtd: bool,
     pub(super) reported: bool,
     pub(super) last_error: Option<SAXParseError>,
+    pub(super) locator: Option<Arc<Locator>>,
 
     // user defined handlers
     pub(super) entity_resolver: Option<Resolver>,
     pub(super) error_handler: Option<Reporter>,
+}
+
+impl<Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReaderHandler<Resolver, Reporter> {
+    pub(crate) fn reset(&mut self) {
+        *self = Self {
+            entity_resolver: self.entity_resolver.take(),
+            error_handler: self.error_handler.take(),
+            ..Default::default()
+        };
+    }
 }
 
 impl<Resolver: EntityResolver, Reporter: ErrorHandler> Default
@@ -44,6 +58,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> Default
             in_dtd: Default::default(),
             reported: Default::default(),
             last_error: None,
+            locator: None,
             entity_resolver: None,
             error_handler: None,
         }
@@ -97,6 +112,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> ErrorHandler
         } else {
             self.last_error = Some(error);
         }
+        self.event = XMLEventType::FatalError;
     }
 
     fn warning(&mut self, error: crate::sax::error::SAXParseError) {
@@ -111,6 +127,10 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> ErrorHandler
 impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
     for XMLStreamReaderHandler<Resolver, Reporter>
 {
+    fn set_document_locator(&mut self, locator: Arc<Locator>) {
+        self.locator = Some(locator);
+    }
+
     fn start_document(&mut self) {
         self.event = XMLEventType::StartDocument;
         self.reported = false;

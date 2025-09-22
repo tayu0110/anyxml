@@ -9,11 +9,12 @@ use crate::{
     ProgressiveParserSpec,
     error::XMLError,
     sax::{
-        NamespaceStack,
-        error::SAXParseError,
+        Locator, NamespaceStack,
+        error::{SAXParseError, fatal_error},
         handler::{DefaultSAXHandler, EntityResolver, ErrorHandler},
         parser::{
-            ParserConfig, ParserOption, XMLProgressiveReaderBuilder, XMLReader, XMLReaderBuilder,
+            ParserConfig, ParserOption, ParserState, XMLProgressiveReaderBuilder, XMLReader,
+            XMLReaderBuilder,
         },
         source::INPUT_CHUNK,
     },
@@ -32,6 +33,7 @@ pub struct XMLStreamReader<
 > {
     source: Box<dyn Read + 'a>,
     buffer: Vec<u8>,
+    eof: bool,
 
     reader: XMLReader<ProgressiveParserSpec, XMLStreamReaderHandler<Resolver, Reporter>>,
 }
@@ -55,10 +57,14 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
         uri: impl AsRef<URIStr>,
         encoding: Option<&str>,
     ) -> Result<(), XMLError> {
-        self.reader.reset()?;
+        self.reset()?;
         if let Some(encoding) = encoding {
             self.reader.set_encoding(encoding);
         }
+        let mut base_uri = self.reader.default_base_uri()?.resolve(uri.as_ref());
+        base_uri.normalize();
+        self.reader.base_uri = base_uri.into();
+        self.reader.locator = Arc::new(Locator::new(self.reader.base_uri.clone(), None, 1, 1));
         let source = Box::new(self.reader.handler.resolve_entity(
             "[document]",
             None,
@@ -81,11 +87,12 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
         encoding: Option<&str>,
         uri: Option<&URIStr>,
     ) -> Result<(), XMLError> {
-        self.reader.reset()?;
+        self.reset()?;
         if let Some(uri) = uri {
-            let mut base_uri = self.reader.base_uri.resolve(uri);
+            let mut base_uri = self.reader.default_base_uri()?.resolve(uri);
             base_uri.normalize();
             self.reader.base_uri = base_uri.into();
+            self.reader.locator = Arc::new(Locator::new(self.reader.base_uri.clone(), None, 1, 1));
         }
         if let Some(encoding) = encoding {
             self.reader.set_encoding(encoding);
@@ -97,11 +104,12 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
     }
 
     pub fn parse_str(&mut self, s: &str, uri: Option<&URIStr>) -> Result<(), XMLError> {
-        self.reader.reset()?;
+        self.reset()?;
         if let Some(uri) = uri {
-            let mut base_uri = self.reader.base_uri.resolve(uri);
+            let mut base_uri = self.reader.default_base_uri()?.resolve(uri);
             base_uri.normalize();
             self.reader.base_uri = base_uri.into();
+            self.reader.locator = Arc::new(Locator::new(self.reader.base_uri.clone(), None, 1, 1));
         }
 
         self.source = Box::new(std::io::empty());
@@ -113,26 +121,42 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
     pub fn reset(&mut self) -> Result<(), XMLError> {
         self.source = Box::new(std::io::empty());
         self.buffer.clear();
-        self.reader.reset()
+        self.eof = false;
+        self.reader.reset()?;
+        self.reader.handler.reset();
+        Ok(())
     }
 
     pub fn next_event<'b>(&'b mut self) -> Result<XMLEvent<'b>, XMLError> {
-        if self.reader.handler.event == XMLEventType::Finished {
-            return Ok(XMLEvent::Finished);
-        } else if self.reader.handler.event == XMLEventType::EndEmptyTag {
-            return Ok(self.create_event());
-        }
-
-        while !self.reader.parse_event_once(false)? || self.reader.handler.in_dtd {
-            let len = self.source.read(&mut self.buffer)?;
-            if len == 0 {
-                // this should report `XMLError::ParserUnexpectedEOF` or `EndDocument` event.
-                self.reader.parse_event_once(true)?;
-                break;
+        (|| {
+            if self.reader.handler.event == XMLEventType::Finished {
+                while self.reader.parse_event_once(self.eof)? {}
+                return Ok(());
+            } else if self.reader.handler.event == XMLEventType::EndEmptyTag {
+                return Ok(());
             }
-
-            self.reader.source.push_bytes(&self.buffer[..len], false)?;
-        }
+            while !self.reader.parse_event_once(self.eof)? || self.reader.handler.in_dtd {
+                if self.eof {
+                    if self.reader.state != ParserState::Finished {
+                        return Err(XMLError::ParserUnexpectedEOF);
+                    } else if self.reader.handler.event == XMLEventType::FatalError {
+                        self.reader.handler.event = XMLEventType::Finished;
+                    }
+                    break;
+                } else {
+                    let len = self.source.read(&mut self.buffer)?;
+                    if len == 0 {
+                        self.eof = true;
+                    } else {
+                        self.reader.source.push_bytes(&self.buffer[..len], false)?;
+                    }
+                }
+            }
+            Ok(())
+        })()
+        .inspect_err(|&err| {
+            fatal_error!(self.reader, err, "Unrecoverable error: {}", err);
+        })?;
         Ok(self.create_event())
     }
 
@@ -142,6 +166,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
             XMLEventType::StartDocument => XMLEvent::StartDocument,
             XMLEventType::EndDocument => {
                 self.reader.handler.event = XMLEventType::Finished;
+                self.reader.handler.locator = None;
                 XMLEvent::EndDocument
             }
             XMLEventType::StartElement => XMLEvent::StartElement(StartElement {
@@ -186,41 +211,65 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
             }
             XMLEventType::StartEntity => XMLEvent::StartEntity(&self.reader.handler.qname),
             XMLEventType::EndEntity => XMLEvent::EndEntity,
+            XMLEventType::FatalError => XMLEvent::FatalError,
             XMLEventType::Finished => XMLEvent::Finished,
         }
     }
 
     pub fn next_tag<'b>(&'b mut self) -> Result<XMLEvent<'b>, XMLError> {
-        if self.reader.handler.event == XMLEventType::Finished {
-            return Ok(XMLEvent::Finished);
-        } else if self.reader.handler.event == XMLEventType::EndEmptyTag {
-            return Ok(self.create_event());
-        }
-
-        while !self.reader.parse_event_once(false)?
-            || self.reader.handler.in_dtd
-            || !matches!(
-                self.reader.handler.event,
-                XMLEventType::StartElement
-                    | XMLEventType::EndElement
-                    | XMLEventType::StartEmptyTag
-                    | XMLEventType::EndEmptyTag
-            )
-        {
-            let len = self.source.read(&mut self.buffer)?;
-            if len == 0 {
-                // this should report `XMLError::ParserUnexpectedEOF` or `EndDocument` event.
-                self.reader.parse_event_once(true)?;
-                break;
+        (|| {
+            if self.reader.handler.event == XMLEventType::Finished {
+                while self.reader.parse_event_once(self.eof)? {}
+                return Ok(());
+            } else if self.reader.handler.event == XMLEventType::EndEmptyTag {
+                return Ok(());
             }
 
-            self.reader.source.push_bytes(&self.buffer[..len], false)?;
-        }
+            while !self.reader.parse_event_once(self.eof)?
+                || self.reader.handler.in_dtd
+                || !matches!(
+                    self.reader.handler.event,
+                    XMLEventType::StartElement
+                        | XMLEventType::EndElement
+                        | XMLEventType::StartEmptyTag
+                        | XMLEventType::EndEmptyTag
+                )
+            {
+                if self.eof {
+                    if self.reader.state != ParserState::Finished {
+                        return Err(XMLError::ParserUnexpectedEOF);
+                    } else if self.reader.handler.event == XMLEventType::FatalError {
+                        self.reader.handler.event = XMLEventType::Finished;
+                    }
+                    break;
+                } else {
+                    let len = self.source.read(&mut self.buffer)?;
+                    if len == 0 {
+                        self.eof = true;
+                    } else {
+                        self.reader.source.push_bytes(&self.buffer[..len], false)?;
+                    }
+                }
+            }
+            Ok(())
+        })()
+        .inspect_err(|&err| {
+            fatal_error!(self.reader, err, "Unrecoverable error: {}", err);
+        })?;
+
         Ok(self.create_event())
     }
 
     pub fn namespaces(&self) -> &NamespaceStack {
         &self.reader.namespaces
+    }
+
+    /// Returns a valid locator if exists.  \
+    /// The returned locator is valid from after the `StartDocument` event until
+    /// before parsing ends due to the `EndDocument` event or a fatal error.  \
+    /// Outside the locator's valid range, it returns `None`.
+    pub fn locator(&self) -> Option<Arc<Locator>> {
+        self.reader.handler.locator.clone()
     }
 
     /// If a user-defined error handler is configured, it will be returned.
@@ -340,6 +389,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
         XMLStreamReader {
             source: Box::new(std::io::empty()),
             buffer: vec![],
+            eof: false,
             reader: self.builder.set_handler(handler).build(),
         }
     }
