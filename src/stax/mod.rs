@@ -270,7 +270,9 @@ impl<'a> XMLStreamReaderBuilder<'a> {
     }
 }
 
-impl<'a, Resolver: EntityResolver> XMLStreamReaderBuilder<'a, Resolver> {
+impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
+    XMLStreamReaderBuilder<'a, Resolver, Reporter>
+{
     pub fn set_default_base_uri(self, base_uri: impl Into<Arc<URIStr>>) -> Result<Self, XMLError> {
         Ok(Self {
             builder: self.builder.set_default_base_uri(base_uri)?,
@@ -283,11 +285,23 @@ impl<'a, Resolver: EntityResolver> XMLStreamReaderBuilder<'a, Resolver> {
     pub fn set_entity_resolver<Other: EntityResolver>(
         self,
         resolver: Other,
-    ) -> XMLStreamReaderBuilder<'a, Other> {
+    ) -> XMLStreamReaderBuilder<'a, Other, Reporter> {
         XMLStreamReaderBuilder {
             builder: self.builder,
             entity_resolver: Some(resolver),
             error_handler: self.error_handler,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn set_error_handler<Other: ErrorHandler>(
+        self,
+        error_handler: Other,
+    ) -> XMLStreamReaderBuilder<'a, Resolver, Other> {
+        XMLStreamReaderBuilder {
+            builder: self.builder,
+            entity_resolver: self.entity_resolver,
+            error_handler: Some(error_handler),
             _phantom: PhantomData,
         }
     }
@@ -317,7 +331,7 @@ impl<'a, Resolver: EntityResolver> XMLStreamReaderBuilder<'a, Resolver> {
         }
     }
 
-    pub fn build(self) -> XMLStreamReader<'a, Resolver> {
+    pub fn build(self) -> XMLStreamReader<'a, Resolver, Reporter> {
         let handler = XMLStreamReaderHandler {
             entity_resolver: self.entity_resolver,
             error_handler: self.error_handler,
