@@ -3,12 +3,16 @@ use anyxml_uri::uri::{URIStr, URIString};
 use crate::{
     sax::{
         attributes::Attributes,
+        error::SAXParseError,
         handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
     },
     stax::events::XMLEventType,
 };
 
-pub(crate) struct XMLStreamReaderHandler<Resolver: EntityResolver = DefaultSAXHandler> {
+pub(crate) struct XMLStreamReaderHandler<
+    Resolver: EntityResolver = DefaultSAXHandler,
+    Reporter: ErrorHandler = DefaultSAXHandler,
+> {
     pub(super) event: XMLEventType,
     pub(super) namespace_name: Option<String>,
     pub(super) local_name: Option<String>,
@@ -18,11 +22,16 @@ pub(crate) struct XMLStreamReaderHandler<Resolver: EntityResolver = DefaultSAXHa
     pub(super) in_cdsect: bool,
     pub(super) in_dtd: bool,
     pub(super) reported: bool,
+    pub(super) last_error: Option<SAXParseError>,
 
+    // user defined handlers
     pub(super) entity_resolver: Option<Resolver>,
+    pub(super) error_handler: Option<Reporter>,
 }
 
-impl<Resolver: EntityResolver> Default for XMLStreamReaderHandler<Resolver> {
+impl<Resolver: EntityResolver, Reporter: ErrorHandler> Default
+    for XMLStreamReaderHandler<Resolver, Reporter>
+{
     fn default() -> Self {
         Self {
             event: Default::default(),
@@ -34,12 +43,16 @@ impl<Resolver: EntityResolver> Default for XMLStreamReaderHandler<Resolver> {
             in_cdsect: Default::default(),
             in_dtd: Default::default(),
             reported: Default::default(),
+            last_error: None,
             entity_resolver: None,
+            error_handler: None,
         }
     }
 }
 
-impl<Resolver: EntityResolver> EntityResolver for XMLStreamReaderHandler<Resolver> {
+impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
+    for XMLStreamReaderHandler<Resolver, Reporter>
+{
     fn get_external_subset(
         &mut self,
         name: &str,
@@ -67,9 +80,37 @@ impl<Resolver: EntityResolver> EntityResolver for XMLStreamReaderHandler<Resolve
     }
 }
 
-impl<Resolver: EntityResolver> ErrorHandler for XMLStreamReaderHandler<Resolver> {}
+impl<Resolver: EntityResolver, Reporter: ErrorHandler> ErrorHandler
+    for XMLStreamReaderHandler<Resolver, Reporter>
+{
+    fn error(&mut self, error: crate::sax::error::SAXParseError) {
+        if let Some(error_handler) = self.error_handler.as_mut() {
+            error_handler.error(error);
+        } else {
+            self.last_error = Some(error);
+        }
+    }
 
-impl<Resolver: EntityResolver> SAXHandler for XMLStreamReaderHandler<Resolver> {
+    fn fatal_error(&mut self, error: crate::sax::error::SAXParseError) {
+        if let Some(error_handler) = self.error_handler.as_mut() {
+            error_handler.fatal_error(error);
+        } else {
+            self.last_error = Some(error);
+        }
+    }
+
+    fn warning(&mut self, error: crate::sax::error::SAXParseError) {
+        if let Some(error_handler) = self.error_handler.as_mut() {
+            error_handler.warning(error);
+        } else {
+            self.last_error = Some(error);
+        }
+    }
+}
+
+impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
+    for XMLStreamReaderHandler<Resolver, Reporter>
+{
     fn start_document(&mut self) {
         self.event = XMLEventType::StartDocument;
         self.reported = false;
