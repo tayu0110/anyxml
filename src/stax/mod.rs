@@ -10,7 +10,7 @@ use crate::{
     error::XMLError,
     sax::{
         NamespaceStack,
-        handler::EntityResolver,
+        handler::{DefaultSAXHandler, EntityResolver},
         parser::{
             ParserConfig, ParserOption, XMLProgressiveReaderBuilder, XMLReader, XMLReaderBuilder,
         },
@@ -24,14 +24,14 @@ use crate::{
     },
 };
 
-pub struct XMLStreamReader<'a> {
+pub struct XMLStreamReader<'a, Resolver: EntityResolver = DefaultSAXHandler> {
     source: Box<dyn Read + 'a>,
     buffer: Vec<u8>,
 
-    reader: XMLReader<ProgressiveParserSpec, XMLStreamReaderHandler>,
+    reader: XMLReader<ProgressiveParserSpec, XMLStreamReaderHandler<Resolver>>,
 }
 
-impl<'a> XMLStreamReader<'a> {
+impl<'a, Resolver: EntityResolver> XMLStreamReader<'a, Resolver> {
     pub fn parse_uri(
         &mut self,
         uri: impl AsRef<URIStr>,
@@ -212,8 +212,9 @@ impl Default for XMLStreamReader<'_> {
     }
 }
 
-pub struct XMLStreamReaderBuilder<'a> {
+pub struct XMLStreamReaderBuilder<'a, Resolver: EntityResolver = DefaultSAXHandler> {
     builder: XMLProgressiveReaderBuilder<XMLStreamReaderHandler>,
+    entity_resolver: Option<Resolver>,
     _phantom: PhantomData<&'a ()>,
 }
 
@@ -223,41 +224,63 @@ impl<'a> XMLStreamReaderBuilder<'a> {
             builder: XMLReaderBuilder::new()
                 .set_handler(XMLStreamReaderHandler::default())
                 .progressive_parser(),
+            entity_resolver: None,
             _phantom: PhantomData,
         }
     }
+}
 
+impl<'a, Resolver: EntityResolver> XMLStreamReaderBuilder<'a, Resolver> {
     pub fn set_default_base_uri(self, base_uri: impl Into<Arc<URIStr>>) -> Result<Self, XMLError> {
         Ok(Self {
             builder: self.builder.set_default_base_uri(base_uri)?,
+            entity_resolver: self.entity_resolver,
             _phantom: PhantomData,
         })
+    }
+
+    pub fn set_entity_resolver<Other: EntityResolver>(
+        self,
+        resolver: Other,
+    ) -> XMLStreamReaderBuilder<'a, Other> {
+        XMLStreamReaderBuilder {
+            builder: self.builder,
+            entity_resolver: Some(resolver),
+            _phantom: PhantomData,
+        }
     }
 
     pub fn set_parser_config(self, config: ParserConfig) -> Self {
         Self {
             builder: self.builder.set_parser_config(config),
+            entity_resolver: self.entity_resolver,
             _phantom: PhantomData,
         }
     }
     pub fn enable_option(self, option: ParserOption) -> Self {
         Self {
             builder: self.builder.enable_option(option),
+            entity_resolver: self.entity_resolver,
             _phantom: PhantomData,
         }
     }
     pub fn disable_option(self, option: ParserOption) -> Self {
         Self {
             builder: self.builder.disable_option(option),
+            entity_resolver: self.entity_resolver,
             _phantom: PhantomData,
         }
     }
 
-    pub fn build(self) -> XMLStreamReader<'a> {
+    pub fn build(self) -> XMLStreamReader<'a, Resolver> {
+        let handler = XMLStreamReaderHandler {
+            entity_resolver: self.entity_resolver,
+            ..Default::default()
+        };
         XMLStreamReader {
             source: Box::new(std::io::empty()),
             buffer: vec![],
-            reader: self.builder.build(),
+            reader: self.builder.set_handler(handler).build(),
         }
     }
 }

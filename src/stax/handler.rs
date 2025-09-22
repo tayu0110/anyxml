@@ -3,13 +3,12 @@ use anyxml_uri::uri::{URIStr, URIString};
 use crate::{
     sax::{
         attributes::Attributes,
-        handler::{EntityResolver, SAXHandler},
+        handler::{DefaultSAXHandler, EntityResolver, SAXHandler},
     },
     stax::events::XMLEventType,
 };
 
-#[derive(Default)]
-pub(crate) struct XMLStreamReaderHandler {
+pub(crate) struct XMLStreamReaderHandler<Resolver: EntityResolver = DefaultSAXHandler> {
     pub(super) event: XMLEventType,
     pub(super) namespace_name: Option<String>,
     pub(super) local_name: Option<String>,
@@ -19,11 +18,56 @@ pub(crate) struct XMLStreamReaderHandler {
     pub(super) in_cdsect: bool,
     pub(super) in_dtd: bool,
     pub(super) reported: bool,
+
+    pub(super) entity_resolver: Option<Resolver>,
 }
 
-impl EntityResolver for XMLStreamReaderHandler {}
+impl<Resolver: EntityResolver> Default for XMLStreamReaderHandler<Resolver> {
+    fn default() -> Self {
+        Self {
+            event: Default::default(),
+            namespace_name: Default::default(),
+            local_name: Default::default(),
+            qname: Default::default(),
+            atts: Default::default(),
+            system_id: Default::default(),
+            in_cdsect: Default::default(),
+            in_dtd: Default::default(),
+            reported: Default::default(),
+            entity_resolver: None,
+        }
+    }
+}
 
-impl SAXHandler for XMLStreamReaderHandler {
+impl<Resolver: EntityResolver> EntityResolver for XMLStreamReaderHandler<Resolver> {
+    fn get_external_subset(
+        &mut self,
+        name: &str,
+        base_uri: Option<&URIStr>,
+    ) -> Result<crate::sax::source::InputSource<'static>, crate::error::XMLError> {
+        if let Some(entity_resolver) = self.entity_resolver.as_mut() {
+            entity_resolver.get_external_subset(name, base_uri)
+        } else {
+            DefaultSAXHandler.get_external_subset(name, base_uri)
+        }
+    }
+
+    fn resolve_entity(
+        &mut self,
+        name: &str,
+        public_id: Option<&str>,
+        base_uri: &URIStr,
+        system_id: &URIStr,
+    ) -> Result<crate::sax::source::InputSource<'static>, crate::error::XMLError> {
+        if let Some(entity_resolver) = self.entity_resolver.as_mut() {
+            entity_resolver.resolve_entity(name, public_id, base_uri, system_id)
+        } else {
+            DefaultSAXHandler.resolve_entity(name, public_id, base_uri, system_id)
+        }
+    }
+}
+
+impl<Resolver: EntityResolver> SAXHandler for XMLStreamReaderHandler<Resolver> {
     fn start_document(&mut self) {
         self.event = XMLEventType::StartDocument;
         self.reported = false;

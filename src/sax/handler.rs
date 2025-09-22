@@ -215,6 +215,7 @@ pub trait EntityResolver {
     }
 }
 
+#[derive(Default)]
 pub struct DefaultSAXHandler;
 
 impl SAXHandler for DefaultSAXHandler {
