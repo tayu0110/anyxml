@@ -122,10 +122,11 @@ endDocument()
 ```
 
 ## Parser (StAX)
-This crate also supports a StAX (Streaming API for XML) style parser.
-Unlike SAX parser, which report events to the application based on the parser's own timing, the application can retrieve events from the parser at any time.
+This crate also supports StAX (Streaming API for XML) style parser.  \
+Unlike SAX parsers, which cannot control the timing of event reports, applications can retrieve events from StAX parsers at arbitrary moments.
 
-StAX parser does not require event handlers, but applications can configure user-defined `EntityResolver` and `ErrorHandler`. To capture all errors except unrecoverable fatal error, configuring an ErrorHandler is mandatory. If no ErrorHandler is configured, only the last error can be retrieved.
+StAX parser does not require event handlers, but applications can configure user-defined `EntityResolver` and `ErrorHandler`.  \
+To capture all errors except unrecoverable fatal error, configuring `ErrorHandler` is mandatory. If no `ErrorHandler` is configured, only the last error can be retrieved.
 
 ### Example
 ```rust
