@@ -6,7 +6,7 @@ use anyxml::{
         handler::DebugHandler,
         parser::{ParserOption, XMLReaderBuilder},
     },
-    stax::{XMLStreamReader, events::XMLEvent},
+    stax::{XMLStreamReaderBuilder, events::XMLEvent},
 };
 use anyxml_uri::uri::URIString;
 use clap::Parser;
@@ -47,7 +47,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         for file in args.file {
             let uri = URIString::parse_file_path(file).map_err(XMLError::from)?;
-            let mut reader = XMLStreamReader::parse_uri(uri, None)?;
+            let mut reader = XMLStreamReaderBuilder::new().build();
+            reader.parse_uri(&uri, None).unwrap();
             let mut buffer = String::new();
             loop {
                 match reader.next_event().unwrap() {

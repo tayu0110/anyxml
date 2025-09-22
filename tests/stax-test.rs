@@ -1,6 +1,6 @@
 use std::{fmt::Write as _, fs::read_dir, path::Path};
 
-use anyxml::stax::{XMLStreamReader, events::XMLEvent};
+use anyxml::stax::{XMLStreamReaderBuilder, events::XMLEvent};
 use anyxml_uri::uri::URIString;
 
 #[test]
@@ -11,7 +11,8 @@ fn well_formed_tests() {
         {
             let path = ent.path();
             let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
-            let mut reader = XMLStreamReader::parse_uri(&uri, None).unwrap();
+            let mut reader = XMLStreamReaderBuilder::new().build();
+            reader.parse_uri(&uri, None).unwrap();
             let mut buffer = String::new();
             loop {
                 match reader.next_event().unwrap() {

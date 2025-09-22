@@ -1,7 +1,7 @@
 pub mod events;
 mod handler;
 
-use std::io::Read;
+use std::{io::Read, marker::PhantomData, sync::Arc};
 
 use anyxml_uri::uri::URIStr;
 
@@ -11,7 +11,9 @@ use crate::{
     sax::{
         NamespaceStack,
         handler::EntityResolver,
-        parser::{XMLReader, XMLReaderBuilder},
+        parser::{
+            ParserConfig, ParserOption, XMLProgressiveReaderBuilder, XMLReader, XMLReaderBuilder,
+        },
         source::INPUT_CHUNK,
     },
     stax::{
@@ -30,65 +32,70 @@ pub struct XMLStreamReader<'a> {
 }
 
 impl<'a> XMLStreamReader<'a> {
-    pub fn parse_uri(uri: impl AsRef<URIStr>, encoding: Option<&str>) -> Result<Self, XMLError> {
-        let mut reader = XMLReaderBuilder::new()
-            .set_handler(XMLStreamReaderHandler::default())
-            .progressive_parser()
-            .build();
+    pub fn parse_uri(
+        &mut self,
+        uri: impl AsRef<URIStr>,
+        encoding: Option<&str>,
+    ) -> Result<(), XMLError> {
+        self.reader.reset()?;
         if let Some(encoding) = encoding {
-            reader.set_encoding(encoding);
+            self.reader.set_encoding(encoding);
         }
-        let source = Box::new(reader.handler.resolve_entity(
+        let source = Box::new(self.reader.handler.resolve_entity(
             "[document]",
             None,
-            &reader.base_uri,
+            &self.reader.base_uri,
             uri.as_ref(),
         )?);
         let (source, buffer) = source.decompose();
         if !buffer.is_empty() {
-            reader.source.push_bytes(buffer, false)?;
+            self.reader.source.push_bytes(buffer, false)?;
         }
-        Ok(Self {
-            source,
-            buffer: vec![0; INPUT_CHUNK],
-            reader,
-        })
+        self.source = source;
+        self.buffer.clear();
+        self.buffer.resize(INPUT_CHUNK, 0);
+        Ok(())
     }
 
     pub fn parse_reader(
+        &mut self,
         source: impl Read + 'a,
         encoding: Option<&str>,
         uri: Option<&URIStr>,
-    ) -> Result<Self, XMLError> {
-        let mut reader = XMLReaderBuilder::new()
-            .set_handler(XMLStreamReaderHandler::default())
-            .progressive_parser();
+    ) -> Result<(), XMLError> {
+        self.reader.reset()?;
         if let Some(uri) = uri {
-            reader = reader.set_default_base_uri(uri)?;
+            let mut base_uri = self.reader.base_uri.resolve(uri);
+            base_uri.normalize();
+            self.reader.base_uri = base_uri.into();
         }
-        let mut reader = reader.build();
         if let Some(encoding) = encoding {
-            reader.set_encoding(encoding);
+            self.reader.set_encoding(encoding);
         }
-        Ok(Self {
-            source: Box::new(source),
-            buffer: vec![0; INPUT_CHUNK],
-            reader,
-        })
+        self.source = Box::new(source);
+        self.buffer.clear();
+        self.buffer.resize(INPUT_CHUNK, 0);
+        Ok(())
     }
 
-    pub fn parse_str(s: &str, uri: Option<&URIStr>) -> Result<Self, XMLError> {
-        let mut reader = XMLReaderBuilder::new()
-            .set_handler(XMLStreamReaderHandler::default())
-            .progressive_parser();
+    pub fn parse_str(&mut self, s: &str, uri: Option<&URIStr>) -> Result<(), XMLError> {
+        self.reader.reset()?;
         if let Some(uri) = uri {
-            reader = reader.set_default_base_uri(uri)?;
+            let mut base_uri = self.reader.base_uri.resolve(uri);
+            base_uri.normalize();
+            self.reader.base_uri = base_uri.into();
         }
-        Ok(Self {
-            source: Box::new(std::io::empty()),
-            buffer: s.as_bytes().to_vec(),
-            reader: reader.build(),
-        })
+
+        self.source = Box::new(std::io::empty());
+        self.buffer.clear();
+        self.buffer.extend(s.as_bytes());
+        Ok(())
+    }
+
+    pub fn reset(&mut self) -> Result<(), XMLError> {
+        self.source = Box::new(std::io::empty());
+        self.buffer.clear();
+        self.reader.reset()
     }
 
     pub fn next_event<'b>(&'b mut self) -> Result<XMLEvent<'b>, XMLError> {
@@ -166,19 +173,97 @@ impl<'a> XMLStreamReader<'a> {
     }
 
     pub fn next_tag<'b>(&'b mut self) -> Result<XMLEvent<'b>, XMLError> {
-        loop {
-            let event = self.next_event()?;
-            if matches!(
-                event,
-                XMLEvent::StartElement(_) | XMLEvent::EndElement(_) | XMLEvent::Finished
-            ) {
+        if self.reader.handler.event == XMLEventType::Finished {
+            return Ok(XMLEvent::Finished);
+        } else if self.reader.handler.event == XMLEventType::EndEmptyTag {
+            return Ok(self.create_event());
+        }
+
+        while !self.reader.parse_event_once(false)?
+            || self.reader.handler.in_dtd
+            || !matches!(
+                self.reader.handler.event,
+                XMLEventType::StartElement
+                    | XMLEventType::EndElement
+                    | XMLEventType::StartEmptyTag
+                    | XMLEventType::EndEmptyTag
+            )
+        {
+            let len = self.source.read(&mut self.buffer)?;
+            if len == 0 {
+                // this should report `XMLError::ParserUnexpectedEOF` or `EndDocument` event.
+                self.reader.parse_event_once(true)?;
                 break;
             }
+
+            self.reader.source.push_bytes(&self.buffer[..len], false)?;
         }
         Ok(self.create_event())
     }
 
     pub fn namespaces(&self) -> &NamespaceStack {
         &self.reader.namespaces
+    }
+}
+
+impl Default for XMLStreamReader<'_> {
+    fn default() -> Self {
+        XMLStreamReaderBuilder::new().build()
+    }
+}
+
+pub struct XMLStreamReaderBuilder<'a> {
+    builder: XMLProgressiveReaderBuilder<XMLStreamReaderHandler>,
+    _phantom: PhantomData<&'a ()>,
+}
+
+impl<'a> XMLStreamReaderBuilder<'a> {
+    pub fn new() -> Self {
+        Self {
+            builder: XMLReaderBuilder::new()
+                .set_handler(XMLStreamReaderHandler::default())
+                .progressive_parser(),
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn set_default_base_uri(self, base_uri: impl Into<Arc<URIStr>>) -> Result<Self, XMLError> {
+        Ok(Self {
+            builder: self.builder.set_default_base_uri(base_uri)?,
+            _phantom: PhantomData,
+        })
+    }
+
+    pub fn set_parser_config(self, config: ParserConfig) -> Self {
+        Self {
+            builder: self.builder.set_parser_config(config),
+            _phantom: PhantomData,
+        }
+    }
+    pub fn enable_option(self, option: ParserOption) -> Self {
+        Self {
+            builder: self.builder.enable_option(option),
+            _phantom: PhantomData,
+        }
+    }
+    pub fn disable_option(self, option: ParserOption) -> Self {
+        Self {
+            builder: self.builder.disable_option(option),
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn build(self) -> XMLStreamReader<'a> {
+        XMLStreamReader {
+            source: Box::new(std::io::empty()),
+            buffer: vec![],
+            reader: self.builder.build(),
+        }
+    }
+}
+
+impl Default for XMLStreamReaderBuilder<'_> {
+    fn default() -> Self {
+        Self::new()
     }
 }
