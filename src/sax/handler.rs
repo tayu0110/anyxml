@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-pub trait SAXHandler: EntityResolver {
+pub trait SAXHandler: EntityResolver + ErrorHandler {
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn characters(&mut self, data: &str) {
@@ -131,24 +131,6 @@ pub trait SAXHandler: EntityResolver {
     }
 
     /// # Reference
-    /// [`ErrorHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ErrorHandler.html)
-    fn error(&mut self, error: SAXParseError) {
-        let _ = error;
-    }
-
-    /// # Reference
-    /// [`ErrorHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ErrorHandler.html)
-    fn fatal_error(&mut self, error: SAXParseError) {
-        let _ = error;
-    }
-
-    /// # Reference
-    /// [`ErrorHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ErrorHandler.html)
-    fn warning(&mut self, error: SAXParseError) {
-        let _ = error;
-    }
-
-    /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
     fn comment(&mut self, data: &str) {
         let _ = data;
@@ -215,10 +197,30 @@ pub trait EntityResolver {
     }
 }
 
+pub trait ErrorHandler {
+    /// # Reference
+    /// [`ErrorHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ErrorHandler.html)
+    fn error(&mut self, error: SAXParseError) {
+        let _ = error;
+    }
+
+    /// # Reference
+    /// [`ErrorHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ErrorHandler.html)
+    fn fatal_error(&mut self, error: SAXParseError) {
+        let _ = error;
+    }
+
+    /// # Reference
+    /// [`ErrorHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ErrorHandler.html)
+    fn warning(&mut self, error: SAXParseError) {
+        let _ = error;
+    }
+}
+
 #[derive(Default)]
 pub struct DefaultSAXHandler;
 
-impl SAXHandler for DefaultSAXHandler {
+impl ErrorHandler for DefaultSAXHandler {
     fn error(&mut self, error: SAXParseError) {
         eprintln!("{error}")
     }
@@ -232,6 +234,7 @@ impl SAXHandler for DefaultSAXHandler {
     }
 }
 impl EntityResolver for DefaultSAXHandler {}
+impl SAXHandler for DefaultSAXHandler {}
 
 pub struct DebugHandler<Child: SAXHandler = DefaultSAXHandler> {
     pub buffer: String,
@@ -260,6 +263,20 @@ impl<Child: SAXHandler> EntityResolver for DebugHandler<Child> {
         }
         self.child
             .resolve_entity(name, public_id, base_uri, system_id)
+    }
+}
+
+impl<Child: SAXHandler> ErrorHandler for DebugHandler<Child> {
+    fn error(&mut self, error: SAXParseError) {
+        self.child.error(error);
+    }
+
+    fn fatal_error(&mut self, error: SAXParseError) {
+        self.child.fatal_error(error);
+    }
+
+    fn warning(&mut self, error: SAXParseError) {
+        self.child.warning(error);
     }
 }
 
@@ -443,18 +460,6 @@ impl<Child: SAXHandler> SAXHandler for DebugHandler<Child> {
         .ok();
         self.child
             .unparsed_entity_decl(name, public_id, system_id, notation_name);
-    }
-
-    fn error(&mut self, error: SAXParseError) {
-        self.child.error(error);
-    }
-
-    fn fatal_error(&mut self, error: SAXParseError) {
-        self.child.fatal_error(error);
-    }
-
-    fn warning(&mut self, error: SAXParseError) {
-        self.child.warning(error);
     }
 
     fn comment(&mut self, data: &str) {

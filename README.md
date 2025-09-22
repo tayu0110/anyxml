@@ -16,7 +16,7 @@ The current implementation supports the following features:
 ## Parser
 You can use a SAX-like API designed with reference to Java SAX API.
 
-The key difference from the Java API is that SAX handlers are provided solely as two traits: `SAXHandler` and `EntityResolver`.  \
+The key difference from the Java API is that SAX handlers are provided solely as three traits: `SAXHandler`, `EntityResolver` and `ErrorHandler`.  \
 This approach reduces opportunities to use `Rc`/`Arc` or internal mutability.
 
 ### Example
@@ -25,7 +25,7 @@ use std::fmt::Write as _;
 
 use anyxml::sax::{
     attributes::Attributes,
-    handler::{EntityResolver, SAXHandler},
+    handler::{EntityResolver, ErrorHandler, SAXHandler},
     parser::XMLReaderBuilder,
 };
 
@@ -34,6 +34,7 @@ struct ExampleHandler {
     buffer: String,
 }
 impl EntityResolver for ExampleHandler {}
+impl ErrorHandler for ExampleHandler {}
 impl SAXHandler for ExampleHandler {
     fn start_document(&mut self) {
         writeln!(self.buffer, "start document").ok();

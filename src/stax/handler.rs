@@ -3,7 +3,7 @@ use anyxml_uri::uri::{URIStr, URIString};
 use crate::{
     sax::{
         attributes::Attributes,
-        handler::{DefaultSAXHandler, EntityResolver, SAXHandler},
+        handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
     },
     stax::events::XMLEventType,
 };
@@ -66,6 +66,8 @@ impl<Resolver: EntityResolver> EntityResolver for XMLStreamReaderHandler<Resolve
         }
     }
 }
+
+impl<Resolver: EntityResolver> ErrorHandler for XMLStreamReaderHandler<Resolver> {}
 
 impl<Resolver: EntityResolver> SAXHandler for XMLStreamReaderHandler<Resolver> {
     fn start_document(&mut self) {

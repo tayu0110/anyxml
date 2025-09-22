@@ -11,7 +11,7 @@ use anyxml::{
     sax::{
         Locator,
         attributes::Attributes,
-        handler::{DebugHandler, EntityResolver, SAXHandler},
+        handler::{DebugHandler, EntityResolver, ErrorHandler, SAXHandler},
         parser::{ParserOption, XMLReaderBuilder},
     },
 };
@@ -50,7 +50,7 @@ impl TestSAXHandler {
 }
 
 impl EntityResolver for TestSAXHandler {}
-impl SAXHandler for TestSAXHandler {
+impl ErrorHandler for TestSAXHandler {
     fn fatal_error(&mut self, error: anyxml::sax::error::SAXParseError) {
         assert_eq!(error.level, XMLErrorLevel::FatalError);
         self.fatal_error.update(|c| c + 1);
@@ -73,6 +73,7 @@ impl SAXHandler for TestSAXHandler {
         writeln!(self.buffer.borrow_mut(), "{}", error).ok();
     }
 }
+impl SAXHandler for TestSAXHandler {}
 
 #[test]
 fn well_formed_tests() {
@@ -362,6 +363,7 @@ impl SAXHandler for XMLConfWalker {
     }
 }
 impl EntityResolver for XMLConfWalker {}
+impl ErrorHandler for XMLConfWalker {}
 
 #[test]
 fn xmlconf_tests() {
