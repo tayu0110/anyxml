@@ -114,7 +114,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
 
         self.source = Box::new(std::io::empty());
         self.buffer.clear();
-        self.buffer.extend(s.as_bytes());
+        self.reader.source.push_bytes(s.as_bytes(), true)?;
         Ok(())
     }
 

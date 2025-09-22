@@ -82,7 +82,7 @@ end document
 
 ## Parser (Progressive)
 SAX-like parsers appear to retrieve all data from a specific source at once, but in some cases, applications may want to provide data incrementally.  \
-This crate also supports such functionality, which libxml2 calls as "Push type parser" or "Progressive type parser".
+This crate also supports such feature, which libxml2 calls as "Push type parser" or "Progressive type parser".
 
 In this crate, this feature is called the "Progressive Parser".  \
 This is because "push" and "pull" are generally used as terms to classify how the parser delivers the parsing results to the application, rather than how the source is provided to the parser.
@@ -119,6 +119,27 @@ characters(Hello!!)
 endElement(None, greeting, greeting)
 endDocument()
 "#, handler.buffer);
+```
+
+## Parser (StAX)
+This crate also supports a StAX (Streaming API for XML) style parser.
+Unlike SAX parser, which report events to the application based on the parser's own timing, the application can retrieve events from the parser at any time.
+
+StAX parser does not require event handlers, but applications can configure user-defined `EntityResolver` and `ErrorHandler`. To capture all errors except unrecoverable fatal error, configuring an ErrorHandler is mandatory. If no ErrorHandler is configured, only the last error can be retrieved.
+
+### Example
+```rust
+use anyxml::stax::{XMLStreamReader, events::XMLEvent::*};
+
+let mut reader = XMLStreamReader::default();
+reader.parse_str(r#"<greeting>Hello!!</greeting>"#, None).unwrap();
+
+assert!(matches!(reader.next_event().unwrap(), StartDocument));
+assert!(matches!(reader.next_event().unwrap(), StartElement(_)));
+assert!(matches!(reader.next_event().unwrap(), Characters("Hello!!")));
+assert!(matches!(reader.next_event().unwrap(), EndElement(_)));
+assert!(matches!(reader.next_event().unwrap(), EndDocument));
+assert!(matches!(reader.next_event().unwrap(), Finished));
 ```
 
 # Conformance
