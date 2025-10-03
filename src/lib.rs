@@ -5,6 +5,7 @@ pub mod error;
 mod parse;
 pub mod sax;
 pub mod stax;
+pub mod tree;
 
 use std::marker::PhantomData;
 
