@@ -1,0 +1,9 @@
+Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/comment1.xml)
+  Comment(Comment, ' This is a comment before the document element. ')
+  Element(Element, root, root, None, None)
+    Text(Text, '
+    ')
+    Comment(Comment, ' This is a comment inside of the content. ')
+    Text(Text, '
+')
+  Comment(Comment, ' This is a comment after the document element. ')

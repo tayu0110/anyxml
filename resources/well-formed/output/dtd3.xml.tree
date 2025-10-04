@@ -1,0 +1,45 @@
+Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/dtd3.xml)
+  DocumentType(DocumentType, root, None, None)
+    ElementDecl(ElementDecl, root, (#PCDATA|child)*)
+    ElementDecl(ElementDecl, child, (child2*,child3+,child2?,child4))
+    ElementDecl(ElementDecl, child2, EMPTY)
+    ElementDecl(ElementDecl, child3, ANY)
+    ElementDecl(ElementDecl, child4, (child2|child3)+)
+    AttlistDecl(AttlistDecl, root, attr1, ID, #REQUIRED)
+    AttlistDecl(AttlistDecl, child, attr2, NMTOKENS, #REQUIRED)
+    AttlistDecl(AttlistDecl, child, attr3, IDREF, #IMPLIED)
+    AttlistDecl(AttlistDecl, child2, attr4, NMTOKEN, #FIXED "hoge")
+    AttlistDecl(AttlistDecl, child2, attr5, (bar|foo|hoge), #IMPLIED)
+  Element(Element, root, root, None, None)
+    Attribute(Attribute, attr1, attr1, None, None, 'foo')
+      Text(Text, 'foo')
+    Text(Text, '
+    This is a character data.
+    ')
+    Element(Element, child, child, None, None)
+      Attribute(Attribute, attr2, attr2, None, None, 'bar fuga')
+        Text(Text, 'bar fuga')
+      Attribute(Attribute, attr3, attr3, None, None, 'foo')
+        Text(Text, 'foo')
+      Text(Text, '
+        ')
+      Element(Element, child2, child2, None, None)
+        Attribute(Attribute, attr4, attr4, None, None, 'hoge')
+          Text(Text, 'hoge')
+      Text(Text, '
+        ')
+      Element(Element, child3, child3, None, None)
+      Text(Text, '
+        ')
+      Element(Element, child4, child4, None, None)
+        Text(Text, '
+            ')
+        Element(Element, child2, child2, None, None)
+          Attribute(Attribute, attr4, attr4, None, None, 'hoge')
+            Text(Text, 'hoge')
+        Text(Text, '
+        ')
+      Text(Text, '
+    ')
+    Text(Text, '
+')

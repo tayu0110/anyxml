@@ -1,0 +1,30 @@
+Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/dtd2.xml)
+  DocumentType(DocumentType, root, None, None)
+    ElementDecl(ElementDecl, root, (#PCDATA|child|child2|child3)*)
+    ElementDecl(ElementDecl, child, (#PCDATA))
+    ElementDecl(ElementDecl, child2, EMPTY)
+    ElementDecl(ElementDecl, child3, ANY)
+    AttlistDecl(AttlistDecl, root, attr1, CDATA, #REQUIRED)
+    AttlistDecl(AttlistDecl, child, attr2, CDATA, #REQUIRED)
+    AttlistDecl(AttlistDecl, child, attr3, CDATA, #IMPLIED)
+    AttlistDecl(AttlistDecl, child2, attr4, CDATA, #FIXED "hoge")
+    AttlistDecl(AttlistDecl, child2, attr5, (bar|foo|hoge), #IMPLIED)
+  Element(Element, root, root, None, None)
+    Attribute(Attribute, attr1, attr1, None, None, 'foo')
+      Text(Text, 'foo')
+    Text(Text, '
+    This is a character data.
+    ')
+    Element(Element, child, child, None, None)
+      Attribute(Attribute, attr2, attr2, None, None, 'bar')
+        Text(Text, 'bar')
+      Text(Text, '
+        This is a character data under `child`.
+    ')
+    Text(Text, '
+    ')
+    Element(Element, child2, child2, None, None)
+      Attribute(Attribute, attr4, attr4, None, None, 'hoge')
+        Text(Text, 'hoge')
+    Text(Text, '
+')

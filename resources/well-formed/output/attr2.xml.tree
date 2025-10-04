@@ -1,0 +1,6 @@
+Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/attr2.xml)
+  Element(Element, root, root, None, None)
+    Attribute(Attribute, attr, attr, None, None, 'foo ')
+      Text(Text, 'foo ')
+    Attribute(Attribute, attr2, attr2, None, None, 'bar')
+      Text(Text, 'bar')

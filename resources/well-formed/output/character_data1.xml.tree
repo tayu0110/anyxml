@@ -1,0 +1,18 @@
+Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/character_data1.xml)
+  Element(Element, root, root, None, None)
+    Text(Text, '
+    This is a character data in the document element.
+    ')
+    EntityReference(EntityReference, lt)
+      Text(Text, '<')
+    Text(Text, 'not-element/')
+    EntityReference(EntityReference, gt)
+      Text(Text, '>')
+    Text(Text, '
+    ')
+    Element(Element, child, child, None, None)
+      Text(Text, '
+        This is a character data in the child element.
+    ')
+    Text(Text, '
+')

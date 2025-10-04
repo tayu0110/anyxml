@@ -9,8 +9,9 @@ use anyxml::{
 };
 use anyxml_uri::uri::URIString;
 
-fn walk_tree(out: &mut String, node: impl Into<Node<dyn NodeSpec>>) {
+fn walk_tree(out: &mut String, node: impl Into<Node<dyn NodeSpec>>, depth: usize) {
     let node: Node<dyn NodeSpec> = node.into();
+    write!(out, "{}", "  ".repeat(depth)).unwrap();
     match node.downcast() {
         NodeKind::Element(element) => {
             writeln!(
@@ -23,11 +24,14 @@ fn walk_tree(out: &mut String, node: impl Into<Node<dyn NodeSpec>>) {
                 element.prefix().as_deref().unwrap_or("None")
             )
             .unwrap();
+            for att in element.attributes() {
+                walk_tree(out, att, depth + 1);
+            }
         }
         NodeKind::Attribute(attribute) => {
             writeln!(
                 out,
-                "Attribute({:?}, {}, {}, {}, {}, {})",
+                "Attribute({:?}, {}, {}, {}, {}, '{}')",
                 attribute.node_type(),
                 attribute.name(),
                 attribute.local_name(),
@@ -38,12 +42,12 @@ fn walk_tree(out: &mut String, node: impl Into<Node<dyn NodeSpec>>) {
             .unwrap();
         }
         NodeKind::Text(text) => {
-            writeln!(out, "Text({:?}, {})", text.node_type(), text.data()).unwrap();
+            writeln!(out, "Text({:?}, '{}')", text.node_type(), text.data()).unwrap();
         }
         NodeKind::CDATASection(cdata) => {
             writeln!(
                 out,
-                "CDATASection({:?}, {})",
+                "CDATASection({:?}, '{}')",
                 cdata.node_type(),
                 cdata.data()
             )
@@ -61,7 +65,7 @@ fn walk_tree(out: &mut String, node: impl Into<Node<dyn NodeSpec>>) {
         NodeKind::EntityDecl(ent) => {
             writeln!(
                 out,
-                "EntityDecl({:?}, {}, {}, {}, {}, {})",
+                "EntityDecl({:?}, {}, {}, {}, {}, '{}')",
                 ent.node_type(),
                 ent.name(),
                 ent.system_id()
@@ -87,7 +91,7 @@ fn walk_tree(out: &mut String, node: impl Into<Node<dyn NodeSpec>>) {
         NodeKind::Comment(comment) => {
             writeln!(
                 out,
-                "Comment({:?}, {})",
+                "Comment({:?}, '{}')",
                 comment.node_type(),
                 comment.data()
             )
@@ -96,7 +100,7 @@ fn walk_tree(out: &mut String, node: impl Into<Node<dyn NodeSpec>>) {
         NodeKind::Document(document) => {
             writeln!(
                 out,
-                "Document({:?}, {}, {}, {}, {})",
+                "Document({:?}, '{}', '{}', {}, {})",
                 document.node_type(),
                 document.version().as_deref().unwrap_or("None"),
                 document.encoding().as_deref().unwrap_or("None"),
@@ -174,10 +178,10 @@ fn walk_tree(out: &mut String, node: impl Into<Node<dyn NodeSpec>>) {
         }
     }
     if let Some(first_child) = node.first_child() {
-        walk_tree(out, first_child);
+        walk_tree(out, first_child, depth + 1);
     }
     if let Some(next_sibling) = node.next_sibling() {
-        walk_tree(out, next_sibling);
+        walk_tree(out, next_sibling, depth);
     }
 }
 
@@ -212,7 +216,7 @@ fn tree_walk_tests() {
 
             let document = reader.handler.document;
             let mut buf = String::new();
-            walk_tree(&mut buf, document);
+            walk_tree(&mut buf, document, 0);
             let outname = path.file_name().unwrap().to_str().unwrap();
             let outname = format!("resources/well-formed/output/{outname}.tree");
             let outname = Path::new(outname.as_str());

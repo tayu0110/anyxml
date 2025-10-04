@@ -1,0 +1,18 @@
+Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/attr3.xml)
+  Element(Element, root, root, None, None)
+    Attribute(Attribute, attr, attr, None, None, 'foo')
+      Text(Text, 'foo')
+    Attribute(Attribute, attr2, attr2, None, None, 'bar')
+      Text(Text, 'bar')
+    Text(Text, '
+    ')
+    Element(Element, child, child, None, None)
+      Attribute(Attribute, attr3, attr3, None, None, '')
+        Text(Text, '')
+    Text(Text, '
+    ')
+    Element(Element, child2, child2, None, None)
+      Attribute(Attribute, attr4, attr4, None, None, 'hoge')
+        Text(Text, 'hoge')
+    Text(Text, '
+')

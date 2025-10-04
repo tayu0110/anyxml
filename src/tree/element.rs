@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     collections::{BTreeSet, HashMap},
+    marker::PhantomData,
     rc::Rc,
 };
 
@@ -159,6 +160,21 @@ impl Element {
             .attributes
             .push(attribute.clone())?;
         Ok(attribute)
+    }
+
+    /// Returns an iterator that scans attributes specified by this element.
+    ///
+    /// # Note
+    /// Due to implementation limitations, it is not possible to prevent iterator invalidation.  \
+    /// For example, by cloning an `Element` that has called `attributes` and binding it
+    /// to a mutable variable, you can modify attributes while retaining the iterator.  \
+    /// Of course, the result of such an operation is undefined.
+    pub fn attributes(&self) -> AttributeIter<'_> {
+        AttributeIter {
+            element: self.clone(),
+            index: 0,
+            _ref: PhantomData,
+        }
     }
 
     /// Search for the prefix bound to the namespace name `namespace_name`.  \
@@ -389,6 +405,30 @@ impl AttributeMap {
                 Occupied(_) => Err(XMLTreeError::DuplicateAttribute),
             },
         }
+    }
+}
+
+pub struct AttributeIter<'a> {
+    element: Element,
+    index: usize,
+    _ref: PhantomData<&'a Element>,
+}
+
+impl<'a> Iterator for AttributeIter<'a> {
+    type Item = Attribute;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let map = &self.element.core.borrow().spec.data.attributes;
+        if self.index >= map.attributes.len() {
+            return None;
+        }
+
+        let ret = Attribute {
+            core: map.attributes[self.index].clone(),
+            owner_document: self.element.owner_document.clone(),
+        };
+        self.index += 1;
+        Some(ret)
     }
 }
 

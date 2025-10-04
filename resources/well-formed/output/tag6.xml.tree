@@ -1,0 +1,13 @@
+Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/tag6.xml)
+  Element(Element, root, root, None, None)
+    Text(Text, '
+    ')
+    Element(Element, child1, child1, None, None)
+    Text(Text, '
+    ')
+    Element(Element, child2, child2, None, None)
+    Text(Text, '
+    ')
+    Element(Element, child3, child3, None, None)
+    Text(Text, '
+')

@@ -1,0 +1,21 @@
+Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/dtd1.xml)
+  DocumentType(DocumentType, root, None, None)
+    ElementDecl(ElementDecl, root, (#PCDATA|child|child2)*)
+    ElementDecl(ElementDecl, child, (#PCDATA))
+    ElementDecl(ElementDecl, child2, (#PCDATA))
+  Element(Element, root, root, None, None)
+    Text(Text, '
+    This is a character data.
+    ')
+    Element(Element, child, child, None, None)
+      Text(Text, '
+        This is a character data under `child`.
+    ')
+    Text(Text, '
+    ')
+    Element(Element, child2, child2, None, None)
+      Text(Text, '
+        This is a character data uder `child2`.
+    ')
+    Text(Text, '
+')
