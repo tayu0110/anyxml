@@ -35,6 +35,11 @@ path = "tests/sax-test.rs"
 name = "stax-test"
 path = "tests/stax-test.rs"
 
+[[test]]
+name = "tree-test"
+path = "tests/tree-test.rs"
+
+
 [lints.clippy]
 type_complexity = "allow"
 too_many_arguments = "allow"
