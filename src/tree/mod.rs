@@ -82,8 +82,9 @@ pub enum XMLTreeError {
 
 pub struct TreeBuildHandler<H: SAXHandler = DefaultSAXHandler> {
     node: Node<dyn InternalNodeSpec>,
-    document: Document,
-    handler: H,
+    pub document: Document,
+    pub handler: H,
+    pub fatal_error: bool,
     in_cdata: bool,
 }
 
@@ -94,6 +95,7 @@ impl<H: SAXHandler> TreeBuildHandler<H> {
             node: document.clone().into(),
             document,
             handler,
+            fatal_error: false,
             in_cdata: false,
         }
     }
@@ -106,6 +108,7 @@ impl Default for TreeBuildHandler {
             node: document.clone().into(),
             document,
             handler: DefaultSAXHandler,
+            fatal_error: false,
             in_cdata: false,
         }
     }
@@ -138,6 +141,7 @@ impl<H: SAXHandler> ErrorHandler for TreeBuildHandler<H> {
     }
 
     fn fatal_error(&mut self, error: SAXParseError) {
+        self.fatal_error = true;
         self.handler.fatal_error(error);
     }
 

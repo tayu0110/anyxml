@@ -186,10 +186,12 @@ impl Node<dyn InternalNodeSpec> {
         Node::<dyn NodeSpec>::from(self.clone()).insert_next_sibling(new_sibling);
     }
 
-    pub fn append_child(&mut self, new_child: Node<dyn NodeSpec>) {
+    pub fn append_child(&mut self, mut new_child: Node<dyn NodeSpec>) {
         if let Some(mut last_child) = self.last_child() {
             last_child.insert_next_sibling(new_child);
         } else {
+            new_child.detach();
+            new_child.set_paretn_node(self.clone());
             self.set_first_child(new_child.clone());
             self.set_last_child(new_child);
         }
