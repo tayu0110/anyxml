@@ -7,7 +7,7 @@ use std::{
 use anyxml_uri::uri::URIStr;
 
 use crate::tree::{
-    AttlistDecl, ElementDecl, EntityDecl, NodeType, NotationDecl,
+    AttlistDecl, Document, ElementDecl, EntityDecl, NodeType, NotationDecl,
     attlist_decl::AttlistDeclSpec,
     element_decl::ElementDeclSpec,
     entity_decl::EntityDeclSpec,
@@ -36,6 +36,30 @@ pub type DocumentTypeSpec = GeneralInternalNodeSpec<DocumentTypeSpecificData>;
 pub type DocumentType = Node<DocumentTypeSpec>;
 
 impl DocumentType {
+    pub(crate) fn new(
+        name: Box<str>,
+        system_id: Option<Box<URIStr>>,
+        public_id: Option<Box<str>>,
+        owner_document: Document,
+    ) -> Self {
+        Node::create_node(
+            GeneralInternalNodeSpec {
+                first_child: None,
+                last_child: None,
+                data: DocumentTypeSpecificData {
+                    element_decl: Default::default(),
+                    attlist_decl: Default::default(),
+                    entity_decl: Default::default(),
+                    notation_decl: Default::default(),
+                    name,
+                    system_id,
+                    public_id,
+                },
+            },
+            owner_document,
+        )
+    }
+
     pub fn get_element_decl(&self, name: &str) -> Option<ElementDecl> {
         self.core
             .borrow()
@@ -90,9 +114,7 @@ impl DocumentType {
     }
 
     pub fn name(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| {
-            core.spec.data.name.as_ref()
-        })
+        Ref::map(self.core.borrow(), |core| core.spec.data.name.as_ref())
     }
 
     pub fn system_id(&self) -> Option<Ref<'_, URIStr>> {

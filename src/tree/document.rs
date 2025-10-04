@@ -3,12 +3,19 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use crate::tree::{
-    DocumentFragment, DocumentType, Element, NodeType, Text, XMLTreeError,
-    document_fragment::DocumentFragmentSpec,
-    document_type::DocumentTypeSpec,
-    element::ElementSpec,
-    node::{GeneralInternalNodeSpec, InternalNodeType, Node, NodeCore},
+use anyxml_uri::uri::{URIStr, URIString};
+
+use crate::{
+    sax::{AttributeType, DefaultDecl, contentspec::ContentSpec},
+    tree::{
+        AttlistDecl, CDATASection, Comment, DocumentFragment, DocumentType, Element, ElementDecl,
+        EntityDecl, EntityReference, NodeType, NotationDecl, ProcessingInstruction, Text,
+        XMLTreeError,
+        document_fragment::DocumentFragmentSpec,
+        document_type::DocumentTypeSpec,
+        element::ElementSpec,
+        node::{GeneralInternalNodeSpec, InternalNodeType, Node, NodeCore},
+    },
 };
 
 pub struct DocumentSpecificData {
@@ -18,6 +25,7 @@ pub struct DocumentSpecificData {
     version: Option<Box<str>>,
     encoding: Option<Box<str>>,
     standalone: Option<bool>,
+    base_uri: Box<URIStr>,
 }
 
 impl InternalNodeType for DocumentSpecificData {
@@ -45,6 +53,12 @@ impl Document {
                     version: None,
                     encoding: None,
                     standalone: None,
+                    base_uri: URIString::parse_file_path(
+                        std::env::current_dir().unwrap_or_default(),
+                    )
+                    .unwrap_or_else(|_| URIString::parse("file:///").unwrap())
+                    .resolve(&URIString::parse("document.xml").unwrap())
+                    .into(),
                 },
             },
         }));
@@ -53,6 +67,15 @@ impl Document {
             core: rc.clone(),
             owner_document: rc.clone(),
         }
+    }
+
+    pub fn create_document_type(
+        &self,
+        name: Box<str>,
+        system_id: Option<Box<URIStr>>,
+        public_id: Option<Box<str>>,
+    ) -> DocumentType {
+        DocumentType::new(name, system_id, public_id, self.clone())
     }
 
     pub fn create_element(
@@ -67,8 +90,81 @@ impl Document {
         Text::new(data.into(), self.clone())
     }
 
+    pub fn create_cdata_section(&self, data: impl Into<String>) -> CDATASection {
+        CDATASection::new(data.into(), self.clone())
+    }
+
+    pub fn create_comment(&self, data: impl Into<String>) -> Comment {
+        Comment::new(data.into(), self.clone())
+    }
+
+    pub fn create_processing_instruction(
+        &self,
+        target: Box<str>,
+        data: Option<Box<str>>,
+    ) -> ProcessingInstruction {
+        ProcessingInstruction::new(target, data, self.clone())
+    }
+
+    pub fn create_entity_reference(&self, name: Box<str>) -> EntityReference {
+        // TODO: try to expand contents
+        EntityReference::new(name, self.clone())
+    }
+
     pub fn create_document_fragment(&self) -> DocumentFragment {
         DocumentFragment::new(self.clone())
+    }
+
+    pub fn create_attlist_decl(
+        &self,
+        elem_name: Box<str>,
+        attr_name: Box<str>,
+        attr_type: AttributeType,
+        default_decl: DefaultDecl,
+    ) -> AttlistDecl {
+        AttlistDecl::new(elem_name, attr_name, attr_type, default_decl, self.clone())
+    }
+
+    pub fn create_element_decl(&self, name: Box<str>, content_spec: ContentSpec) -> ElementDecl {
+        ElementDecl::new(name, content_spec, self.clone())
+    }
+
+    pub fn create_internal_entity_decl(&self, name: Box<str>, value: Box<str>) -> EntityDecl {
+        EntityDecl::new_internal_entity_decl(name, value, self.clone())
+    }
+
+    pub fn create_external_entity_decl(
+        &self,
+        name: Box<str>,
+        system_id: Box<URIStr>,
+        public_id: Option<Box<str>>,
+    ) -> EntityDecl {
+        EntityDecl::new_external_entity_decl(name, system_id, public_id, self.clone())
+    }
+
+    pub fn create_unparsed_entity_decl(
+        &self,
+        name: Box<str>,
+        system_id: Box<URIStr>,
+        public_id: Option<Box<str>>,
+        notation_name: Box<str>,
+    ) -> EntityDecl {
+        EntityDecl::new_unparsed_entity_decl(
+            name,
+            system_id,
+            public_id,
+            notation_name,
+            self.clone(),
+        )
+    }
+
+    pub fn create_notation_decl(
+        &self,
+        name: Box<str>,
+        system_id: Option<Box<URIStr>>,
+        public_id: Option<Box<str>>,
+    ) -> NotationDecl {
+        NotationDecl::new(name, system_id, public_id, self.clone())
     }
 
     pub fn document_element(&self) -> Option<Element> {
@@ -103,6 +199,10 @@ impl Document {
         Ref::filter_map(self.core.borrow(), |core| core.spec.data.version.as_deref()).ok()
     }
 
+    pub fn set_version(&mut self, version: Option<&str>) {
+        self.core.borrow_mut().spec.data.version = version.map(|version| version.into());
+    }
+
     /// If XML declaration is present and it has the encoding declaration,
     /// return the encoding specified in the declaration.  \
     /// Otherwise, return `None`.
@@ -113,11 +213,32 @@ impl Document {
         .ok()
     }
 
+    pub fn set_encoding(&mut self, encoding: Option<&str>) {
+        self.core.borrow_mut().spec.data.encoding = encoding.map(|encoding| encoding.into());
+    }
+
     /// If XML declaration is present and it has the standalone declaration,
     /// return the boolean value specified in the declaration.  \
     /// Otherwise, return `None`.
     pub fn standalone(&self) -> Option<bool> {
         self.core.borrow().spec.data.standalone
+    }
+
+    pub fn set_standalone(&mut self, standalone: Option<bool>) {
+        self.core.borrow_mut().spec.data.standalone = standalone;
+    }
+
+    pub fn base_uri(&self) -> Ref<'_, URIStr> {
+        Ref::map(self.core.borrow(), |core| core.spec.data.base_uri.as_ref())
+    }
+
+    pub fn set_base_uri(&mut self, base_uri: Box<URIStr>) -> Result<(), XMLTreeError> {
+        if !base_uri.is_absolute() {
+            return Err(XMLTreeError::BaseURINotAbsolute);
+        }
+
+        self.core.borrow_mut().spec.data.base_uri = base_uri;
+        Ok(())
     }
 }
 

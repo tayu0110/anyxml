@@ -138,7 +138,7 @@ impl Element {
     }
 
     pub fn set_attribute(
-        &self,
+        &mut self,
         qname: &str,
         namespace_name: Option<&str>,
         value: Option<&str>,

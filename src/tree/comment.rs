@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::tree::{
-    NodeType,
+    Document, NodeType,
     node::{Node, NodeCore, NodeSpec},
 };
 
@@ -29,6 +29,10 @@ impl NodeSpec for CommentSpec {
 pub type Comment = Node<CommentSpec>;
 
 impl Comment {
+    pub(crate) fn new(data: String, owner_document: Document) -> Self {
+        Node::create_node(CommentSpec { data }, owner_document)
+    }
+
     pub fn data(&self) -> Ref<'_, str> {
         Ref::map(self.core.borrow(), |core| core.spec.data.as_str())
     }

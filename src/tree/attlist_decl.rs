@@ -6,7 +6,7 @@ use std::{
 use crate::{
     sax::{AttributeType, DefaultDecl},
     tree::{
-        NodeType,
+        Document, NodeType,
         node::{Node, NodeCore, NodeSpec},
     },
 };
@@ -35,16 +35,30 @@ impl NodeSpec for AttlistDeclSpec {
 pub type AttlistDecl = Node<AttlistDeclSpec>;
 
 impl AttlistDecl {
+    pub(crate) fn new(
+        elem_name: Box<str>,
+        attr_name: Box<str>,
+        attr_type: AttributeType,
+        default_decl: DefaultDecl,
+        owner_document: Document,
+    ) -> Self {
+        Node::create_node(
+            AttlistDeclSpec {
+                elem_name,
+                attr_name,
+                attr_type,
+                default_decl,
+            },
+            owner_document,
+        )
+    }
+
     pub fn elem_name(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| {
-            core.spec.elem_name.as_ref()
-        })
+        Ref::map(self.core.borrow(), |core| core.spec.elem_name.as_ref())
     }
 
     pub fn attr_name(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| {
-            core.spec.attr_name.as_ref()
-        })
+        Ref::map(self.core.borrow(), |core| core.spec.attr_name.as_ref())
     }
 
     pub fn attr_type(&self) -> Ref<'_, AttributeType> {

@@ -4,13 +4,13 @@ use std::{
 };
 
 use crate::tree::{
-    NodeType,
+    Document, NodeType,
     node::{Node, NodeCore, NodeSpec},
 };
 
 pub struct ProcessingInstructionSpec {
     target: Box<str>,
-    data: Box<str>,
+    data: Option<Box<str>>,
 }
 
 impl NodeSpec for ProcessingInstructionSpec {
@@ -30,13 +30,15 @@ impl NodeSpec for ProcessingInstructionSpec {
 pub type ProcessingInstruction = Node<ProcessingInstructionSpec>;
 
 impl ProcessingInstruction {
-    pub fn target(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| {
-            core.spec.target.as_ref()
-        })
+    pub(crate) fn new(target: Box<str>, data: Option<Box<str>>, owner_document: Document) -> Self {
+        Node::create_node(ProcessingInstructionSpec { target, data }, owner_document)
     }
 
-    pub fn data(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| core.spec.data.as_ref())
+    pub fn target(&self) -> Ref<'_, str> {
+        Ref::map(self.core.borrow(), |core| core.spec.target.as_ref())
+    }
+
+    pub fn data(&self) -> Option<Ref<'_, str>> {
+        Ref::filter_map(self.core.borrow(), |core| core.spec.data.as_deref()).ok()
     }
 }
