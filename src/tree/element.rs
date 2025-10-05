@@ -138,17 +138,86 @@ impl Element {
         })
     }
 
+    /// Set attributes for elements.
+    ///
+    /// When trying to set the namespace declaration attribute,
+    /// it will be redirected to [`declare_namespace`](Element::declare_namespace).
+    ///
+    /// Specifying a QName with a prefix without specifying a namespace name is an error.  \
+    /// Specifying a pair of prefix and namespace name that conflicts with an existing
+    /// namespace declaration within this element is also an error.  \
+    /// According to the namespace specification, attributes without a prefix are considered
+    /// to belong to no namespace. Therefore, specifying a namespace name when specifying
+    /// a name without a prefix is an error.
     pub fn set_attribute(
         &mut self,
         qname: &str,
         namespace_name: Option<&str>,
         value: Option<&str>,
-    ) -> Result<Attribute, XMLTreeError> {
-        let mut attribute = Attribute::new(
-            qname.into(),
-            namespace_name.map(|name| name.into()),
-            self.clone(),
-        )?;
+    ) -> Result<(), XMLTreeError> {
+        let mut attribute = if let Some((prefix, local_name)) = qname.split_once(':')
+            && !prefix.is_empty()
+        {
+            if prefix == "xmlns" {
+                if namespace_name != Some(XML_NS_NAMESPACE) || value.is_none() {
+                    return Err(XMLTreeError::UnacceptableNamespaceBinding);
+                }
+
+                self.declare_namespace(Some(local_name), value.unwrap())?;
+                return Ok(());
+            }
+
+            if let Some(namespace) = self
+                .core
+                .borrow()
+                .spec
+                .data
+                .namespace_decl
+                .get_by_prefix(Some(prefix))
+                .map(|core| Namespace {
+                    core,
+                    owner_document: self.owner_document.clone(),
+                })
+            {
+                Attribute::with_namespace(qname.into(), Some(namespace), self.clone())?
+            } else {
+                let ret = Attribute::new(
+                    qname.into(),
+                    namespace_name.map(|name| name.into()),
+                    self.clone(),
+                )?;
+
+                // register implicit namespace declaration
+                if let Some(namespace) = ret.namespace() {
+                    self.core
+                        .borrow_mut()
+                        .spec
+                        .data
+                        .namespace_decl
+                        .push(namespace)?;
+                }
+
+                ret
+            }
+        } else {
+            if qname == "xmlns" {
+                if namespace_name != Some(XML_NS_NAMESPACE) || value.is_none() {
+                    return Err(XMLTreeError::UnacceptableNamespaceBinding);
+                }
+
+                self.declare_namespace(None, value.unwrap())?;
+                return Ok(());
+            }
+
+            // According to the specification,
+            // attributes without prefixes do not belong to a namespace,
+            // so specifying a namespace for an attribute without a prefix is an error.
+            if namespace_name.is_some() {
+                return Err(XMLTreeError::UnacceptableNamespaceName);
+            }
+
+            Attribute::new(qname.into(), None, self.clone())?
+        };
         if let Some(value) = value {
             let text = self.owner_document().create_text(value);
             attribute.append_child(text.into());
@@ -159,7 +228,68 @@ impl Element {
             .data
             .attributes
             .push(attribute.clone())?;
-        Ok(attribute)
+        Ok(())
+    }
+
+    pub fn remove_attribute_node(&mut self, attribute: Attribute) -> Result<(), XMLTreeError> {
+        if attribute
+            .owner_element()
+            .is_none_or(|elem| !Rc::ptr_eq(&self.core, &elem.core))
+        {
+            return Err(XMLTreeError::UnspecifiedAttribute);
+        }
+
+        let prefix = attribute.prefix();
+        let local_name = attribute.local_name();
+        let namespace_name = attribute.namespace_name();
+        if let Some(mut attribute) = self
+            .core
+            .borrow_mut()
+            .spec
+            .data
+            .attributes
+            .remove(&local_name, namespace_name.as_deref())
+            .map(|core| Attribute {
+                core,
+                owner_document: self.owner_document.clone(),
+            })
+        {
+            attribute.unset_owner_element();
+        }
+        // remove implicit namespace declaration if it is no longer used
+        if let Some(namespace_name) = namespace_name
+            && self
+                .namespace()
+                .is_some_and(|namespace| namespace.namespace_name() != namespace_name)
+            && !self
+                .core
+                .borrow()
+                .spec
+                .data
+                .attributes
+                .check_using_namespace(&namespace_name)
+            && let Some(namespace) = self
+                .core
+                .borrow()
+                .spec
+                .data
+                .namespace_decl
+                .get_by_prefix(prefix.as_deref())
+                .map(|core| Namespace {
+                    core,
+                    owner_document: self.owner_document.clone(),
+                })
+            && namespace.is_implicit()
+        {
+            self.core
+                .borrow_mut()
+                .spec
+                .data
+                .namespace_decl
+                .remove(prefix.as_deref());
+        }
+
+        Ok(())
     }
 
     /// Returns an iterator that scans attributes specified by this element.
@@ -349,13 +479,19 @@ impl Element {
                 .check_using_namespace(&namespace.namespace_name())
         {
             namespace.as_implicit();
-        } else {
-            self.core
-                .borrow_mut()
-                .spec
-                .data
-                .namespace_decl
-                .remove(prefix);
+        } else if let Some(mut namespace) = self
+            .core
+            .borrow_mut()
+            .spec
+            .data
+            .namespace_decl
+            .remove(prefix)
+            .map(|core| Namespace {
+                core,
+                owner_document: self.owner_document.clone(),
+            })
+        {
+            namespace.unset_owner_element();
         }
     }
 }
@@ -378,6 +514,25 @@ impl AttributeMap {
             .get(namespace_name.unwrap_or(""))?
             .get(local_name)?;
         self.attributes.get(index).cloned()
+    }
+
+    fn remove(
+        &mut self,
+        local_name: &str,
+        namespace_name: Option<&str>,
+    ) -> Option<Rc<RefCell<NodeCore<AttributeSpec>>>> {
+        let map = self.index.get_mut(namespace_name.unwrap_or_default())?;
+        let index = map.remove(local_name)?;
+        if map.is_empty() {
+            self.index.remove(namespace_name.unwrap_or_default());
+        }
+        let ret = self.attributes.remove(index);
+        self.index
+            .values_mut()
+            .flat_map(|map| map.values_mut())
+            .filter(|i| **i > index)
+            .for_each(|index| *index -= 1);
+        Some(ret)
     }
 
     fn check_using_namespace(&self, namespace_name: &str) -> bool {

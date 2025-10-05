@@ -72,6 +72,12 @@ impl Namespace {
         })
     }
 
+    pub(crate) fn unset_owner_element(&mut self) {
+        let weak = Weak::new();
+        self.core.borrow_mut().spec.owner_element = weak.clone();
+        self.core.borrow_mut().parent_node = weak;
+    }
+
     pub fn prefix(&self) -> Option<Rc<str>> {
         self.core.borrow().spec.prefix.clone()
     }
@@ -88,9 +94,9 @@ impl Namespace {
         self.core.borrow_mut().spec.declare_type = DeclareType::Explicit;
     }
 
-    // pub(crate) fn is_implicit(&self) -> bool {
-    //     matches!(self.core.borrow().spec.declare_type, DeclareType::Implicit)
-    // }
+    pub(crate) fn is_implicit(&self) -> bool {
+        matches!(self.core.borrow().spec.declare_type, DeclareType::Implicit)
+    }
 
     pub(crate) fn as_implicit(&mut self) {
         self.core.borrow_mut().spec.declare_type = DeclareType::Implicit

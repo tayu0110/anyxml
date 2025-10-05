@@ -77,6 +77,7 @@ pub enum XMLTreeError {
     UnacceptableNamespaceBinding,
     UnacceptableNamespaceName,
     DuplicateAttribute,
+    UnspecifiedAttribute,
     BaseURINotAbsolute,
 }
 

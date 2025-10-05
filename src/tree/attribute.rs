@@ -101,11 +101,84 @@ impl Attribute {
         Ok(ret)
     }
 
+    pub(crate) fn with_namespace(
+        qname: Rc<str>,
+        namespace: Option<Namespace>,
+        owner_element: Element,
+    ) -> Result<Self, XMLTreeError> {
+        let elem = Rc::downgrade(&owner_element.core);
+        let prev: Weak<RefCell<NodeCore<DocumentFragmentSpec>>> = Weak::new();
+        if let Some((prefix, local_name)) = qname.split_once(':')
+            && !prefix.is_empty()
+        {
+            let Some(namespace) = namespace else {
+                return Err(XMLTreeError::UnresolvablePrefix);
+            };
+            if namespace.prefix().is_none_or(|pre| pre.as_ref() != prefix) {
+                return Err(XMLTreeError::UnresolvablePrefix);
+            }
+            Ok(Attribute {
+                core: Rc::new(RefCell::new(NodeCore {
+                    parent_node: elem.clone(),
+                    previous_sibling: prev,
+                    next_sibling: None,
+                    spec: GeneralInternalNodeSpec {
+                        first_child: None,
+                        last_child: None,
+                        data: AttributeSpecificData {
+                            owner_element: elem,
+                            name: qname.clone(),
+                            local_name: local_name.into(),
+                            namespace: Some(namespace.core),
+                        },
+                    },
+                })),
+                owner_document: owner_element.owner_document().core,
+            })
+        } else {
+            if qname.starts_with(':') {
+                return Err(XMLTreeError::EmptyPrefix);
+            }
+
+            // According to the specification,
+            // attributes without prefixes do not belong to a namespace,
+            // so specifying a namespace for an attribute without a prefix is an error.
+            if namespace.is_some() {
+                return Err(XMLTreeError::UnacceptableNamespaceName);
+            }
+
+            Ok(Attribute {
+                core: Rc::new(RefCell::new(NodeCore {
+                    parent_node: elem.clone(),
+                    previous_sibling: prev,
+                    next_sibling: None,
+                    spec: GeneralInternalNodeSpec {
+                        first_child: None,
+                        last_child: None,
+                        data: AttributeSpecificData {
+                            owner_element: elem,
+                            name: qname.clone(),
+                            local_name: qname.clone(),
+                            namespace: None,
+                        },
+                    },
+                })),
+                owner_document: owner_element.owner_document().core,
+            })
+        }
+    }
+
     pub fn owner_element(&self) -> Option<Element> {
         Some(Element {
             core: self.core.borrow().spec.data.owner_element.upgrade()?,
             owner_document: self.owner_document.clone(),
         })
+    }
+
+    pub(crate) fn unset_owner_element(&mut self) {
+        let weak = Weak::new();
+        self.core.borrow_mut().spec.data.owner_element = weak.clone();
+        self.core.borrow_mut().parent_node = weak;
     }
 
     pub fn name(&self) -> Rc<str> {

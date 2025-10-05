@@ -5,6 +5,7 @@ use std::{
 
 use crate::tree::{
     NodeType,
+    convert::NodeKind,
     document::{Document, DocumentSpec},
     document_fragment::DocumentFragmentSpec,
 };
@@ -108,9 +109,32 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
     fn unset_next_sibling(&mut self) {
         self.core.borrow_mut().next_sibling = None;
     }
+}
 
+impl Node<dyn NodeSpec> {
+    /// Detach the link between parent and self, and remove self from the sibling list.
+    ///
+    /// For attribute nodes, execute [`remove_attribute_node`](crate::tree::Element::remove_attribute_node) on the parent element for itself.  \
+    /// For namespace nodes, execute [`undeclare_namespace`](crate::tree::Element::undeclare_namespace) on the parent element for itself.
     pub fn detach(&mut self) {
-        let parent_node = self.parent_node();
+        let mut parent_node = self.parent_node();
+        if let Some(parent_node) = parent_node.as_mut() {
+            match self.downcast() {
+                NodeKind::Attribute(attribute) => {
+                    if let Some(mut element) = attribute.owner_element() {
+                        element.remove_attribute_node(attribute).ok();
+                    }
+                    return;
+                }
+                NodeKind::Namespace(namespace) => {
+                    if let Some(mut element) = namespace.owner_element() {
+                        element.undeclare_namespace(namespace.prefix().as_deref());
+                    }
+                    return;
+                }
+                _ => parent_node.pre_child_removal(self.clone()),
+            }
+        }
         self.unset_parent_node();
         let previous_sibling = self.previous_sibling();
         self.unset_previous_sibling();
@@ -141,9 +165,7 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
             (None, None, None) => {}
         }
     }
-}
 
-impl Node<dyn NodeSpec> {
     pub fn insert_previous_sibling(&mut self, mut new_sibling: Node<dyn NodeSpec>) {
         new_sibling.detach();
         new_sibling.set_next_sibling(self.clone());
@@ -178,6 +200,10 @@ impl Node<dyn NodeSpec> {
 }
 
 impl Node<dyn InternalNodeSpec> {
+    pub fn detach(&mut self) {
+        Node::<dyn NodeSpec>::from(self.clone()).detach();
+    }
+
     pub fn insert_previous_sibling(&mut self, new_sibling: Node<dyn NodeSpec>) {
         Node::<dyn NodeSpec>::from(self.clone()).insert_previous_sibling(new_sibling);
     }
@@ -196,6 +222,10 @@ impl Node<dyn InternalNodeSpec> {
             self.set_last_child(new_child);
         }
     }
+
+    fn pre_child_removal(&mut self, removed_child: Node<dyn NodeSpec>) {
+        todo!()
+    }
 }
 
 impl<Spec: NodeSpec + 'static> Node<Spec> {
@@ -210,6 +240,10 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
             })),
             owner_document: owner_document.owner_document.clone(),
         }
+    }
+
+    pub fn detach(&mut self) {
+        Node::<dyn NodeSpec>::from(self.clone()).detach();
     }
 
     pub fn insert_previous_sibling(&mut self, new_sibling: Node<dyn NodeSpec>) {
