@@ -59,6 +59,19 @@ impl InternalNodeSpec for DocumentSpec {
     fn unset_last_child(&mut self) {
         self.last_child = None;
     }
+
+    fn pre_child_removal(&mut self, removed_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
+        match removed_child.node_type() {
+            NodeType::Element => {
+                self.document_element = None;
+            }
+            NodeType::DocumentType => {
+                self.document_type = None;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
 }
 
 pub type Document = Node<DocumentSpec>;
