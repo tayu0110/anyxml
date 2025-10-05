@@ -10,11 +10,14 @@ use crate::{
         document_fragment::DocumentFragmentSpec,
         element::ElementSpec,
         namespace::{Namespace, NamespaceSpec},
-        node::{GeneralInternalNodeSpec, InternalNodeType, Node, NodeCore},
+        node::{InternalNodeSpec, Node, NodeCore, NodeSpec},
     },
 };
 
-pub struct AttributeSpecificData {
+pub struct AttributeSpec {
+    first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
+    last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
+
     owner_element: Weak<RefCell<NodeCore<ElementSpec>>>,
 
     name: Rc<str>,
@@ -22,13 +25,36 @@ pub struct AttributeSpecificData {
     namespace: Option<Rc<RefCell<NodeCore<NamespaceSpec>>>>,
 }
 
-impl InternalNodeType for AttributeSpecificData {
+impl NodeSpec for AttributeSpec {
     fn node_type(&self) -> NodeType {
         NodeType::Attribute
     }
+
+    fn first_child(&self) -> Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>> {
+        self.first_child.clone()
+    }
+
+    fn last_child(&self) -> Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>> {
+        self.last_child.clone()
+    }
 }
 
-pub type AttributeSpec = GeneralInternalNodeSpec<AttributeSpecificData>;
+impl InternalNodeSpec for AttributeSpec {
+    fn set_first_child(&mut self, new: Rc<RefCell<NodeCore<dyn NodeSpec>>>) {
+        self.first_child = Some(new);
+    }
+    fn unset_first_child(&mut self) {
+        self.first_child = None;
+    }
+
+    fn set_last_child(&mut self, new: Rc<RefCell<NodeCore<dyn NodeSpec>>>) {
+        self.last_child = Some(new);
+    }
+    fn unset_last_child(&mut self) {
+        self.last_child = None;
+    }
+}
+
 pub type Attribute = Node<AttributeSpec>;
 
 impl Attribute {
@@ -44,15 +70,13 @@ impl Attribute {
                 parent_node: elem.clone(),
                 previous_sibling: prev,
                 next_sibling: None,
-                spec: GeneralInternalNodeSpec {
+                spec: AttributeSpec {
                     first_child: None,
                     last_child: None,
-                    data: AttributeSpecificData {
-                        owner_element: elem,
-                        name: qname.clone(),
-                        local_name: qname.clone(),
-                        namespace: None,
-                    },
+                    owner_element: elem,
+                    name: qname.clone(),
+                    local_name: qname.clone(),
+                    namespace: None,
                 },
             })),
             owner_document: owner_element.owner_document().core,
@@ -82,8 +106,8 @@ impl Attribute {
                 owner_element,
             );
             namespace.as_implicit();
-            ret.core.borrow_mut().spec.data.local_name = local_name.into();
-            ret.core.borrow_mut().spec.data.namespace = Some(namespace.core);
+            ret.core.borrow_mut().spec.local_name = local_name.into();
+            ret.core.borrow_mut().spec.namespace = Some(namespace.core);
         } else {
             if qname.starts_with(":") {
                 return Err(XMLTreeError::EmptyPrefix);
@@ -94,7 +118,7 @@ impl Attribute {
             {
                 let mut namespace = Namespace::new(None, namespace_name, owner_element);
                 namespace.as_implicit();
-                ret.core.borrow_mut().spec.data.namespace = Some(namespace.core);
+                ret.core.borrow_mut().spec.namespace = Some(namespace.core);
             }
         }
 
@@ -122,15 +146,13 @@ impl Attribute {
                     parent_node: elem.clone(),
                     previous_sibling: prev,
                     next_sibling: None,
-                    spec: GeneralInternalNodeSpec {
+                    spec: AttributeSpec {
                         first_child: None,
                         last_child: None,
-                        data: AttributeSpecificData {
-                            owner_element: elem,
-                            name: qname.clone(),
-                            local_name: local_name.into(),
-                            namespace: Some(namespace.core),
-                        },
+                        owner_element: elem,
+                        name: qname.clone(),
+                        local_name: local_name.into(),
+                        namespace: Some(namespace.core),
                     },
                 })),
                 owner_document: owner_element.owner_document().core,
@@ -152,15 +174,13 @@ impl Attribute {
                     parent_node: elem.clone(),
                     previous_sibling: prev,
                     next_sibling: None,
-                    spec: GeneralInternalNodeSpec {
+                    spec: AttributeSpec {
                         first_child: None,
                         last_child: None,
-                        data: AttributeSpecificData {
-                            owner_element: elem,
-                            name: qname.clone(),
-                            local_name: qname.clone(),
-                            namespace: None,
-                        },
+                        owner_element: elem,
+                        name: qname.clone(),
+                        local_name: qname.clone(),
+                        namespace: None,
                     },
                 })),
                 owner_document: owner_element.owner_document().core,
@@ -170,30 +190,29 @@ impl Attribute {
 
     pub fn owner_element(&self) -> Option<Element> {
         Some(Element {
-            core: self.core.borrow().spec.data.owner_element.upgrade()?,
+            core: self.core.borrow().spec.owner_element.upgrade()?,
             owner_document: self.owner_document.clone(),
         })
     }
 
     pub(crate) fn unset_owner_element(&mut self) {
         let weak = Weak::new();
-        self.core.borrow_mut().spec.data.owner_element = weak.clone();
+        self.core.borrow_mut().spec.owner_element = weak.clone();
         self.core.borrow_mut().parent_node = weak;
     }
 
     pub fn name(&self) -> Rc<str> {
-        self.core.borrow().spec.data.name.clone()
+        self.core.borrow().spec.name.clone()
     }
 
     pub fn local_name(&self) -> Rc<str> {
-        self.core.borrow().spec.data.local_name.clone()
+        self.core.borrow().spec.local_name.clone()
     }
 
     pub fn namespace(&self) -> Option<Namespace> {
         self.core
             .borrow()
             .spec
-            .data
             .namespace
             .clone()
             .map(|core| Namespace {

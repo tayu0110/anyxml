@@ -11,11 +11,14 @@ use crate::tree::{
     attlist_decl::AttlistDeclSpec,
     element_decl::ElementDeclSpec,
     entity_decl::EntityDeclSpec,
-    node::{GeneralInternalNodeSpec, InternalNodeType, Node, NodeCore},
+    node::{InternalNodeSpec, Node, NodeCore, NodeSpec},
     notation_decl::NotationDeclSpec,
 };
 
-pub struct DocumentTypeSpecificData {
+pub struct DocumentTypeSpec {
+    first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
+    last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
+
     element_decl: HashMap<Box<str>, Rc<RefCell<NodeCore<ElementDeclSpec>>>>,
     attlist_decl: HashMap<Box<str>, HashMap<Box<str>, Rc<RefCell<NodeCore<AttlistDeclSpec>>>>>,
     entity_decl: HashMap<Box<str>, Rc<RefCell<NodeCore<EntityDeclSpec>>>>,
@@ -26,13 +29,36 @@ pub struct DocumentTypeSpecificData {
     public_id: Option<Box<str>>,
 }
 
-impl InternalNodeType for DocumentTypeSpecificData {
-    fn node_type(&self) -> super::NodeType {
+impl NodeSpec for DocumentTypeSpec {
+    fn node_type(&self) -> NodeType {
         NodeType::DocumentType
+    }
+
+    fn first_child(&self) -> Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>> {
+        self.first_child.clone()
+    }
+
+    fn last_child(&self) -> Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>> {
+        self.last_child.clone()
     }
 }
 
-pub type DocumentTypeSpec = GeneralInternalNodeSpec<DocumentTypeSpecificData>;
+impl InternalNodeSpec for DocumentTypeSpec {
+    fn set_first_child(&mut self, new: Rc<RefCell<NodeCore<dyn NodeSpec>>>) {
+        self.first_child = Some(new);
+    }
+    fn unset_first_child(&mut self) {
+        self.first_child = None;
+    }
+
+    fn set_last_child(&mut self, new: Rc<RefCell<NodeCore<dyn NodeSpec>>>) {
+        self.last_child = Some(new);
+    }
+    fn unset_last_child(&mut self) {
+        self.last_child = None;
+    }
+}
+
 pub type DocumentType = Node<DocumentTypeSpec>;
 
 impl DocumentType {
@@ -43,18 +69,16 @@ impl DocumentType {
         owner_document: Document,
     ) -> Self {
         Node::create_node(
-            GeneralInternalNodeSpec {
+            DocumentTypeSpec {
                 first_child: None,
                 last_child: None,
-                data: DocumentTypeSpecificData {
-                    element_decl: Default::default(),
-                    attlist_decl: Default::default(),
-                    entity_decl: Default::default(),
-                    notation_decl: Default::default(),
-                    name,
-                    system_id,
-                    public_id,
-                },
+                element_decl: Default::default(),
+                attlist_decl: Default::default(),
+                entity_decl: Default::default(),
+                notation_decl: Default::default(),
+                name,
+                system_id,
+                public_id,
             },
             owner_document,
         )
@@ -64,7 +88,6 @@ impl DocumentType {
         self.core
             .borrow()
             .spec
-            .data
             .element_decl
             .get(name)
             .map(|core| ElementDecl {
@@ -77,7 +100,6 @@ impl DocumentType {
         self.core
             .borrow()
             .spec
-            .data
             .attlist_decl
             .get(elem_name)?
             .get(attr_name)
@@ -91,7 +113,6 @@ impl DocumentType {
         self.core
             .borrow()
             .spec
-            .data
             .entity_decl
             .get(name)
             .map(|core| EntityDecl {
@@ -104,7 +125,6 @@ impl DocumentType {
         self.core
             .borrow()
             .spec
-            .data
             .notation_decl
             .get(name)
             .map(|core| NotationDecl {
@@ -114,20 +134,14 @@ impl DocumentType {
     }
 
     pub fn name(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| core.spec.data.name.as_ref())
+        Ref::map(self.core.borrow(), |core| core.spec.name.as_ref())
     }
 
     pub fn system_id(&self) -> Option<Ref<'_, URIStr>> {
-        Ref::filter_map(self.core.borrow(), |core| {
-            core.spec.data.system_id.as_deref()
-        })
-        .ok()
+        Ref::filter_map(self.core.borrow(), |core| core.spec.system_id.as_deref()).ok()
     }
 
     pub fn public_id(&self) -> Option<Ref<'_, str>> {
-        Ref::filter_map(self.core.borrow(), |core| {
-            core.spec.data.public_id.as_deref()
-        })
-        .ok()
+        Ref::filter_map(self.core.borrow(), |core| core.spec.public_id.as_deref()).ok()
     }
 }

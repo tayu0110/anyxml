@@ -2,18 +2,44 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::tree::{
     Document, NodeType,
-    node::{GeneralInternalNodeSpec, InternalNodeType, Node, NodeCore},
+    node::{InternalNodeSpec, Node, NodeCore, NodeSpec},
 };
 
-pub struct DocumentFragmentSpecificData {}
+pub struct DocumentFragmentSpec {
+    first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
+    last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
+}
 
-impl InternalNodeType for DocumentFragmentSpecificData {
-    fn node_type(&self) -> super::NodeType {
+impl NodeSpec for DocumentFragmentSpec {
+    fn node_type(&self) -> NodeType {
         NodeType::DocumentFragment
+    }
+
+    fn first_child(&self) -> Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>> {
+        self.first_child.clone()
+    }
+
+    fn last_child(&self) -> Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>> {
+        self.last_child.clone()
     }
 }
 
-pub type DocumentFragmentSpec = GeneralInternalNodeSpec<DocumentFragmentSpecificData>;
+impl InternalNodeSpec for DocumentFragmentSpec {
+    fn set_first_child(&mut self, new: Rc<RefCell<NodeCore<dyn NodeSpec>>>) {
+        self.first_child = Some(new);
+    }
+    fn unset_first_child(&mut self) {
+        self.first_child = None;
+    }
+
+    fn set_last_child(&mut self, new: Rc<RefCell<NodeCore<dyn NodeSpec>>>) {
+        self.last_child = Some(new);
+    }
+    fn unset_last_child(&mut self) {
+        self.last_child = None;
+    }
+}
+
 pub type DocumentFragment = Node<DocumentFragmentSpec>;
 
 impl DocumentFragment {
@@ -23,10 +49,9 @@ impl DocumentFragment {
                 parent_node: owner_document.core.borrow().parent_node.clone(),
                 previous_sibling: owner_document.core.borrow().previous_sibling.clone(),
                 next_sibling: None,
-                spec: GeneralInternalNodeSpec {
+                spec: DocumentFragmentSpec {
                     first_child: None,
                     last_child: None,
-                    data: DocumentFragmentSpecificData {},
                 },
             })),
             owner_document: owner_document.core.clone(),

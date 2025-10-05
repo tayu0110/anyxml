@@ -11,11 +11,14 @@ use crate::{
         Attribute, Document, NodeType, XMLTreeError,
         attribute::AttributeSpec,
         namespace::{Namespace, NamespaceSpec},
-        node::{GeneralInternalNodeSpec, InternalNodeSpec, InternalNodeType, Node, NodeCore},
+        node::{InternalNodeSpec, Node, NodeCore, NodeSpec},
     },
 };
 
-pub struct ElementSpecificData {
+pub struct ElementSpec {
+    first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
+    last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
+
     name: Rc<str>,
     local_name: Rc<str>,
     namespace: Option<Rc<RefCell<NodeCore<NamespaceSpec>>>>,
@@ -24,13 +27,36 @@ pub struct ElementSpecificData {
     namespace_decl: NamespaceMap,
 }
 
-impl InternalNodeType for ElementSpecificData {
+impl NodeSpec for ElementSpec {
     fn node_type(&self) -> NodeType {
         NodeType::Element
     }
+
+    fn first_child(&self) -> Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>> {
+        self.first_child.clone()
+    }
+
+    fn last_child(&self) -> Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>> {
+        self.last_child.clone()
+    }
 }
 
-pub type ElementSpec = GeneralInternalNodeSpec<ElementSpecificData>;
+impl InternalNodeSpec for ElementSpec {
+    fn set_first_child(&mut self, new: Rc<RefCell<NodeCore<dyn NodeSpec>>>) {
+        self.first_child = Some(new);
+    }
+    fn unset_first_child(&mut self) {
+        self.first_child = None;
+    }
+
+    fn set_last_child(&mut self, new: Rc<RefCell<NodeCore<dyn NodeSpec>>>) {
+        self.last_child = Some(new);
+    }
+    fn unset_last_child(&mut self) {
+        self.last_child = None;
+    }
+}
+
 pub type Element = Node<ElementSpec>;
 
 impl Element {
@@ -40,13 +66,15 @@ impl Element {
         owner_document: Document,
     ) -> Result<Self, XMLTreeError> {
         let ret = Node::create_node(
-            GeneralInternalNodeSpec::new(ElementSpecificData {
+            ElementSpec {
+                first_child: None,
+                last_child: None,
                 name: qname.clone(),
                 local_name: qname.clone(),
                 namespace: None,
                 attributes: AttributeMap::default(),
                 namespace_decl: NamespaceMap::default(),
-            }),
+            },
             owner_document,
         );
 
@@ -73,8 +101,8 @@ impl Element {
                 ret.clone(),
             );
             namespace.as_implicit();
-            ret.core.borrow_mut().spec.data.local_name = local_name.into();
-            ret.core.borrow_mut().spec.data.namespace = Some(namespace.core);
+            ret.core.borrow_mut().spec.local_name = local_name.into();
+            ret.core.borrow_mut().spec.namespace = Some(namespace.core);
         } else {
             if qname.starts_with(":") {
                 return Err(XMLTreeError::EmptyPrefix);
@@ -85,7 +113,7 @@ impl Element {
             {
                 let mut namespace = Namespace::new(None, namespace_name, ret.clone());
                 namespace.as_implicit();
-                ret.core.borrow_mut().spec.data.namespace = Some(namespace.core);
+                ret.core.borrow_mut().spec.namespace = Some(namespace.core);
             }
         }
 
@@ -93,18 +121,17 @@ impl Element {
     }
 
     pub fn name(&self) -> Rc<str> {
-        self.core.borrow().spec.data.name.clone()
+        self.core.borrow().spec.name.clone()
     }
 
     pub fn local_name(&self) -> Rc<str> {
-        self.core.borrow().spec.data.local_name.clone()
+        self.core.borrow().spec.local_name.clone()
     }
 
     pub(crate) fn namespace(&self) -> Option<Namespace> {
         self.core
             .borrow()
             .spec
-            .data
             .namespace
             .clone()
             .map(|core| Namespace {
@@ -131,7 +158,6 @@ impl Element {
                 .core
                 .borrow()
                 .spec
-                .data
                 .attributes
                 .get(local_name, namespace_name)?,
             owner_document: self.owner_document.clone(),
@@ -171,7 +197,6 @@ impl Element {
                 .core
                 .borrow()
                 .spec
-                .data
                 .namespace_decl
                 .get_by_prefix(Some(prefix))
                 .map(|core| Namespace {
@@ -189,12 +214,7 @@ impl Element {
 
                 // register implicit namespace declaration
                 if let Some(namespace) = ret.namespace() {
-                    self.core
-                        .borrow_mut()
-                        .spec
-                        .data
-                        .namespace_decl
-                        .push(namespace)?;
+                    self.core.borrow_mut().spec.namespace_decl.push(namespace)?;
                 }
 
                 ret
@@ -225,7 +245,6 @@ impl Element {
         self.core
             .borrow_mut()
             .spec
-            .data
             .attributes
             .push(attribute.clone())?;
         Ok(())
@@ -246,7 +265,6 @@ impl Element {
             .core
             .borrow_mut()
             .spec
-            .data
             .attributes
             .remove(&local_name, namespace_name.as_deref())
             .map(|core| Attribute {
@@ -265,14 +283,12 @@ impl Element {
                 .core
                 .borrow()
                 .spec
-                .data
                 .attributes
                 .check_using_namespace(&namespace_name)
             && let Some(namespace) = self
                 .core
                 .borrow()
                 .spec
-                .data
                 .namespace_decl
                 .get_by_prefix(prefix.as_deref())
                 .map(|core| Namespace {
@@ -284,7 +300,6 @@ impl Element {
             self.core
                 .borrow_mut()
                 .spec
-                .data
                 .namespace_decl
                 .remove(prefix.as_deref());
         }
@@ -322,7 +337,6 @@ impl Element {
                     .core
                     .borrow()
                     .spec
-                    .data
                     .namespace_decl
                     .get_by_namespace_name(namespace_name)
             {
@@ -359,7 +373,6 @@ impl Element {
                     .core
                     .borrow()
                     .spec
-                    .data
                     .namespace_decl
                     .get_by_prefix(prefix)
             {
@@ -401,7 +414,6 @@ impl Element {
             .core
             .borrow()
             .spec
-            .data
             .namespace_decl
             .get_by_prefix(prefix)
             .map(|core| Namespace {
@@ -441,12 +453,7 @@ impl Element {
             namespace_name.into(),
             self.clone(),
         );
-        self.core
-            .borrow_mut()
-            .spec
-            .data
-            .namespace_decl
-            .push(namespace)?;
+        self.core.borrow_mut().spec.namespace_decl.push(namespace)?;
         Ok(())
     }
 
@@ -459,7 +466,6 @@ impl Element {
             .core
             .borrow()
             .spec
-            .data
             .namespace_decl
             .get_by_prefix(prefix)
             .map(|core| Namespace {
@@ -474,7 +480,6 @@ impl Element {
                 .core
                 .borrow()
                 .spec
-                .data
                 .attributes
                 .check_using_namespace(&namespace.namespace_name())
         {
@@ -483,7 +488,6 @@ impl Element {
             .core
             .borrow_mut()
             .spec
-            .data
             .namespace_decl
             .remove(prefix)
             .map(|core| Namespace {
@@ -573,7 +577,7 @@ impl<'a> Iterator for AttributeIter<'a> {
     type Item = Attribute;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let map = &self.element.core.borrow().spec.data.attributes;
+        let map = &self.element.core.borrow().spec.attributes;
         if self.index >= map.attributes.len() {
             return None;
         }
