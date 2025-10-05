@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::tree::{
-    NodeType,
+    NodeType, XMLTreeError,
     convert::NodeKind,
     document::{Document, DocumentSpec},
     document_fragment::DocumentFragmentSpec,
@@ -22,6 +22,11 @@ pub trait InternalNodeSpec: NodeSpec {
 
     fn set_last_child(&mut self, new: Rc<RefCell<NodeCore<dyn NodeSpec>>>);
     fn unset_last_child(&mut self);
+
+    fn pre_child_removal(&mut self, removed_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
+        let _ = removed_child;
+        Ok(())
+    }
 }
 
 pub struct NodeCore<Spec: ?Sized> {
@@ -132,7 +137,9 @@ impl Node<dyn NodeSpec> {
                     }
                     return;
                 }
-                _ => parent_node.pre_child_removal(self.clone()),
+                _ => {
+                    parent_node.pre_child_removal(self.clone()).ok();
+                }
             }
         }
         self.unset_parent_node();
@@ -223,8 +230,8 @@ impl Node<dyn InternalNodeSpec> {
         }
     }
 
-    fn pre_child_removal(&mut self, removed_child: Node<dyn NodeSpec>) {
-        todo!()
+    fn pre_child_removal(&mut self, removed_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
+        self.core.borrow_mut().spec.pre_child_removal(removed_child)
     }
 }
 
