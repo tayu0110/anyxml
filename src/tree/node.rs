@@ -121,7 +121,7 @@ impl Node<dyn NodeSpec> {
     ///
     /// For attribute nodes, execute [`remove_attribute_node`](crate::tree::Element::remove_attribute_node) on the parent element for itself.  \
     /// For namespace nodes, execute [`undeclare_namespace`](crate::tree::Element::undeclare_namespace) on the parent element for itself.
-    pub fn detach(&mut self) {
+    pub fn detach(&mut self) -> Result<(), XMLTreeError> {
         let mut parent_node = self.parent_node();
         if let Some(parent_node) = parent_node.as_mut() {
             match self.downcast() {
@@ -129,16 +129,16 @@ impl Node<dyn NodeSpec> {
                     if let Some(mut element) = attribute.owner_element() {
                         element.remove_attribute_node(attribute).ok();
                     }
-                    return;
+                    return Ok(());
                 }
                 NodeKind::Namespace(namespace) => {
                     if let Some(mut element) = namespace.owner_element() {
                         element.undeclare_namespace(namespace.prefix().as_deref());
                     }
-                    return;
+                    return Ok(());
                 }
                 _ => {
-                    parent_node.pre_child_removal(self.clone()).ok();
+                    parent_node.pre_child_removal(self.clone())?;
                 }
             }
         }
@@ -171,10 +171,14 @@ impl Node<dyn NodeSpec> {
             }
             (None, None, None) => {}
         }
+        Ok(())
     }
 
-    pub fn insert_previous_sibling(&mut self, mut new_sibling: Node<dyn NodeSpec>) {
-        new_sibling.detach();
+    pub fn insert_previous_sibling(
+        &mut self,
+        mut new_sibling: Node<dyn NodeSpec>,
+    ) -> Result<(), XMLTreeError> {
+        new_sibling.detach()?;
         new_sibling.set_next_sibling(self.clone());
         if let Some(mut previous_sibling) = self.previous_sibling() {
             previous_sibling.set_next_sibling(new_sibling.clone());
@@ -187,10 +191,14 @@ impl Node<dyn NodeSpec> {
             new_sibling.set_paretn_node(parent_node);
         }
         self.set_previous_sibling(new_sibling.clone());
+        Ok(())
     }
 
-    pub fn insert_next_sibling(&mut self, mut new_sibling: Node<dyn NodeSpec>) {
-        new_sibling.detach();
+    pub fn insert_next_sibling(
+        &mut self,
+        mut new_sibling: Node<dyn NodeSpec>,
+    ) -> Result<(), XMLTreeError> {
+        new_sibling.detach()?;
         new_sibling.set_previous_sibling(self.clone());
         if let Some(mut next_sibling) = self.next_sibling() {
             next_sibling.set_previous_sibling(new_sibling.clone());
@@ -203,31 +211,39 @@ impl Node<dyn NodeSpec> {
             new_sibling.set_paretn_node(parent_node);
         }
         self.set_next_sibling(new_sibling.clone());
+        Ok(())
     }
 }
 
 impl Node<dyn InternalNodeSpec> {
-    pub fn detach(&mut self) {
-        Node::<dyn NodeSpec>::from(self.clone()).detach();
+    pub fn detach(&mut self) -> Result<(), XMLTreeError> {
+        Node::<dyn NodeSpec>::from(self.clone()).detach()
     }
 
-    pub fn insert_previous_sibling(&mut self, new_sibling: Node<dyn NodeSpec>) {
-        Node::<dyn NodeSpec>::from(self.clone()).insert_previous_sibling(new_sibling);
+    pub fn insert_previous_sibling(
+        &mut self,
+        new_sibling: Node<dyn NodeSpec>,
+    ) -> Result<(), XMLTreeError> {
+        Node::<dyn NodeSpec>::from(self.clone()).insert_previous_sibling(new_sibling)
     }
 
-    pub fn insert_next_sibling(&mut self, new_sibling: Node<dyn NodeSpec>) {
-        Node::<dyn NodeSpec>::from(self.clone()).insert_next_sibling(new_sibling);
+    pub fn insert_next_sibling(
+        &mut self,
+        new_sibling: Node<dyn NodeSpec>,
+    ) -> Result<(), XMLTreeError> {
+        Node::<dyn NodeSpec>::from(self.clone()).insert_next_sibling(new_sibling)
     }
 
-    pub fn append_child(&mut self, mut new_child: Node<dyn NodeSpec>) {
+    pub fn append_child(&mut self, mut new_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
         if let Some(mut last_child) = self.last_child() {
-            last_child.insert_next_sibling(new_child);
+            last_child.insert_next_sibling(new_child)?;
         } else {
-            new_child.detach();
+            new_child.detach()?;
             new_child.set_paretn_node(self.clone());
             self.set_first_child(new_child.clone());
             self.set_last_child(new_child);
         }
+        Ok(())
     }
 
     fn pre_child_removal(&mut self, removed_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
@@ -249,16 +265,22 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
         }
     }
 
-    pub fn detach(&mut self) {
-        Node::<dyn NodeSpec>::from(self.clone()).detach();
+    pub fn detach(&mut self) -> Result<(), XMLTreeError> {
+        Node::<dyn NodeSpec>::from(self.clone()).detach()
     }
 
-    pub fn insert_previous_sibling(&mut self, new_sibling: Node<dyn NodeSpec>) {
-        Node::<dyn NodeSpec>::from(self.clone()).insert_previous_sibling(new_sibling);
+    pub fn insert_previous_sibling(
+        &mut self,
+        new_sibling: Node<dyn NodeSpec>,
+    ) -> Result<(), XMLTreeError> {
+        Node::<dyn NodeSpec>::from(self.clone()).insert_previous_sibling(new_sibling)
     }
 
-    pub fn insert_next_sibling(&mut self, new_sibling: Node<dyn NodeSpec>) {
-        Node::<dyn NodeSpec>::from(self.clone()).insert_next_sibling(new_sibling);
+    pub fn insert_next_sibling(
+        &mut self,
+        new_sibling: Node<dyn NodeSpec>,
+    ) -> Result<(), XMLTreeError> {
+        Node::<dyn NodeSpec>::from(self.clone()).insert_next_sibling(new_sibling)
     }
 }
 
@@ -282,8 +304,8 @@ impl<Spec: InternalNodeSpec + ?Sized> Node<Spec> {
 }
 
 impl<Spec: InternalNodeSpec + 'static> Node<Spec> {
-    pub fn append_child(&mut self, new_child: Node<dyn NodeSpec>) {
-        Node::<dyn InternalNodeSpec>::from(self.clone()).append_child(new_child);
+    pub fn append_child(&mut self, new_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
+        Node::<dyn InternalNodeSpec>::from(self.clone()).append_child(new_child)
     }
 }
 

@@ -240,7 +240,7 @@ impl Element {
         };
         if let Some(value) = value {
             let text = self.owner_document().create_text(value);
-            attribute.append_child(text.into());
+            attribute.append_child(text.into())?;
         }
         self.core
             .borrow_mut()

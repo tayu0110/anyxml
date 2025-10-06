@@ -159,16 +159,18 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
         attribute_type: &AttributeType,
         default_decl: &DefaultDecl,
     ) {
-        self.node.append_child(
-            self.document
-                .create_attlist_decl(
-                    element_name.into(),
-                    attribute_name.into(),
-                    attribute_type.clone(),
-                    default_decl.clone(),
-                )
-                .into(),
-        );
+        self.node
+            .append_child(
+                self.document
+                    .create_attlist_decl(
+                        element_name.into(),
+                        attribute_name.into(),
+                        attribute_type.clone(),
+                        default_decl.clone(),
+                    )
+                    .into(),
+            )
+            .unwrap();
         self.handler
             .attribute_decl(element_name, attribute_name, attribute_type, default_decl);
     }
@@ -180,20 +182,23 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
                     cdata.push_str(data);
                 } else {
                     self.node
-                        .append_child(self.document.create_text(data).into());
+                        .append_child(self.document.create_text(data).into())
+                        .unwrap();
                 }
             }
             Some(NodeKind::Text(mut text)) => text.push_str(data),
             _ => self
                 .node
-                .append_child(self.document.create_text(data).into()),
+                .append_child(self.document.create_text(data).into())
+                .unwrap(),
         }
         self.handler.characters(data);
     }
 
     fn comment(&mut self, data: &str) {
         self.node
-            .append_child(self.document.create_comment(data).into());
+            .append_child(self.document.create_comment(data).into())
+            .unwrap();
         self.handler.comment(data);
     }
 
@@ -205,24 +210,28 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
     }
 
     fn element_decl(&mut self, name: &str, contentspec: &ContentSpec) {
-        self.node.append_child(
-            self.document
-                .create_element_decl(name.into(), contentspec.clone())
-                .into(),
-        );
+        self.node
+            .append_child(
+                self.document
+                    .create_element_decl(name.into(), contentspec.clone())
+                    .into(),
+            )
+            .unwrap();
         self.handler.element_decl(name, contentspec);
     }
 
     fn external_entity_decl(&mut self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
-        self.node.append_child(
-            self.document
-                .create_external_entity_decl(
-                    name.into(),
-                    system_id.into(),
-                    public_id.map(|id| id.into()),
-                )
-                .into(),
-        );
+        self.node
+            .append_child(
+                self.document
+                    .create_external_entity_decl(
+                        name.into(),
+                        system_id.into(),
+                        public_id.map(|id| id.into()),
+                    )
+                    .into(),
+            )
+            .unwrap();
         self.handler
             .external_entity_decl(name, public_id, system_id);
     }
@@ -234,45 +243,53 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
                     cdata.push_str(data);
                 } else {
                     self.node
-                        .append_child(self.document.create_text(data).into());
+                        .append_child(self.document.create_text(data).into())
+                        .unwrap();
                 }
             }
             Some(NodeKind::Text(mut text)) => text.push_str(data),
             _ => self
                 .node
-                .append_child(self.document.create_text(data).into()),
+                .append_child(self.document.create_text(data).into())
+                .unwrap(),
         }
         self.handler.ignorable_whitespace(data);
     }
 
     fn internal_entity_decl(&mut self, name: &str, value: &str) {
-        self.node.append_child(
-            self.document
-                .create_internal_entity_decl(name.into(), value.into())
-                .into(),
-        );
+        self.node
+            .append_child(
+                self.document
+                    .create_internal_entity_decl(name.into(), value.into())
+                    .into(),
+            )
+            .unwrap();
         self.handler.internal_entity_decl(name, value);
     }
 
     fn notation_decl(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
-        self.node.append_child(
-            self.document
-                .create_notation_decl(
-                    name.into(),
-                    system_id.map(|id| id.into()),
-                    public_id.map(|id| id.into()),
-                )
-                .into(),
-        );
+        self.node
+            .append_child(
+                self.document
+                    .create_notation_decl(
+                        name.into(),
+                        system_id.map(|id| id.into()),
+                        public_id.map(|id| id.into()),
+                    )
+                    .into(),
+            )
+            .unwrap();
         self.handler.notation_decl(name, public_id, system_id);
     }
 
     fn processing_instruction(&mut self, target: &str, data: Option<&str>) {
-        self.node.append_child(
-            self.document
-                .create_processing_instruction(target.into(), data.map(|data| data.into()))
-                .into(),
-        );
+        self.node
+            .append_child(
+                self.document
+                    .create_processing_instruction(target.into(), data.map(|data| data.into()))
+                    .into(),
+            )
+            .unwrap();
         self.handler.processing_instruction(target, data);
     }
 
@@ -288,7 +305,8 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
             // we should create an empty entity reference,
             // so we should use `EntityReference::new`, not but `self.document.create_entity_reference`.
             self.node
-                .append_child(EntityReference::new(name.into(), self.document.clone()).into());
+                .append_child(EntityReference::new(name.into(), self.document.clone()).into())
+                .unwrap();
         }
         self.handler.skipped_entity(name);
     }
@@ -296,7 +314,8 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
     fn start_cdata(&mut self) {
         self.in_cdata = true;
         self.node
-            .append_child(self.document.create_cdata_section("").into());
+            .append_child(self.document.create_cdata_section("").into())
+            .unwrap();
         self.handler.start_cdata();
     }
     fn end_cdata(&mut self) {
@@ -317,7 +336,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
             system_id.map(|id| id.into()),
             public_id.map(|id| id.into()),
         );
-        self.node.append_child(doctype.clone().into());
+        self.node.append_child(doctype.clone().into()).unwrap();
         self.node = doctype.into();
         self.handler.start_dtd(name, public_id, system_id);
     }
@@ -352,7 +371,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
                         .ok();
                 }
             }
-            self.node.append_child(elem.clone().into());
+            self.node.append_child(elem.clone().into()).unwrap();
             self.node = elem.into();
         }
         self.handler.start_element(uri, local_name, qname, atts);
@@ -369,7 +388,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
             // we should create an empty entity reference,
             // so we should use `EntityReference::new`, not but `self.document.create_entity_reference`.
             let ent = EntityReference::new(name.into(), self.document.clone());
-            self.node.append_child(ent.clone().into());
+            self.node.append_child(ent.clone().into()).unwrap();
             self.node = ent.into();
         }
         self.handler.start_entity(name);
@@ -397,16 +416,18 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
         system_id: &URIStr,
         notation_name: &str,
     ) {
-        self.node.append_child(
-            self.document
-                .create_unparsed_entity_decl(
-                    name.into(),
-                    system_id.into(),
-                    public_id.map(|id| id.into()),
-                    notation_name.into(),
-                )
-                .into(),
-        );
+        self.node
+            .append_child(
+                self.document
+                    .create_unparsed_entity_decl(
+                        name.into(),
+                        system_id.into(),
+                        public_id.map(|id| id.into()),
+                        notation_name.into(),
+                    )
+                    .into(),
+            )
+            .unwrap();
         self.handler
             .unparsed_entity_decl(name, public_id, system_id, notation_name);
     }
