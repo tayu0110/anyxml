@@ -410,3 +410,49 @@ impl<Spec: InternalNodeSpec + 'static> From<Node<Spec>> for Node<dyn InternalNod
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cyclic_reference_tests() {
+        let document = Document::new();
+        let mut elem = document.create_element("elem".into(), None).unwrap();
+        let mut elem2 = document.create_element("elem2".into(), None).unwrap();
+        elem.append_child(elem2.clone().into()).unwrap();
+
+        assert!(
+            elem2
+                .append_child(elem.clone().into())
+                .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
+        );
+        assert!(
+            elem.insert_previous_sibling(elem.clone().into())
+                .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
+        );
+        assert!(
+            elem.append_child(elem.clone().into())
+                .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
+        );
+        assert!(
+            elem.insert_next_sibling(elem.clone().into())
+                .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
+        );
+        assert!(
+            elem2
+                .append_child(elem2.clone().into())
+                .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
+        );
+        assert!(
+            elem2
+                .insert_previous_sibling(elem2.clone().into())
+                .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
+        );
+        assert!(
+            elem2
+                .insert_next_sibling(elem2.clone().into())
+                .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
+        );
+    }
+}
