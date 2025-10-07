@@ -55,6 +55,22 @@ impl InternalNodeSpec for ElementSpec {
     fn unset_last_child(&mut self) {
         self.last_child = None;
     }
+
+    fn pre_child_insertion(
+        &mut self,
+        inserted_child: Node<dyn NodeSpec>,
+        _preceding_node: Option<Node<dyn NodeSpec>>,
+    ) -> Result<(), XMLTreeError> {
+        match inserted_child.node_type() {
+            NodeType::CDATASection
+            | NodeType::Comment
+            | NodeType::Element
+            | NodeType::EntityReference
+            | NodeType::ProcessingInstruction
+            | NodeType::Text => Ok(()),
+            _ => Err(XMLTreeError::UnacceptableHierarchy),
+        }
+    }
 }
 
 pub type Element = Node<ElementSpec>;

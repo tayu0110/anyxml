@@ -76,8 +76,15 @@ pub enum XMLTreeError {
     AlreadyBoundPrefix,
     UnacceptableNamespaceBinding,
     UnacceptableNamespaceName,
+    MultipleDocumentElement,
     DuplicateAttribute,
     UnspecifiedAttribute,
+    MultipleDocumentType,
+    DuplicateElementDecl,
+    DuplicateNotationDecl,
+    CyclicReference,
+    UnacceptableHierarchy,
+    UnacceptableHorizontality,
     BaseURINotAbsolute,
 }
 

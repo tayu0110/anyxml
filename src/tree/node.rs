@@ -27,6 +27,19 @@ pub trait InternalNodeSpec: NodeSpec {
         let _ = removed_child;
         Ok(())
     }
+
+    /// Perform preprocessing when `inserted_child` is inserted following `preceding_node`.
+    ///
+    /// If there is no preceding node (i.e., `inserted_child` is inserted as the first child),
+    /// `preceding_node` is `None`.
+    fn pre_child_insertion(
+        &mut self,
+        inserted_child: Node<dyn NodeSpec>,
+        preceding_node: Option<Node<dyn NodeSpec>>,
+    ) -> Result<(), XMLTreeError> {
+        let _ = (inserted_child, preceding_node);
+        Ok(())
+    }
 }
 
 pub struct NodeCore<Spec: ?Sized> {
@@ -174,10 +187,46 @@ impl Node<dyn NodeSpec> {
         Ok(())
     }
 
+    fn cyclic_reference_check(
+        &self,
+        reference_node: &Node<dyn NodeSpec>,
+    ) -> Result<(), XMLTreeError> {
+        let mut parent_node = Some(self.clone());
+        while let Some(now) = parent_node {
+            parent_node = now.parent_node().map(From::from);
+            if Rc::ptr_eq(&reference_node.core, &now.core) {
+                return Err(XMLTreeError::CyclicReference);
+            }
+        }
+        Ok(())
+    }
+
+    fn pre_insertion_common_check(
+        &self,
+        new_sibling: &Node<dyn NodeSpec>,
+    ) -> Result<(), XMLTreeError> {
+        if matches!(
+            new_sibling.node_type(),
+            NodeType::Document
+                | NodeType::DocumentFragment
+                | NodeType::Attribute
+                | NodeType::Namespace
+        ) {
+            return Err(XMLTreeError::UnacceptableHierarchy);
+        }
+
+        self.cyclic_reference_check(new_sibling)?;
+        Ok(())
+    }
+
     pub fn insert_previous_sibling(
         &mut self,
         mut new_sibling: Node<dyn NodeSpec>,
     ) -> Result<(), XMLTreeError> {
+        self.pre_insertion_common_check(&new_sibling)?;
+        if let Some(mut parent_node) = self.parent_node() {
+            parent_node.pre_child_insertion(new_sibling.clone(), self.previous_sibling())?;
+        }
         new_sibling.detach()?;
         new_sibling.set_next_sibling(self.clone());
         if let Some(mut previous_sibling) = self.previous_sibling() {
@@ -198,6 +247,10 @@ impl Node<dyn NodeSpec> {
         &mut self,
         mut new_sibling: Node<dyn NodeSpec>,
     ) -> Result<(), XMLTreeError> {
+        self.pre_insertion_common_check(&new_sibling)?;
+        if let Some(mut parent_node) = self.parent_node() {
+            parent_node.pre_child_insertion(new_sibling.clone(), Some(self.clone()))?;
+        }
         new_sibling.detach()?;
         new_sibling.set_previous_sibling(self.clone());
         if let Some(mut next_sibling) = self.next_sibling() {
@@ -248,6 +301,17 @@ impl Node<dyn InternalNodeSpec> {
 
     fn pre_child_removal(&mut self, removed_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
         self.core.borrow_mut().spec.pre_child_removal(removed_child)
+    }
+
+    fn pre_child_insertion(
+        &mut self,
+        inserted_child: Node<dyn NodeSpec>,
+        preceding_node: Option<Node<dyn NodeSpec>>,
+    ) -> Result<(), XMLTreeError> {
+        self.core
+            .borrow_mut()
+            .spec
+            .pre_child_insertion(inserted_child, preceding_node)
     }
 }
 

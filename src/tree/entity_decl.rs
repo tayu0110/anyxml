@@ -6,7 +6,7 @@ use std::{
 use anyxml_uri::uri::URIStr;
 
 use crate::tree::{
-    Document, NodeType,
+    Document, NodeType, XMLTreeError,
     node::{InternalNodeSpec, Node, NodeCore, NodeSpec},
 };
 
@@ -48,6 +48,22 @@ impl InternalNodeSpec for EntityDeclSpec {
     }
     fn unset_last_child(&mut self) {
         self.last_child = None;
+    }
+
+    fn pre_child_insertion(
+        &mut self,
+        inserted_child: Node<dyn NodeSpec>,
+        _preceding_node: Option<Node<dyn NodeSpec>>,
+    ) -> Result<(), super::XMLTreeError> {
+        match inserted_child.node_type() {
+            NodeType::CDATASection
+            | NodeType::Comment
+            | NodeType::Element
+            | NodeType::EntityReference
+            | NodeType::ProcessingInstruction
+            | NodeType::Text => Ok(()),
+            _ => Err(XMLTreeError::UnacceptableHierarchy),
+        }
     }
 }
 

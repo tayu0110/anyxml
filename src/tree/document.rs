@@ -11,6 +11,7 @@ use crate::{
         AttlistDecl, CDATASection, Comment, DocumentFragment, DocumentType, Element, ElementDecl,
         EntityDecl, EntityReference, NodeType, NotationDecl, ProcessingInstruction, Text,
         XMLTreeError,
+        convert::NodeKind,
         document_fragment::DocumentFragmentSpec,
         document_type::DocumentTypeSpec,
         element::ElementSpec,
@@ -69,6 +70,50 @@ impl InternalNodeSpec for DocumentSpec {
                 self.document_type = None;
             }
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn pre_child_insertion(
+        &mut self,
+        inserted_child: Node<dyn NodeSpec>,
+        mut preceding_node: Option<Node<dyn NodeSpec>>,
+    ) -> Result<(), XMLTreeError> {
+        match inserted_child.downcast() {
+            NodeKind::DocumentType(doctype) => {
+                if self.document_type.is_some() {
+                    return Err(XMLTreeError::MultipleDocumentType);
+                }
+                if self.document_element.is_some() {
+                    while let Some(now) = preceding_node {
+                        if matches!(now.node_type(), NodeType::Element) {
+                            return Err(XMLTreeError::UnacceptableHorizontality);
+                        }
+                        preceding_node = now.previous_sibling();
+                    }
+                }
+                self.document_type = Some(doctype.core);
+            }
+            NodeKind::Element(element) => {
+                if self.document_element.is_some() {
+                    return Err(XMLTreeError::MultipleDocumentElement);
+                }
+                if self.document_type.is_some() {
+                    while let Some(now) = preceding_node.as_ref() {
+                        if matches!(now.node_type(), NodeType::DocumentType) {
+                            break;
+                        }
+                        preceding_node = now.previous_sibling();
+                    }
+
+                    if preceding_node.is_none() {
+                        return Err(XMLTreeError::UnacceptableHorizontality);
+                    }
+                }
+                self.document_element = Some(element.core);
+            }
+            NodeKind::Comment(_) | NodeKind::ProcessingInstruction(_) => {}
+            _ => return Err(XMLTreeError::UnacceptableHierarchy),
         }
         Ok(())
     }

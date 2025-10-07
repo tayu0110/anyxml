@@ -7,6 +7,7 @@ use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE,
     tree::{
         Element, NodeType, XMLTreeError,
+        convert::NodeKind,
         document_fragment::DocumentFragmentSpec,
         element::ElementSpec,
         namespace::{Namespace, NamespaceSpec},
@@ -52,6 +53,40 @@ impl InternalNodeSpec for AttributeSpec {
     }
     fn unset_last_child(&mut self) {
         self.last_child = None;
+    }
+
+    fn pre_child_insertion(
+        &mut self,
+        inserted_child: Node<dyn NodeSpec>,
+        _preceding_node: Option<Node<dyn NodeSpec>>,
+    ) -> Result<(), XMLTreeError> {
+        match inserted_child.downcast() {
+            NodeKind::Text(_) => {}
+            NodeKind::EntityReference(entref) => {
+                let mut descendant = entref.first_child();
+                while let Some(now) = descendant {
+                    if !matches!(now.node_type(), NodeType::EntityReference | NodeType::Text) {
+                        return Err(XMLTreeError::UnacceptableHierarchy);
+                    }
+                    if let Some(first) = now.first_child() {
+                        descendant = Some(first);
+                    } else if let Some(next) = now.next_sibling() {
+                        descendant = Some(next);
+                    } else {
+                        descendant = now.parent_node().map(From::from);
+                        while let Some(par) = descendant.as_ref() {
+                            if let Some(next) = par.next_sibling() {
+                                descendant = Some(next);
+                                break;
+                            }
+                            descendant = par.parent_node().map(From::from);
+                        }
+                    }
+                }
+            }
+            _ => return Err(XMLTreeError::UnacceptableHierarchy),
+        }
+        Ok(())
     }
 }
 
