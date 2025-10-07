@@ -333,7 +333,7 @@ mod tests {
         assert!(document.document_element().is_none());
         assert!(document.first_child().is_none());
         assert!(document.last_child().is_none());
-        let elem = document.create_element("root".into(), None).unwrap();
+        let mut elem = document.create_element("root".into(), None).unwrap();
         document.append_child(elem.clone().into()).unwrap();
         assert!(document.document_element().is_some());
         assert!(document.document_element().is_some());
@@ -356,5 +356,123 @@ mod tests {
                 .last_child()
                 .is_some_and(|elem| elem.as_element().unwrap().name().as_ref() == "root")
         );
+        assert!(
+            elem.parent_node()
+                .is_some_and(|doc| matches!(doc.node_type(), NodeType::Document))
+        );
+        assert!(elem2.parent_node().is_none());
+
+        elem.detach().unwrap();
+
+        assert!(document.document_element().is_none());
+        assert!(document.first_child().is_none());
+        assert!(document.last_child().is_none());
+        assert!(elem.parent_node().is_none());
+    }
+
+    #[test]
+    fn document_type_insertion_test() {
+        let mut document = Document::new();
+        let mut doctype = document.create_document_type("root".into(), None, None);
+        document.append_child(doctype.clone().into()).unwrap();
+        assert!(document.document_type().is_some());
+        assert!(
+            document.first_child().is_some_and(|doctype| &*doctype
+                .as_document_type()
+                .unwrap()
+                .name()
+                == "root")
+        );
+        assert!(
+            document.last_child().is_some_and(|doctype| &*doctype
+                .as_document_type()
+                .unwrap()
+                .name()
+                == "root")
+        );
+
+        let doctype2 = document.create_document_type("root2".into(), None, None);
+        assert!(document.append_child(doctype2.into()).is_err());
+        assert!(
+            document
+                .document_type()
+                .is_some_and(|doctype| &*doctype.name() == "root")
+        );
+        assert!(
+            document.first_child().is_some_and(|doctype| &*doctype
+                .as_document_type()
+                .unwrap()
+                .name()
+                == "root")
+        );
+        assert!(
+            document.last_child().is_some_and(|doctype| &*doctype
+                .as_document_type()
+                .unwrap()
+                .name()
+                == "root")
+        );
+
+        doctype.detach().unwrap();
+        assert!(document.document_type().is_none());
+        assert!(document.first_child().is_none());
+        assert!(document.last_child().is_none());
+        assert!(doctype.parent_node().is_none());
+    }
+
+    #[test]
+    fn document_element_insertion_before_document_type_test() {
+        let mut document = Document::new();
+        let mut doctype = document.create_document_type("root".into(), None, None);
+        let root = document.create_element("root".into(), None).unwrap();
+        document.append_child(doctype.clone().into()).unwrap();
+        assert!(
+            doctype
+                .insert_previous_sibling(root.clone().into())
+                .is_err()
+        );
+
+        assert!(document.document_type().is_some());
+        assert!(document.document_element().is_none());
+        assert!(
+            document
+                .first_child()
+                .is_some_and(|doctype| matches!(doctype.node_type(), NodeType::DocumentType))
+        );
+        assert!(
+            document
+                .last_child()
+                .is_some_and(|doctype| matches!(doctype.node_type(), NodeType::DocumentType))
+        );
+        assert!(doctype.parent_node().is_some());
+        assert!(doctype.previous_sibling().is_none());
+        assert!(root.parent_node().is_none());
+        assert!(root.next_sibling().is_none());
+    }
+
+    #[test]
+    fn document_type_insertion_after_document_element_test() {
+        let mut document = Document::new();
+        let doctype = document.create_document_type("root".into(), None, None);
+        let mut root = document.create_element("root".into(), None).unwrap();
+        document.append_child(root.clone().into()).unwrap();
+        assert!(root.insert_next_sibling(doctype.clone().into()).is_err());
+
+        assert!(document.document_type().is_none());
+        assert!(document.document_element().is_some());
+        assert!(
+            document
+                .first_child()
+                .is_some_and(|root| matches!(root.node_type(), NodeType::Element))
+        );
+        assert!(
+            document
+                .last_child()
+                .is_some_and(|root| matches!(root.node_type(), NodeType::Element))
+        );
+        assert!(doctype.parent_node().is_none());
+        assert!(doctype.previous_sibling().is_none());
+        assert!(root.parent_node().is_some());
+        assert!(root.next_sibling().is_none());
     }
 }
