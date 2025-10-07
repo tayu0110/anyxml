@@ -1,0 +1,8 @@
+setDocumentLocator()
+startDocument()
+startDTD(root, None, None)
+internalEntityDecl(ent, attvalue)
+endDTD()
+startElement(None, root, root, attr='attvalue')
+endElement(None, root, root)
+endDocument()

@@ -1,0 +1,6 @@
+Document(Document, 'None', 'None', None, file:///home/tayu/src/anyxml/resources/well-formed/attr4.xml)
+  DocumentType(DocumentType, root, None, None)
+    EntityDecl(EntityDecl, ent, None, None, None, 'attvalue')
+  Element(Element, root, root, None, None)
+    Attribute(Attribute, attr, attr, None, None, 'attvalue')
+      Text(Text, 'attvalue')

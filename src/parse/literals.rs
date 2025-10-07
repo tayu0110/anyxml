@@ -304,9 +304,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                             None,
                         )?;
 
-                        if !self.fatal_error_occurred {
-                            self.handler.start_entity(&name);
-                        }
+                        // Do not call `start_entity`/`end_entity` for entities appearing
+                        // in attribute values.
+                        // https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html#startEntity(java.lang.String)
+                        // if !self.fatal_error_occurred {
+                        //     self.handler.start_entity(&name);
+                        // }
 
                         self.parse_att_value_internal(buffer, quote, orig_entity_stack)?;
                         self.grow()?;
@@ -322,9 +325,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         }
 
                         self.pop_source()?;
-                        if !self.fatal_error_occurred {
-                            self.handler.end_entity();
-                        }
+                        // Do not call `start_entity`/`end_entity` for entities appearing
+                        // in attribute values.
+                        // https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html#startEntity(java.lang.String)
+                        // if !self.fatal_error_occurred {
+                        //     self.handler.end_entity();
+                        // }
                     }
                 }
                 EntityDecl::ExternalGeneralParsedEntity { .. } => {

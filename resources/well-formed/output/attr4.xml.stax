@@ -1,0 +1,5 @@
+startDocument()
+documentType()
+startElement(None, None, root, root, attr='attvalue')
+endElement(None, None, root, root)
+endDocument()
