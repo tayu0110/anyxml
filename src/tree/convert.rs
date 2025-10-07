@@ -232,39 +232,82 @@ mod tests {
 
     use std::rc::Rc;
 
-    use crate::tree::{
-        Document, DocumentFragment, Node,
-        convert::NodeKind,
-        node::{InternalNodeSpec, NodeSpec},
+    use crate::{
+        sax::{AttributeType, DefaultDecl},
+        tree::{
+            Document, Node,
+            convert::NodeKind,
+            node::{InternalNodeSpec, NodeSpec},
+        },
     };
+
+    macro_rules! convert_and_test {
+        ( $document:ident, $create:ident( $( $arg:tt )* ), $revert:ident, $match:tt, $( $to:ty ),* ) => {
+            let node = $document.$create($( $arg )*);
+            $(
+                let converted = <$to>::from(node.clone()).downcast();
+                assert!(matches!(converted, NodeKind::$match(_)));
+                assert!(Rc::ptr_eq(
+                    &node.core,
+                    &converted.$revert().unwrap().core
+                ));
+            )*
+        };
+    }
 
     #[test]
     fn node_conversion_tests() {
         let document = Document::new();
-        let converted = Node::<dyn NodeSpec>::from(document.clone()).downcast();
-        assert!(matches!(converted, NodeKind::Document(_)));
-        assert!(Rc::ptr_eq(
-            &document.core,
-            &converted.as_document().unwrap().core
-        ));
-        let converted = Node::<dyn InternalNodeSpec>::from(document.clone()).downcast();
-        assert!(matches!(converted, NodeKind::Document(_)));
-        assert!(Rc::ptr_eq(
-            &document.core,
-            &converted.as_document().unwrap().core
-        ));
-        let frag = DocumentFragment::new(document.clone());
-        let converted = Node::<dyn NodeSpec>::from(frag.clone()).downcast();
-        assert!(matches!(converted, NodeKind::DocumentFragment(_)));
-        assert!(Rc::ptr_eq(
-            &frag.core,
-            &converted.as_document_fragment().unwrap().core
-        ));
-        let converted = Node::<dyn InternalNodeSpec>::from(frag.clone()).downcast();
-        assert!(matches!(converted, NodeKind::DocumentFragment(_)));
-        assert!(Rc::ptr_eq(
-            &frag.core,
-            &converted.as_document_fragment().unwrap().core
-        ));
+        convert_and_test!(
+            document,
+            clone(),
+            as_document,
+            Document,
+            Node<dyn NodeSpec>,
+            Node<dyn InternalNodeSpec>
+        );
+
+        convert_and_test!(
+            document,
+            create_attlist_decl(
+                "element".into(),
+                "attribute".into(),
+                AttributeType::CDATA,
+                DefaultDecl::IMPLIED
+            ),
+            as_attlist_decl,
+            AttlistDecl,
+            Node<dyn NodeSpec>
+        );
+        convert_and_test!(
+            document,
+            create_cdata_section("CDATASection"),
+            as_cdata_section,
+            CDATASection,
+            Node<dyn NodeSpec>
+        );
+        convert_and_test!(
+            document,
+            create_comment("Comment"),
+            as_comment,
+            Comment,
+            Node<dyn NodeSpec>
+        );
+        convert_and_test!(
+            document,
+            create_document_fragment(),
+            as_document_fragment,
+            DocumentFragment,
+            Node<dyn NodeSpec>,
+            Node<dyn InternalNodeSpec>
+        );
+        convert_and_test!(
+            document,
+            create_document_type("dtd".into(), None, None),
+            as_document_type,
+            DocumentType,
+            Node<dyn NodeSpec>,
+            Node<dyn InternalNodeSpec>
+        );
     }
 }
