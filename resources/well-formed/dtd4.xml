@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE root [
     <!ELEMENT root (#PCDATA|child)*>
-    <!ELEMENT child (((child2*,child3)|child2)?,child4)*>
+    <!ELEMENT child ((child2*,child3*)?,child4)*>
     <!ELEMENT child2 EMPTY>
     <!ELEMENT child3 ANY>
     <!ELEMENT child4 (child2|child3)+>

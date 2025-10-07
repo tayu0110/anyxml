@@ -1,7 +1,7 @@
 Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/dtd4.xml)
   DocumentType(DocumentType, root, None, None)
     ElementDecl(ElementDecl, root, (#PCDATA|child)*)
-    ElementDecl(ElementDecl, child, (((child2*,child3)|child2)?,child4)*)
+    ElementDecl(ElementDecl, child, ((child2*,child3*)?,child4)*)
     ElementDecl(ElementDecl, child2, EMPTY)
     ElementDecl(ElementDecl, child3, ANY)
     ElementDecl(ElementDecl, child4, (child2|child3)+)
