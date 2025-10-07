@@ -360,6 +360,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 }
             }
         } else {
+            #[allow(clippy::collapsible_else_if)]
             if self.standalone == Some(true)
                 || (!self.has_internal_subset && !self.has_external_subset)
                 || (!self.has_external_subset && !self.has_parameter_entity)
@@ -379,9 +380,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 );
             }
 
-            if !self.fatal_error_occurred {
-                self.handler.skipped_entity(&name);
-            }
+            // Do not call `skipped_entity` for entities appearing in attribute values.
+            // https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html#skippedEntity(java.lang.String)
+            // if !self.fatal_error_occurred {
+            //     self.handler.skipped_entity(&name);
+            // }
         }
         Ok(())
     }
