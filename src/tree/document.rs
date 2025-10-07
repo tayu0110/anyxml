@@ -322,3 +322,39 @@ impl Default for Document {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn document_element_insertion_test() {
+        let mut document = Document::new();
+        assert!(document.document_element().is_none());
+        assert!(document.first_child().is_none());
+        assert!(document.last_child().is_none());
+        let elem = document.create_element("root".into(), None).unwrap();
+        document.append_child(elem.clone().into()).unwrap();
+        assert!(document.document_element().is_some());
+        assert!(document.document_element().is_some());
+        assert!(document.document_element().is_some());
+
+        let elem2 = document.create_element("root2".into(), None).unwrap();
+        assert!(document.append_child(elem2.clone().into()).is_err());
+        assert!(
+            document
+                .document_element()
+                .is_some_and(|elem| elem.name().as_ref() == "root")
+        );
+        assert!(
+            document
+                .first_child()
+                .is_some_and(|elem| elem.as_element().unwrap().name().as_ref() == "root")
+        );
+        assert!(
+            document
+                .last_child()
+                .is_some_and(|elem| elem.as_element().unwrap().name().as_ref() == "root")
+        );
+    }
+}
