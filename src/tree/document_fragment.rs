@@ -118,7 +118,7 @@ impl InternalNodeSpec for DocumentFragmentSpec {
                 // TODO: support parameter entities
                 #[allow(clippy::if_same_then_else)]
                 if entity.name().starts_with('%') {
-                    return Err(XMLTreeError::UnacceptableHierarchy);
+                    return Err(XMLTreeError::Unsupported);
                 } else if !matches!(
                     self.state,
                     State::AsContent | State::HasAnElement | State::None

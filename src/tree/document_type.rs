@@ -151,7 +151,7 @@ impl InternalNodeSpec for DocumentTypeSpec {
             | NodeKind::ProcessingInstruction(_) => {}
             NodeKind::EntityReference(_) => {
                 // TODO: Supports parameter entities
-                return Err(XMLTreeError::UnacceptableHierarchy);
+                return Err(XMLTreeError::Unsupported);
             }
             _ => return Err(XMLTreeError::UnacceptableHierarchy),
         }
