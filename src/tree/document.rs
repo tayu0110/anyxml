@@ -75,12 +75,12 @@ impl InternalNodeSpec for DocumentSpec {
     }
 
     fn pre_child_insertion(
-        &mut self,
+        &self,
         inserted_child: Node<dyn NodeSpec>,
         mut preceding_node: Option<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
-        match inserted_child.downcast() {
-            NodeKind::DocumentType(doctype) => {
+        match inserted_child.node_type() {
+            NodeType::DocumentType => {
                 if self.document_type.is_some() {
                     return Err(XMLTreeError::MultipleDocumentType);
                 }
@@ -92,9 +92,8 @@ impl InternalNodeSpec for DocumentSpec {
                         preceding_node = now.previous_sibling();
                     }
                 }
-                self.document_type = Some(doctype.core);
             }
-            NodeKind::Element(element) => {
+            NodeType::Element => {
                 if self.document_element.is_some() {
                     return Err(XMLTreeError::MultipleDocumentElement);
                 }
@@ -110,12 +109,23 @@ impl InternalNodeSpec for DocumentSpec {
                         return Err(XMLTreeError::UnacceptableHorizontality);
                     }
                 }
-                self.document_element = Some(element.core);
             }
-            NodeKind::Comment(_) | NodeKind::ProcessingInstruction(_) => {}
+            NodeType::Comment | NodeType::ProcessingInstruction => {}
             _ => return Err(XMLTreeError::UnacceptableHierarchy),
         }
         Ok(())
+    }
+
+    fn post_child_insertion(&mut self, inserted_child: Node<dyn NodeSpec>) {
+        match inserted_child.downcast() {
+            NodeKind::DocumentType(doctype) => {
+                self.document_type = Some(doctype.core);
+            }
+            NodeKind::Element(element) => {
+                self.document_element = Some(element.core);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -197,25 +207,25 @@ impl Document {
 
     pub fn create_attlist_decl(
         &self,
-        elem_name: Box<str>,
-        attr_name: Box<str>,
+        elem_name: Rc<str>,
+        attr_name: Rc<str>,
         attr_type: AttributeType,
         default_decl: DefaultDecl,
     ) -> AttlistDecl {
         AttlistDecl::new(elem_name, attr_name, attr_type, default_decl, self.clone())
     }
 
-    pub fn create_element_decl(&self, name: Box<str>, content_spec: ContentSpec) -> ElementDecl {
+    pub fn create_element_decl(&self, name: Rc<str>, content_spec: ContentSpec) -> ElementDecl {
         ElementDecl::new(name, content_spec, self.clone())
     }
 
-    pub fn create_internal_entity_decl(&self, name: Box<str>, value: Box<str>) -> EntityDecl {
+    pub fn create_internal_entity_decl(&self, name: Rc<str>, value: Box<str>) -> EntityDecl {
         EntityDecl::new_internal_entity_decl(name, value, self.clone())
     }
 
     pub fn create_external_entity_decl(
         &self,
-        name: Box<str>,
+        name: Rc<str>,
         system_id: Box<URIStr>,
         public_id: Option<Box<str>>,
     ) -> EntityDecl {
@@ -224,7 +234,7 @@ impl Document {
 
     pub fn create_unparsed_entity_decl(
         &self,
-        name: Box<str>,
+        name: Rc<str>,
         system_id: Box<URIStr>,
         public_id: Option<Box<str>>,
         notation_name: Box<str>,
@@ -240,7 +250,7 @@ impl Document {
 
     pub fn create_notation_decl(
         &self,
-        name: Box<str>,
+        name: Rc<str>,
         system_id: Option<Box<URIStr>>,
         public_id: Option<Box<str>>,
     ) -> NotationDecl {

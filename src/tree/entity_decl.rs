@@ -14,7 +14,7 @@ pub struct EntityDeclSpec {
     first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
     last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
 
-    name: Box<str>,
+    name: Rc<str>,
     system_id: Option<Box<URIStr>>,
     public_id: Option<Box<str>>,
     notation_name: Option<Box<str>>,
@@ -51,7 +51,7 @@ impl InternalNodeSpec for EntityDeclSpec {
     }
 
     fn pre_child_insertion(
-        &mut self,
+        &self,
         inserted_child: Node<dyn NodeSpec>,
         _preceding_node: Option<Node<dyn NodeSpec>>,
     ) -> Result<(), super::XMLTreeError> {
@@ -71,7 +71,7 @@ pub type EntityDecl = Node<EntityDeclSpec>;
 
 impl EntityDecl {
     pub(crate) fn new_internal_entity_decl(
-        name: Box<str>,
+        name: Rc<str>,
         value: Box<str>,
         owner_document: Document,
     ) -> Self {
@@ -90,7 +90,7 @@ impl EntityDecl {
     }
 
     pub(crate) fn new_external_entity_decl(
-        name: Box<str>,
+        name: Rc<str>,
         system_id: Box<URIStr>,
         public_id: Option<Box<str>>,
         owner_document: Document,
@@ -110,7 +110,7 @@ impl EntityDecl {
     }
 
     pub(crate) fn new_unparsed_entity_decl(
-        name: Box<str>,
+        name: Rc<str>,
         system_id: Box<URIStr>,
         public_id: Option<Box<str>>,
         notation_name: Box<str>,
@@ -130,8 +130,8 @@ impl EntityDecl {
         )
     }
 
-    pub fn name(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| core.spec.name.as_ref())
+    pub fn name(&self) -> Rc<str> {
+        self.core.borrow().spec.name.clone()
     }
 
     pub fn system_id(&self) -> Option<Ref<'_, URIStr>> {

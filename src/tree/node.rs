@@ -32,13 +32,25 @@ pub trait InternalNodeSpec: NodeSpec {
     ///
     /// If there is no preceding node (i.e., `inserted_child` is inserted as the first child),
     /// `preceding_node` is `None`.
+    ///
+    /// Only perform precondition checks; do not cause side effects.
     fn pre_child_insertion(
-        &mut self,
+        &self,
         inserted_child: Node<dyn NodeSpec>,
         preceding_node: Option<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
         let _ = (inserted_child, preceding_node);
         Ok(())
+    }
+
+    /// Perform postprocessing when `inserted_child` is inserted following `preceding_node`.
+    ///
+    /// If there is no preceding node (i.e., `inserted_child` is inserted as the first child),
+    /// `preceding_node` is `None`.
+    ///
+    /// Assume all prerequisites are satisfied; errors must not occur.
+    fn post_child_insertion(&mut self, inserted_child: Node<dyn NodeSpec>) {
+        let _ = inserted_child;
     }
 }
 
@@ -224,7 +236,7 @@ impl Node<dyn NodeSpec> {
         mut new_sibling: Node<dyn NodeSpec>,
     ) -> Result<(), XMLTreeError> {
         self.pre_insertion_common_check(&new_sibling)?;
-        if let Some(mut parent_node) = self.parent_node() {
+        if let Some(parent_node) = self.parent_node() {
             parent_node.pre_child_insertion(new_sibling.clone(), self.previous_sibling())?;
         }
         new_sibling.detach()?;
@@ -240,6 +252,9 @@ impl Node<dyn NodeSpec> {
             new_sibling.set_paretn_node(parent_node);
         }
         self.set_previous_sibling(new_sibling.clone());
+        if let Some(mut parent_node) = self.parent_node() {
+            parent_node.post_child_insertion(new_sibling);
+        }
         Ok(())
     }
 
@@ -248,7 +263,7 @@ impl Node<dyn NodeSpec> {
         mut new_sibling: Node<dyn NodeSpec>,
     ) -> Result<(), XMLTreeError> {
         self.pre_insertion_common_check(&new_sibling)?;
-        if let Some(mut parent_node) = self.parent_node() {
+        if let Some(parent_node) = self.parent_node() {
             parent_node.pre_child_insertion(new_sibling.clone(), Some(self.clone()))?;
         }
         new_sibling.detach()?;
@@ -264,6 +279,9 @@ impl Node<dyn NodeSpec> {
             new_sibling.set_paretn_node(parent_node);
         }
         self.set_next_sibling(new_sibling.clone());
+        if let Some(mut parent_node) = self.parent_node() {
+            parent_node.post_child_insertion(new_sibling);
+        }
         Ok(())
     }
 }
@@ -296,7 +314,8 @@ impl Node<dyn InternalNodeSpec> {
             new_child.detach()?;
             new_child.set_paretn_node(self.clone());
             self.set_first_child(new_child.clone());
-            self.set_last_child(new_child);
+            self.set_last_child(new_child.clone());
+            self.post_child_insertion(new_child);
         }
         Ok(())
     }
@@ -306,14 +325,21 @@ impl Node<dyn InternalNodeSpec> {
     }
 
     fn pre_child_insertion(
-        &mut self,
+        &self,
         inserted_child: Node<dyn NodeSpec>,
         preceding_node: Option<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
         self.core
-            .borrow_mut()
+            .borrow()
             .spec
             .pre_child_insertion(inserted_child, preceding_node)
+    }
+
+    fn post_child_insertion(&mut self, inserted_child: Node<dyn NodeSpec>) {
+        self.core
+            .borrow_mut()
+            .spec
+            .post_child_insertion(inserted_child);
     }
 }
 

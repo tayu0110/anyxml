@@ -21,13 +21,13 @@ pub struct DocumentTypeSpec {
     last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
 
     /// (element name, node pointer)
-    element_decl: HashMap<Box<str>, Rc<RefCell<NodeCore<ElementDeclSpec>>>>,
+    element_decl: HashMap<Rc<str>, Rc<RefCell<NodeCore<ElementDeclSpec>>>>,
     /// (element name, (attribute name, node pointer))
-    attlist_decl: HashMap<Box<str>, HashMap<Box<str>, Rc<RefCell<NodeCore<AttlistDeclSpec>>>>>,
+    attlist_decl: HashMap<Rc<str>, HashMap<Rc<str>, Rc<RefCell<NodeCore<AttlistDeclSpec>>>>>,
     /// (entity name, node pointer)
-    entity_decl: HashMap<Box<str>, Rc<RefCell<NodeCore<EntityDeclSpec>>>>,
+    entity_decl: HashMap<Rc<str>, Rc<RefCell<NodeCore<EntityDeclSpec>>>>,
     /// (notation name, node pointer)
-    notation_decl: HashMap<Box<str>, Rc<RefCell<NodeCore<NotationDeclSpec>>>>,
+    notation_decl: HashMap<Rc<str>, Rc<RefCell<NodeCore<NotationDeclSpec>>>>,
 
     name: Box<str>,
     system_id: Option<Box<URIStr>>,
@@ -130,76 +130,25 @@ impl InternalNodeSpec for DocumentTypeSpec {
     }
 
     fn pre_child_insertion(
-        &mut self,
+        &self,
         inserted_child: Node<dyn NodeSpec>,
-        mut preceding_node: Option<Node<dyn NodeSpec>>,
+        _preceding_node: Option<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
-        use std::collections::hash_map::Entry::*;
-
         match inserted_child.downcast() {
             NodeKind::ElementDecl(element) => {
-                match self.element_decl.entry((*element.name()).into()) {
-                    Vacant(entry) => {
-                        entry.insert(element.core.clone());
-                    }
-                    Occupied(_) => return Err(XMLTreeError::DuplicateElementDecl),
+                if self.element_decl.contains_key(&element.name()) {
+                    return Err(XMLTreeError::DuplicateElementDecl);
                 }
             }
-            NodeKind::AttlistDecl(attlist) => {
-                match self.attlist_decl.entry((*attlist.elem_name()).into()) {
-                    Vacant(entry) => {
-                        entry.insert(From::from([(
-                            (*attlist.attr_name()).into(),
-                            attlist.core.clone(),
-                        )]));
-                    }
-                    Occupied(mut entry) => {
-                        match entry.get_mut().entry((*attlist.attr_name()).into()) {
-                            Vacant(entry) => {
-                                entry.insert(attlist.core.clone());
-                            }
-                            Occupied(mut entry) => {
-                                let core = entry.get();
-                                while let Some(now) = preceding_node {
-                                    preceding_node = now.previous_sibling();
-                                    if let Some(now) = now.as_attlist_decl()
-                                        && Rc::ptr_eq(&now.core, core)
-                                    {
-                                        return Ok(());
-                                    }
-                                }
-                                entry.insert(attlist.core.clone());
-                            }
-                        }
-                    }
-                }
-            }
-            NodeKind::EntityDecl(entity) => match self.entity_decl.entry((*entity.name()).into()) {
-                Vacant(entry) => {
-                    entry.insert(entity.core.clone());
-                }
-                Occupied(mut entry) => {
-                    let core = entry.get();
-                    while let Some(now) = preceding_node {
-                        preceding_node = now.previous_sibling();
-                        if let Some(now) = now.as_entity_decl()
-                            && Rc::ptr_eq(&now.core, core)
-                        {
-                            return Ok(());
-                        }
-                    }
-                    entry.insert(entity.core.clone());
-                }
-            },
             NodeKind::NotationDecl(notation) => {
-                match self.notation_decl.entry((*notation.name()).into()) {
-                    Vacant(entry) => {
-                        entry.insert(notation.core.clone());
-                    }
-                    Occupied(_) => return Err(XMLTreeError::DuplicateNotationDecl),
+                if self.notation_decl.contains_key(&notation.name()) {
+                    return Err(XMLTreeError::DuplicateNotationDecl);
                 }
             }
-            NodeKind::Comment(_) | NodeKind::ProcessingInstruction(_) => {}
+            NodeKind::AttlistDecl(_)
+            | NodeKind::EntityDecl(_)
+            | NodeKind::Comment(_)
+            | NodeKind::ProcessingInstruction(_) => {}
             NodeKind::EntityReference(_) => {
                 // TODO: Supports parameter entities
                 return Err(XMLTreeError::UnacceptableHierarchy);
@@ -207,6 +156,61 @@ impl InternalNodeSpec for DocumentTypeSpec {
             _ => return Err(XMLTreeError::UnacceptableHierarchy),
         }
         Ok(())
+    }
+
+    fn post_child_insertion(&mut self, inserted_child: Node<dyn NodeSpec>) {
+        use std::collections::hash_map::Entry::*;
+
+        match inserted_child.downcast() {
+            NodeKind::AttlistDecl(attlist) => match self.attlist_decl.entry(attlist.elem_name()) {
+                Vacant(entry) => {
+                    entry.insert(From::from([(attlist.attr_name(), attlist.core.clone())]));
+                }
+                Occupied(mut entry) => match entry.get_mut().entry((*attlist.attr_name()).into()) {
+                    Vacant(entry) => {
+                        entry.insert(attlist.core.clone());
+                    }
+                    Occupied(mut entry) => {
+                        let core = entry.get();
+                        let mut preceding_node = attlist.previous_sibling();
+                        while let Some(now) = preceding_node {
+                            preceding_node = now.previous_sibling();
+                            if let Some(now) = now.as_attlist_decl()
+                                && Rc::ptr_eq(&now.core, core)
+                            {
+                                return;
+                            }
+                        }
+                        entry.insert(attlist.core.clone());
+                    }
+                },
+            },
+            NodeKind::ElementDecl(element) => {
+                self.element_decl.insert(element.name(), element.core);
+            }
+            NodeKind::EntityDecl(entity) => match self.entity_decl.entry(entity.name()) {
+                Vacant(entry) => {
+                    entry.insert(entity.core.clone());
+                }
+                Occupied(mut entry) => {
+                    let core = entry.get();
+                    let mut preceding_node = entity.previous_sibling();
+                    while let Some(now) = preceding_node {
+                        preceding_node = now.previous_sibling();
+                        if let Some(now) = now.as_entity_decl()
+                            && Rc::ptr_eq(&now.core, core)
+                        {
+                            return;
+                        }
+                    }
+                    entry.insert(entity.core.clone());
+                }
+            },
+            NodeKind::NotationDecl(notation) => {
+                self.notation_decl.insert(notation.name(), notation.core);
+            }
+            _ => {}
+        }
     }
 }
 

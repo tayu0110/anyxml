@@ -11,7 +11,7 @@ use crate::tree::{
 };
 
 pub struct NotationDeclSpec {
-    name: Box<str>,
+    name: Rc<str>,
     system_id: Option<Box<URIStr>>,
     public_id: Option<Box<str>>,
 }
@@ -34,7 +34,7 @@ pub type NotationDecl = Node<NotationDeclSpec>;
 
 impl NotationDecl {
     pub(crate) fn new(
-        name: Box<str>,
+        name: Rc<str>,
         system_id: Option<Box<URIStr>>,
         public_id: Option<Box<str>>,
         owner_document: Document,
@@ -49,8 +49,8 @@ impl NotationDecl {
         )
     }
 
-    pub fn name(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| core.spec.name.as_ref())
+    pub fn name(&self) -> Rc<str> {
+        self.core.borrow().spec.name.clone()
     }
 
     pub fn system_id(&self) -> Option<Ref<'_, URIStr>> {

@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub struct ElementDeclSpec {
-    name: Box<str>,
+    name: Rc<str>,
     content_spec: ContentSpec,
 }
 
@@ -33,12 +33,12 @@ impl NodeSpec for ElementDeclSpec {
 pub type ElementDecl = Node<ElementDeclSpec>;
 
 impl ElementDecl {
-    pub(crate) fn new(name: Box<str>, content_spec: ContentSpec, owner_document: Document) -> Self {
+    pub(crate) fn new(name: Rc<str>, content_spec: ContentSpec, owner_document: Document) -> Self {
         Node::create_node(ElementDeclSpec { name, content_spec }, owner_document)
     }
 
-    pub fn name(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| core.spec.name.as_ref())
+    pub fn name(&self) -> Rc<str> {
+        self.core.borrow().spec.name.clone()
     }
 
     pub fn content_spec(&self) -> Ref<'_, ContentSpec> {

@@ -12,8 +12,8 @@ use crate::{
 };
 
 pub struct AttlistDeclSpec {
-    elem_name: Box<str>,
-    attr_name: Box<str>,
+    elem_name: Rc<str>,
+    attr_name: Rc<str>,
     attr_type: AttributeType,
     default_decl: DefaultDecl,
 }
@@ -36,8 +36,8 @@ pub type AttlistDecl = Node<AttlistDeclSpec>;
 
 impl AttlistDecl {
     pub(crate) fn new(
-        elem_name: Box<str>,
-        attr_name: Box<str>,
+        elem_name: Rc<str>,
+        attr_name: Rc<str>,
         attr_type: AttributeType,
         default_decl: DefaultDecl,
         owner_document: Document,
@@ -53,12 +53,12 @@ impl AttlistDecl {
         )
     }
 
-    pub fn elem_name(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| core.spec.elem_name.as_ref())
+    pub fn elem_name(&self) -> Rc<str> {
+        self.core.borrow().spec.elem_name.clone()
     }
 
-    pub fn attr_name(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| core.spec.attr_name.as_ref())
+    pub fn attr_name(&self) -> Rc<str> {
+        self.core.borrow().spec.attr_name.clone()
     }
 
     pub fn attr_type(&self) -> Ref<'_, AttributeType> {

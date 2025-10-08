@@ -56,7 +56,7 @@ impl InternalNodeSpec for AttributeSpec {
     }
 
     fn pre_child_insertion(
-        &mut self,
+        &self,
         inserted_child: Node<dyn NodeSpec>,
         _preceding_node: Option<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
