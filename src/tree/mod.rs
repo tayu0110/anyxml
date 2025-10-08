@@ -86,6 +86,7 @@ pub enum XMLTreeError {
     UnacceptableHierarchy,
     UnacceptableHorizontality,
     BaseURINotAbsolute,
+    Unsupported,
 }
 
 pub struct TreeBuildHandler<H: SAXHandler = DefaultSAXHandler> {
