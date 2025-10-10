@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        build: [--release, --debug]
+        build: [--release, ~]
 
     runs-on: ${{ matrix.os }}
 
@@ -37,8 +37,8 @@ jobs:
           rustc --version
           cargo --version
 
-      - name: Build crate with ${{ matrix.build }}
+      - name: Build crate
         run: cargo build ${{ matrix.build }}
             
-      - name: Run `cargo test --workspace` with ${{ matrix.build }}
+      - name: Run `cargo test --workspace`
         run: cargo test --workspace ${{ matrix.build }}
