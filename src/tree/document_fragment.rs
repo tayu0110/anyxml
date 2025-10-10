@@ -279,9 +279,9 @@ mod tests {
         //       frag
         //      /    \
         // doctype  elem1
-        frag.append_child(doctype.clone().into()).unwrap();
-        frag.append_child(elem1.clone().into()).unwrap();
-        assert!(frag.append_child(elem2.clone().into()).is_err());
+        frag.append_child(doctype.clone()).unwrap();
+        frag.append_child(elem1.clone()).unwrap();
+        assert!(frag.append_child(elem2.clone()).is_err());
         assert!(
             frag.first_child()
                 .and_then(|ch| ch.as_document_type())
@@ -308,11 +308,7 @@ mod tests {
                 .is_some()
         );
 
-        assert!(
-            doctype
-                .insert_previous_sibling(elem1.clone().into())
-                .is_err()
-        );
+        assert!(doctype.insert_previous_sibling(elem1.clone()).is_err());
         assert!(
             frag.first_child()
                 .and_then(|ch| ch.as_document_type())
@@ -328,7 +324,7 @@ mod tests {
         assert!(frag.first_child().is_none());
         assert!(frag.last_child().is_none());
 
-        frag.append_child(elem1.clone().into()).unwrap();
+        frag.append_child(elem1.clone()).unwrap();
         assert!(
             frag.first_child()
                 .and_then(|ch| ch.as_element())
@@ -339,14 +335,13 @@ mod tests {
                 .and_then(|ch| ch.as_element())
                 .is_some_and(|elem| elem.name().as_ref() == "elem1")
         );
-        frag.insert_previous_sibling(doctype.clone().into())
-            .unwrap();
+        frag.insert_previous_sibling(doctype.clone()).unwrap();
 
         doctype.detach().unwrap();
 
-        assert!(frag.append_child(doctype.clone().into()).is_err());
+        assert!(frag.append_child(doctype.clone()).is_err());
 
-        frag.append_child(elem2.into()).unwrap();
+        frag.append_child(elem2).unwrap();
         assert!(
             frag.first_child()
                 .and_then(|ch| ch.as_element())
@@ -357,7 +352,7 @@ mod tests {
                 .and_then(|ch| ch.as_element())
                 .is_some_and(|elem| elem.name().as_ref() == "elem2")
         );
-        assert!(elem1.insert_previous_sibling(doctype.into()).is_err());
+        assert!(elem1.insert_previous_sibling(doctype).is_err());
     }
 
     #[test]
@@ -367,14 +362,13 @@ mod tests {
         let mut elem = document.create_element("root", None).unwrap();
         let mut frag = document.create_document_fragment();
 
-        frag.append_child(document.create_element("child1", None).unwrap().into())
+        frag.append_child(document.create_element("child1", None).unwrap())
             .unwrap();
-        frag.append_child(document.create_text("text1").into())
-            .unwrap();
-        frag.append_child(document.create_element("child2", None).unwrap().into())
+        frag.append_child(document.create_text("text1")).unwrap();
+        frag.append_child(document.create_element("child2", None).unwrap())
             .unwrap();
 
-        elem.append_child(frag.clone().into()).unwrap();
+        elem.append_child(frag.clone()).unwrap();
 
         let mut children = elem.first_child();
         for expect in ["child1", "text1", "child2"] {
@@ -399,18 +393,16 @@ mod tests {
         let mut document = Document::new();
 
         let mut frag = document.create_document_fragment();
-        frag.append_child(document.create_comment("comment1").into())
+        frag.append_child(document.create_comment("comment1"))
             .unwrap();
-        frag.append_child(document.create_comment("comment2").into())
+        frag.append_child(document.create_comment("comment2"))
             .unwrap();
-        frag.append_child(document.create_text("text1").into())
-            .unwrap();
-        frag.append_child(document.create_text("text2").into())
-            .unwrap();
-        frag.append_child(document.create_comment("comment3").into())
+        frag.append_child(document.create_text("text1")).unwrap();
+        frag.append_child(document.create_text("text2")).unwrap();
+        frag.append_child(document.create_comment("comment3"))
             .unwrap();
 
-        assert!(document.append_child(frag.clone().into()).is_err());
+        assert!(document.append_child(frag.clone()).is_err());
         assert!(document.first_child().is_none());
         assert!(document.last_child().is_none());
 

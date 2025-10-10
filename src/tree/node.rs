@@ -233,7 +233,7 @@ impl Node<dyn NodeSpec> {
         Ok(())
     }
 
-    pub fn insert_previous_sibling(
+    fn do_insert_previous_sibling(
         &mut self,
         mut new_sibling: Node<dyn NodeSpec>,
     ) -> Result<(), XMLTreeError> {
@@ -279,7 +279,14 @@ impl Node<dyn NodeSpec> {
         Ok(())
     }
 
-    pub fn insert_next_sibling(
+    pub fn insert_previous_sibling(
+        &mut self,
+        new_sibling: impl Into<Node<dyn NodeSpec>>,
+    ) -> Result<(), XMLTreeError> {
+        self.do_insert_previous_sibling(new_sibling.into())
+    }
+
+    fn do_insert_next_sibling(
         &mut self,
         mut new_sibling: Node<dyn NodeSpec>,
     ) -> Result<(), XMLTreeError> {
@@ -323,6 +330,13 @@ impl Node<dyn NodeSpec> {
         }
         Ok(())
     }
+
+    pub fn insert_next_sibling(
+        &mut self,
+        new_sibling: impl Into<Node<dyn NodeSpec>>,
+    ) -> Result<(), XMLTreeError> {
+        self.do_insert_next_sibling(new_sibling.into())
+    }
 }
 
 impl Node<dyn InternalNodeSpec> {
@@ -332,19 +346,19 @@ impl Node<dyn InternalNodeSpec> {
 
     pub fn insert_previous_sibling(
         &mut self,
-        new_sibling: Node<dyn NodeSpec>,
+        new_sibling: impl Into<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
         Node::<dyn NodeSpec>::from(self.clone()).insert_previous_sibling(new_sibling)
     }
 
     pub fn insert_next_sibling(
         &mut self,
-        new_sibling: Node<dyn NodeSpec>,
+        new_sibling: impl Into<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
         Node::<dyn NodeSpec>::from(self.clone()).insert_next_sibling(new_sibling)
     }
 
-    pub fn append_child(&mut self, mut new_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
+    fn do_append_child(&mut self, mut new_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
         if let Some(mut last_child) = self.last_child() {
             last_child.insert_next_sibling(new_child)?;
         } else {
@@ -354,7 +368,7 @@ impl Node<dyn InternalNodeSpec> {
                 };
 
                 self.append_child(child.clone())?;
-                return match self.append_child(frag.clone().into()) {
+                return match self.append_child(frag.clone()) {
                     Ok(()) => Ok(()),
                     Err(err) => {
                         child.detach()?;
@@ -376,6 +390,13 @@ impl Node<dyn InternalNodeSpec> {
             self.post_child_insertion(new_child);
         }
         Ok(())
+    }
+
+    pub fn append_child(
+        &mut self,
+        new_child: impl Into<Node<dyn NodeSpec>>,
+    ) -> Result<(), XMLTreeError> {
+        self.do_append_child(new_child.into())
     }
 
     fn pre_child_removal(&mut self, removed_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
@@ -421,14 +442,14 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
 
     pub fn insert_previous_sibling(
         &mut self,
-        new_sibling: Node<dyn NodeSpec>,
+        new_sibling: impl Into<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
         Node::<dyn NodeSpec>::from(self.clone()).insert_previous_sibling(new_sibling)
     }
 
     pub fn insert_next_sibling(
         &mut self,
-        new_sibling: Node<dyn NodeSpec>,
+        new_sibling: impl Into<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
         Node::<dyn NodeSpec>::from(self.clone()).insert_next_sibling(new_sibling)
     }
@@ -454,7 +475,10 @@ impl<Spec: InternalNodeSpec + ?Sized> Node<Spec> {
 }
 
 impl<Spec: InternalNodeSpec + 'static> Node<Spec> {
-    pub fn append_child(&mut self, new_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
+    pub fn append_child(
+        &mut self,
+        new_child: impl Into<Node<dyn NodeSpec>>,
+    ) -> Result<(), XMLTreeError> {
         Node::<dyn InternalNodeSpec>::from(self.clone()).append_child(new_child)
     }
 }
@@ -504,38 +528,38 @@ mod tests {
         let document = Document::new();
         let mut elem = document.create_element("elem", None).unwrap();
         let mut elem2 = document.create_element("elem2", None).unwrap();
-        elem.append_child(elem2.clone().into()).unwrap();
+        elem.append_child(elem2.clone()).unwrap();
 
         assert!(
             elem2
-                .append_child(elem.clone().into())
+                .append_child(elem.clone())
                 .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
         );
         assert!(
-            elem.insert_previous_sibling(elem.clone().into())
+            elem.insert_previous_sibling(elem.clone())
                 .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
         );
         assert!(
-            elem.append_child(elem.clone().into())
+            elem.append_child(elem.clone())
                 .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
         );
         assert!(
-            elem.insert_next_sibling(elem.clone().into())
-                .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
-        );
-        assert!(
-            elem2
-                .append_child(elem2.clone().into())
+            elem.insert_next_sibling(elem.clone())
                 .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
         );
         assert!(
             elem2
-                .insert_previous_sibling(elem2.clone().into())
+                .append_child(elem2.clone())
                 .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
         );
         assert!(
             elem2
-                .insert_next_sibling(elem2.clone().into())
+                .insert_previous_sibling(elem2.clone())
+                .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
+        );
+        assert!(
+            elem2
+                .insert_next_sibling(elem2.clone())
                 .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
         );
     }

@@ -358,13 +358,13 @@ mod tests {
         assert!(document.first_child().is_none());
         assert!(document.last_child().is_none());
         let mut elem = document.create_element("root", None).unwrap();
-        document.append_child(elem.clone().into()).unwrap();
+        document.append_child(elem.clone()).unwrap();
         assert!(document.document_element().is_some());
         assert!(document.document_element().is_some());
         assert!(document.document_element().is_some());
 
         let elem2 = document.create_element("root2", None).unwrap();
-        assert!(document.append_child(elem2.clone().into()).is_err());
+        assert!(document.append_child(elem2.clone()).is_err());
         assert!(
             document
                 .document_element()
@@ -398,7 +398,7 @@ mod tests {
     fn document_type_insertion_test() {
         let mut document = Document::new();
         let mut doctype = document.create_document_type("root", None, None);
-        document.append_child(doctype.clone().into()).unwrap();
+        document.append_child(doctype.clone()).unwrap();
         assert!(document.document_type().is_some());
         assert!(
             document.first_child().is_some_and(|doctype| &*doctype
@@ -416,7 +416,7 @@ mod tests {
         );
 
         let doctype2 = document.create_document_type("root2", None, None);
-        assert!(document.append_child(doctype2.into()).is_err());
+        assert!(document.append_child(doctype2).is_err());
         assert!(
             document
                 .document_type()
@@ -449,12 +449,8 @@ mod tests {
         let mut document = Document::new();
         let mut doctype = document.create_document_type("root", None, None);
         let root = document.create_element("root", None).unwrap();
-        document.append_child(doctype.clone().into()).unwrap();
-        assert!(
-            doctype
-                .insert_previous_sibling(root.clone().into())
-                .is_err()
-        );
+        document.append_child(doctype.clone()).unwrap();
+        assert!(doctype.insert_previous_sibling(root.clone()).is_err());
 
         assert!(document.document_type().is_some());
         assert!(document.document_element().is_none());
@@ -479,8 +475,8 @@ mod tests {
         let mut document = Document::new();
         let doctype = document.create_document_type("root", None, None);
         let mut root = document.create_element("root", None).unwrap();
-        document.append_child(root.clone().into()).unwrap();
-        assert!(root.insert_next_sibling(doctype.clone().into()).is_err());
+        document.append_child(root.clone()).unwrap();
+        assert!(root.insert_next_sibling(doctype.clone()).is_err());
 
         assert!(document.document_type().is_none());
         assert!(document.document_element().is_some());
