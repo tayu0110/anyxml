@@ -143,6 +143,44 @@ assert!(matches!(reader.next_event().unwrap(), EndDocument));
 assert!(matches!(reader.next_event().unwrap(), Finished));
 ```
 
+## Tree Manipulation
+This API represents the entire XML document as a tree and provides methods for manipulating it.
+
+When parsing an XML document to construct the tree, you can use handlers for SAX parsers.
+Even without a document, you can build the tree by creating and editing various nodes starting from the `Document` node.
+
+This API assumes namespace support, so it may not accept prefixed names without a specified namespace name.
+
+### Example
+```rust
+use anyxml::{
+    sax::parser::XMLReaderBuilder,
+    tree::TreeBuildHandler,
+};
+
+let mut reader = XMLReaderBuilder::new().set_handler(TreeBuildHandler::default()).build();
+reader.parse_str(r#"<greeting>Hello!!</greeting>"#, None).unwrap();
+
+// If a fatal error occurs, the constructed tree is meaningless.
+assert!(!reader.handler.fatal_error);
+let document = reader.handler.document;
+
+let root = document
+    .first_child()
+    .unwrap()
+    .as_element()
+    .unwrap();
+assert_eq!(root.name().as_ref(), "greeting");
+
+let text = root
+    .first_child()
+    .unwrap()
+    .as_text()
+    .unwrap();
+assert_eq!(&*text.data(), "Hello!!");
+```
+
+
 # Conformance
 This crate conforms to the following specifications:
 
