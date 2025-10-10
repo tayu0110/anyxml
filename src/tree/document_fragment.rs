@@ -335,7 +335,7 @@ mod tests {
                 .and_then(|ch| ch.as_element())
                 .is_some_and(|elem| elem.name().as_ref() == "elem1")
         );
-        frag.insert_previous_sibling(doctype.clone()).unwrap();
+        elem1.insert_previous_sibling(doctype.clone()).unwrap();
 
         doctype.detach().unwrap();
 

@@ -237,6 +237,9 @@ impl Node<dyn NodeSpec> {
         &mut self,
         mut new_sibling: Node<dyn NodeSpec>,
     ) -> Result<(), XMLTreeError> {
+        if self.parent_node().is_none() {
+            return Err(XMLTreeError::UnacceptableHierarchy);
+        }
         if let Some(frag) = new_sibling.as_document_fragment() {
             let mut succeed = 0;
             while let Some(mut child) = frag.first_child() {
@@ -279,6 +282,33 @@ impl Node<dyn NodeSpec> {
         Ok(())
     }
 
+    /// Insert `new_sibling` as a sibling preceding itself.
+    ///
+    /// Insertions that violate tree constraints (such as those that create cyclic references
+    /// or insert siblings at the root node) are errors.  \
+    /// Additionally, operations that generate expressions impossible in well-formed XML documents
+    /// (such as placing Text outside document elements or inserting declarations into element
+    /// content) are also errors.
+    ///
+    /// # Example
+    /// ```rust
+    /// use anyxml::tree::Document;
+    ///
+    /// let mut document = Document::new();
+    /// let mut root = document.create_element("root", None).unwrap();
+    /// let mut comment = document.create_comment("comment");
+    /// // cyclic reference
+    /// assert!(root.insert_previous_sibling(root.clone()).is_err());
+    /// // multiple root
+    /// assert!(root.insert_previous_sibling(comment.clone()).is_err());
+    /// document.append_child(root.clone()).unwrap();
+    /// root.insert_previous_sibling(comment).unwrap();
+    /// assert!(root
+    ///     .previous_sibling()
+    ///     .and_then(|sib| sib.as_comment())
+    ///     .is_some_and(|comment| &*comment.data() == "comment")
+    /// );
+    /// ```
     pub fn insert_previous_sibling(
         &mut self,
         new_sibling: impl Into<Node<dyn NodeSpec>>,
@@ -290,6 +320,9 @@ impl Node<dyn NodeSpec> {
         &mut self,
         mut new_sibling: Node<dyn NodeSpec>,
     ) -> Result<(), XMLTreeError> {
+        if self.parent_node().is_none() {
+            return Err(XMLTreeError::UnacceptableHierarchy);
+        }
         if let Some(mut frag) = new_sibling.as_document_fragment() {
             let mut succeed = 0;
             while let Some(child) = frag.last_child() {
@@ -331,6 +364,33 @@ impl Node<dyn NodeSpec> {
         Ok(())
     }
 
+    /// Insert `new_sibling` as a sibling following itself.
+    ///
+    /// Insertions that violate tree constraints (such as those that create cyclic references
+    /// or insert siblings at the root node) are errors.  \
+    /// Additionally, operations that generate expressions impossible in well-formed XML documents
+    /// (such as placing Text outside document elements or inserting declarations into element
+    /// content) are also errors.
+    ///
+    /// # Example
+    /// ```rust
+    /// use anyxml::tree::Document;
+    ///
+    /// let mut document = Document::new();
+    /// let mut root = document.create_element("root", None).unwrap();
+    /// let mut comment = document.create_comment("comment");
+    /// // cyclic reference
+    /// assert!(root.insert_next_sibling(root.clone()).is_err());
+    /// // multiple root
+    /// assert!(root.insert_next_sibling(comment.clone()).is_err());
+    /// document.append_child(root.clone()).unwrap();
+    /// root.insert_next_sibling(comment).unwrap();
+    /// assert!(root
+    ///     .next_sibling()
+    ///     .and_then(|sib| sib.as_comment())
+    ///     .is_some_and(|comment| &*comment.data() == "comment")
+    /// );
+    /// ```
     pub fn insert_next_sibling(
         &mut self,
         new_sibling: impl Into<Node<dyn NodeSpec>>,
@@ -340,10 +400,12 @@ impl Node<dyn NodeSpec> {
 }
 
 impl Node<dyn InternalNodeSpec> {
+    /// See [Node::detach].
     pub fn detach(&mut self) -> Result<(), XMLTreeError> {
         Node::<dyn NodeSpec>::from(self.clone()).detach()
     }
 
+    /// See [Node::insert_previous_sibling].
     pub fn insert_previous_sibling(
         &mut self,
         new_sibling: impl Into<Node<dyn NodeSpec>>,
@@ -351,6 +413,7 @@ impl Node<dyn InternalNodeSpec> {
         Node::<dyn NodeSpec>::from(self.clone()).insert_previous_sibling(new_sibling)
     }
 
+    /// See [Node::insert_next_sibling].
     pub fn insert_next_sibling(
         &mut self,
         new_sibling: impl Into<Node<dyn NodeSpec>>,
@@ -392,6 +455,13 @@ impl Node<dyn InternalNodeSpec> {
         Ok(())
     }
 
+    /// Insert `new_child` as a last child of `self`.
+    ///
+    /// Insertions that violate tree constraints (such as those that create cyclic references)
+    /// are errors.  \
+    /// Additionally, operations that generate expressions impossible in well-formed XML documents
+    /// (such as placing Text outside document elements or inserting declarations into element
+    /// content) are also errors.
     pub fn append_child(
         &mut self,
         new_child: impl Into<Node<dyn NodeSpec>>,
@@ -436,10 +506,12 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
         }
     }
 
+    /// See [Node::detach].
     pub fn detach(&mut self) -> Result<(), XMLTreeError> {
         Node::<dyn NodeSpec>::from(self.clone()).detach()
     }
 
+    /// See [Node::insert_previous_sibling].
     pub fn insert_previous_sibling(
         &mut self,
         new_sibling: impl Into<Node<dyn NodeSpec>>,
@@ -447,6 +519,7 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
         Node::<dyn NodeSpec>::from(self.clone()).insert_previous_sibling(new_sibling)
     }
 
+    /// See [Node::insert_next_sibling].
     pub fn insert_next_sibling(
         &mut self,
         new_sibling: impl Into<Node<dyn NodeSpec>>,
@@ -475,6 +548,7 @@ impl<Spec: InternalNodeSpec + ?Sized> Node<Spec> {
 }
 
 impl<Spec: InternalNodeSpec + 'static> Node<Spec> {
+    /// See [Node::append_child].
     pub fn append_child(
         &mut self,
         new_child: impl Into<Node<dyn NodeSpec>>,
@@ -525,10 +599,11 @@ mod tests {
 
     #[test]
     fn cyclic_reference_tests() {
-        let document = Document::new();
+        let mut document = Document::new();
         let mut elem = document.create_element("elem", None).unwrap();
         let mut elem2 = document.create_element("elem2", None).unwrap();
         elem.append_child(elem2.clone()).unwrap();
+        document.append_child(elem.clone()).unwrap();
 
         assert!(
             elem2
