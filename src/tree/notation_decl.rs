@@ -1,7 +1,4 @@
-use std::{
-    cell::{Ref, RefCell},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 
 use anyxml_uri::uri::URIStr;
 
@@ -12,8 +9,8 @@ use crate::tree::{
 
 pub struct NotationDeclSpec {
     name: Rc<str>,
-    system_id: Option<Box<URIStr>>,
-    public_id: Option<Box<str>>,
+    system_id: Option<Rc<URIStr>>,
+    public_id: Option<Rc<str>>,
 }
 
 impl NodeSpec for NotationDeclSpec {
@@ -35,8 +32,8 @@ pub type NotationDecl = Node<NotationDeclSpec>;
 impl NotationDecl {
     pub(crate) fn new(
         name: Rc<str>,
-        system_id: Option<Box<URIStr>>,
-        public_id: Option<Box<str>>,
+        system_id: Option<Rc<URIStr>>,
+        public_id: Option<Rc<str>>,
         owner_document: Document,
     ) -> Self {
         Node::create_node(
@@ -53,11 +50,11 @@ impl NotationDecl {
         self.core.borrow().spec.name.clone()
     }
 
-    pub fn system_id(&self) -> Option<Ref<'_, URIStr>> {
-        Ref::filter_map(self.core.borrow(), |core| core.spec.system_id.as_deref()).ok()
+    pub fn system_id(&self) -> Option<Rc<URIStr>> {
+        self.core.borrow().spec.system_id.clone()
     }
 
-    pub fn public_id(&self) -> Option<Ref<'_, str>> {
-        Ref::filter_map(self.core.borrow(), |core| core.spec.public_id.as_deref()).ok()
+    pub fn public_id(&self) -> Option<Rc<str>> {
+        self.core.borrow().spec.public_id.clone()
     }
 }

@@ -15,10 +15,10 @@ pub struct EntityDeclSpec {
     last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
 
     name: Rc<str>,
-    system_id: Option<Box<URIStr>>,
-    public_id: Option<Box<str>>,
-    notation_name: Option<Box<str>>,
-    value: Option<Box<str>>,
+    system_id: Option<Rc<URIStr>>,
+    public_id: Option<Rc<str>>,
+    notation_name: Option<Rc<str>>,
+    value: Option<Rc<str>>,
 }
 
 impl NodeSpec for EntityDeclSpec {
@@ -72,7 +72,7 @@ pub type EntityDecl = Node<EntityDeclSpec>;
 impl EntityDecl {
     pub(crate) fn new_internal_entity_decl(
         name: Rc<str>,
-        value: Box<str>,
+        value: Rc<str>,
         owner_document: Document,
     ) -> Self {
         Node::create_node(
@@ -91,8 +91,8 @@ impl EntityDecl {
 
     pub(crate) fn new_external_entity_decl(
         name: Rc<str>,
-        system_id: Box<URIStr>,
-        public_id: Option<Box<str>>,
+        system_id: Rc<URIStr>,
+        public_id: Option<Rc<str>>,
         owner_document: Document,
     ) -> Self {
         Node::create_node(
@@ -111,9 +111,9 @@ impl EntityDecl {
 
     pub(crate) fn new_unparsed_entity_decl(
         name: Rc<str>,
-        system_id: Box<URIStr>,
-        public_id: Option<Box<str>>,
-        notation_name: Box<str>,
+        system_id: Rc<URIStr>,
+        public_id: Option<Rc<str>>,
+        notation_name: Rc<str>,
         owner_document: Document,
     ) -> Self {
         Node::create_node(

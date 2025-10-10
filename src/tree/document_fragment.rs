@@ -271,9 +271,9 @@ mod tests {
     fn document_fragment_doctype_insertion_test() {
         let document = Document::new();
 
-        let mut doctype = document.create_document_type("root".into(), None, None);
-        let mut elem1 = document.create_element("elem1".into(), None).unwrap();
-        let elem2 = document.create_element("elem2".into(), None).unwrap();
+        let mut doctype = document.create_document_type("root", None, None);
+        let mut elem1 = document.create_element("elem1", None).unwrap();
+        let elem2 = document.create_element("elem2", None).unwrap();
         let mut frag = document.create_document_fragment();
 
         //       frag
@@ -364,25 +364,15 @@ mod tests {
     fn document_fragment_insertion_to_other_test() {
         let document = Document::new();
 
-        let mut elem = document.create_element("root".into(), None).unwrap();
+        let mut elem = document.create_element("root", None).unwrap();
         let mut frag = document.create_document_fragment();
 
-        frag.append_child(
-            document
-                .create_element("child1".into(), None)
-                .unwrap()
-                .into(),
-        )
-        .unwrap();
+        frag.append_child(document.create_element("child1", None).unwrap().into())
+            .unwrap();
         frag.append_child(document.create_text("text1").into())
             .unwrap();
-        frag.append_child(
-            document
-                .create_element("child2".into(), None)
-                .unwrap()
-                .into(),
-        )
-        .unwrap();
+        frag.append_child(document.create_element("child2", None).unwrap().into())
+            .unwrap();
 
         elem.append_child(frag.clone().into()).unwrap();
 

@@ -270,8 +270,8 @@ mod tests {
         convert_and_test!(
             document,
             create_attlist_decl(
-                "element".into(),
-                "attribute".into(),
+                "element",
+                "attribute",
                 AttributeType::CDATA,
                 DefaultDecl::IMPLIED
             ),
@@ -303,7 +303,7 @@ mod tests {
         );
         convert_and_test!(
             document,
-            create_document_type("dtd".into(), None, None),
+            create_document_type("dtd", None, None),
             as_document_type,
             DocumentType,
             Node<dyn NodeSpec>,

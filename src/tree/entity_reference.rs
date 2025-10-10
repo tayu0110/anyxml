@@ -1,7 +1,4 @@
-use std::{
-    cell::{Ref, RefCell},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::tree::{
     Document, NodeType, XMLTreeError,
@@ -12,7 +9,7 @@ pub struct EntityReferenceSpec {
     first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
     last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
 
-    name: Box<str>,
+    name: Rc<str>,
 }
 
 impl NodeSpec for EntityReferenceSpec {
@@ -64,7 +61,7 @@ impl InternalNodeSpec for EntityReferenceSpec {
 pub type EntityReference = Node<EntityReferenceSpec>;
 
 impl EntityReference {
-    pub(crate) fn new(name: Box<str>, owner_document: Document) -> Self {
+    pub(crate) fn new(name: Rc<str>, owner_document: Document) -> Self {
         Node::create_node(
             EntityReferenceSpec {
                 first_child: None,
@@ -75,7 +72,7 @@ impl EntityReference {
         )
     }
 
-    pub fn name(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| core.spec.name.as_ref())
+    pub fn name(&self) -> Rc<str> {
+        self.core.borrow().spec.name.clone()
     }
 }

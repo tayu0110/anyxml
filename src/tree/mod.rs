@@ -171,8 +171,8 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
             .append_child(
                 self.document
                     .create_attlist_decl(
-                        element_name.into(),
-                        attribute_name.into(),
+                        element_name,
+                        attribute_name,
                         attribute_type.clone(),
                         default_decl.clone(),
                     )
@@ -221,7 +221,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
         self.node
             .append_child(
                 self.document
-                    .create_element_decl(name.into(), contentspec.clone())
+                    .create_element_decl(name, contentspec.clone())
                     .into(),
             )
             .unwrap();
@@ -232,11 +232,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
         self.node
             .append_child(
                 self.document
-                    .create_external_entity_decl(
-                        name.into(),
-                        system_id.into(),
-                        public_id.map(|id| id.into()),
-                    )
+                    .create_external_entity_decl(name, system_id, public_id.map(|id| id.into()))
                     .into(),
             )
             .unwrap();
@@ -268,7 +264,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
         self.node
             .append_child(
                 self.document
-                    .create_internal_entity_decl(name.into(), value.into())
+                    .create_internal_entity_decl(name, value)
                     .into(),
             )
             .unwrap();
@@ -280,7 +276,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
             .append_child(
                 self.document
                     .create_notation_decl(
-                        name.into(),
+                        name,
                         system_id.map(|id| id.into()),
                         public_id.map(|id| id.into()),
                     )
@@ -294,7 +290,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
         self.node
             .append_child(
                 self.document
-                    .create_processing_instruction(target.into(), data.map(|data| data.into()))
+                    .create_processing_instruction(target, data.map(|data| data.into()))
                     .into(),
             )
             .unwrap();
@@ -340,7 +336,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
 
     fn start_dtd(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
         let doctype = self.document.create_document_type(
-            name.into(),
+            name,
             system_id.map(|id| id.into()),
             public_id.map(|id| id.into()),
         );
@@ -364,7 +360,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
     ) {
         if let Ok(mut elem) = self
             .document
-            .create_element(qname.into(), uri.map(|uri| uri.into()))
+            .create_element(qname, uri.map(|uri| uri.into()))
         {
             for att in atts {
                 if att.is_nsdecl() {
@@ -428,10 +424,10 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
             .append_child(
                 self.document
                     .create_unparsed_entity_decl(
-                        name.into(),
-                        system_id.into(),
+                        name,
+                        system_id,
                         public_id.map(|id| id.into()),
-                        notation_name.into(),
+                        notation_name,
                     )
                     .into(),
             )

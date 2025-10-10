@@ -502,8 +502,8 @@ mod tests {
     #[test]
     fn cyclic_reference_tests() {
         let document = Document::new();
-        let mut elem = document.create_element("elem".into(), None).unwrap();
-        let mut elem2 = document.create_element("elem2".into(), None).unwrap();
+        let mut elem = document.create_element("elem", None).unwrap();
+        let mut elem2 = document.create_element("elem2", None).unwrap();
         elem.append_child(elem2.clone().into()).unwrap();
 
         assert!(

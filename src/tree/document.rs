@@ -161,19 +161,19 @@ impl Document {
 
     pub fn create_document_type(
         &self,
-        name: Box<str>,
-        system_id: Option<Box<URIStr>>,
-        public_id: Option<Box<str>>,
+        name: impl Into<Rc<str>>,
+        system_id: Option<Rc<URIStr>>,
+        public_id: Option<Rc<str>>,
     ) -> DocumentType {
-        DocumentType::new(name, system_id, public_id, self.clone())
+        DocumentType::new(name.into(), system_id, public_id, self.clone())
     }
 
     pub fn create_element(
         &self,
-        qname: Rc<str>,
+        qname: impl Into<Rc<str>>,
         namespace_name: Option<Rc<str>>,
     ) -> Result<Element, XMLTreeError> {
-        Element::new(qname, namespace_name, self.clone())
+        Element::new(qname.into(), namespace_name, self.clone())
     }
 
     pub fn create_text(&self, data: impl Into<String>) -> Text {
@@ -190,15 +190,15 @@ impl Document {
 
     pub fn create_processing_instruction(
         &self,
-        target: Box<str>,
-        data: Option<Box<str>>,
+        target: impl Into<Rc<str>>,
+        data: Option<Rc<str>>,
     ) -> ProcessingInstruction {
-        ProcessingInstruction::new(target, data, self.clone())
+        ProcessingInstruction::new(target.into(), data, self.clone())
     }
 
-    pub fn create_entity_reference(&self, name: Box<str>) -> EntityReference {
+    pub fn create_entity_reference(&self, name: impl Into<Rc<str>>) -> EntityReference {
         // TODO: try to expand contents
-        EntityReference::new(name, self.clone())
+        EntityReference::new(name.into(), self.clone())
     }
 
     pub fn create_document_fragment(&self) -> DocumentFragment {
@@ -207,54 +207,68 @@ impl Document {
 
     pub fn create_attlist_decl(
         &self,
-        elem_name: Rc<str>,
-        attr_name: Rc<str>,
+        elem_name: impl Into<Rc<str>>,
+        attr_name: impl Into<Rc<str>>,
         attr_type: AttributeType,
         default_decl: DefaultDecl,
     ) -> AttlistDecl {
-        AttlistDecl::new(elem_name, attr_name, attr_type, default_decl, self.clone())
+        AttlistDecl::new(
+            elem_name.into(),
+            attr_name.into(),
+            attr_type,
+            default_decl,
+            self.clone(),
+        )
     }
 
-    pub fn create_element_decl(&self, name: Rc<str>, content_spec: ContentSpec) -> ElementDecl {
-        ElementDecl::new(name, content_spec, self.clone())
+    pub fn create_element_decl(
+        &self,
+        name: impl Into<Rc<str>>,
+        content_spec: ContentSpec,
+    ) -> ElementDecl {
+        ElementDecl::new(name.into(), content_spec, self.clone())
     }
 
-    pub fn create_internal_entity_decl(&self, name: Rc<str>, value: Box<str>) -> EntityDecl {
-        EntityDecl::new_internal_entity_decl(name, value, self.clone())
+    pub fn create_internal_entity_decl(
+        &self,
+        name: impl Into<Rc<str>>,
+        value: impl Into<Rc<str>>,
+    ) -> EntityDecl {
+        EntityDecl::new_internal_entity_decl(name.into(), value.into(), self.clone())
     }
 
     pub fn create_external_entity_decl(
         &self,
-        name: Rc<str>,
-        system_id: Box<URIStr>,
-        public_id: Option<Box<str>>,
+        name: impl Into<Rc<str>>,
+        system_id: impl Into<Rc<URIStr>>,
+        public_id: Option<Rc<str>>,
     ) -> EntityDecl {
-        EntityDecl::new_external_entity_decl(name, system_id, public_id, self.clone())
+        EntityDecl::new_external_entity_decl(name.into(), system_id.into(), public_id, self.clone())
     }
 
     pub fn create_unparsed_entity_decl(
         &self,
-        name: Rc<str>,
-        system_id: Box<URIStr>,
-        public_id: Option<Box<str>>,
-        notation_name: Box<str>,
+        name: impl Into<Rc<str>>,
+        system_id: impl Into<Rc<URIStr>>,
+        public_id: Option<Rc<str>>,
+        notation_name: impl Into<Rc<str>>,
     ) -> EntityDecl {
         EntityDecl::new_unparsed_entity_decl(
-            name,
-            system_id,
+            name.into(),
+            system_id.into(),
             public_id,
-            notation_name,
+            notation_name.into(),
             self.clone(),
         )
     }
 
     pub fn create_notation_decl(
         &self,
-        name: Rc<str>,
-        system_id: Option<Box<URIStr>>,
-        public_id: Option<Box<str>>,
+        name: impl Into<Rc<str>>,
+        system_id: Option<Rc<URIStr>>,
+        public_id: Option<Rc<str>>,
     ) -> NotationDecl {
-        NotationDecl::new(name, system_id, public_id, self.clone())
+        NotationDecl::new(name.into(), system_id, public_id, self.clone())
     }
 
     pub fn document_element(&self) -> Option<Element> {
@@ -343,13 +357,13 @@ mod tests {
         assert!(document.document_element().is_none());
         assert!(document.first_child().is_none());
         assert!(document.last_child().is_none());
-        let mut elem = document.create_element("root".into(), None).unwrap();
+        let mut elem = document.create_element("root", None).unwrap();
         document.append_child(elem.clone().into()).unwrap();
         assert!(document.document_element().is_some());
         assert!(document.document_element().is_some());
         assert!(document.document_element().is_some());
 
-        let elem2 = document.create_element("root2".into(), None).unwrap();
+        let elem2 = document.create_element("root2", None).unwrap();
         assert!(document.append_child(elem2.clone().into()).is_err());
         assert!(
             document
@@ -383,7 +397,7 @@ mod tests {
     #[test]
     fn document_type_insertion_test() {
         let mut document = Document::new();
-        let mut doctype = document.create_document_type("root".into(), None, None);
+        let mut doctype = document.create_document_type("root", None, None);
         document.append_child(doctype.clone().into()).unwrap();
         assert!(document.document_type().is_some());
         assert!(
@@ -401,7 +415,7 @@ mod tests {
                 == "root")
         );
 
-        let doctype2 = document.create_document_type("root2".into(), None, None);
+        let doctype2 = document.create_document_type("root2", None, None);
         assert!(document.append_child(doctype2.into()).is_err());
         assert!(
             document
@@ -433,8 +447,8 @@ mod tests {
     #[test]
     fn document_element_insertion_before_document_type_test() {
         let mut document = Document::new();
-        let mut doctype = document.create_document_type("root".into(), None, None);
-        let root = document.create_element("root".into(), None).unwrap();
+        let mut doctype = document.create_document_type("root", None, None);
+        let root = document.create_element("root", None).unwrap();
         document.append_child(doctype.clone().into()).unwrap();
         assert!(
             doctype
@@ -463,8 +477,8 @@ mod tests {
     #[test]
     fn document_type_insertion_after_document_element_test() {
         let mut document = Document::new();
-        let doctype = document.create_document_type("root".into(), None, None);
-        let mut root = document.create_element("root".into(), None).unwrap();
+        let doctype = document.create_document_type("root", None, None);
+        let mut root = document.create_element("root", None).unwrap();
         document.append_child(root.clone().into()).unwrap();
         assert!(root.insert_next_sibling(doctype.clone().into()).is_err());
 

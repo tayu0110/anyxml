@@ -1,8 +1,4 @@
-use std::{
-    cell::{Ref, RefCell},
-    collections::HashMap,
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use anyxml_uri::uri::URIStr;
 
@@ -29,9 +25,9 @@ pub struct DocumentTypeSpec {
     /// (notation name, node pointer)
     notation_decl: HashMap<Rc<str>, Rc<RefCell<NodeCore<NotationDeclSpec>>>>,
 
-    name: Box<str>,
-    system_id: Option<Box<URIStr>>,
-    public_id: Option<Box<str>>,
+    name: Rc<str>,
+    system_id: Option<Rc<URIStr>>,
+    public_id: Option<Rc<str>>,
 }
 
 impl NodeSpec for DocumentTypeSpec {
@@ -218,9 +214,9 @@ pub type DocumentType = Node<DocumentTypeSpec>;
 
 impl DocumentType {
     pub(crate) fn new(
-        name: Box<str>,
-        system_id: Option<Box<URIStr>>,
-        public_id: Option<Box<str>>,
+        name: Rc<str>,
+        system_id: Option<Rc<URIStr>>,
+        public_id: Option<Rc<str>>,
         owner_document: Document,
     ) -> Self {
         Node::create_node(
@@ -288,15 +284,15 @@ impl DocumentType {
             })
     }
 
-    pub fn name(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| core.spec.name.as_ref())
+    pub fn name(&self) -> Rc<str> {
+        self.core.borrow().spec.name.clone()
     }
 
-    pub fn system_id(&self) -> Option<Ref<'_, URIStr>> {
-        Ref::filter_map(self.core.borrow(), |core| core.spec.system_id.as_deref()).ok()
+    pub fn system_id(&self) -> Option<Rc<URIStr>> {
+        self.core.borrow().spec.system_id.clone()
     }
 
-    pub fn public_id(&self) -> Option<Ref<'_, str>> {
-        Ref::filter_map(self.core.borrow(), |core| core.spec.public_id.as_deref()).ok()
+    pub fn public_id(&self) -> Option<Rc<str>> {
+        self.core.borrow().spec.public_id.clone()
     }
 }

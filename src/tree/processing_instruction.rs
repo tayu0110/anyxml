@@ -1,7 +1,4 @@
-use std::{
-    cell::{Ref, RefCell},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::tree::{
     Document, NodeType,
@@ -9,8 +6,8 @@ use crate::tree::{
 };
 
 pub struct ProcessingInstructionSpec {
-    target: Box<str>,
-    data: Option<Box<str>>,
+    target: Rc<str>,
+    data: Option<Rc<str>>,
 }
 
 impl NodeSpec for ProcessingInstructionSpec {
@@ -30,15 +27,15 @@ impl NodeSpec for ProcessingInstructionSpec {
 pub type ProcessingInstruction = Node<ProcessingInstructionSpec>;
 
 impl ProcessingInstruction {
-    pub(crate) fn new(target: Box<str>, data: Option<Box<str>>, owner_document: Document) -> Self {
+    pub(crate) fn new(target: Rc<str>, data: Option<Rc<str>>, owner_document: Document) -> Self {
         Node::create_node(ProcessingInstructionSpec { target, data }, owner_document)
     }
 
-    pub fn target(&self) -> Ref<'_, str> {
-        Ref::map(self.core.borrow(), |core| core.spec.target.as_ref())
+    pub fn target(&self) -> Rc<str> {
+        self.core.borrow().spec.target.clone()
     }
 
-    pub fn data(&self) -> Option<Ref<'_, str>> {
-        Ref::filter_map(self.core.borrow(), |core| core.spec.data.as_deref()).ok()
+    pub fn data(&self) -> Option<Rc<str>> {
+        self.core.borrow().spec.data.clone()
     }
 }
