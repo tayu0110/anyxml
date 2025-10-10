@@ -178,10 +178,12 @@ impl Node<dyn NodeSpec> {
                 previous_sibling.set_next_sibling(next_sibling.clone());
                 next_sibling.set_previous_sibling(previous_sibling.clone());
             }
-            (Some(mut parent_node), Some(previous_sibling), None) => {
+            (Some(mut parent_node), Some(mut previous_sibling), None) => {
+                previous_sibling.unset_next_sibling();
                 parent_node.set_last_child(previous_sibling);
             }
-            (Some(mut parent_node), None, Some(next_sibling)) => {
+            (Some(mut parent_node), None, Some(mut next_sibling)) => {
+                next_sibling.unset_previous_sibling();
                 parent_node.set_first_child(next_sibling);
             }
             (Some(mut parent_node), None, None) => {
@@ -237,13 +239,15 @@ impl Node<dyn NodeSpec> {
     ) -> Result<(), XMLTreeError> {
         if let Some(frag) = new_sibling.as_document_fragment() {
             let mut succeed = 0;
-            while let Some(child) = frag.first_child() {
-                let ret = self.insert_previous_sibling(child);
+            while let Some(mut child) = frag.first_child() {
+                let ret = self.insert_previous_sibling(child.clone());
                 if ret.is_err() {
                     // rollback
                     for _ in 0..succeed {
                         if let Some(mut previous) = self.previous_sibling() {
                             previous.detach()?;
+                            child.insert_previous_sibling(previous.clone())?;
+                            child = previous;
                         }
                     }
                     return ret;
@@ -279,7 +283,7 @@ impl Node<dyn NodeSpec> {
         &mut self,
         mut new_sibling: Node<dyn NodeSpec>,
     ) -> Result<(), XMLTreeError> {
-        if let Some(frag) = new_sibling.as_document_fragment() {
+        if let Some(mut frag) = new_sibling.as_document_fragment() {
             let mut succeed = 0;
             while let Some(child) = frag.last_child() {
                 let ret = self.insert_next_sibling(child);
@@ -288,6 +292,7 @@ impl Node<dyn NodeSpec> {
                     for _ in 0..succeed {
                         if let Some(mut next) = self.next_sibling() {
                             next.detach()?;
+                            frag.append_child(next)?;
                         }
                     }
                     return ret;
@@ -343,6 +348,25 @@ impl Node<dyn InternalNodeSpec> {
         if let Some(mut last_child) = self.last_child() {
             last_child.insert_next_sibling(new_child)?;
         } else {
+            if let Some(mut frag) = new_child.as_document_fragment() {
+                let Some(mut child) = frag.first_child() else {
+                    return Ok(());
+                };
+
+                self.append_child(child.clone())?;
+                return match self.append_child(frag.clone().into()) {
+                    Ok(()) => Ok(()),
+                    Err(err) => {
+                        child.detach()?;
+                        if let Some(mut first) = frag.first_child() {
+                            first.insert_previous_sibling(child)?;
+                        } else {
+                            frag.append_child(child)?;
+                        }
+                        return Err(err);
+                    }
+                };
+            }
             Node::<dyn NodeSpec>::from(self.clone()).pre_insertion_common_check(&new_child)?;
             self.pre_child_insertion(new_child.clone(), None)?;
             new_child.detach()?;

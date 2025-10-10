@@ -16,9 +16,9 @@ enum State {
     // has document type and document element
     AsDocument,
     // has character data and zero or one element
-    AsContent,
+    AsContent { elem: usize, text: usize },
     // has declarations
-    AsDocumentType,
+    AsDocumentType { decl: usize },
 }
 
 pub struct DocumentFragmentSpec {
@@ -57,6 +57,66 @@ impl InternalNodeSpec for DocumentFragmentSpec {
         self.last_child = None;
     }
 
+    fn pre_child_removal(&mut self, removed_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
+        match removed_child.node_type() {
+            NodeType::AttlistDecl
+            | NodeType::ElementDecl
+            | NodeType::EntityDecl
+            | NodeType::NotationDecl => match &mut self.state {
+                State::AsDocumentType { decl } => {
+                    *decl -= 1;
+                    if *decl == 0 {
+                        self.state = State::None;
+                    }
+                }
+                _ => unreachable!(),
+            },
+            NodeType::DocumentType => match self.state {
+                State::AsDocument => self.state = State::HasAnElement,
+                State::HasDocumentType => self.state = State::None,
+                _ => unreachable!(),
+            },
+            NodeType::Element => match &mut self.state {
+                State::AsContent { elem, text } => {
+                    *elem -= 1;
+                    if *elem == 0 && *text == 0 {
+                        self.state = State::None;
+                    }
+                }
+                State::AsDocument => self.state = State::HasDocumentType,
+                State::HasAnElement => self.state = State::None,
+                _ => unreachable!(),
+            },
+            NodeType::CDATASection | NodeType::Text => match &mut self.state {
+                State::AsContent { elem, text } => {
+                    *text -= 1;
+                    if *elem == 0 && *text == 0 {
+                        self.state = State::None;
+                    }
+                }
+                _ => unreachable!(),
+            },
+            NodeType::EntityReference => match &mut self.state {
+                State::AsContent { elem, text } => {
+                    *text -= 1;
+                    if *elem == 0 && *text == 0 {
+                        self.state = State::None;
+                    }
+                }
+                State::AsDocumentType { decl } => {
+                    *decl -= 1;
+                    if *decl == 0 {
+                        self.state = State::None;
+                    }
+                }
+                _ => unreachable!(),
+            },
+            NodeType::Comment | NodeType::ProcessingInstruction => {}
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn pre_child_insertion(
         &self,
         inserted_child: Node<dyn NodeSpec>,
@@ -67,14 +127,14 @@ impl InternalNodeSpec for DocumentFragmentSpec {
             | NodeKind::ElementDecl(_)
             | NodeKind::EntityDecl(_)
             | NodeKind::NotationDecl(_) => {
-                if !matches!(self.state, State::None | State::AsDocumentType) {
+                if !matches!(self.state, State::None | State::AsDocumentType { .. }) {
                     return Err(XMLTreeError::UnacceptableHierarchy);
                 }
             }
             NodeKind::DocumentType(_) => match self.state {
-                State::AsContent
+                State::AsContent { .. }
                 | State::AsDocument
-                | State::AsDocumentType
+                | State::AsDocumentType { .. }
                 | State::HasDocumentType => {
                     return Err(XMLTreeError::UnacceptableHierarchy);
                 }
@@ -101,15 +161,15 @@ impl InternalNodeSpec for DocumentFragmentSpec {
                         return Err(XMLTreeError::UnacceptableHorizontality);
                     }
                 }
-                State::AsDocument | State::AsDocumentType => {
+                State::AsDocument | State::AsDocumentType { .. } => {
                     return Err(XMLTreeError::UnacceptableHierarchy);
                 }
-                State::AsContent | State::HasAnElement | State::None => {}
+                State::AsContent { .. } | State::HasAnElement | State::None => {}
             },
             NodeKind::CDATASection(_) | NodeKind::Text(_) => {
                 if !matches!(
                     self.state,
-                    State::AsContent | State::HasAnElement | State::None
+                    State::AsContent { .. } | State::HasAnElement | State::None
                 ) {
                     return Err(XMLTreeError::UnacceptableHierarchy);
                 }
@@ -121,7 +181,7 @@ impl InternalNodeSpec for DocumentFragmentSpec {
                     return Err(XMLTreeError::Unsupported);
                 } else if !matches!(
                     self.state,
-                    State::AsContent | State::HasAnElement | State::None
+                    State::AsContent { .. } | State::HasAnElement | State::None
                 ) {
                     return Err(XMLTreeError::UnacceptableHierarchy);
                 }
@@ -137,9 +197,10 @@ impl InternalNodeSpec for DocumentFragmentSpec {
             NodeKind::AttlistDecl(_)
             | NodeKind::ElementDecl(_)
             | NodeKind::EntityDecl(_)
-            | NodeKind::NotationDecl(_) => {
-                self.state = State::AsDocumentType;
-            }
+            | NodeKind::NotationDecl(_) => match &mut self.state {
+                State::AsDocumentType { decl } => *decl += 1,
+                _ => self.state = State::AsDocumentType { decl: 1 },
+            },
             NodeKind::DocumentType(_) => {
                 if matches!(self.state, State::None) {
                     self.state = State::HasDocumentType;
@@ -147,20 +208,33 @@ impl InternalNodeSpec for DocumentFragmentSpec {
                     self.state = State::AsDocument;
                 }
             }
-            NodeKind::Element(_) => match self.state {
-                State::HasAnElement | State::AsContent => self.state = State::AsContent,
+            NodeKind::Element(_) => match &mut self.state {
+                State::HasAnElement => self.state = State::AsContent { elem: 2, text: 0 },
+                State::AsContent { elem, .. } => *elem += 1,
                 State::None => self.state = State::HasAnElement,
                 State::HasDocumentType => self.state = State::AsDocument,
-                State::AsDocument | State::AsDocumentType => unreachable!(),
+                State::AsDocument | State::AsDocumentType { .. } => unreachable!(),
             },
-            NodeKind::CDATASection(_) | NodeKind::Text(_) => {
-                self.state = State::AsContent;
-            }
+            NodeKind::CDATASection(_) | NodeKind::Text(_) => match &mut self.state {
+                State::AsContent { text, .. } => *text += 1,
+                State::HasAnElement => self.state = State::AsContent { elem: 1, text: 1 },
+                State::None => self.state = State::AsContent { elem: 0, text: 1 },
+                _ => unreachable!(),
+            },
             NodeKind::EntityReference(entity) => {
                 if entity.name().starts_with('%') {
-                    self.state = State::AsDocumentType;
+                    match &mut self.state {
+                        State::AsDocumentType { decl } => *decl += 1,
+                        State::None => self.state = State::AsDocumentType { decl: 1 },
+                        _ => unreachable!(),
+                    }
                 } else {
-                    self.state = State::AsContent;
+                    match &mut self.state {
+                        State::AsContent { text, .. } => *text += 1,
+                        State::HasAnElement => self.state = State::AsContent { elem: 1, text: 1 },
+                        State::None => self.state = State::AsContent { elem: 0, text: 1 },
+                        _ => unreachable!(),
+                    }
                 }
             }
             NodeKind::Comment(_) | NodeKind::ProcessingInstruction(_) => {}
@@ -186,5 +260,183 @@ impl DocumentFragment {
             })),
             owner_document: owner_document.core.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn document_fragment_doctype_insertion_test() {
+        let document = Document::new();
+
+        let mut doctype = document.create_document_type("root".into(), None, None);
+        let mut elem1 = document.create_element("elem1".into(), None).unwrap();
+        let elem2 = document.create_element("elem2".into(), None).unwrap();
+        let mut frag = document.create_document_fragment();
+
+        //       frag
+        //      /    \
+        // doctype  elem1
+        frag.append_child(doctype.clone().into()).unwrap();
+        frag.append_child(elem1.clone().into()).unwrap();
+        assert!(frag.append_child(elem2.clone().into()).is_err());
+        assert!(
+            frag.first_child()
+                .and_then(|ch| ch.as_document_type())
+                .is_some()
+        );
+        assert!(
+            frag.last_child()
+                .and_then(|ch| ch.as_element())
+                .is_some_and(|elem| elem.name().as_ref() == "elem1")
+        );
+
+        //   frag
+        //     |
+        //  doctype
+        elem1.detach().unwrap();
+        assert!(
+            frag.first_child()
+                .and_then(|ch| ch.as_document_type())
+                .is_some()
+        );
+        assert!(
+            frag.last_child()
+                .and_then(|ch| ch.as_document_type())
+                .is_some()
+        );
+
+        assert!(
+            doctype
+                .insert_previous_sibling(elem1.clone().into())
+                .is_err()
+        );
+        assert!(
+            frag.first_child()
+                .and_then(|ch| ch.as_document_type())
+                .is_some()
+        );
+        assert!(
+            frag.last_child()
+                .and_then(|ch| ch.as_document_type())
+                .is_some()
+        );
+
+        doctype.detach().unwrap();
+        assert!(frag.first_child().is_none());
+        assert!(frag.last_child().is_none());
+
+        frag.append_child(elem1.clone().into()).unwrap();
+        assert!(
+            frag.first_child()
+                .and_then(|ch| ch.as_element())
+                .is_some_and(|elem| elem.name().as_ref() == "elem1")
+        );
+        assert!(
+            frag.last_child()
+                .and_then(|ch| ch.as_element())
+                .is_some_and(|elem| elem.name().as_ref() == "elem1")
+        );
+        frag.insert_previous_sibling(doctype.clone().into())
+            .unwrap();
+
+        doctype.detach().unwrap();
+
+        assert!(frag.append_child(doctype.clone().into()).is_err());
+
+        frag.append_child(elem2.into()).unwrap();
+        assert!(
+            frag.first_child()
+                .and_then(|ch| ch.as_element())
+                .is_some_and(|elem| elem.name().as_ref() == "elem1")
+        );
+        assert!(
+            frag.last_child()
+                .and_then(|ch| ch.as_element())
+                .is_some_and(|elem| elem.name().as_ref() == "elem2")
+        );
+        assert!(elem1.insert_previous_sibling(doctype.into()).is_err());
+    }
+
+    #[test]
+    fn document_fragment_insertion_to_other_test() {
+        let document = Document::new();
+
+        let mut elem = document.create_element("root".into(), None).unwrap();
+        let mut frag = document.create_document_fragment();
+
+        frag.append_child(
+            document
+                .create_element("child1".into(), None)
+                .unwrap()
+                .into(),
+        )
+        .unwrap();
+        frag.append_child(document.create_text("text1").into())
+            .unwrap();
+        frag.append_child(
+            document
+                .create_element("child2".into(), None)
+                .unwrap()
+                .into(),
+        )
+        .unwrap();
+
+        elem.append_child(frag.clone().into()).unwrap();
+
+        let mut children = elem.first_child();
+        for expect in ["child1", "text1", "child2"] {
+            match children.as_ref().unwrap().downcast() {
+                NodeKind::Element(elem) => {
+                    assert_eq!(elem.name().as_ref(), expect);
+                }
+                NodeKind::Text(text) => {
+                    assert_eq!(&*text.data(), expect);
+                }
+                _ => unreachable!(),
+            }
+            children = children.unwrap().next_sibling();
+        }
+        assert!(children.is_none());
+        assert!(frag.first_child().is_none());
+        assert!(frag.last_child().is_none());
+    }
+
+    #[test]
+    fn document_fragment_wrong_insertion_to_other_test() {
+        let mut document = Document::new();
+
+        let mut frag = document.create_document_fragment();
+        frag.append_child(document.create_comment("comment1").into())
+            .unwrap();
+        frag.append_child(document.create_comment("comment2").into())
+            .unwrap();
+        frag.append_child(document.create_text("text1").into())
+            .unwrap();
+        frag.append_child(document.create_text("text2").into())
+            .unwrap();
+        frag.append_child(document.create_comment("comment3").into())
+            .unwrap();
+
+        assert!(document.append_child(frag.clone().into()).is_err());
+        assert!(document.first_child().is_none());
+        assert!(document.last_child().is_none());
+
+        let mut children = frag.first_child();
+        for expect in ["comment1", "comment2", "text1", "text2", "comment3"] {
+            match children.as_ref().expect(expect).downcast() {
+                NodeKind::Comment(comment) => {
+                    assert_eq!(&*comment.data(), expect);
+                }
+                NodeKind::Text(text) => {
+                    assert_eq!(&*text.data(), expect);
+                }
+                _ => unreachable!(),
+            }
+            children = children.unwrap().next_sibling();
+        }
+        assert!(children.is_none());
     }
 }
