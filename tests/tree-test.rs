@@ -100,14 +100,13 @@ fn walk_tree(out: &mut String, node: impl Into<Node<dyn NodeSpec>>, depth: usize
         NodeKind::Document(document) => {
             writeln!(
                 out,
-                "Document({:?}, '{}', '{}', {}, {})",
+                "Document({:?}, '{}', '{}', {})",
                 document.node_type(),
                 document.version().as_deref().unwrap_or("None"),
                 document.encoding().as_deref().unwrap_or("None"),
                 document
                     .standalone()
-                    .map_or("None", |sddecl| if sddecl { "yes" } else { "no" }),
-                document.base_uri().as_escaped_str()
+                    .map_or("None", |sddecl| if sddecl { "yes" } else { "no" })
             )
             .unwrap();
         }

@@ -1,2 +1,2 @@
-Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/tag1.xml)
+Document(Document, '1.0', 'UTF-8', None)
   Element(Element, root, root, None, None)

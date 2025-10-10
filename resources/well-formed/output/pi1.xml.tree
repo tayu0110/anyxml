@@ -1,4 +1,4 @@
-Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/pi1.xml)
+Document(Document, '1.0', 'UTF-8', None)
   ProcessingInstruction(ProcessingInstruction, before-document-element, None)
   Element(Element, root, root, None, None)
     Text(Text, '

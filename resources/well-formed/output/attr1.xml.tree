@@ -1,4 +1,4 @@
-Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/attr1.xml)
+Document(Document, '1.0', 'UTF-8', None)
   Element(Element, root, root, None, None)
     Attribute(Attribute, attr, attr, None, None, 'foo')
       Text(Text, 'foo')

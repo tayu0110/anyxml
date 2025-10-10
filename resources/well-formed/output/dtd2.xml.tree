@@ -1,4 +1,4 @@
-Document(Document, '1.0', 'UTF-8', None, file:///home/tayu/src/anyxml/resources/well-formed/dtd2.xml)
+Document(Document, '1.0', 'UTF-8', None)
   DocumentType(DocumentType, root, None, None)
     ElementDecl(ElementDecl, root, (#PCDATA|child|child2|child3)*)
     ElementDecl(ElementDecl, child, (#PCDATA))
