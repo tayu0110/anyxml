@@ -1,8 +1,9 @@
 use std::{borrow::Cow, sync::Arc};
 
-use anyxml_uri::uri::URIStr;
-
-use crate::error::{XMLError, XMLErrorDomain, XMLErrorLevel};
+use crate::{
+    error::{XMLError, XMLErrorDomain, XMLErrorLevel},
+    uri::URIStr,
+};
 
 #[derive(Debug)]
 pub struct SAXParseError {

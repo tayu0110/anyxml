@@ -1,15 +1,16 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use anyxml_uri::uri::URIStr;
-
-use crate::tree::{
-    AttlistDecl, Document, ElementDecl, EntityDecl, NodeType, NotationDecl, XMLTreeError,
-    attlist_decl::AttlistDeclSpec,
-    convert::NodeKind,
-    element_decl::ElementDeclSpec,
-    entity_decl::EntityDeclSpec,
-    node::{InternalNodeSpec, Node, NodeCore, NodeSpec},
-    notation_decl::NotationDeclSpec,
+use crate::{
+    tree::{
+        AttlistDecl, Document, ElementDecl, EntityDecl, NodeType, NotationDecl, XMLTreeError,
+        attlist_decl::AttlistDeclSpec,
+        convert::NodeKind,
+        element_decl::ElementDeclSpec,
+        entity_decl::EntityDeclSpec,
+        node::{InternalNodeSpec, Node, NodeCore, NodeSpec},
+        notation_decl::NotationDeclSpec,
+    },
+    uri::URIStr,
 };
 
 pub struct DocumentTypeSpec {

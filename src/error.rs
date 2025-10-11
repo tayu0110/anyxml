@@ -1,6 +1,7 @@
-use anyxml_uri::ParseRIError;
-
-use crate::encoding::{DecodeError, EncodeError};
+use crate::{
+    encoding::{DecodeError, EncodeError},
+    uri::ParseRIError,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XMLErrorLevel {

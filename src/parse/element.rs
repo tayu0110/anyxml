@@ -3,8 +3,6 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use anyxml_uri::uri::URIString;
-
 use crate::{
     ParserSpec, XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
@@ -16,6 +14,7 @@ use crate::{
         parser::{ParserOption, ParserState, XMLReader},
         source::InputSource,
     },
+    uri::URIString,
 };
 
 static ARC_XML_NS_NAMESPACE: LazyLock<Arc<str>> = LazyLock::new(|| XML_NS_NAMESPACE.into());

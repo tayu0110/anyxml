@@ -1,5 +1,3 @@
-use anyxml_uri::uri::URIString;
-
 use crate::{
     ParserSpec,
     error::XMLError,
@@ -10,6 +8,7 @@ use crate::{
         parser::{ParserOption, XMLReader},
         source::InputSource,
     },
+    uri::URIString,
 };
 
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {

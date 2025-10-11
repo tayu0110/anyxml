@@ -1,10 +1,9 @@
 use std::{io::Read, sync::atomic::AtomicUsize};
 
-use anyxml_uri::uri::{URIStr, URIString};
-
 use crate::{
     encoding::{DecodeError, Decoder, UTF8Decoder, UTF16BEDecoder, UTF16LEDecoder, find_decoder},
     error::XMLError,
+    uri::{URIStr, URIString},
 };
 
 pub(crate) const INPUT_CHUNK: usize = 4096;

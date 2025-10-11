@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, atomic::AtomicUsize},
 };
 
-use anyxml_automata::{
+use crate::automata::{
     Atom,
     ast::ASTNode,
     fa::{DFA, NFA, State},

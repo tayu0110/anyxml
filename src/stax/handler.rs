@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use anyxml_uri::uri::{URIStr, URIString};
-
 use crate::{
     sax::{
         Locator,
@@ -10,6 +8,7 @@ use crate::{
         handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
     },
     stax::events::XMLEventType,
+    uri::{URIStr, URIString},
 };
 
 pub(crate) struct XMLStreamReaderHandler<

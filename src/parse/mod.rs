@@ -12,8 +12,6 @@ mod xmldecl;
 
 use std::{str::from_utf8_unchecked, sync::Arc};
 
-use anyxml_uri::uri::URIString;
-
 use crate::{
     ParserSpec,
     error::XMLError,
@@ -24,6 +22,7 @@ use crate::{
         parser::{ParserOption, ParserState, XMLReader},
         source::InputSource,
     },
+    uri::URIString,
 };
 
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {

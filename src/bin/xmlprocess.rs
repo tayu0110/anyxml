@@ -7,8 +7,8 @@ use anyxml::{
         parser::{ParserOption, XMLReaderBuilder},
     },
     stax::{XMLStreamReaderBuilder, events::XMLEvent},
+    uri::URIString,
 };
-use anyxml_uri::uri::URIString;
 use clap::Parser;
 
 #[derive(clap::Parser)]

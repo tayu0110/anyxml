@@ -1,7 +1,5 @@
 use std::{ops::ControlFlow, sync::Arc};
 
-use anyxml_uri::uri::URIString;
-
 use crate::{
     ProgressiveParserSpec,
     error::XMLError,
@@ -12,6 +10,7 @@ use crate::{
         parser::{ParserOption, ParserState, ParserSubState, XMLReader},
         source::InputSource,
     },
+    uri::URIString,
 };
 
 impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {

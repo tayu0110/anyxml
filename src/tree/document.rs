@@ -3,8 +3,6 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use anyxml_uri::uri::{URIStr, URIString};
-
 use crate::{
     sax::{AttributeType, DefaultDecl, contentspec::ContentSpec},
     tree::{
@@ -17,6 +15,7 @@ use crate::{
         element::ElementSpec,
         node::{InternalNodeSpec, Node, NodeCore, NodeSpec},
     },
+    uri::{URIStr, URIString},
 };
 
 pub struct DocumentSpec {

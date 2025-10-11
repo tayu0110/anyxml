@@ -7,8 +7,8 @@ use anyxml::{
         parser::ParserOption,
     },
     stax::{XMLStreamReaderBuilder, events::XMLEvent},
+    uri::URIString,
 };
-use anyxml_uri::uri::URIString;
 
 #[test]
 fn well_formed_tests() {

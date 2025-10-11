@@ -1,11 +1,13 @@
 #![doc = include_str!("../README.md")]
 
+pub mod automata;
 pub mod encoding;
 pub mod error;
 mod parse;
 pub mod sax;
 pub mod stax;
 pub mod tree;
+pub mod uri;
 
 use std::marker::PhantomData;
 

@@ -13,9 +13,12 @@ use std::{
     },
 };
 
-use anyxml_uri::uri::{URIStr, URIString};
-
-use crate::{XML_XML_NAMESPACE, error::XMLError, sax::contentspec::ContentSpec};
+use crate::{
+    XML_XML_NAMESPACE,
+    error::XMLError,
+    sax::contentspec::ContentSpec,
+    uri::{URIStr, URIString},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum AttributeType {

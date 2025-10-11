@@ -14,8 +14,8 @@ use anyxml::{
         handler::{DebugHandler, EntityResolver, ErrorHandler, SAXHandler},
         parser::{ParserOption, XMLReaderBuilder},
     },
+    uri::URIString,
 };
-use anyxml_uri::uri::URIString;
 
 #[derive(Default)]
 struct TestSAXHandler {

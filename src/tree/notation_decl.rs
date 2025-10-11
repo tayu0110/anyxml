@@ -1,10 +1,11 @@
 use std::{cell::RefCell, rc::Rc};
 
-use anyxml_uri::uri::URIStr;
-
-use crate::tree::{
-    Document, NodeType,
-    node::{Node, NodeCore, NodeSpec},
+use crate::{
+    tree::{
+        Document, NodeType,
+        node::{Node, NodeCore, NodeSpec},
+    },
+    uri::URIStr,
 };
 
 pub struct NotationDeclSpec {

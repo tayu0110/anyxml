@@ -6,8 +6,8 @@ use anyxml::{
         parser::XMLReaderBuilder,
     },
     tree::{Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec},
+    uri::URIString,
 };
-use anyxml_uri::uri::URIString;
 
 fn walk_tree(out: &mut String, node: impl Into<Node<dyn NodeSpec>>, depth: usize) {
     let node: Node<dyn NodeSpec> = node.into();

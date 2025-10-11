@@ -18,7 +18,6 @@ pub mod text;
 
 use std::sync::Arc;
 
-use anyxml_uri::uri::URIStr;
 pub use attlist_decl::AttlistDecl;
 pub use attribute::Attribute;
 pub use cdata_section::CDATASection;
@@ -46,6 +45,7 @@ use crate::{
         source::InputSource,
     },
     tree::{convert::NodeKind, node::InternalNodeSpec},
+    uri::URIStr,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

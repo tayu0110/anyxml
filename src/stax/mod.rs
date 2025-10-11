@@ -3,8 +3,6 @@ mod handler;
 
 use std::{io::Read, marker::PhantomData, sync::Arc};
 
-use anyxml_uri::uri::URIStr;
-
 use crate::{
     ProgressiveParserSpec,
     error::XMLError,
@@ -24,6 +22,7 @@ use crate::{
         },
         handler::XMLStreamReaderHandler,
     },
+    uri::URIStr,
 };
 
 pub struct XMLStreamReader<

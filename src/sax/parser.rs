@@ -5,8 +5,6 @@ use std::{
     sync::{Arc, RwLock, atomic::AtomicUsize},
 };
 
-use anyxml_uri::uri::{URIStr, URIString};
-
 use crate::{
     DefaultParserSpec, ParserSpec, ProgressiveParserSpec, ProgressiveParserSpecificContext,
     XMLVersion,
@@ -19,6 +17,7 @@ use crate::{
         handler::{DefaultSAXHandler, SAXHandler},
         source::{INPUT_CHUNK, InputSource},
     },
+    uri::{URIStr, URIString},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

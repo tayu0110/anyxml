@@ -1,13 +1,12 @@
 use std::{fmt::Write as _, fs::File, sync::Arc};
 
-use anyxml_uri::uri::URIStr;
-
 use crate::{
     error::XMLError,
     sax::{
         AttributeType, ContentSpec, DefaultDecl, Locator, attributes::Attributes,
         error::SAXParseError, source::InputSource,
     },
+    uri::URIStr,
 };
 
 pub trait SAXHandler: EntityResolver + ErrorHandler {
