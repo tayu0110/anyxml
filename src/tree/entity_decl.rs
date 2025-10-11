@@ -1,7 +1,4 @@
-use std::{
-    cell::{Ref, RefCell},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 
 use anyxml_uri::uri::URIStr;
 
@@ -134,22 +131,19 @@ impl EntityDecl {
         self.core.borrow().spec.name.clone()
     }
 
-    pub fn system_id(&self) -> Option<Ref<'_, URIStr>> {
-        Ref::filter_map(self.core.borrow(), |core| core.spec.system_id.as_deref()).ok()
+    pub fn system_id(&self) -> Option<Rc<URIStr>> {
+        self.core.borrow().spec.system_id.clone()
     }
 
-    pub fn public_id(&self) -> Option<Ref<'_, str>> {
-        Ref::filter_map(self.core.borrow(), |core| core.spec.public_id.as_deref()).ok()
+    pub fn public_id(&self) -> Option<Rc<str>> {
+        self.core.borrow().spec.public_id.clone()
     }
 
-    pub fn notation_name(&self) -> Option<Ref<'_, str>> {
-        Ref::filter_map(self.core.borrow(), |core| {
-            core.spec.notation_name.as_deref()
-        })
-        .ok()
+    pub fn notation_name(&self) -> Option<Rc<str>> {
+        self.core.borrow().spec.notation_name.clone()
     }
 
-    pub fn value(&self) -> Option<Ref<'_, str>> {
-        Ref::filter_map(self.core.borrow(), |core| core.spec.value.as_deref()).ok()
+    pub fn value(&self) -> Option<Rc<str>> {
+        self.core.borrow().spec.value.clone()
     }
 }

@@ -282,7 +282,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
 
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
         self.document
-            .set_base_uri(locator.system_id().as_ref().into())
+            .set_base_uri(locator.system_id().as_ref())
             .ok();
         self.handler.set_document_locator(locator);
     }

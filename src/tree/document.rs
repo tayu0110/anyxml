@@ -1,5 +1,5 @@
 use std::{
-    cell::{Ref, RefCell},
+    cell::RefCell,
     rc::{Rc, Weak},
 };
 
@@ -26,10 +26,10 @@ pub struct DocumentSpec {
     document_element: Option<Rc<RefCell<NodeCore<ElementSpec>>>>,
     document_type: Option<Rc<RefCell<NodeCore<DocumentTypeSpec>>>>,
 
-    version: Option<Box<str>>,
-    encoding: Option<Box<str>>,
+    version: Option<Rc<str>>,
+    encoding: Option<Rc<str>>,
     standalone: Option<bool>,
-    base_uri: Box<URIStr>,
+    base_uri: Rc<URIStr>,
 }
 
 impl NodeSpec for DocumentSpec {
@@ -297,8 +297,8 @@ impl Document {
 
     /// If XML declaration is present, return the version specified in the declaration.  \
     /// Otherwise, return `None`.
-    pub fn version(&self) -> Option<Ref<'_, str>> {
-        Ref::filter_map(self.core.borrow(), |core| core.spec.version.as_deref()).ok()
+    pub fn version(&self) -> Option<Rc<str>> {
+        self.core.borrow().spec.version.clone()
     }
 
     pub fn set_version(&mut self, version: Option<&str>) {
@@ -308,8 +308,8 @@ impl Document {
     /// If XML declaration is present and it has the encoding declaration,
     /// return the encoding specified in the declaration.  \
     /// Otherwise, return `None`.
-    pub fn encoding(&self) -> Option<Ref<'_, str>> {
-        Ref::filter_map(self.core.borrow(), |core| core.spec.encoding.as_deref()).ok()
+    pub fn encoding(&self) -> Option<Rc<str>> {
+        self.core.borrow().spec.encoding.clone()
     }
 
     pub fn set_encoding(&mut self, encoding: Option<&str>) {
@@ -327,11 +327,12 @@ impl Document {
         self.core.borrow_mut().spec.standalone = standalone;
     }
 
-    pub fn base_uri(&self) -> Ref<'_, URIStr> {
-        Ref::map(self.core.borrow(), |core| core.spec.base_uri.as_ref())
+    pub fn base_uri(&self) -> Rc<URIStr> {
+        self.core.borrow().spec.base_uri.clone()
     }
 
-    pub fn set_base_uri(&mut self, base_uri: Box<URIStr>) -> Result<(), XMLTreeError> {
+    pub fn set_base_uri(&mut self, base_uri: impl Into<Rc<URIStr>>) -> Result<(), XMLTreeError> {
+        let base_uri = base_uri.into();
         if !base_uri.is_absolute() {
             return Err(XMLTreeError::BaseURINotAbsolute);
         }
