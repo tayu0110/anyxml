@@ -109,7 +109,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
     ///                                     [WFC: No Recursion]
     ///                                     [WFC: In DTD]
     /// ```
-    pub(crate) fn parse_pe_reference(&mut self) -> Result<bool, XMLError> {
+    pub(crate) fn parse_pe_reference(&mut self, in_decl: bool) -> Result<bool, XMLError> {
         // skip '%'
         self.source.advance(1)?;
         self.locator.update_column(|c| c + 1);
@@ -170,10 +170,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                             )?;
                             entity_push = true;
 
-                            if !self.fatal_error_occurred {
+                            if !in_decl && !self.fatal_error_occurred {
                                 self.handler.start_entity(&name);
                             }
-                        } else if !self.fatal_error_occurred {
+                        } else if !in_decl && !self.fatal_error_occurred {
                             self.handler.skipped_entity(&name);
                         }
                     }
@@ -200,7 +200,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                                 )?;
                                 entity_push = true;
 
-                                if !self.fatal_error_occurred {
+                                if !in_decl && !self.fatal_error_occurred {
                                     self.handler.start_entity(&name);
                                 }
                             }
@@ -211,7 +211,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                                     "The external general entity '{}' cannot be resolved.",
                                     name
                                 );
-                                if !self.fatal_error_occurred {
+                                if !in_decl && !self.fatal_error_occurred {
                                     self.handler.skipped_entity(&name);
                                 }
                             }
@@ -227,9 +227,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     "The parameter entity '{}' is not declared.",
                     name
                 );
-                self.handler.skipped_entity(&name);
+                if !in_decl {
+                    self.handler.skipped_entity(&name);
+                }
             }
-        } else if !self.fatal_error_occurred {
+        } else if !in_decl && !self.fatal_error_occurred {
             self.handler.skipped_entity(&name);
         }
         Ok(entity_push)
@@ -268,7 +270,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     );
                     return Err(XMLError::ParserInvalidEntityReference);
                 } else {
-                    self.parse_pe_reference()?;
+                    self.parse_pe_reference(in_decl)?;
                     s += self.skip_whitespaces()?;
                     self.grow()?;
                 }
@@ -281,7 +283,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     break Ok(s);
                 }
                 self.pop_source()?;
-                if !self.fatal_error_occurred {
+                if !in_decl && !self.fatal_error_occurred {
                     self.handler.end_entity();
                 }
                 s += 1 + self.skip_whitespaces()?;

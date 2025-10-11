@@ -303,7 +303,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             self.grow()?;
             match self.source.content_bytes() {
                 [b'%', ..] => {
-                    self.parse_pe_reference()?;
+                    self.parse_pe_reference(false)?;
                 }
                 [b'<', b'?', ..] => self.parse_pi()?,
                 [b'<', b'!', b'-', b'-', ..] => self.parse_comment()?,

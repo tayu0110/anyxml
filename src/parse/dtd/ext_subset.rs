@@ -39,7 +39,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             self.grow()?;
             match self.source.content_bytes() {
                 [b'%', ..] => {
-                    let entity_push = self.parse_pe_reference()?;
+                    let entity_push = self.parse_pe_reference(false)?;
                     let source_id = self.source.source_id();
                     self.parse_ext_subset_decl()?;
                     if self.source.source_id() != source_id {
