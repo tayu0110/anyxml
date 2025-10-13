@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?before-document-element?>
+<root>
+    <?inside-of-content data1="foo"?>
+</root>
+<?after-document-element data2="bar" data3?>

@@ -1,0 +1,4 @@
+<!DOCTYPE root [
+<!ENTITY ent "attvalue">
+]>
+<root attr="attvalue" />

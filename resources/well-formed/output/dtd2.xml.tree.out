@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE root [
+<!ELEMENT root (#PCDATA|child|child2|child3)*>
+<!ELEMENT child (#PCDATA)>
+<!ELEMENT child2 EMPTY>
+<!ELEMENT child3 ANY>
+<!ATTLIST root attr1 CDATA #REQUIRED>
+<!ATTLIST child attr2 CDATA #REQUIRED>
+<!ATTLIST child attr3 CDATA #IMPLIED>
+<!ATTLIST child2 attr4 CDATA #FIXED "hoge">
+<!ATTLIST child2 attr5 (bar|foo|hoge) #IMPLIED>
+]>
+<root attr1="foo">
+    This is a character data.
+    <child attr2="bar">
+        This is a character data under `child`.
+    </child>
+    <child2 attr4="hoge" />
+</root>

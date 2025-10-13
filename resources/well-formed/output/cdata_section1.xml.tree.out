@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+    <![CDATA[ This is a CDATA Section. ]]>
+    <![CDATA[ <greeting>Hello, World!</greeting> ]]>
+    <![CDATA[ <<<<<<</&&&&&&#FFFFFFFFFFFFFF; ]]>
+</root>

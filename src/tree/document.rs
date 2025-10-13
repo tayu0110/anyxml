@@ -349,6 +349,7 @@ impl Default for Document {
 
 impl std::fmt::Display for Document {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut top_of_document = true;
         if self.version().is_some() || self.encoding().is_some() || self.standalone().is_some() {
             write!(
                 f,
@@ -365,14 +366,18 @@ impl std::fmt::Display for Document {
                     write!(f, " standalone=\"no\"")?;
                 }
             }
-            writeln!(f, "?>")?;
+            write!(f, "?>")?;
+            top_of_document = false;
         }
 
         let mut children = self.first_child();
         while let Some(child) = children {
             children = child.next_sibling();
-
-            writeln!(f, "{}", child)?;
+            if !top_of_document {
+                writeln!(f)?;
+            }
+            write!(f, "{}", child)?;
+            top_of_document = false;
         }
         Ok(())
     }

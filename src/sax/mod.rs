@@ -48,7 +48,7 @@ impl std::fmt::Display for AttributeType {
             Self::NMTOKENS => write!(f, "NMTOKENS"),
             ty @ (Self::NOTATION(set) | Self::Enumeration(set)) => {
                 if matches!(ty, Self::NOTATION(_)) {
-                    write!(f, "NOTATION")?;
+                    write!(f, "NOTATION ")?;
                 }
                 write!(f, "(")?;
                 let mut set = set.iter().collect::<Vec<_>>();

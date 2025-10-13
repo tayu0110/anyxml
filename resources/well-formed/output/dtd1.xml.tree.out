@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE root [
+<!ELEMENT root (#PCDATA|child|child2)*>
+<!ELEMENT child (#PCDATA)>
+<!ELEMENT child2 (#PCDATA)>
+]>
+<root>
+    This is a character data.
+    <child>
+        This is a character data under `child`.
+    </child>
+    <child2>
+        This is a character data uder `child2`.
+    </child2>
+</root>

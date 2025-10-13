@@ -91,6 +91,10 @@ pub(crate) fn write_escaped_att_value<'a>(
             next = i + 1;
         }
     }
+    if next < value.len() {
+        f.write_str(&value[next..])?;
+    }
+
     if need_quote {
         f.write_char(q)?;
     }

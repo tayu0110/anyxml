@@ -530,12 +530,14 @@ impl std::fmt::Display for Element {
             }
         }
         for attr in self.attributes() {
-            write!(f, " {}", attr)?;
+            if attr.is_specified() {
+                write!(f, " {}", attr)?;
+            }
         }
 
         let mut children = self.first_child();
         if children.is_none() {
-            return write!(f, "/>");
+            return write!(f, " />");
         }
 
         write!(f, ">")?;

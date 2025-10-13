@@ -224,3 +224,30 @@ fn tree_walk_tests() {
         }
     }
 }
+
+#[test]
+fn tree_dump_tests() {
+    for ent in read_dir("resources/well-formed").unwrap() {
+        if let Ok(ent) = ent
+            && ent.metadata().unwrap().is_file()
+        {
+            let path = ent.path();
+            let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
+            let mut reader = XMLReaderBuilder::new()
+                .set_handler(TreeBuildHandler::default())
+                .build();
+            reader.parse_uri(&uri, None).ok();
+            assert!(!reader.handler.fatal_error);
+
+            let document = reader.handler.document;
+
+            let mut buf = String::new();
+            write!(buf, "{}", document).unwrap();
+            let outname = path.file_name().unwrap().to_str().unwrap();
+            let outname = format!("resources/well-formed/output/{outname}.tree.out");
+            let outname = Path::new(outname.as_str());
+            let output = std::fs::read_to_string(outname).unwrap_or_default();
+            assert_eq!(buf, output, "uri: {}\n{}", uri.as_escaped_str(), buf);
+        }
+    }
+}

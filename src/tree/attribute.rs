@@ -25,6 +25,8 @@ pub struct AttributeSpec {
     name: Rc<str>,
     local_name: Rc<str>,
     namespace: Option<Rc<RefCell<NodeCore<NamespaceSpec>>>>,
+
+    specified: bool,
 }
 
 impl NodeSpec for AttributeSpec {
@@ -113,6 +115,7 @@ impl Attribute {
                     name: qname.clone(),
                     local_name: qname.clone(),
                     namespace: None,
+                    specified: true,
                 },
             })),
             owner_document: owner_element.owner_document().core,
@@ -189,6 +192,7 @@ impl Attribute {
                         name: qname.clone(),
                         local_name: local_name.into(),
                         namespace: Some(namespace.core),
+                        specified: true,
                     },
                 })),
                 owner_document: owner_element.owner_document().core,
@@ -217,6 +221,7 @@ impl Attribute {
                         name: qname.clone(),
                         local_name: qname.clone(),
                         namespace: None,
+                        specified: true,
                     },
                 })),
                 owner_document: owner_element.owner_document().core,
@@ -296,6 +301,18 @@ impl Attribute {
         }
 
         buf
+    }
+
+    pub fn is_specified(&self) -> bool {
+        self.core.borrow().spec.specified
+    }
+
+    pub(crate) fn set_specified(&mut self) {
+        self.core.borrow_mut().spec.specified = true;
+    }
+
+    pub(crate) fn unset_specified(&mut self) {
+        self.core.borrow_mut().spec.specified = false;
     }
 }
 

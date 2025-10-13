@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+    This is a character data in the document element.
+    &lt;not-element/&gt;
+    <child>
+        This is a character data in the child element.
+    </child>
+</root>

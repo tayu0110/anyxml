@@ -354,8 +354,22 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
                             .ok();
                     }
                 } else {
+                    // TODO:
+                    // In the current implementation, only attribute values after entity expansion can
+                    // be retrieved, so entity references disappear when the document is written back.
+
                     elem.set_attribute(&att.qname, att.uri.as_deref(), Some(&att.value))
                         .ok();
+
+                    let local_name = att.local_name.as_deref().unwrap_or(&att.qname);
+                    if let Some(mut attribute) = elem.get_attribute(local_name, att.uri.as_deref())
+                    {
+                        if att.is_specified() {
+                            attribute.set_specified();
+                        } else {
+                            attribute.unset_specified();
+                        }
+                    }
                 }
             }
             self.node.append_child(elem.clone()).unwrap();
