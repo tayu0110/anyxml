@@ -45,3 +45,9 @@ impl Comment {
         self.core.borrow_mut().spec.data.push_str(string);
     }
 }
+
+impl std::fmt::Display for Comment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<!--{}-->", self.data())
+    }
+}

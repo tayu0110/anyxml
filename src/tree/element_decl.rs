@@ -45,3 +45,9 @@ impl ElementDecl {
         Ref::map(self.core.borrow(), |core| &core.spec.content_spec)
     }
 }
+
+impl std::fmt::Display for ElementDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<!ELEMENT {} {}>", self.name(), self.content_spec())
+    }
+}

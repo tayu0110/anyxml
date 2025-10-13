@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
+    save::write_quoted,
     tree::{
         Document, NodeType,
         node::{Node, NodeCore, NodeSpec},
@@ -57,5 +58,33 @@ impl NotationDecl {
 
     pub fn public_id(&self) -> Option<Rc<str>> {
         self.core.borrow().spec.public_id.clone()
+    }
+}
+
+impl std::fmt::Display for NotationDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<!NOTATION {}", self.name())?;
+        if let Some(public_id) = self.public_id() {
+            write!(f, " PUBLIC ")?;
+            write_quoted(f, &public_id, false)?;
+            if let Some(system_id) = self.system_id() {
+                if let Some(system_id) = system_id.as_unescaped_str() {
+                    write!(f, " ")?;
+                    write_quoted(f, &system_id, false)?;
+                } else {
+                    write!(f, " ")?;
+                    write_quoted(f, system_id.as_escaped_str(), false)?;
+                }
+            }
+        } else if let Some(system_id) = self.system_id() {
+            if let Some(system_id) = system_id.as_unescaped_str() {
+                write!(f, " SYSTEM ")?;
+                write_quoted(f, &system_id, false)?;
+            } else {
+                write!(f, " SYSTEM ")?;
+                write_quoted(f, system_id.as_escaped_str(), false)?;
+            }
+        }
+        write!(f, ">")
     }
 }

@@ -516,6 +516,39 @@ impl Element {
     }
 }
 
+impl std::fmt::Display for Element {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<{}", self.name())?;
+
+        for core in self.core.borrow().spec.namespace_decl.prefix.values() {
+            let namespace = Namespace {
+                core: core.clone(),
+                owner_document: self.owner_document.clone(),
+            };
+            if namespace.is_explicit() {
+                write!(f, " {}", namespace)?;
+            }
+        }
+        for attr in self.attributes() {
+            write!(f, " {}", attr)?;
+        }
+
+        let mut children = self.first_child();
+        if children.is_none() {
+            return write!(f, "/>");
+        }
+
+        write!(f, ">")?;
+
+        while let Some(child) = children {
+            children = child.next_sibling();
+
+            write!(f, "{}", child)?;
+        }
+        write!(f, "</{}>", self.name())
+    }
+}
+
 #[derive(Default)]
 struct AttributeMap {
     attributes: Vec<Rc<RefCell<NodeCore<AttributeSpec>>>>,

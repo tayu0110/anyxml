@@ -5,6 +5,7 @@ use std::{
 
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE,
+    save::write_escaped_att_value,
     tree::{
         Element, NodeType, XMLTreeError,
         convert::NodeKind,
@@ -295,5 +296,29 @@ impl Attribute {
         }
 
         buf
+    }
+}
+
+impl std::fmt::Display for Attribute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}=\"", self.name())?;
+
+        if let Some(child) = self.first_child() {
+            let mut children = Some(child);
+            while let Some(child) = children {
+                children = child.next_sibling();
+
+                match child.downcast() {
+                    NodeKind::EntityReference(entref) => {
+                        write!(f, "{}", entref)?;
+                    }
+                    NodeKind::Text(text) => {
+                        write_escaped_att_value(f, &text.data(), false, &mut Some('"'))?;
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+        write!(f, "\"")
     }
 }

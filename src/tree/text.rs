@@ -3,9 +3,12 @@ use std::{
     rc::Rc,
 };
 
-use crate::tree::{
-    Document, NodeType,
-    node::{Node, NodeCore, NodeSpec},
+use crate::{
+    save::write_escaped_char_data,
+    tree::{
+        Document, NodeType,
+        node::{Node, NodeCore, NodeSpec},
+    },
 };
 
 pub struct TextSpec {
@@ -43,5 +46,11 @@ impl Text {
 
     pub fn push_str(&mut self, string: &str) {
         self.core.borrow_mut().spec.data.push_str(string);
+    }
+}
+
+impl std::fmt::Display for Text {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write_escaped_char_data(f, &self.data())
     }
 }

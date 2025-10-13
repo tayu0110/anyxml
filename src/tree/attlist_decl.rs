@@ -69,3 +69,16 @@ impl AttlistDecl {
         Ref::map(self.core.borrow(), |core| &core.spec.default_decl)
     }
 }
+
+impl std::fmt::Display for AttlistDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<!ATTLIST {} {} {} {}>",
+            self.elem_name(),
+            self.attr_name(),
+            self.attr_type(),
+            self.default_decl()
+        )
+    }
+}

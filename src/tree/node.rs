@@ -593,6 +593,34 @@ impl<Spec: InternalNodeSpec + 'static> From<Node<Spec>> for Node<dyn InternalNod
     }
 }
 
+impl std::fmt::Display for Node<dyn NodeSpec> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.downcast() {
+            NodeKind::AttlistDecl(attlist) => write!(f, "{}", attlist),
+            NodeKind::Attribute(attribute) => write!(f, "{}", attribute),
+            NodeKind::CDATASection(cdata) => write!(f, "{}", cdata),
+            NodeKind::Comment(comment) => write!(f, "{}", comment),
+            NodeKind::Document(document) => write!(f, "{}", document),
+            NodeKind::DocumentFragment(frag) => write!(f, "{}", frag),
+            NodeKind::DocumentType(doctype) => write!(f, "{}", doctype),
+            NodeKind::Element(element) => write!(f, "{}", element),
+            NodeKind::ElementDecl(element) => write!(f, "{}", element),
+            NodeKind::EntityDecl(entity) => write!(f, "{}", entity),
+            NodeKind::EntityReference(entref) => write!(f, "{}", entref),
+            NodeKind::Namespace(namespace) => write!(f, "{}", namespace),
+            NodeKind::NotationDecl(notation) => write!(f, "{}", notation),
+            NodeKind::ProcessingInstruction(pi) => write!(f, "{}", pi),
+            NodeKind::Text(text) => write!(f, "{}", text),
+        }
+    }
+}
+
+impl std::fmt::Display for Node<dyn InternalNodeSpec> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", Node::<dyn NodeSpec>::from(self.clone()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

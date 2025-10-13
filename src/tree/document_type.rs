@@ -1,6 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
+    save::write_quoted,
     tree::{
         AttlistDecl, Document, ElementDecl, EntityDecl, NodeType, NotationDecl, XMLTreeError,
         attlist_decl::AttlistDeclSpec,
@@ -295,5 +296,44 @@ impl DocumentType {
 
     pub fn public_id(&self) -> Option<Rc<str>> {
         self.core.borrow().spec.public_id.clone()
+    }
+}
+
+impl std::fmt::Display for DocumentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<!DOCTYPE {}", self.name())?;
+        if let Some(public_id) = self.public_id() {
+            write!(f, " PUBLIC ")?;
+            write_quoted(f, &public_id, false)?;
+            if let Some(system_id) = self.system_id() {
+                write!(f, " ")?;
+                if let Some(system_id) = system_id.as_unescaped_str() {
+                    write_quoted(f, &system_id, false)?;
+                } else {
+                    write_quoted(f, system_id.as_escaped_str(), false)?;
+                }
+            }
+        } else if let Some(system_id) = self.system_id() {
+            write!(f, " SYSTEM ")?;
+            if let Some(system_id) = system_id.as_unescaped_str() {
+                write_quoted(f, &system_id, false)?;
+            } else {
+                write_quoted(f, system_id.as_escaped_str(), false)?;
+            }
+        }
+
+        if self.first_child().is_some() {
+            writeln!(f, " [")?;
+            let mut children = self.first_child();
+            while let Some(now) = children {
+                children = now.next_sibling();
+
+                writeln!(f, "{}", now)?;
+            }
+            write!(f, "]")?;
+        }
+
+        write!(f, ">")?;
+        Ok(())
     }
 }

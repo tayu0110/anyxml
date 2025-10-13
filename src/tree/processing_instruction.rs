@@ -39,3 +39,13 @@ impl ProcessingInstruction {
         self.core.borrow().spec.data.clone()
     }
 }
+
+impl std::fmt::Display for ProcessingInstruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<?{}", self.target())?;
+        if let Some(data) = self.data() {
+            write!(f, " {}", data)?;
+        }
+        write!(f, "?>")
+    }
+}

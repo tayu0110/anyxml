@@ -263,6 +263,18 @@ impl DocumentFragment {
     }
 }
 
+impl std::fmt::Display for DocumentFragment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut children = self.first_child();
+        while let Some(child) = children {
+            children = child.next_sibling();
+
+            write!(f, "{}", child)?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

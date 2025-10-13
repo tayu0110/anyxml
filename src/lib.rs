@@ -4,6 +4,7 @@ pub mod automata;
 pub mod encoding;
 pub mod error;
 mod parse;
+mod save;
 pub mod sax;
 pub mod stax;
 pub mod tree;

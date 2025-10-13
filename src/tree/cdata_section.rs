@@ -45,3 +45,9 @@ impl CDATASection {
         self.core.borrow_mut().spec.data.push_str(string);
     }
 }
+
+impl std::fmt::Display for CDATASection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<![CDATA[{}]]>", self.data())
+    }
+}

@@ -347,6 +347,37 @@ impl Default for Document {
     }
 }
 
+impl std::fmt::Display for Document {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.version().is_some() || self.encoding().is_some() || self.standalone().is_some() {
+            write!(
+                f,
+                "<?xml version=\"{}\"",
+                self.version().as_deref().unwrap_or("1.0")
+            )?;
+            if let Some(encoding) = self.encoding() {
+                write!(f, " encoding=\"{}\"", encoding)?;
+            }
+            if let Some(standalone) = self.standalone() {
+                if standalone {
+                    write!(f, " standalone=\"yes\"")?;
+                } else {
+                    write!(f, " standalone=\"no\"")?;
+                }
+            }
+            writeln!(f, "?>")?;
+        }
+
+        let mut children = self.first_child();
+        while let Some(child) = children {
+            children = child.next_sibling();
+
+            writeln!(f, "{}", child)?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

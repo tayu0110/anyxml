@@ -3,11 +3,14 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use crate::tree::{
-    Element, NodeType,
-    document_fragment::DocumentFragmentSpec,
-    element::ElementSpec,
-    node::{Node, NodeCore, NodeSpec},
+use crate::{
+    save::write_escaped_att_value,
+    tree::{
+        Element, NodeType,
+        document_fragment::DocumentFragmentSpec,
+        element::ElementSpec,
+        node::{Node, NodeCore, NodeSpec},
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,5 +103,20 @@ impl Namespace {
 
     pub(crate) fn as_implicit(&mut self) {
         self.core.borrow_mut().spec.declare_type = DeclareType::Implicit
+    }
+}
+
+impl std::fmt::Display for Namespace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_implicit() {
+            return Ok(());
+        }
+
+        if let Some(prefix) = self.prefix() {
+            write!(f, "xmlns:{}=", prefix)?;
+        } else {
+            write!(f, "xmlns=")?;
+        }
+        write_escaped_att_value(f, &self.namespace_name(), true, &mut None)
     }
 }

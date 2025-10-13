@@ -76,3 +76,14 @@ impl EntityReference {
         self.core.borrow().spec.name.clone()
     }
 }
+
+impl std::fmt::Display for EntityReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = self.name();
+        if name.starts_with('%') {
+            write!(f, "{};", name)
+        } else {
+            write!(f, "&{};", name)
+        }
+    }
+}

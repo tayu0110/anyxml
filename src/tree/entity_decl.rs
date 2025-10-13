@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
+    save::write_quoted,
     tree::{
         Document, NodeType, XMLTreeError,
         node::{InternalNodeSpec, Node, NodeCore, NodeSpec},
@@ -146,5 +147,49 @@ impl EntityDecl {
 
     pub fn value(&self) -> Option<Rc<str>> {
         self.core.borrow().spec.value.clone()
+    }
+}
+
+impl std::fmt::Display for EntityDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = self.name();
+        if let Some(name) = name.strip_prefix('%') {
+            write!(f, "<!ENTITY % {} ", name)?;
+        } else {
+            write!(f, "<!ENTITY {} ", name)?;
+        }
+
+        if let Some(value) = self.value() {
+            write_quoted(f, &value, false)?;
+        } else {
+            if let Some(public_id) = self.public_id() {
+                write!(f, "PUBLIC ")?;
+                write_quoted(f, &public_id, false)?;
+                if let Some(system_id) = self.system_id() {
+                    write!(f, " ")?;
+                    if let Some(system_id) = system_id.as_unescaped_str() {
+                        write_quoted(f, &system_id, false)?;
+                    } else {
+                        write_quoted(f, system_id.as_escaped_str(), false)?;
+                    }
+                } else {
+                    unreachable!()
+                }
+            } else if let Some(system_id) = self.system_id() {
+                write!(f, "SYSTEM ")?;
+                if let Some(system_id) = system_id.as_unescaped_str() {
+                    write_quoted(f, &system_id, false)?;
+                } else {
+                    write_quoted(f, system_id.as_escaped_str(), false)?;
+                }
+            } else {
+                unreachable!()
+            }
+
+            if let Some(notation_name) = self.notation_name() {
+                write!(f, " NDATA {}", notation_name)?;
+            }
+        }
+        write!(f, ">")
     }
 }
