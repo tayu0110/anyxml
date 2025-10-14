@@ -12,6 +12,7 @@ The current implementation supports the following features:
     - [x] Default attribute value handling
 - validate XML 1.0 document using DTD
 - handle namespace conforming to XML Namespace 1.0
+- build, modify and serialize XML document trees
 
 ## Parser
 You can use a SAX-like API designed with reference to Java SAX API.
@@ -159,13 +160,13 @@ use anyxml::{
 };
 
 let mut reader = XMLReaderBuilder::new().set_handler(TreeBuildHandler::default()).build();
-reader.parse_str(r#"<greeting>Hello!!</greeting>"#, None).unwrap();
+reader.parse_str(r#"<greeting>Hello</greeting>"#, None).unwrap();
 
 // If a fatal error occurs, the constructed tree is meaningless.
 assert!(!reader.handler.fatal_error);
 let document = reader.handler.document;
 
-let root = document
+let mut root = document
     .first_child()
     .unwrap()
     .as_element()
@@ -177,7 +178,12 @@ let text = root
     .unwrap()
     .as_text()
     .unwrap();
-assert_eq!(&*text.data(), "Hello!!");
+assert_eq!(&*text.data(), "Hello");
+
+// modify the document tree
+root.append_child(document.create_text(" World!!")).unwrap();
+// serialize the document tree
+assert_eq!(document.to_string(), r#"<greeting>Hello World!!</greeting>"#);
 ```
 
 
