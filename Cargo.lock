@@ -54,7 +54,7 @@ dependencies = [
 
 [[package]]
 name = "anyxml"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyxml-automata",
  "anyxml-uri",
