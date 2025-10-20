@@ -9,6 +9,7 @@ pub mod sax;
 pub mod stax;
 pub mod tree;
 pub mod uri;
+pub mod xpath;
 
 use std::marker::PhantomData;
 
