@@ -514,6 +514,33 @@ impl Element {
             namespace.unset_owner_element();
         }
     }
+
+    /// If any recent ancestor, including `self`, has an `xml:lang` attribute,
+    /// return `None` if the attribute value is an empty string,
+    /// otherwise return the attribute value wrapped in `Some`.  \
+    /// If no ancestor has an `xml:lang` attribute specified, return `None`.
+    ///
+    /// # Reference
+    /// [2.12 Language Identification](https://www.w3.org/TR/xml/#sec-lang-tag)
+    pub fn language(&self) -> Option<String> {
+        if let Some(attribute) = self.get_attribute("lang", Some(XML_XML_NAMESPACE)) {
+            let value = attribute.value();
+            return (!value.is_empty()).then_some(value);
+        }
+
+        let mut parent = self.parent_node();
+        while let Some(now) = parent {
+            parent = now.parent_node();
+            if let Some(attribute) = now
+                .as_element()
+                .and_then(|element| element.get_attribute("lang", Some(XML_XML_NAMESPACE)))
+            {
+                let value = attribute.value();
+                return (!value.is_empty()).then_some(value);
+            }
+        }
+        None
+    }
 }
 
 impl std::fmt::Display for Element {
@@ -699,5 +726,67 @@ impl NamespaceMap {
         self.prefix.insert(prefix, namespace.core.clone());
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{sax::parser::XMLReaderBuilder, tree::TreeBuildHandler};
+
+    #[test]
+    fn get_language_tests() {
+        let mut parser = XMLReaderBuilder::new()
+            .set_handler(TreeBuildHandler::default())
+            .build();
+
+        const CASE: &str = r#"<root>
+            <child xml:lang="ja">
+                <child2 />
+                <child3 xml:lang="ch" />
+            </child>
+            <child4 xml:lang="en">
+                <child5 xml:lang="">
+                    <child6 />
+                    <child7 xml:lang="fr" />
+                </child5>
+            </child4>
+        </root>"#;
+
+        parser.parse_str(CASE, None).unwrap();
+        assert!(!parser.handler.fatal_error);
+        let document = parser.handler.document;
+        let mut children = document.first_child();
+        while let Some(child) = children {
+            if let Some(element) = child.as_element() {
+                let lang = element.language();
+                match element.name().as_ref() {
+                    "root" => assert_eq!(lang.as_deref(), None),
+                    "child" => assert_eq!(lang.as_deref(), Some("ja")),
+                    "child2" => assert_eq!(lang.as_deref(), Some("ja")),
+                    "child3" => assert_eq!(lang.as_deref(), Some("ch")),
+                    "child4" => assert_eq!(lang.as_deref(), Some("en")),
+                    "child5" => assert_eq!(lang.as_deref(), None),
+                    "child6" => assert_eq!(lang.as_deref(), None),
+                    "child7" => assert_eq!(lang.as_deref(), Some("fr")),
+                    _ => unreachable!(),
+                }
+            }
+
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = child.parent_node();
+                while let Some(now) = parent {
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
     }
 }
