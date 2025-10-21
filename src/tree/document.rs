@@ -339,6 +339,39 @@ impl Document {
         self.core.borrow_mut().spec.base_uri = base_uri;
         Ok(())
     }
+
+    /// Returns the element with an ID attribute whose attribute value is `id`.
+    ///
+    /// For invalid XML documents, multiple elements may have the same ID attribute value.  \
+    /// In such cases, the earliest element appearing in document order is returned.
+    pub fn get_element_by_id(&self, id: &str) -> Option<Element> {
+        let mut children = self.document_element().map(Node::<dyn NodeSpec>::from);
+        while let Some(child) = children {
+            if let Some(element) = child.as_element() {
+                for att in element.attributes().filter(|att| att.is_id()) {
+                    if att.value() == id {
+                        return Some(element);
+                    }
+                }
+            }
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = child.parent_node();
+                while let Some(now) = parent {
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
+        None
+    }
 }
 
 impl Default for Document {

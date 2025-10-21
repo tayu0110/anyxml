@@ -6,6 +6,7 @@ use std::{
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE,
     save::write_escaped_att_value,
+    sax::AttributeType,
     tree::{
         Element, NodeType, XMLTreeError,
         convert::NodeKind,
@@ -313,6 +314,15 @@ impl Attribute {
 
     pub(crate) fn unset_specified(&mut self) {
         self.core.borrow_mut().spec.specified = false;
+    }
+
+    pub fn is_id(&self) -> bool {
+        self.owner_document()
+            .document_type()
+            .and_then(|doctype| {
+                doctype.get_attlist_decl(&self.owner_element()?.name(), &self.name())
+            })
+            .is_some_and(|attlist| matches!(*attlist.attr_type(), AttributeType::ID))
     }
 }
 
