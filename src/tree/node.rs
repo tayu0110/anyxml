@@ -397,6 +397,31 @@ impl Node<dyn NodeSpec> {
     ) -> Result<(), XMLTreeError> {
         self.do_insert_next_sibling(new_sibling.into())
     }
+
+    /// Check whether `self` and `other` are the same node.
+    ///
+    /// # Note
+    /// This method does not perform equality comparison.  \
+    /// For example, `is_same_node` will always return `false` for two [`Text`](crate::tree::Text)
+    /// nodes  containing exactly the same string generated from the same [`Document`],
+    /// unless one is a clone of the other.
+    ///
+    /// # Example
+    /// ```rust
+    /// use anyxml::tree::Document;
+    ///
+    /// let document = Document::new();
+    /// let text1 = document.create_text("Hello");
+    /// let text2 = document.create_text("Hello");
+    ///
+    /// assert!(text1.is_same_node(text1.clone()));
+    /// // These have the same character data, but they are not the same node.
+    /// assert!(!text1.is_same_node(text2.clone()));
+    /// ```
+    pub fn is_same_node(&self, other: impl Into<Self>) -> bool {
+        let other: Self = other.into();
+        Rc::ptr_eq(&self.core, &other.core)
+    }
 }
 
 impl Node<dyn InternalNodeSpec> {
@@ -490,6 +515,15 @@ impl Node<dyn InternalNodeSpec> {
             .spec
             .post_child_insertion(inserted_child);
     }
+
+    /// Check whether `self` and `other` are the same node.
+    ///
+    /// For more details, please refer [`Node::is_same_node`] of [`Node<dyn NodeSpec>`]
+    pub fn is_same_node(&self, other: impl Into<Node<dyn NodeSpec>>) -> bool {
+        let left = Node::<dyn NodeSpec>::from(self.clone());
+        let right: Node<dyn NodeSpec> = other.into();
+        Rc::ptr_eq(&left.core, &right.core)
+    }
 }
 
 impl<Spec: NodeSpec + 'static> Node<Spec> {
@@ -525,6 +559,15 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
         new_sibling: impl Into<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
         Node::<dyn NodeSpec>::from(self.clone()).insert_next_sibling(new_sibling)
+    }
+
+    /// Check whether `self` and `other` are the same node.
+    ///
+    /// For more details, please refer [`Node::is_same_node`] of [`Node<dyn NodeSpec>`]
+    pub fn is_same_node(&self, other: impl Into<Node<dyn NodeSpec>>) -> bool {
+        let left = Node::<dyn NodeSpec>::from(self.clone());
+        let right: Node<dyn NodeSpec> = other.into();
+        Rc::ptr_eq(&left.core, &right.core)
     }
 }
 
