@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::tree::{
-    NodeType, XMLTreeError,
+    NodeType, XMLTreeError, compare_document_order,
     convert::NodeKind,
     document::{Document, DocumentSpec},
     document_fragment::DocumentFragmentSpec,
@@ -138,6 +138,13 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
     }
     fn unset_next_sibling(&mut self) {
         self.core.borrow_mut().next_sibling = None;
+    }
+
+    pub(super) fn is_same_owner_document<Other: NodeSpec + ?Sized>(
+        &self,
+        other: &Node<Other>,
+    ) -> bool {
+        Rc::ptr_eq(&self.owner_document, &other.owner_document)
     }
 }
 
@@ -403,7 +410,7 @@ impl Node<dyn NodeSpec> {
     /// # Note
     /// This method does not perform equality comparison.  \
     /// For example, `is_same_node` will always return `false` for two [`Text`](crate::tree::Text)
-    /// nodes  containing exactly the same string generated from the same [`Document`],
+    /// nodes containing exactly the same string generated from the same [`Document`],
     /// unless one is a clone of the other.
     ///
     /// # Example
@@ -415,12 +422,30 @@ impl Node<dyn NodeSpec> {
     /// let text2 = document.create_text("Hello");
     ///
     /// assert!(text1.is_same_node(text1.clone()));
-    /// // These have the same character data, but they are not the same node.
+    /// // These have the same character data, but are not the same node.
     /// assert!(!text1.is_same_node(text2.clone()));
     /// ```
     pub fn is_same_node(&self, other: impl Into<Self>) -> bool {
         let other: Self = other.into();
         Rc::ptr_eq(&self.core, &other.core)
+    }
+
+    /// Compare the positions of `self` and `other` in the document order.  \
+    ///
+    /// If `self` appears first, return `Less`;  \
+    /// if it appears later, return `Greater`;  \
+    /// if they are the same node, return `Equal`.  \
+    ///
+    /// If `self` and `other` do not belong to the same document tree
+    /// (i.e., they have no common ancestor), return `None`.
+    ///
+    /// # Reference
+    /// [5 Data Model in XPath 1.0](https://www.w3.org/TR/1999/REC-xpath-19991116/#dt-document-order)
+    pub fn compare_document_order(
+        &self,
+        other: impl Into<Node<dyn NodeSpec>>,
+    ) -> Option<std::cmp::Ordering> {
+        compare_document_order(self.clone(), other.into())
     }
 }
 
@@ -524,6 +549,16 @@ impl Node<dyn InternalNodeSpec> {
         let right: Node<dyn NodeSpec> = other.into();
         Rc::ptr_eq(&left.core, &right.core)
     }
+
+    /// Compare the positions of `self` and `other` in the document order.
+    ///
+    /// For more details, please refer [`Node::compare_document_order`] of [`Node<dyn NodeSpec>`].
+    pub fn compare_document_order(
+        &self,
+        other: impl Into<Node<dyn NodeSpec>>,
+    ) -> Option<std::cmp::Ordering> {
+        compare_document_order(self.clone().into(), other.into())
+    }
 }
 
 impl<Spec: NodeSpec + 'static> Node<Spec> {
@@ -568,6 +603,16 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
         let left = Node::<dyn NodeSpec>::from(self.clone());
         let right: Node<dyn NodeSpec> = other.into();
         Rc::ptr_eq(&left.core, &right.core)
+    }
+
+    /// Compare the positions of `self` and `other` in the document order.
+    ///
+    /// For more details, please refer [`Node::compare_document_order`] of [`Node<dyn NodeSpec>`].
+    pub fn compare_document_order(
+        &self,
+        other: impl Into<Node<dyn NodeSpec>>,
+    ) -> Option<std::cmp::Ordering> {
+        compare_document_order(self.clone().into(), other.into())
     }
 }
 
@@ -666,6 +711,8 @@ impl std::fmt::Display for Node<dyn InternalNodeSpec> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{sax::parser::XMLReaderBuilder, tree::TreeBuildHandler};
+
     use super::*;
 
     #[test]
@@ -708,5 +755,115 @@ mod tests {
                 .insert_next_sibling(elem2.clone())
                 .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
         );
+    }
+
+    #[test]
+    fn document_order_comparison_tests() {
+        let mut parser = XMLReaderBuilder::new()
+            .set_handler(TreeBuildHandler::default())
+            .build();
+
+        const CASE: &str = r#"<?xml version="1.0"?>
+        <!DOCTYPE root [
+            <!ELEMENT root   ANY>
+            <!ATTLIST root   foo   CDATA #IMPLIED>
+            <!ELEMENT child  ANY>
+            <!ATTLIST child  bar   CDATA #IMPLIED
+                             xmlns CDATA #FIXED "http://example.com/pre"
+                             hoge  CDATA #IMPLIED>
+            <!ELEMENT child2 ANY>
+            <!ATTLIST child2 xmlns CDATA #FIXED "">
+            <!ELEMENT child3 ANY>
+            <!ENTITY  ent "in entity reference">
+        ]>
+        <!-- before document element -->
+        <?pi before document element?>
+        <root foo="foo">
+            child of 'foo'
+            <?pi in document element1?>
+            <!-- in document element1 -->
+            <child bar="bar" xmlns="http://example.com/pre" hoge="hoge">
+                child of 'child'
+                <child2 xmlns=""/>
+                <![CDATA[child of 'child2']]>
+                &ent;
+                <?pi in document element2?>
+                <!-- in document element2 -->
+                <child3 xml:lang="ch" />
+            </child>
+        </root>
+        <?pi after document element?>
+        <!-- after document element -->"#;
+
+        parser.parse_str(CASE, None).unwrap();
+        assert!(!parser.handler.fatal_error);
+        let document = parser.handler.document;
+        let mut children = Some(Node::<dyn NodeSpec>::from(document.clone()));
+        while let Some(now) = children {
+            let mut others = Some(Node::<dyn NodeSpec>::from(document.clone()));
+            let mut pre = true;
+            while let Some(other) = others {
+                if now.is_same_node(other.clone()) {
+                    assert!(now.compare_document_order(other.clone()).unwrap().is_eq());
+                    pre = false;
+                    if let Some(element) = now.as_element() {
+                        for att in element.attributes() {
+                            assert!(att.compare_document_order(other.clone()).unwrap().is_gt());
+                            assert!(now.compare_document_order(att).unwrap().is_lt());
+                        }
+                    }
+                } else {
+                    assert_eq!(
+                        pre,
+                        now.compare_document_order(other.clone()).unwrap().is_gt()
+                    );
+                    if let Some(element) = now.as_element() {
+                        for att in element.attributes() {
+                            assert_eq!(
+                                pre,
+                                att.compare_document_order(other.clone()).unwrap().is_gt()
+                            );
+                        }
+                    }
+                    if let Some(element) = other.as_element() {
+                        for att in element.attributes() {
+                            assert_eq!(pre, now.compare_document_order(att).unwrap().is_gt());
+                        }
+                    }
+                }
+
+                if let Some(first) = other.first_child() {
+                    others = Some(first);
+                } else if let Some(next) = other.next_sibling() {
+                    others = Some(next);
+                } else {
+                    others = None;
+                    let mut parent = other.parent_node();
+                    while let Some(now) = parent {
+                        if let Some(next) = now.next_sibling() {
+                            others = Some(next);
+                            break;
+                        }
+                        parent = now.parent_node();
+                    }
+                }
+            }
+
+            if let Some(first) = now.first_child() {
+                children = Some(first);
+            } else if let Some(next) = now.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = now.parent_node();
+                while let Some(now) = parent {
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
     }
 }

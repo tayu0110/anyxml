@@ -810,13 +810,18 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     &att_name[prefix_length + 1..]
                 };
                 match URIString::parse(att_value) {
+                    // Report an error if the namespace name is not an absolute URI.
+                    // However, this is not an error if it is a default namespace
+                    // declaration and the namespace name is an empty string.
                     Ok(uri) if !uri.is_absolute() => {
-                        ns_error!(
-                            self,
-                            ParserNamespaceNameNotAbsoluteURI,
-                            "The namespace name '{}' is not a valid absolute URI.",
-                            att_value
-                        );
+                        if !prefix.is_empty() || !att_value.is_empty() {
+                            ns_error!(
+                                self,
+                                ParserNamespaceNameNotAbsoluteURI,
+                                "The namespace name '{}' is not a valid absolute URI.",
+                                att_value
+                            );
+                        }
                     }
                     Ok(_) => {}
                     Err(_) => {
