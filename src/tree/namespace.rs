@@ -41,6 +41,22 @@ impl NodeSpec for NamespaceSpec {
     }
 }
 
+/// The leaf node of the document tree that represents a namespace declaration of the XML document.
+///
+/// It mostly covers the information provided by the "Namespace Information Item"
+/// in the [XML Infoset](https://www.w3.org/TR/xml-infoset/).
+///
+/// # Note
+/// An [`Namespace`] node can have an [`Element`] node as its parent,
+/// but it cannot be a child of an [`Element`] node.
+///
+/// This structure is based on the [XPath 1.0 data model](https://www.w3.org/TR/1999/REC-xpath-19991116/#data-model).
+///
+/// However, unlike the XPath data model, one [`Namespace`] node is assigned per *namespace declaration*.  \
+/// It is not assigned one per active namespace on an element.
+///
+/// # Reference
+/// [2.11. Namespace Information Items](https://www.w3.org/TR/xml-infoset/#infoitem.namespace)
 pub type Namespace = Node<NamespaceSpec>;
 
 impl Namespace {

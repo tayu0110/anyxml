@@ -94,6 +94,19 @@ impl InternalNodeSpec for AttributeSpec {
     }
 }
 
+/// The internal or leaf node of the document tree that represents an attribute of the XML document.
+///
+/// It mostly covers the information provided by the "Attribute Information Item"
+/// in the [XML Infoset](https://www.w3.org/TR/xml-infoset/).
+///
+/// # Note
+/// An [`Attribute`] node can have an [`Element`] node as its parent,
+/// but it cannot be a child of an [`Element`] node.
+///
+/// This structure is based on the [XPath 1.0 data model](https://www.w3.org/TR/1999/REC-xpath-19991116/#data-model).
+///
+/// # Reference
+/// [2.3. Attribute Information Items](https://www.w3.org/TR/xml-infoset/#infoitem.attribute)
 pub type Attribute = Node<AttributeSpec>;
 
 impl Attribute {

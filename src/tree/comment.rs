@@ -26,6 +26,13 @@ impl NodeSpec for CommentSpec {
     }
 }
 
+/// The leaf node of the document tree that represents a comment of the XML document.
+///
+/// It mostly covers the information provided by the "Comment Information Item"
+/// in the [XML Infoset](https://www.w3.org/TR/xml-infoset/).
+///
+/// # Reference
+/// [2.7. Comment Information Items](https://www.w3.org/TR/xml-infoset/#infoitem.comment)
 pub type Comment = Node<CommentSpec>;
 
 impl Comment {
