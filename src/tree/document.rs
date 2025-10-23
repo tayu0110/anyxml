@@ -396,7 +396,7 @@ impl Document {
     }
 
     /// Returns the elements whose QName is `qname`.
-    pub fn get_element_by_qname(&self, qname: &str) -> impl Iterator<Item = Element> {
+    pub fn get_elements_by_qname(&self, qname: &str) -> impl Iterator<Item = Element> {
         let mut children = self.document_element().map(Node::<dyn NodeSpec>::from);
         let mut ret = vec![];
         while let Some(child) = children {
@@ -424,8 +424,8 @@ impl Document {
         ret.into_iter()
     }
 
-    /// Returns the elements whose QName is `qname`.
-    pub fn get_element_by_expanded_name(
+    /// Returns the elements whose expanded name is {`namespace_name`}`local_name`.
+    pub fn get_elements_by_expanded_name(
         &self,
         local_name: &str,
         namespace_name: Option<&str>,

@@ -974,7 +974,7 @@ mod tests {
         for (i, &case) in CASES.iter().enumerate() {
             parser.parse_str(case, None).unwrap();
             let document = parser.handler.document.clone();
-            for elem in document.get_element_by_qname(TARGETS[i]) {
+            for elem in document.get_elements_by_qname(TARGETS[i]) {
                 assert_eq!(
                     elem.base_uri().unwrap().as_unescaped_str().unwrap(),
                     EXPECTED[i]
