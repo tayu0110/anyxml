@@ -284,6 +284,8 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
     }
 
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
+        self.document = Document::new();
+        self.node = self.document.clone().into();
         self.document
             .set_document_base_uri(locator.system_id().as_ref())
             .ok();

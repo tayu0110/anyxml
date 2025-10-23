@@ -459,6 +459,7 @@ impl Node<dyn NodeSpec> {
     pub fn base_uri(&self) -> Option<URIString> {
         let mut node = Some(self.clone());
         let mut uris: Vec<URIString> = vec![];
+        let mut ret = None;
         while let Some(now) = node {
             if let Some(base) = now
                 .as_element()
@@ -466,20 +467,22 @@ impl Node<dyn NodeSpec> {
                 .and_then(|base| URIString::parse(base).ok())
             {
                 if base.scheme().is_some() {
-                    return Some(
+                    ret = Some(
                         uris.into_iter()
                             .rev()
                             .fold(base, |base, rel| base.resolve(&rel)),
                     );
+                    break;
                 }
                 uris.push(base);
             } else if let Some(document) = now.as_document() {
                 let base = document.document_base_uri().as_ref().to_owned();
-                return Some(
+                ret = Some(
                     uris.into_iter()
                         .rev()
                         .fold(base, |base, rel| base.resolve(&rel)),
                 );
+                break;
             } else if let Some(entity) = now.as_entity_reference() {
                 let name = entity.name();
                 if let Some(base) = self
@@ -489,16 +492,28 @@ impl Node<dyn NodeSpec> {
                     .and_then(|decl| decl.system_id())
                 {
                     let base = base.as_ref().to_owned();
-                    return Some(
+                    ret = Some(
                         uris.into_iter()
                             .rev()
                             .fold(base, |base, rel| base.resolve(&rel)),
                     );
+                    break;
                 }
             }
             node = now.parent_node().map(From::from);
         }
-        None
+        ret.map(|uri| {
+            // The URI returned as the base URI must be an absolute URI.
+            // However, at this point, only relative references have been resolved,
+            // and a fragment may be included.
+            // The URI returned as the base URI must be an absolute URI.
+            // Therefore, resolving the relative reference without the fragment removes the fragment.
+            //
+            // Reference:
+            // [Testing XML Base Conformance](https://www.w3.org/XML/2006/12/xmlbase-testing.html)
+            // section 4. in "Discussion of few key example"
+            uri.resolve(&URIString::parse("").unwrap())
+        })
     }
 }
 
@@ -930,6 +945,40 @@ mod tests {
                     }
                     parent = now.parent_node();
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn base_uri_tests() {
+        // Testing XML Base Conformance
+        // https://www.w3.org/XML/2006/12/xmlbase-testing.html
+
+        const CASES: &[&str] = &[
+            r#"<elt xml:base="http://www.example.org/~Dürst/"/>"#,
+            r#"<outer xml:base="http://www.example.org/one/two"> <inner xml:base=""/> </outer>"#,
+            r#"<elt xml:base="http://www.example.org/one/two#frag"/>"#,
+            r##"<outer xml:base="http://www.example.org/one/two"> <inner xml:base="#frag"/> </outer>"##,
+        ];
+        const TARGETS: &[&str] = &["elt", "inner", "elt", "inner"];
+        const EXPECTED: &[&str] = &[
+            "http://www.example.org/~Dürst/",
+            "http://www.example.org/one/two",
+            "http://www.example.org/one/two",
+            "http://www.example.org/one/two",
+        ];
+
+        let mut parser = XMLReaderBuilder::new()
+            .set_handler(TreeBuildHandler::default())
+            .build();
+        for (i, &case) in CASES.iter().enumerate() {
+            parser.parse_str(case, None).unwrap();
+            let document = parser.handler.document.clone();
+            for elem in document.get_element_by_qname(TARGETS[i]) {
+                assert_eq!(
+                    elem.base_uri().unwrap().as_unescaped_str().unwrap(),
+                    EXPECTED[i]
+                );
             }
         }
     }

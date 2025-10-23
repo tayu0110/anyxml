@@ -394,6 +394,69 @@ impl Document {
         }
         None
     }
+
+    /// Returns the elements whose QName is `qname`.
+    pub fn get_element_by_qname(&self, qname: &str) -> impl Iterator<Item = Element> {
+        let mut children = self.document_element().map(Node::<dyn NodeSpec>::from);
+        let mut ret = vec![];
+        while let Some(child) = children {
+            if let Some(element) = child.as_element()
+                && element.name().as_ref() == qname
+            {
+                ret.push(element);
+            }
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = child.parent_node();
+                while let Some(now) = parent {
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
+        ret.into_iter()
+    }
+
+    /// Returns the elements whose QName is `qname`.
+    pub fn get_element_by_expanded_name(
+        &self,
+        local_name: &str,
+        namespace_name: Option<&str>,
+    ) -> impl Iterator<Item = Element> {
+        let mut children = self.document_element().map(Node::<dyn NodeSpec>::from);
+        let mut ret = vec![];
+        while let Some(child) = children {
+            if let Some(element) = child.as_element()
+                && element.local_name().as_ref() == local_name
+                && element.namespace_name().as_deref() == namespace_name
+            {
+                ret.push(element);
+            }
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = child.parent_node();
+                while let Some(now) = parent {
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
+        ret.into_iter()
+    }
 }
 
 impl Default for Document {
