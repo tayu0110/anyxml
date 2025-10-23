@@ -192,6 +192,7 @@ This crate conforms to the following specifications:
 
 - [Extensible Markup Language (XML) 1.0 (Fifth Edition)](https://www.w3.org/TR/2008/REC-xml-20081126/)
 - [Namespaces in XML 1.0 (Third Edition)](https://www.w3.org/TR/2009/REC-xml-names-20091208/)
+- [XML Base (Second Edition)](https://www.w3.org/TR/2009/REC-xmlbase-20090128/)
 
 # Tests
 This crate passes the following tests:

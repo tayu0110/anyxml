@@ -285,7 +285,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
 
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
         self.document
-            .set_base_uri(locator.system_id().as_ref())
+            .set_document_base_uri(locator.system_id().as_ref())
             .ok();
         self.handler.set_document_locator(locator);
     }
@@ -365,7 +365,8 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
                         .ok();
 
                     let local_name = att.local_name.as_deref().unwrap_or(&att.qname);
-                    if let Some(mut attribute) = elem.get_attribute(local_name, att.uri.as_deref())
+                    if let Some(mut attribute) =
+                        elem.get_attribute_node(local_name, att.uri.as_deref())
                     {
                         if att.is_specified() {
                             attribute.set_specified();

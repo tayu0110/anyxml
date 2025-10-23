@@ -3,11 +3,15 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use crate::tree::{
-    NodeType, XMLTreeError, compare_document_order,
-    convert::NodeKind,
-    document::{Document, DocumentSpec},
-    document_fragment::DocumentFragmentSpec,
+use crate::{
+    XML_XML_NAMESPACE,
+    tree::{
+        NodeType, XMLTreeError, compare_document_order,
+        convert::NodeKind,
+        document::{Document, DocumentSpec},
+        document_fragment::DocumentFragmentSpec,
+    },
+    uri::URIString,
 };
 
 pub trait NodeSpec: std::any::Any {
@@ -447,6 +451,55 @@ impl Node<dyn NodeSpec> {
     ) -> Option<std::cmp::Ordering> {
         compare_document_order(self.clone(), other.into())
     }
+
+    /// Retrieve the base URI according to the [XML Base](https://www.w3.org/TR/xmlbase/).
+    ///
+    /// If the node is embedded as a descendant of a [`Document`] node, always return `Some`.  \
+    /// If there are insufficient ancestor nodes to resolve the base URI, return `None`.
+    pub fn base_uri(&self) -> Option<URIString> {
+        let mut node = Some(self.clone());
+        let mut uris: Vec<URIString> = vec![];
+        while let Some(now) = node {
+            if let Some(base) = now
+                .as_element()
+                .and_then(|elem| elem.get_attribute("base", Some(XML_XML_NAMESPACE)))
+                .and_then(|base| URIString::parse(base).ok())
+            {
+                if base.scheme().is_some() {
+                    return Some(
+                        uris.into_iter()
+                            .rev()
+                            .fold(base, |base, rel| base.resolve(&rel)),
+                    );
+                }
+                uris.push(base);
+            } else if let Some(document) = now.as_document() {
+                let base = document.document_base_uri().as_ref().to_owned();
+                return Some(
+                    uris.into_iter()
+                        .rev()
+                        .fold(base, |base, rel| base.resolve(&rel)),
+                );
+            } else if let Some(entity) = now.as_entity_reference() {
+                let name = entity.name();
+                if let Some(base) = self
+                    .owner_document()
+                    .document_type()
+                    .and_then(|doctype| doctype.get_entity_decl(&name))
+                    .and_then(|decl| decl.system_id())
+                {
+                    let base = base.as_ref().to_owned();
+                    return Some(
+                        uris.into_iter()
+                            .rev()
+                            .fold(base, |base, rel| base.resolve(&rel)),
+                    );
+                }
+            }
+            node = now.parent_node().map(From::from);
+        }
+        None
+    }
 }
 
 impl Node<dyn InternalNodeSpec> {
@@ -559,6 +612,13 @@ impl Node<dyn InternalNodeSpec> {
     ) -> Option<std::cmp::Ordering> {
         compare_document_order(self.clone().into(), other.into())
     }
+
+    /// Retrieve the base URI according to the [XML Base](https://www.w3.org/TR/xmlbase/).
+    ///
+    /// For more details, please refer to [Node::base_uri].
+    pub fn base_uri(&self) -> Option<URIString> {
+        Node::<dyn NodeSpec>::from(self.clone()).base_uri()
+    }
 }
 
 impl<Spec: NodeSpec + 'static> Node<Spec> {
@@ -613,6 +673,13 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
         other: impl Into<Node<dyn NodeSpec>>,
     ) -> Option<std::cmp::Ordering> {
         compare_document_order(self.clone().into(), other.into())
+    }
+
+    /// Retrieve the base URI according to the [XML Base](https://www.w3.org/TR/xmlbase/).
+    ///
+    /// For more details, please refer to [Node::base_uri].
+    pub fn base_uri(&self) -> Option<URIString> {
+        Node::<dyn NodeSpec>::from(self.clone()).base_uri()
     }
 }
 

@@ -73,6 +73,13 @@ impl InternalNodeSpec for ElementSpec {
     }
 }
 
+/// The internal or leaf node of the document tree that represents an element of the XML document.
+///
+/// It mostly covers the information provided by the "Element Information Item"
+/// in the [XML Infoset](https://www.w3.org/TR/xml-infoset/).
+///
+/// # Reference
+/// [2.2. Element Information Items](https://www.w3.org/TR/xml-infoset/#infoitem.element)
 pub type Element = Node<ElementSpec>;
 
 impl Element {
@@ -164,7 +171,7 @@ impl Element {
         self.namespace().map(|namespace| namespace.namespace_name())
     }
 
-    pub fn get_attribute(
+    pub fn get_attribute_node(
         &self,
         local_name: &str,
         namespace_name: Option<&str>,
@@ -178,6 +185,11 @@ impl Element {
                 .get(local_name, namespace_name)?,
             owner_document: self.owner_document.clone(),
         })
+    }
+
+    pub fn get_attribute(&self, local_name: &str, namespace_name: Option<&str>) -> Option<String> {
+        self.get_attribute_node(local_name, namespace_name)
+            .map(|attr| attr.value())
     }
 
     /// Set attributes for elements.
@@ -523,7 +535,7 @@ impl Element {
     /// # Reference
     /// [2.12 Language Identification](https://www.w3.org/TR/xml/#sec-lang-tag)
     pub fn language(&self) -> Option<String> {
-        if let Some(attribute) = self.get_attribute("lang", Some(XML_XML_NAMESPACE)) {
+        if let Some(attribute) = self.get_attribute_node("lang", Some(XML_XML_NAMESPACE)) {
             let value = attribute.value();
             return (!value.is_empty()).then_some(value);
         }
@@ -533,7 +545,7 @@ impl Element {
             parent = now.parent_node();
             if let Some(attribute) = now
                 .as_element()
-                .and_then(|element| element.get_attribute("lang", Some(XML_XML_NAMESPACE)))
+                .and_then(|element| element.get_attribute_node("lang", Some(XML_XML_NAMESPACE)))
             {
                 let value = attribute.value();
                 return (!value.is_empty()).then_some(value);

@@ -128,6 +128,13 @@ impl InternalNodeSpec for DocumentSpec {
     }
 }
 
+/// The root node of the document tree that represents the XML document itself.
+///
+/// It mostly covers the information provided by the "Document Information Item"
+/// in the [XML Infoset](https://www.w3.org/TR/xml-infoset/).
+///
+/// # Reference
+/// [2.1. The Document Information Item](https://www.w3.org/TR/xml-infoset/#infoitem.document)
 pub type Document = Node<DocumentSpec>;
 
 impl Document {
@@ -270,6 +277,7 @@ impl Document {
         NotationDecl::new(name.into(), system_id, public_id, self.clone())
     }
 
+    /// Returns the document element. If no document element exists, return [`None`].
     pub fn document_element(&self) -> Option<Element> {
         self.core
             .borrow()
@@ -282,6 +290,7 @@ impl Document {
             })
     }
 
+    /// Returns the document type. If no document type exists, return [`None`].
     pub fn document_type(&self) -> Option<DocumentType> {
         self.core
             .borrow()
@@ -295,7 +304,7 @@ impl Document {
     }
 
     /// If XML declaration is present, return the version specified in the declaration.  \
-    /// Otherwise, return `None`.
+    /// Otherwise, return [`None`].
     pub fn version(&self) -> Option<Rc<str>> {
         self.core.borrow().spec.version.clone()
     }
@@ -306,7 +315,7 @@ impl Document {
 
     /// If XML declaration is present and it has the encoding declaration,
     /// return the encoding specified in the declaration.  \
-    /// Otherwise, return `None`.
+    /// Otherwise, return [`None`].
     pub fn encoding(&self) -> Option<Rc<str>> {
         self.core.borrow().spec.encoding.clone()
     }
@@ -326,11 +335,24 @@ impl Document {
         self.core.borrow_mut().spec.standalone = standalone;
     }
 
-    pub fn base_uri(&self) -> Rc<URIStr> {
+    /// Return the base URI of this document.
+    ///
+    /// # Note
+    /// The [`Node::base_uri`] method is common to all node types and,
+    /// due to implementation constraints, returns a [`URIString`].  \
+    /// URI strings are often short, so performance differences should rarely be noticeable.
+    /// However, since no allocation occurs, [`Document::document_base_uri`] might be more efficient.
+    pub fn document_base_uri(&self) -> Rc<URIStr> {
         self.core.borrow().spec.base_uri.clone()
     }
 
-    pub fn set_base_uri(&mut self, base_uri: impl Into<Rc<URIStr>>) -> Result<(), XMLTreeError> {
+    /// Set the base URI for the document.
+    ///
+    /// The base URI must be an absolute URI.
+    pub fn set_document_base_uri(
+        &mut self,
+        base_uri: impl Into<Rc<URIStr>>,
+    ) -> Result<(), XMLTreeError> {
         let base_uri = base_uri.into();
         if !base_uri.is_absolute() {
             return Err(XMLTreeError::BaseURINotAbsolute);
