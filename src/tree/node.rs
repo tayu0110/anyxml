@@ -434,11 +434,11 @@ impl Node<dyn NodeSpec> {
         Rc::ptr_eq(&self.core, &other.core)
     }
 
-    /// Compare the positions of `self` and `other` in the document order.  \
+    /// Compare the positions of `self` and `other` in the document order.
     ///
     /// If `self` appears first, return `Less`;  \
     /// if it appears later, return `Greater`;  \
-    /// if they are the same node, return `Equal`.  \
+    /// if they are the same node, return `Equal`.
     ///
     /// If `self` and `other` do not belong to the same document tree
     /// (i.e., they have no common ancestor), return `None`.

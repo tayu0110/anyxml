@@ -317,6 +317,9 @@ impl Attribute {
         buf
     }
 
+    /// If this attribute is explicitly specified, it returns `true`.  \
+    /// If it is implicitly specified, such as through a default value
+    /// in an attribute list declaration, it returns `false`.
     pub fn is_specified(&self) -> bool {
         self.core.borrow().spec.specified
     }
@@ -329,13 +332,20 @@ impl Attribute {
         self.core.borrow_mut().spec.specified = false;
     }
 
+    /// If this attribute is the ID attribute, return `true`.
+    ///
+    /// # Reference
+    /// - [3.3.1 Attribute Types](https://www.w3.org/TR/xml/#sec-attribute-types)
+    /// - [xml:id Version 1.0](https://www.w3.org/TR/xml-id/)
     pub fn is_id(&self) -> bool {
-        self.owner_document()
-            .document_type()
-            .and_then(|doctype| {
-                doctype.get_attlist_decl(&self.owner_element()?.name(), &self.name())
-            })
-            .is_some_and(|attlist| matches!(*attlist.attr_type(), AttributeType::ID))
+        self.name().as_ref() == "xml:id"
+            || self
+                .owner_document()
+                .document_type()
+                .and_then(|doctype| {
+                    doctype.get_attlist_decl(&self.owner_element()?.name(), &self.name())
+                })
+                .is_some_and(|attlist| matches!(*attlist.attr_type(), AttributeType::ID))
     }
 }
 

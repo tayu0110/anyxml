@@ -90,6 +90,10 @@ pub struct AttlistDeclMap(
     // (attribute type, default value declaration, is external markup declaration)
     HashMap<Box<str>, HashMap<Box<str>, (AttributeType, DefaultDecl, bool)>>,
 );
+// declaration for `xml:id`.
+// since the `get` method must return a reference, it is provided as a static variable.
+static XML_ID_ATTRIBUTE_DECL: (AttributeType, DefaultDecl, bool) =
+    (AttributeType::ID, DefaultDecl::IMPLIED, false);
 
 impl AttlistDeclMap {
     /// Returns `true` if newly inserted, and `false` if an element or attribute with
@@ -130,7 +134,16 @@ impl AttlistDeclMap {
         elem_name: &str,
         attr_name: &str,
     ) -> Option<&(AttributeType, DefaultDecl, bool)> {
-        self.0.get(elem_name)?.get(attr_name)
+        if let Some(ret) = self.0.get(elem_name)?.get(attr_name) {
+            return Some(ret);
+        }
+
+        if attr_name == "xml:id" {
+            // 'xml:id' attribute is considered to be defined as an ID type.
+            return Some(&XML_ID_ATTRIBUTE_DECL);
+        }
+
+        None
     }
 
     pub fn contains(&self, elem_name: &str, attr_name: &str) -> bool {
