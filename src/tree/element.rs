@@ -553,6 +553,79 @@ impl Element {
         }
         None
     }
+
+    /// Returns the descendant elements whose QName is `qname`.
+    ///
+    /// `self` is not included in the returned elements.
+    pub fn get_elements_by_qname(&self, qname: &str) -> impl Iterator<Item = Element> {
+        let mut children = self.first_child();
+        let mut ret = vec![];
+        while let Some(child) = children {
+            if let Some(element) = child.as_element()
+                && element.name().as_ref() == qname
+            {
+                ret.push(element);
+            }
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = child.parent_node();
+                while let Some(now) = parent {
+                    if self.is_same_node(now.clone()) {
+                        break;
+                    }
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
+        ret.into_iter()
+    }
+
+    /// Returns the descendant elements whose expanded name is {`namespace_name`}`local_name`.
+    ///
+    /// `self` is not included in the returned elements.
+    pub fn get_elements_by_expanded_name(
+        &self,
+        local_name: &str,
+        namespace_name: Option<&str>,
+    ) -> impl Iterator<Item = Element> {
+        let mut children = self.first_child();
+        let mut ret = vec![];
+        while let Some(child) = children {
+            if let Some(element) = child.as_element()
+                && element.local_name().as_ref() == local_name
+                && element.namespace_name().as_deref() == namespace_name
+            {
+                ret.push(element);
+            }
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = child.parent_node();
+                while let Some(now) = parent {
+                    if self.is_same_node(now.clone()) {
+                        break;
+                    }
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
+        ret.into_iter()
+    }
 }
 
 impl std::fmt::Display for Element {

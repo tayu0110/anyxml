@@ -14,7 +14,7 @@
   <scenario operation="standard">
     <input-file>001_normalize.xml</input-file>
     <id>te st</id>
-    <result>xml:id on para is an ID (te st)</result>
+    <result>xml:id on para is an ID (te st) </result>
     <notes>XSLT cannot perform this test.</notes>
   </scenario>
 </test-case>

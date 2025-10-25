@@ -134,7 +134,7 @@ impl AttlistDeclMap {
         elem_name: &str,
         attr_name: &str,
     ) -> Option<&(AttributeType, DefaultDecl, bool)> {
-        if let Some(ret) = self.0.get(elem_name)?.get(attr_name) {
+        if let Some(ret) = self.0.get(elem_name).and_then(|map| map.get(attr_name)) {
             return Some(ret);
         }
 
