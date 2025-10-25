@@ -371,7 +371,7 @@ impl Element {
     }
 
     /// Search for the prefix bound to the namespace name `namespace_name`.  \
-    /// If it is not found, return `None`.
+    /// If it is not found, return [`None`].
     ///
     /// # Note
     /// A namespace may bind to more than one prefix.  \
@@ -412,8 +412,8 @@ impl Element {
         implicit
     }
 
-    /// Returns the namespace declaration on `self` or a nearest ancestor that binds `prefix`. \
-    /// If no such declaration exists, returns `None`.
+    /// Returns the namespace declaration on `self` or a nearest ancestor that binds `prefix`.  \
+    /// If no such declaration exists, returns [`None`].
     ///
     /// # Note
     /// If `prefix` is bound to some namespace name, that namespace name is always unique.
@@ -552,10 +552,52 @@ impl Element {
         }
     }
 
+    /// If the element or any of its immediate ancestors has an `xml:space` attribute, it returns:
+    ///
+    /// - `Some(true)` if the value is "preserve"
+    /// - `Some(false)` if the value is "default"
+    /// - `None` for any other value
+    ///
+    /// If no such element exists, it returns `None`.
+    ///
+    /// # Reference
+    /// [2.10 White Space Handling](https://www.w3.org/TR/xml/#sec-white-space)
+    pub fn space_preserve(&self) -> Option<bool> {
+        if let Some(attribute) = self.get_attribute_node("space", Some(XML_XML_NAMESPACE)) {
+            let value = attribute.value();
+            return if value == "preserve" {
+                Some(true)
+            } else if value == "default" {
+                Some(false)
+            } else {
+                None
+            };
+        }
+
+        let mut parent = self.parent_node();
+        while let Some(now) = parent {
+            parent = now.parent_node();
+            if let Some(attribute) = now
+                .as_element()
+                .and_then(|element| element.get_attribute_node("space", Some(XML_XML_NAMESPACE)))
+            {
+                let value = attribute.value();
+                return if value == "preserve" {
+                    Some(true)
+                } else if value == "default" {
+                    Some(false)
+                } else {
+                    None
+                };
+            }
+        }
+        None
+    }
+
     /// If any recent ancestor, including `self`, has an `xml:lang` attribute,
-    /// return `None` if the attribute value is an empty string,
-    /// otherwise return the attribute value wrapped in `Some`.  \
-    /// If no ancestor has an `xml:lang` attribute specified, return `None`.
+    /// return [`None`] if the attribute value is an empty string,
+    /// otherwise return the attribute value wrapped in [`Some`].  \
+    /// If no ancestor has an `xml:lang` attribute specified, return [`None`].
     ///
     /// # Reference
     /// [2.12 Language Identification](https://www.w3.org/TR/xml/#sec-lang-tag)
