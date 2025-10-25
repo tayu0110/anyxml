@@ -252,6 +252,7 @@ fn tree_dump_tests() {
     }
 }
 
+// reference of test method: https://www.w3.org/XML/2005/01/xml-id/runtests.xsl
 #[test]
 fn xml_id_tests() {
     let mut reader = XMLReaderBuilder::new()
@@ -333,6 +334,12 @@ fn xml_id_tests() {
                                     att.value()
                                 )
                                 .unwrap();
+                            }
+                        } else if att.name().as_ref() == "ref" {
+                            if let Some(elem) = document.get_element_by_id(&att.value()) {
+                                write!(buf, "Found {} ", elem.name()).unwrap();
+                            } else {
+                                write!(buf, "Found no element with id {} ", att.value()).unwrap();
                             }
                         }
                     }
