@@ -282,10 +282,7 @@ fn xml_id_tests() {
             .unwrap()
             .first_child()
             .unwrap()
-            .as_text()
-            .unwrap()
-            .data()
-            .to_owned();
+            .text_content();
         for scenario in test_case.get_elements_by_qname("scenario") {
             let input_file = scenario
                 .get_elements_by_qname("input-file")
@@ -293,10 +290,7 @@ fn xml_id_tests() {
                 .unwrap()
                 .first_child()
                 .unwrap()
-                .as_text()
-                .unwrap()
-                .data()
-                .to_owned();
+                .text_content();
             let target_file = format!("resources/xml-id/{file_path}/{input_file}");
             eprintln!("target-file='{target_file}'");
             let expected = scenario
@@ -305,10 +299,7 @@ fn xml_id_tests() {
                 .unwrap()
                 .first_child()
                 .unwrap()
-                .as_text()
-                .unwrap()
-                .data()
-                .to_owned();
+                .text_content();
 
             reader
                 .parse_uri(URIString::parse_file_path(target_file).unwrap(), None)

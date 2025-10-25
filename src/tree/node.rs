@@ -515,6 +515,52 @@ impl Node<dyn NodeSpec> {
             uri.resolve(&URIString::parse("").unwrap())
         })
     }
+
+    /// If `self` and its descendants contain character data, concatenate all of it
+    /// and return the result.  \
+    /// If they do not contain character data, return an empty string.
+    ///
+    /// # Note
+    /// If descendants contain [`Comment`](crate::tree::Comment)
+    /// or [`ProcessingInstruction`](crate::tree::ProcessingInstruction), these are also
+    /// included in the result.  \
+    /// For [`ProcessingInstruction`](crate::tree::ProcessingInstruction),
+    /// the result is the data following the target.
+    ///
+    /// Additionally, the result for [`Document`] is an empty string.
+    pub fn text_content(&self) -> String {
+        let mut buf = String::new();
+        fn collect_text_content(node: Node<dyn NodeSpec>, buf: &mut String) {
+            match node.downcast() {
+                NodeKind::Element(_)
+                | NodeKind::Attribute(_)
+                | NodeKind::EntityDecl(_)
+                | NodeKind::EntityReference(_)
+                | NodeKind::DocumentFragment(_) => {
+                    let mut children = node.first_child();
+                    while let Some(child) = children {
+                        children = child.next_sibling();
+                        collect_text_content(child, buf);
+                    }
+                }
+                NodeKind::Text(text) => {
+                    buf.push_str(&text.data());
+                }
+                NodeKind::CDATASection(cdata) => {
+                    buf.push_str(&cdata.data());
+                }
+                NodeKind::Comment(comment) => {
+                    buf.push_str(&comment.data());
+                }
+                NodeKind::ProcessingInstruction(pi) => {
+                    buf.push_str(pi.data().as_deref().unwrap_or_default());
+                }
+                _ => {}
+            }
+        }
+        collect_text_content(self.clone(), &mut buf);
+        buf
+    }
 }
 
 impl Node<dyn InternalNodeSpec> {
@@ -613,7 +659,7 @@ impl Node<dyn InternalNodeSpec> {
     ///
     /// For more details, please refer [`Node::is_same_node`] of [`Node<dyn NodeSpec>`]
     pub fn is_same_node(&self, other: impl Into<Node<dyn NodeSpec>>) -> bool {
-        let left = Node::<dyn NodeSpec>::from(self.clone());
+        let left = Node::<dyn NodeSpec>::from(self);
         let right: Node<dyn NodeSpec> = other.into();
         Rc::ptr_eq(&left.core, &right.core)
     }
@@ -625,14 +671,19 @@ impl Node<dyn InternalNodeSpec> {
         &self,
         other: impl Into<Node<dyn NodeSpec>>,
     ) -> Option<std::cmp::Ordering> {
-        compare_document_order(self.clone().into(), other.into())
+        compare_document_order(self.into(), other.into())
     }
 
     /// Retrieve the base URI according to the [XML Base](https://www.w3.org/TR/xmlbase/).
     ///
     /// For more details, please refer to [Node::base_uri].
     pub fn base_uri(&self) -> Option<URIString> {
-        Node::<dyn NodeSpec>::from(self.clone()).base_uri()
+        Node::<dyn NodeSpec>::from(self).base_uri()
+    }
+
+    /// Please see [Node::text_content].
+    pub fn text_content(&self) -> String {
+        Node::<dyn NodeSpec>::from(self).text_content()
     }
 }
 
@@ -652,7 +703,7 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
 
     /// See [Node::detach].
     pub fn detach(&mut self) -> Result<(), XMLTreeError> {
-        Node::<dyn NodeSpec>::from(self.clone()).detach()
+        Node::<dyn NodeSpec>::from(self).detach()
     }
 
     /// See [Node::insert_previous_sibling].
@@ -660,7 +711,7 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
         &mut self,
         new_sibling: impl Into<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
-        Node::<dyn NodeSpec>::from(self.clone()).insert_previous_sibling(new_sibling)
+        Node::<dyn NodeSpec>::from(self).insert_previous_sibling(new_sibling)
     }
 
     /// See [Node::insert_next_sibling].
@@ -668,14 +719,14 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
         &mut self,
         new_sibling: impl Into<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
-        Node::<dyn NodeSpec>::from(self.clone()).insert_next_sibling(new_sibling)
+        Node::<dyn NodeSpec>::from(self).insert_next_sibling(new_sibling)
     }
 
     /// Check whether `self` and `other` are the same node.
     ///
     /// For more details, please refer [`Node::is_same_node`] of [`Node<dyn NodeSpec>`]
     pub fn is_same_node(&self, other: impl Into<Node<dyn NodeSpec>>) -> bool {
-        let left = Node::<dyn NodeSpec>::from(self.clone());
+        let left = Node::<dyn NodeSpec>::from(self);
         let right: Node<dyn NodeSpec> = other.into();
         Rc::ptr_eq(&left.core, &right.core)
     }
@@ -687,14 +738,19 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
         &self,
         other: impl Into<Node<dyn NodeSpec>>,
     ) -> Option<std::cmp::Ordering> {
-        compare_document_order(self.clone().into(), other.into())
+        compare_document_order(self.into(), other.into())
     }
 
     /// Retrieve the base URI according to the [XML Base](https://www.w3.org/TR/xmlbase/).
     ///
     /// For more details, please refer to [Node::base_uri].
     pub fn base_uri(&self) -> Option<URIString> {
-        Node::<dyn NodeSpec>::from(self.clone()).base_uri()
+        Node::<dyn NodeSpec>::from(self).base_uri()
+    }
+
+    /// Please see [Node::text_content].
+    pub fn text_content(&self) -> String {
+        Node::<dyn NodeSpec>::from(self).text_content()
     }
 }
 
@@ -736,12 +792,36 @@ impl<Spec: ?Sized> Clone for Node<Spec> {
     }
 }
 
+impl From<&Node<dyn NodeSpec>> for Node<dyn NodeSpec> {
+    fn from(value: &Node<dyn NodeSpec>) -> Self {
+        value.clone()
+    }
+}
+
+impl From<&mut Node<dyn NodeSpec>> for Node<dyn NodeSpec> {
+    fn from(value: &mut Node<dyn NodeSpec>) -> Self {
+        value.clone()
+    }
+}
+
 impl<Spec: NodeSpec + 'static> From<Node<Spec>> for Node<dyn NodeSpec> {
     fn from(value: Node<Spec>) -> Self {
         Node {
             core: value.core,
             owner_document: value.owner_document,
         }
+    }
+}
+
+impl<Spec: NodeSpec + 'static> From<&Node<Spec>> for Node<dyn NodeSpec> {
+    fn from(value: &Node<Spec>) -> Self {
+        value.clone().into()
+    }
+}
+
+impl<Spec: NodeSpec + 'static> From<&mut Node<Spec>> for Node<dyn NodeSpec> {
+    fn from(value: &mut Node<Spec>) -> Self {
+        value.clone().into()
     }
 }
 
@@ -754,12 +834,36 @@ impl From<Node<dyn InternalNodeSpec>> for Node<dyn NodeSpec> {
     }
 }
 
+impl From<&Node<dyn InternalNodeSpec>> for Node<dyn NodeSpec> {
+    fn from(value: &Node<dyn InternalNodeSpec>) -> Self {
+        value.clone().into()
+    }
+}
+
+impl From<&mut Node<dyn InternalNodeSpec>> for Node<dyn NodeSpec> {
+    fn from(value: &mut Node<dyn InternalNodeSpec>) -> Self {
+        value.clone().into()
+    }
+}
+
 impl<Spec: InternalNodeSpec + 'static> From<Node<Spec>> for Node<dyn InternalNodeSpec> {
     fn from(value: Node<Spec>) -> Self {
         Node {
             core: value.core,
             owner_document: value.owner_document,
         }
+    }
+}
+
+impl<Spec: InternalNodeSpec + 'static> From<&Node<Spec>> for Node<dyn InternalNodeSpec> {
+    fn from(value: &Node<Spec>) -> Self {
+        value.clone().into()
+    }
+}
+
+impl<Spec: InternalNodeSpec + 'static> From<&mut Node<Spec>> for Node<dyn InternalNodeSpec> {
+    fn from(value: &mut Node<Spec>) -> Self {
+        value.clone().into()
     }
 }
 
