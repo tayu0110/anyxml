@@ -410,6 +410,10 @@ impl XPathNodeSet {
         }
         self.nodes.push(node);
     }
+
+    pub(crate) fn clear(&mut self) {
+        self.nodes.clear();
+    }
 }
 
 impl<'a> IntoIterator for &'a XPathNodeSet {
