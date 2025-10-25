@@ -42,7 +42,7 @@ impl XPathExpression {
                 self.do_evaluate(right)?;
                 let right = self.context.stack.pop().unwrap();
                 let left = self.context.stack.pop().unwrap();
-                todo!("Union")
+                self.context.push_object(left.union(right)?);
             }
             XPathSyntaxTree::Slash(left, right) => {
                 self.do_evaluate(left)?;
@@ -403,6 +403,11 @@ impl XPathNodeSet {
         self.nodes.last()
     }
 
+    pub fn contains(&self, node: impl Into<Node<dyn NodeSpec>>) -> bool {
+        let node: Node<dyn NodeSpec> = node.into();
+        self.iter().any(|n| node.is_same_node(n))
+    }
+
     pub(crate) fn push(&mut self, node: impl Into<Node<dyn NodeSpec>>) {
         let node: Node<dyn NodeSpec> = node.into();
         if self.nodes.iter().any(|n| node.is_same_node(n)) {
@@ -411,8 +416,41 @@ impl XPathNodeSet {
         self.nodes.push(node);
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.nodes.clear();
+    }
+
+    pub fn union(&self, other: &Self) -> Self {
+        let mut ret = self.clone();
+        for node in other.iter() {
+            ret.push(node);
+        }
+        ret
+    }
+
+    pub fn difference(&self, other: &Self) -> Self {
+        let mut ret = Self::default();
+        for node in other.iter() {
+            if !self.contains(&node) {
+                ret.push(node);
+            }
+        }
+        for node in self.iter() {
+            if !other.contains(&node) {
+                ret.push(node);
+            }
+        }
+        ret
+    }
+
+    pub fn intersection(&self, other: &Self) -> Self {
+        let mut ret = Self::default();
+        for node in other.iter() {
+            if self.contains(&node) {
+                ret.push(node);
+            }
+        }
+        ret
     }
 }
 

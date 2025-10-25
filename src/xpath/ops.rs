@@ -178,4 +178,11 @@ impl XPathObject {
     pub(super) fn ge(self, other: Self) -> Result<Self, XPathError> {
         self.compare(other, |left, right| left >= right)
     }
+
+    pub(super) fn union(self, other: Self) -> Result<Self, XPathError> {
+        let (XPathObject::NodeSet(left), XPathObject::NodeSet(right)) = (self, other) else {
+            return Err(XPathError::IncorrectOperandType);
+        };
+        Ok(left.union(&right).into())
+    }
 }
