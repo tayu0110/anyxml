@@ -377,7 +377,7 @@ impl From<XPathNodeSet> for XPathObject {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct XPathNodeSet {
     nodes: Vec<Node<dyn NodeSpec>>,
 }
@@ -391,7 +391,7 @@ impl XPathNodeSet {
         self.nodes.is_empty()
     }
 
-    pub fn iter(&self) -> std::iter::Cloned<std::slice::Iter<'_, Node<dyn NodeSpec>>> {
+    pub fn iter(&self) -> impl Iterator<Item = Node<dyn NodeSpec>> + '_ {
         self.nodes.iter().cloned()
     }
 
@@ -401,6 +401,14 @@ impl XPathNodeSet {
 
     pub fn last(&self) -> Option<&Node<dyn NodeSpec>> {
         self.nodes.last()
+    }
+
+    pub(crate) fn push(&mut self, node: impl Into<Node<dyn NodeSpec>>) {
+        let node: Node<dyn NodeSpec> = node.into();
+        if self.nodes.iter().any(|n| node.is_same_node(n)) {
+            return;
+        }
+        self.nodes.push(node);
     }
 }
 

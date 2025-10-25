@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashMap, iter::repeat};
 use crate::{
     XMLVersion,
     tree::convert::NodeKind,
-    xpath::{XPathContext, XPathError, XPathObject},
+    xpath::{XPathContext, XPathError, XPathNodeSet, XPathObject},
 };
 
 type XPathFunction = fn(&mut XPathContext, usize) -> Result<XPathObject, XPathError>;
@@ -92,7 +92,42 @@ fn count(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPa
 }
 
 fn id(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPathError> {
-    todo!()
+    if num_args != 1 {
+        return Err(XPathError::IncorrectNumberOfArgument);
+    }
+
+    let object = context
+        .pop_object()
+        .ok_or(XPathError::IncorrectNumberOfArgument)?;
+    let mut node_set = XPathNodeSet::default();
+    let document = context.node.clone().unwrap().owner_document();
+    match object {
+        XPathObject::NodeSet(ns) => {
+            for node in ns.iter() {
+                let string = node.xpath_string_value();
+                for id in string
+                    .split(|c: char| XMLVersion::default().is_whitespace(c))
+                    .filter(|s| !s.is_empty())
+                {
+                    if let Some(elem) = document.get_element_by_id(id) {
+                        node_set.push(elem);
+                    }
+                }
+            }
+        }
+        object => {
+            let string = object.as_string()?;
+            for id in string
+                .split(|c: char| XMLVersion::default().is_whitespace(c))
+                .filter(|s| !s.is_empty())
+            {
+                if let Some(elem) = document.get_element_by_id(id) {
+                    node_set.push(elem);
+                }
+            }
+        }
+    }
+    Ok(node_set.into())
 }
 
 fn local_name(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPathError> {
@@ -488,7 +523,30 @@ fn r#false(_context: &mut XPathContext, num_args: usize) -> Result<XPathObject, 
 }
 
 fn lang(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPathError> {
-    todo!()
+    if num_args != 1 {
+        return Err(XPathError::IncorrectNumberOfArgument);
+    }
+
+    let string = context
+        .pop_object()
+        .ok_or(XPathError::IncorrectNumberOfArgument)?
+        .as_string()?;
+    let mut node = context.node.clone();
+    let mut ret = false;
+    while let Some(now) = node {
+        if let Some(elem) = now.as_element()
+            && let Some(lang) = elem.language()
+        {
+            if let Some((lang, _)) = lang.split_once('-') {
+                ret = lang.eq_ignore_ascii_case(&string);
+            } else {
+                ret = lang.eq_ignore_ascii_case(&string);
+            }
+            break;
+        }
+        node = now.parent_node().map(From::from);
+    }
+    Ok(ret.into())
 }
 
 fn number(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPathError> {
