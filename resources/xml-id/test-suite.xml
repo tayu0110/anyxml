@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<test-suite>
+
+<test-catalog submitter="Sun Microsystems">
+<creator>Norm Walsh</creator>
+<date>2005-01-25</date>
+
+<test-case category="normalize" id="normal_001">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-01-25</date>
+  <purpose>Check ID normalization</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>001_normalize.xml</input-file>
+    <id>te st</id>
+    <result>xml:id on para is an ID (te st) </result>
+    <notes>XSLT cannot perform this test.</notes>
+  </scenario>
+</test-case>
+
+<test-case category="undeclared" id="undecl_001">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-01-25</date>
+  <purpose>Check that xml:id does not have to be declared</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>002_undecl.xml</input-file>
+    <id>test</id>
+    <result>xml:id on para is an ID (test) </result>
+  </scenario>
+</test-case>
+
+<test-case category="declared" id="declar_001">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-01-25</date>
+  <purpose>Check that xml:id can be declared correctly with a DTD</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>003_dtd.xml</input-file>
+    <id>id</id>
+    <result>xml:id on para is an ID (id) </result>
+  </scenario>
+</test-case>
+
+<test-case category="declared" id="declar_002" feature="schema">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-01-25</date>
+  <purpose>Check that xml:id can be declared correctly with a schema</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>004_schema.xml</input-file>
+    <id>id</id>
+    <result>xml:id on para is an ID (id) </result>
+    <notes>Proper evaluation requires a schema-aware processor.</notes>
+  </scenario>
+</test-case>
+
+<test-case category="error" id="baddcl_001">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-01-25</date>
+  <purpose>Check that an incorrect DTD declaration is caught</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>005_errdtdbad.xml</input-file>
+    <id>id</id>
+    <result>xml:id on para is an ID (id) </result>
+    <notes>Must generate invalid declared type error.</notes>
+  </scenario>
+</test-case>
+
+<test-case category="error" id="dupdup_001">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-01-25</date>
+  <purpose>Test to see if duplicate IDs are detected.</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>005_errdup.xml</input-file>
+    <id>dup</id>
+    <id>dup</id>
+    <result>xml:id on para is an ID (dup) </result>
+    <notes>Should generate duplicate ID error; may report both elements.</notes>
+  </scenario>
+</test-case>
+
+<test-case category="error" id="baddcl_002" feature="schema">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-01-25</date>
+  <purpose>Check that an incorrect schema declaration is caught</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>006_errschemabad.xml</input-file>
+    <id>id</id>
+    <result>xml:id on para is an ID (id) </result>
+    <notes>Must generate invalid declared type error; proper evaluation requires a schema-aware processor.</notes>
+  </scenario>
+</test-case>
+
+<test-case category="error" id="dupdup_002">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-01-25</date>
+  <purpose>Test to see if duplicate IDs are detected.</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>007_errdup.xml</input-file>
+    <id>id1</id>
+    <id>id1</id>
+    <result>id on para is an ID (id1) xml:id on para is an ID (id1) </result>
+    <notes>Should generate duplicate ID error; may report both elements.</notes>
+  </scenario>
+</test-case>
+
+<test-case category="chars" id="okchar_001">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-01-25</date>
+  <purpose>Check that an XML 1.0 document accepts 1.0 IDs</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>008_ok10.xml</input-file>
+    <id>anid</id>
+    <result>xml:id on p is an ID (anid) </result>
+  </scenario>
+</test-case>
+
+<test-case category="chars" id="okchar_002" feature="xml11">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-01-25</date>
+  <purpose>Check that an XML 1.1 document accepts 1.1 IDs</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>009_ok11.xml</input-file>
+    <id>id&#11264;ok</id>
+    <result>xml:id on p is an ID (id&#11264;ok) </result>
+    <notes>Will fail if an XML 1.0 processor is used.</notes>
+  </scenario>
+</test-case>
+
+<test-case category="xref" id="xref___001">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-04-08</date>
+  <purpose>Check that IDREFs work</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>010_okxref.xml</input-file>
+    <id>id1</id>
+    <id>id2</id>
+    <result>id on para is an ID (id1) xml:id on para is an ID (id2) Found para Found para </result>
+  </scenario>
+</test-case>
+
+<test-case category="normalize" id="normal_002">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-01-25</date>
+  <purpose>Check that an ID is normalized</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>011_oknormalize.xml</input-file>
+    <id>anid</id>
+    <result>xml:id on p is an ID (anid) </result>
+  </scenario>
+</test-case>
+
+<test-case category="normalize" id="normal_003">
+  <file-path>tests</file-path>
+  <creator>Norman Walsh</creator>
+  <date>2005-04-08</date>
+  <purpose>Check that an ID is normalized</purpose>
+  <spec-citation place="4" type="section" version="1.0" spec="xml:id"/>
+  <scenario operation="standard">
+    <input-file>012_value.xml</input-file>
+    <id>&#x0D; p2</id>
+    <result>xml:id on para is an ID (&#x0D; p2) </result>
+    <notes>XSLT cannot perform this test.</notes>
+  </scenario>
+</test-case>
+
+</test-catalog>
+
+</test-suite>

@@ -13,7 +13,7 @@ pub struct EntityReferenceSpec {
 }
 
 impl NodeSpec for EntityReferenceSpec {
-    fn node_type(&self) -> super::NodeType {
+    fn node_type(&self) -> NodeType {
         NodeType::EntityReference
     }
 

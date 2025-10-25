@@ -3,11 +3,15 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use crate::tree::{
-    NodeType, XMLTreeError,
-    convert::NodeKind,
-    document::{Document, DocumentSpec},
-    document_fragment::DocumentFragmentSpec,
+use crate::{
+    XML_XML_NAMESPACE,
+    tree::{
+        NodeType, XMLTreeError, compare_document_order,
+        convert::NodeKind,
+        document::{Document, DocumentSpec},
+        document_fragment::DocumentFragmentSpec,
+    },
+    uri::URIString,
 };
 
 pub trait NodeSpec: std::any::Any {
@@ -138,6 +142,13 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
     }
     fn unset_next_sibling(&mut self) {
         self.core.borrow_mut().next_sibling = None;
+    }
+
+    pub(super) fn is_same_owner_document<Other: NodeSpec + ?Sized>(
+        &self,
+        other: &Node<Other>,
+    ) -> bool {
+        Rc::ptr_eq(&self.owner_document, &other.owner_document)
     }
 }
 
@@ -397,6 +408,159 @@ impl Node<dyn NodeSpec> {
     ) -> Result<(), XMLTreeError> {
         self.do_insert_next_sibling(new_sibling.into())
     }
+
+    /// Check whether `self` and `other` are the same node.
+    ///
+    /// # Note
+    /// This method does not perform equality comparison.  \
+    /// For example, `is_same_node` will always return `false` for two [`Text`](crate::tree::Text)
+    /// nodes containing exactly the same string generated from the same [`Document`],
+    /// unless one is a clone of the other.
+    ///
+    /// # Example
+    /// ```rust
+    /// use anyxml::tree::Document;
+    ///
+    /// let document = Document::new();
+    /// let text1 = document.create_text("Hello");
+    /// let text2 = document.create_text("Hello");
+    ///
+    /// assert!(text1.is_same_node(text1.clone()));
+    /// // These have the same character data, but are not the same node.
+    /// assert!(!text1.is_same_node(text2.clone()));
+    /// ```
+    pub fn is_same_node(&self, other: impl Into<Self>) -> bool {
+        let other: Self = other.into();
+        Rc::ptr_eq(&self.core, &other.core)
+    }
+
+    /// Compare the positions of `self` and `other` in the document order.
+    ///
+    /// If `self` appears first, return `Less`;  \
+    /// if it appears later, return `Greater`;  \
+    /// if they are the same node, return `Equal`.
+    ///
+    /// If `self` and `other` do not belong to the same document tree
+    /// (i.e., they have no common ancestor), return `None`.
+    ///
+    /// # Reference
+    /// [5 Data Model in XPath 1.0](https://www.w3.org/TR/1999/REC-xpath-19991116/#dt-document-order)
+    pub fn compare_document_order(
+        &self,
+        other: impl Into<Node<dyn NodeSpec>>,
+    ) -> Option<std::cmp::Ordering> {
+        compare_document_order(self.clone(), other.into())
+    }
+
+    /// Retrieve the base URI according to the [XML Base](https://www.w3.org/TR/xmlbase/).
+    ///
+    /// If the node is embedded as a descendant of a [`Document`] node, always return `Some`.  \
+    /// If there are insufficient ancestor nodes to resolve the base URI, return `None`.
+    pub fn base_uri(&self) -> Option<URIString> {
+        let mut node = Some(self.clone());
+        let mut uris: Vec<URIString> = vec![];
+        let mut ret = None;
+        while let Some(now) = node {
+            if let Some(base) = now
+                .as_element()
+                .and_then(|elem| elem.get_attribute("base", Some(XML_XML_NAMESPACE)))
+                .and_then(|base| URIString::parse(base).ok())
+            {
+                if base.scheme().is_some() {
+                    ret = Some(
+                        uris.into_iter()
+                            .rev()
+                            .fold(base, |base, rel| base.resolve(&rel)),
+                    );
+                    break;
+                }
+                uris.push(base);
+            } else if let Some(document) = now.as_document() {
+                let base = document.document_base_uri().as_ref().to_owned();
+                ret = Some(
+                    uris.into_iter()
+                        .rev()
+                        .fold(base, |base, rel| base.resolve(&rel)),
+                );
+                break;
+            } else if let Some(entity) = now.as_entity_reference() {
+                let name = entity.name();
+                if let Some(base) = self
+                    .owner_document()
+                    .document_type()
+                    .and_then(|doctype| doctype.get_entity_decl(&name))
+                    .and_then(|decl| decl.system_id())
+                {
+                    let base = base.as_ref().to_owned();
+                    ret = Some(
+                        uris.into_iter()
+                            .rev()
+                            .fold(base, |base, rel| base.resolve(&rel)),
+                    );
+                    break;
+                }
+            }
+            node = now.parent_node().map(From::from);
+        }
+        ret.map(|uri| {
+            // The URI returned as the base URI must be an absolute URI.
+            // However, at this point, only relative references have been resolved,
+            // and a fragment may be included.
+            // The URI returned as the base URI must be an absolute URI.
+            // Therefore, resolving the relative reference without the fragment removes the fragment.
+            //
+            // Reference:
+            // [Testing XML Base Conformance](https://www.w3.org/XML/2006/12/xmlbase-testing.html)
+            // section 4. in "Discussion of few key example"
+            uri.resolve(&URIString::parse("").unwrap())
+        })
+    }
+
+    /// If `self` and its descendants contain character data, concatenate all of it
+    /// and return the result.  \
+    /// If they do not contain character data, return an empty string.
+    ///
+    /// # Note
+    /// If descendants contain [`Comment`](crate::tree::Comment)
+    /// or [`ProcessingInstruction`](crate::tree::ProcessingInstruction), these are also
+    /// included in the result.  \
+    /// For [`ProcessingInstruction`](crate::tree::ProcessingInstruction),
+    /// the result is the data following the target.
+    ///
+    /// Additionally, the result for [`Document`] is an empty string.
+    pub fn text_content(&self) -> String {
+        let mut buf = String::new();
+        fn collect_text_content(node: Node<dyn NodeSpec>, buf: &mut String) {
+            match node.downcast() {
+                NodeKind::Element(_)
+                | NodeKind::Attribute(_)
+                | NodeKind::EntityDecl(_)
+                | NodeKind::EntityReference(_)
+                | NodeKind::DocumentFragment(_) => {
+                    let mut children = node.first_child();
+                    while let Some(child) = children {
+                        children = child.next_sibling();
+                        collect_text_content(child, buf);
+                    }
+                }
+                NodeKind::Text(text) => {
+                    buf.push_str(&text.data());
+                }
+                NodeKind::CDATASection(cdata) => {
+                    buf.push_str(&cdata.data());
+                }
+                NodeKind::Comment(comment) => {
+                    buf.push_str(&comment.data());
+                }
+                NodeKind::ProcessingInstruction(pi) => {
+                    buf.push_str(pi.data().as_deref().unwrap_or_default());
+                }
+                _ => {}
+            }
+        }
+        collect_text_content(self.clone(), &mut buf);
+        buf
+    }
 }
 
 impl Node<dyn InternalNodeSpec> {
@@ -490,6 +654,37 @@ impl Node<dyn InternalNodeSpec> {
             .spec
             .post_child_insertion(inserted_child);
     }
+
+    /// Check whether `self` and `other` are the same node.
+    ///
+    /// For more details, please refer [`Node::is_same_node`] of [`Node<dyn NodeSpec>`]
+    pub fn is_same_node(&self, other: impl Into<Node<dyn NodeSpec>>) -> bool {
+        let left = Node::<dyn NodeSpec>::from(self);
+        let right: Node<dyn NodeSpec> = other.into();
+        Rc::ptr_eq(&left.core, &right.core)
+    }
+
+    /// Compare the positions of `self` and `other` in the document order.
+    ///
+    /// For more details, please refer [`Node::compare_document_order`] of [`Node<dyn NodeSpec>`].
+    pub fn compare_document_order(
+        &self,
+        other: impl Into<Node<dyn NodeSpec>>,
+    ) -> Option<std::cmp::Ordering> {
+        compare_document_order(self.into(), other.into())
+    }
+
+    /// Retrieve the base URI according to the [XML Base](https://www.w3.org/TR/xmlbase/).
+    ///
+    /// For more details, please refer to [Node::base_uri].
+    pub fn base_uri(&self) -> Option<URIString> {
+        Node::<dyn NodeSpec>::from(self).base_uri()
+    }
+
+    /// Please see [Node::text_content].
+    pub fn text_content(&self) -> String {
+        Node::<dyn NodeSpec>::from(self).text_content()
+    }
 }
 
 impl<Spec: NodeSpec + 'static> Node<Spec> {
@@ -508,7 +703,7 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
 
     /// See [Node::detach].
     pub fn detach(&mut self) -> Result<(), XMLTreeError> {
-        Node::<dyn NodeSpec>::from(self.clone()).detach()
+        Node::<dyn NodeSpec>::from(self).detach()
     }
 
     /// See [Node::insert_previous_sibling].
@@ -516,7 +711,7 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
         &mut self,
         new_sibling: impl Into<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
-        Node::<dyn NodeSpec>::from(self.clone()).insert_previous_sibling(new_sibling)
+        Node::<dyn NodeSpec>::from(self).insert_previous_sibling(new_sibling)
     }
 
     /// See [Node::insert_next_sibling].
@@ -524,7 +719,38 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
         &mut self,
         new_sibling: impl Into<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
-        Node::<dyn NodeSpec>::from(self.clone()).insert_next_sibling(new_sibling)
+        Node::<dyn NodeSpec>::from(self).insert_next_sibling(new_sibling)
+    }
+
+    /// Check whether `self` and `other` are the same node.
+    ///
+    /// For more details, please refer [`Node::is_same_node`] of [`Node<dyn NodeSpec>`]
+    pub fn is_same_node(&self, other: impl Into<Node<dyn NodeSpec>>) -> bool {
+        let left = Node::<dyn NodeSpec>::from(self);
+        let right: Node<dyn NodeSpec> = other.into();
+        Rc::ptr_eq(&left.core, &right.core)
+    }
+
+    /// Compare the positions of `self` and `other` in the document order.
+    ///
+    /// For more details, please refer [`Node::compare_document_order`] of [`Node<dyn NodeSpec>`].
+    pub fn compare_document_order(
+        &self,
+        other: impl Into<Node<dyn NodeSpec>>,
+    ) -> Option<std::cmp::Ordering> {
+        compare_document_order(self.into(), other.into())
+    }
+
+    /// Retrieve the base URI according to the [XML Base](https://www.w3.org/TR/xmlbase/).
+    ///
+    /// For more details, please refer to [Node::base_uri].
+    pub fn base_uri(&self) -> Option<URIString> {
+        Node::<dyn NodeSpec>::from(self).base_uri()
+    }
+
+    /// Please see [Node::text_content].
+    pub fn text_content(&self) -> String {
+        Node::<dyn NodeSpec>::from(self).text_content()
     }
 }
 
@@ -566,12 +792,36 @@ impl<Spec: ?Sized> Clone for Node<Spec> {
     }
 }
 
+impl From<&Node<dyn NodeSpec>> for Node<dyn NodeSpec> {
+    fn from(value: &Node<dyn NodeSpec>) -> Self {
+        value.clone()
+    }
+}
+
+impl From<&mut Node<dyn NodeSpec>> for Node<dyn NodeSpec> {
+    fn from(value: &mut Node<dyn NodeSpec>) -> Self {
+        value.clone()
+    }
+}
+
 impl<Spec: NodeSpec + 'static> From<Node<Spec>> for Node<dyn NodeSpec> {
     fn from(value: Node<Spec>) -> Self {
         Node {
             core: value.core,
             owner_document: value.owner_document,
         }
+    }
+}
+
+impl<Spec: NodeSpec + 'static> From<&Node<Spec>> for Node<dyn NodeSpec> {
+    fn from(value: &Node<Spec>) -> Self {
+        value.clone().into()
+    }
+}
+
+impl<Spec: NodeSpec + 'static> From<&mut Node<Spec>> for Node<dyn NodeSpec> {
+    fn from(value: &mut Node<Spec>) -> Self {
+        value.clone().into()
     }
 }
 
@@ -584,12 +834,36 @@ impl From<Node<dyn InternalNodeSpec>> for Node<dyn NodeSpec> {
     }
 }
 
+impl From<&Node<dyn InternalNodeSpec>> for Node<dyn NodeSpec> {
+    fn from(value: &Node<dyn InternalNodeSpec>) -> Self {
+        value.clone().into()
+    }
+}
+
+impl From<&mut Node<dyn InternalNodeSpec>> for Node<dyn NodeSpec> {
+    fn from(value: &mut Node<dyn InternalNodeSpec>) -> Self {
+        value.clone().into()
+    }
+}
+
 impl<Spec: InternalNodeSpec + 'static> From<Node<Spec>> for Node<dyn InternalNodeSpec> {
     fn from(value: Node<Spec>) -> Self {
         Node {
             core: value.core,
             owner_document: value.owner_document,
         }
+    }
+}
+
+impl<Spec: InternalNodeSpec + 'static> From<&Node<Spec>> for Node<dyn InternalNodeSpec> {
+    fn from(value: &Node<Spec>) -> Self {
+        value.clone().into()
+    }
+}
+
+impl<Spec: InternalNodeSpec + 'static> From<&mut Node<Spec>> for Node<dyn InternalNodeSpec> {
+    fn from(value: &mut Node<Spec>) -> Self {
+        value.clone().into()
     }
 }
 
@@ -623,6 +897,8 @@ impl std::fmt::Display for Node<dyn InternalNodeSpec> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{sax::parser::XMLReaderBuilder, tree::TreeBuildHandler};
+
     use super::*;
 
     #[test]
@@ -665,5 +941,149 @@ mod tests {
                 .insert_next_sibling(elem2.clone())
                 .is_err_and(|err| matches!(err, XMLTreeError::CyclicReference))
         );
+    }
+
+    #[test]
+    fn document_order_comparison_tests() {
+        let mut parser = XMLReaderBuilder::new()
+            .set_handler(TreeBuildHandler::default())
+            .build();
+
+        const CASE: &str = r#"<?xml version="1.0"?>
+        <!DOCTYPE root [
+            <!ELEMENT root   ANY>
+            <!ATTLIST root   foo   CDATA #IMPLIED>
+            <!ELEMENT child  ANY>
+            <!ATTLIST child  bar   CDATA #IMPLIED
+                             xmlns CDATA #FIXED "http://example.com/pre"
+                             hoge  CDATA #IMPLIED>
+            <!ELEMENT child2 ANY>
+            <!ATTLIST child2 xmlns CDATA #FIXED "">
+            <!ELEMENT child3 ANY>
+            <!ENTITY  ent "in entity reference">
+        ]>
+        <!-- before document element -->
+        <?pi before document element?>
+        <root foo="foo">
+            child of 'foo'
+            <?pi in document element1?>
+            <!-- in document element1 -->
+            <child bar="bar" xmlns="http://example.com/pre" hoge="hoge">
+                child of 'child'
+                <child2 xmlns=""/>
+                <![CDATA[child of 'child2']]>
+                &ent;
+                <?pi in document element2?>
+                <!-- in document element2 -->
+                <child3 xml:lang="ch" />
+            </child>
+        </root>
+        <?pi after document element?>
+        <!-- after document element -->"#;
+
+        parser.parse_str(CASE, None).unwrap();
+        assert!(!parser.handler.fatal_error);
+        let document = parser.handler.document;
+        let mut children = Some(Node::<dyn NodeSpec>::from(document.clone()));
+        while let Some(now) = children {
+            let mut others = Some(Node::<dyn NodeSpec>::from(document.clone()));
+            let mut pre = true;
+            while let Some(other) = others {
+                if now.is_same_node(other.clone()) {
+                    assert!(now.compare_document_order(other.clone()).unwrap().is_eq());
+                    pre = false;
+                    if let Some(element) = now.as_element() {
+                        for att in element.attributes() {
+                            assert!(att.compare_document_order(other.clone()).unwrap().is_gt());
+                            assert!(now.compare_document_order(att).unwrap().is_lt());
+                        }
+                    }
+                } else {
+                    assert_eq!(
+                        pre,
+                        now.compare_document_order(other.clone()).unwrap().is_gt()
+                    );
+                    if let Some(element) = now.as_element() {
+                        for att in element.attributes() {
+                            assert_eq!(
+                                pre,
+                                att.compare_document_order(other.clone()).unwrap().is_gt()
+                            );
+                        }
+                    }
+                    if let Some(element) = other.as_element() {
+                        for att in element.attributes() {
+                            assert_eq!(pre, now.compare_document_order(att).unwrap().is_gt());
+                        }
+                    }
+                }
+
+                if let Some(first) = other.first_child() {
+                    others = Some(first);
+                } else if let Some(next) = other.next_sibling() {
+                    others = Some(next);
+                } else {
+                    others = None;
+                    let mut parent = other.parent_node();
+                    while let Some(now) = parent {
+                        if let Some(next) = now.next_sibling() {
+                            others = Some(next);
+                            break;
+                        }
+                        parent = now.parent_node();
+                    }
+                }
+            }
+
+            if let Some(first) = now.first_child() {
+                children = Some(first);
+            } else if let Some(next) = now.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = now.parent_node();
+                while let Some(now) = parent {
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn base_uri_tests() {
+        // Testing XML Base Conformance
+        // https://www.w3.org/XML/2006/12/xmlbase-testing.html
+
+        const CASES: &[&str] = &[
+            r#"<elt xml:base="http://www.example.org/~Dürst/"/>"#,
+            r#"<outer xml:base="http://www.example.org/one/two"> <inner xml:base=""/> </outer>"#,
+            r#"<elt xml:base="http://www.example.org/one/two#frag"/>"#,
+            r##"<outer xml:base="http://www.example.org/one/two"> <inner xml:base="#frag"/> </outer>"##,
+        ];
+        const TARGETS: &[&str] = &["elt", "inner", "elt", "inner"];
+        const EXPECTED: &[&str] = &[
+            "http://www.example.org/~Dürst/",
+            "http://www.example.org/one/two",
+            "http://www.example.org/one/two",
+            "http://www.example.org/one/two",
+        ];
+
+        let mut parser = XMLReaderBuilder::new()
+            .set_handler(TreeBuildHandler::default())
+            .build();
+        for (i, &case) in CASES.iter().enumerate() {
+            parser.parse_str(case, None).unwrap();
+            let document = parser.handler.document.clone();
+            for elem in document.get_elements_by_qname(TARGETS[i]) {
+                assert_eq!(
+                    elem.base_uri().unwrap().as_unescaped_str().unwrap(),
+                    EXPECTED[i]
+                );
+            }
+        }
     }
 }

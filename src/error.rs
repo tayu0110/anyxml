@@ -85,6 +85,7 @@ pub enum XMLError {
     ParserAmbiguousElementContentModel,
     ParserDuplicateMixedContent,
     ParserInvalidAttlistDecl,
+    ParserMismatchXMLIDAttributeType,
     ParserDuplicateAttlistDecl,
     ParserDuplicateTokensInAttlistDecl,
     ParserMultipleIDAttributePerElement,

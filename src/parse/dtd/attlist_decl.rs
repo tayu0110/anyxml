@@ -5,7 +5,7 @@ use crate::{
     error::XMLError,
     sax::{
         AttributeType, DefaultDecl,
-        error::{fatal_error, validity_error, warning},
+        error::{error, fatal_error, validity_error, warning},
         handler::SAXHandler,
         parser::{ParserOption, XMLReader},
         source::InputSource,
@@ -249,7 +249,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
 
         // parse AttType
         self.grow()?;
-        let atttype = match self.source.content_bytes() {
+        let mut atttype = match self.source.content_bytes() {
             [b'(', ..] => {
                 // Enumeration
                 // [59] Enumeration ::= '(' S? Nmtoken (S? '|' S? Nmtoken)* S? ')'
@@ -541,6 +541,18 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 DefaultDecl::None(buffer.into_boxed_str())
             }
         };
+
+        if att_name == "xml:id" && atttype != AttributeType::ID {
+            error!(
+                self,
+                ParserMismatchXMLIDAttributeType, "The attribute type of 'xml:id' must be ID."
+            );
+            // overwrite attribute type
+            atttype = AttributeType::ID;
+
+            // The validation of DefaultDecl is delegated to the same method
+            // used for other attribute declarations.
+        }
 
         if let DefaultDecl::FIXED(def) | DefaultDecl::None(def) = &default_decl {
             match &atttype {

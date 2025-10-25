@@ -128,6 +128,13 @@ impl InternalNodeSpec for DocumentSpec {
     }
 }
 
+/// The root node of the document tree that represents the XML document itself.
+///
+/// It mostly covers the information provided by the "Document Information Item"
+/// in the [XML Infoset](https://www.w3.org/TR/xml-infoset/).
+///
+/// # Reference
+/// [2.1. The Document Information Item](https://www.w3.org/TR/xml-infoset/#infoitem.document)
 pub type Document = Node<DocumentSpec>;
 
 impl Document {
@@ -270,6 +277,7 @@ impl Document {
         NotationDecl::new(name.into(), system_id, public_id, self.clone())
     }
 
+    /// Returns the document element. If no document element exists, return [`None`].
     pub fn document_element(&self) -> Option<Element> {
         self.core
             .borrow()
@@ -282,6 +290,7 @@ impl Document {
             })
     }
 
+    /// Returns the document type. If no document type exists, return [`None`].
     pub fn document_type(&self) -> Option<DocumentType> {
         self.core
             .borrow()
@@ -295,7 +304,7 @@ impl Document {
     }
 
     /// If XML declaration is present, return the version specified in the declaration.  \
-    /// Otherwise, return `None`.
+    /// Otherwise, return [`None`].
     pub fn version(&self) -> Option<Rc<str>> {
         self.core.borrow().spec.version.clone()
     }
@@ -306,7 +315,7 @@ impl Document {
 
     /// If XML declaration is present and it has the encoding declaration,
     /// return the encoding specified in the declaration.  \
-    /// Otherwise, return `None`.
+    /// Otherwise, return [`None`].
     pub fn encoding(&self) -> Option<Rc<str>> {
         self.core.borrow().spec.encoding.clone()
     }
@@ -326,11 +335,24 @@ impl Document {
         self.core.borrow_mut().spec.standalone = standalone;
     }
 
-    pub fn base_uri(&self) -> Rc<URIStr> {
+    /// Return the base URI of this document.
+    ///
+    /// # Note
+    /// The [`Node::base_uri`] method is common to all node types and,
+    /// due to implementation constraints, returns a [`URIString`].  \
+    /// URI strings are often short, so performance differences should rarely be noticeable.
+    /// However, since no allocation occurs, [`Document::document_base_uri`] might be more efficient.
+    pub fn document_base_uri(&self) -> Rc<URIStr> {
         self.core.borrow().spec.base_uri.clone()
     }
 
-    pub fn set_base_uri(&mut self, base_uri: impl Into<Rc<URIStr>>) -> Result<(), XMLTreeError> {
+    /// Set the base URI for the document.
+    ///
+    /// The base URI must be an absolute URI.
+    pub fn set_document_base_uri(
+        &mut self,
+        base_uri: impl Into<Rc<URIStr>>,
+    ) -> Result<(), XMLTreeError> {
         let base_uri = base_uri.into();
         if !base_uri.is_absolute() {
             return Err(XMLTreeError::BaseURINotAbsolute);
@@ -338,6 +360,102 @@ impl Document {
 
         self.core.borrow_mut().spec.base_uri = base_uri;
         Ok(())
+    }
+
+    /// Returns the element with an ID attribute whose attribute value is `id`.
+    ///
+    /// For invalid XML documents, multiple elements may have the same ID attribute value.  \
+    /// In such cases, the earliest element appearing in document order is returned.
+    pub fn get_element_by_id(&self, id: &str) -> Option<Element> {
+        let mut children = self.document_element().map(Node::<dyn NodeSpec>::from);
+        while let Some(child) = children {
+            if let Some(element) = child.as_element() {
+                for att in element.attributes().filter(|att| att.is_id()) {
+                    if att.value() == id {
+                        return Some(element);
+                    }
+                }
+            }
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = child.parent_node();
+                while let Some(now) = parent {
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
+        None
+    }
+
+    /// Returns the elements whose QName is `qname`.
+    pub fn get_elements_by_qname(&self, qname: &str) -> impl Iterator<Item = Element> {
+        let mut children = self.document_element().map(Node::<dyn NodeSpec>::from);
+        let mut ret = vec![];
+        while let Some(child) = children {
+            if let Some(element) = child.as_element()
+                && element.name().as_ref() == qname
+            {
+                ret.push(element);
+            }
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = child.parent_node();
+                while let Some(now) = parent {
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
+        ret.into_iter()
+    }
+
+    /// Returns the elements whose expanded name is {`namespace_name`}`local_name`.
+    pub fn get_elements_by_expanded_name(
+        &self,
+        local_name: &str,
+        namespace_name: Option<&str>,
+    ) -> impl Iterator<Item = Element> {
+        let mut children = self.document_element().map(Node::<dyn NodeSpec>::from);
+        let mut ret = vec![];
+        while let Some(child) = children {
+            if let Some(element) = child.as_element()
+                && element.local_name().as_ref() == local_name
+                && element.namespace_name().as_deref() == namespace_name
+            {
+                ret.push(element);
+            }
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = child.parent_node();
+                while let Some(now) = parent {
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
+        ret.into_iter()
     }
 }
 

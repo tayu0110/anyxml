@@ -268,6 +268,22 @@ mod tests {
         assert_eq!(base.resolve(&rel).as_escaped_str(), "http://a/b/c/g#s/./x");
         let rel = URIString::parse("g#s/../x").unwrap();
         assert_eq!(base.resolve(&rel).as_escaped_str(), "http://a/b/c/g#s/../x");
+
+        // [Testing XML Base Conformance](https://www.w3.org/XML/2006/12/xmlbase-testing.html)
+        assert_eq!(
+            URIString::parse("http://www.example.org/one/two")
+                .unwrap()
+                .resolve(&URIString::parse("").unwrap())
+                .as_escaped_str(),
+            "http://www.example.org/one/two"
+        );
+        assert_eq!(
+            URIString::parse("http://www.example.org/one/two#frag")
+                .unwrap()
+                .resolve(&URIString::parse("").unwrap())
+                .as_escaped_str(),
+            "http://www.example.org/one/two"
+        );
     }
 
     #[cfg(target_family = "windows")]

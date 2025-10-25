@@ -44,7 +44,10 @@ use crate::{
         handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
         source::InputSource,
     },
-    tree::{convert::NodeKind, node::InternalNodeSpec},
+    tree::{
+        convert::NodeKind,
+        node::{InternalNodeSpec, NodeSpec},
+    },
     uri::URIStr,
 };
 
@@ -281,8 +284,10 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
     }
 
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
+        self.document = Document::new();
+        self.node = self.document.clone().into();
         self.document
-            .set_base_uri(locator.system_id().as_ref())
+            .set_document_base_uri(locator.system_id().as_ref())
             .ok();
         self.handler.set_document_locator(locator);
     }
@@ -362,7 +367,8 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
                         .ok();
 
                     let local_name = att.local_name.as_deref().unwrap_or(&att.qname);
-                    if let Some(mut attribute) = elem.get_attribute(local_name, att.uri.as_deref())
+                    if let Some(mut attribute) =
+                        elem.get_attribute_node(local_name, att.uri.as_deref())
                     {
                         if att.is_specified() {
                             attribute.set_specified();
@@ -428,4 +434,108 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
         self.handler
             .unparsed_entity_decl(name, public_id, system_id, notation_name);
     }
+}
+
+fn compare_document_order(
+    left: Node<dyn NodeSpec>,
+    right: Node<dyn NodeSpec>,
+) -> Option<std::cmp::Ordering> {
+    use std::cmp::Ordering::*;
+
+    if left.is_same_node(right.clone()) {
+        return Some(Equal);
+    }
+    if !left.is_same_owner_document(&right) {
+        return None;
+    }
+
+    let mut ldepth = 0;
+    let mut lp = left.clone();
+    while let Some(par) = lp.parent_node() {
+        ldepth += 1;
+        lp = par.into();
+    }
+    let mut rdepth = 0;
+    let mut rp = right.clone();
+    while let Some(par) = rp.parent_node() {
+        rdepth += 1;
+        rp = par.into();
+    }
+
+    // they are not on the same document tree
+    if !lp.is_same_node(rp) {
+        return None;
+    }
+
+    let mut lp = left.clone();
+    let mut rp = right.clone();
+    while ldepth > rdepth {
+        ldepth -= 1;
+        lp = lp.parent_node().unwrap().into();
+    }
+    if lp.is_same_node(rp.clone()) {
+        return Some(Greater);
+    }
+    while ldepth < rdepth {
+        rdepth -= 1;
+        rp = rp.parent_node().unwrap().into();
+    }
+    if lp.is_same_node(rp.clone()) {
+        return Some(Less);
+    }
+
+    while let Some(lpar) = lp.parent_node()
+        && let Some(rpar) = rp.parent_node()
+        && !lpar.is_same_node(rpar.clone())
+    {
+        lp = lpar.into();
+        rp = rpar.into();
+    }
+
+    match (lp.node_type(), rp.node_type()) {
+        // Attribute and Namespace precede descendant nodes of the parent element,
+        // so if the other is neither an Attribute nor a Namespace, it must precede it.
+        // Additionally, the Namespace precedes the Attribute.
+        //
+        // Reference:
+        // https://www.w3.org/TR/1999/REC-xpath-19991116/#dt-document-order
+        (NodeType::Namespace, NodeType::Namespace) => {
+            let lp = lp.as_namespace().unwrap();
+            let rp = rp.as_namespace().unwrap();
+            // Since prefixes are unique within elements,
+            // they can be safely used for comparison.
+            return lp
+                .prefix()
+                .unwrap_or_default()
+                .partial_cmp(&rp.prefix().unwrap_or_default());
+        }
+        (NodeType::Namespace, _) => return Some(Less),
+        (_, NodeType::Namespace) => return Some(Greater),
+        (NodeType::Attribute, NodeType::Attribute) => {
+            let elem = lp.parent_node().unwrap().as_element().unwrap();
+            for att in elem.attributes() {
+                if lp.is_same_node(att.clone()) {
+                    return Some(Less);
+                } else if rp.is_same_node(att.clone()) {
+                    return Some(Greater);
+                }
+            }
+            // is it possible to reach here?
+            return None;
+        }
+        (NodeType::Attribute, _) => return Some(Less),
+        (_, NodeType::Attribute) => return Some(Greater),
+        // DocumentType always precedes Element.
+        (NodeType::DocumentType, NodeType::Element) => return Some(Less),
+        (NodeType::Element, NodeType::DocumentType) => return Some(Greater),
+        _ => {}
+    }
+
+    while let Some(rprev) = rp.previous_sibling() {
+        if lp.is_same_node(rprev.clone()) {
+            return Some(Less);
+        }
+        rp = rprev;
+    }
+    Some(Greater)
 }

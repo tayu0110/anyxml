@@ -24,6 +24,13 @@ impl NodeSpec for ProcessingInstructionSpec {
     }
 }
 
+/// The leaf node of the document tree that represents a processing instruction of the XML document.
+///
+/// It mostly covers the information provided by the "Processing Instruction Information Item"
+/// in the [XML Infoset](https://www.w3.org/TR/xml-infoset/).
+///
+/// # Reference
+/// [2.4. Processing Instruction Information Items](https://www.w3.org/TR/xml-infoset/#infoitem.pi)
 pub type ProcessingInstruction = Node<ProcessingInstructionSpec>;
 
 impl ProcessingInstruction {

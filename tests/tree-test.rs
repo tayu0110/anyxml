@@ -251,3 +251,121 @@ fn tree_dump_tests() {
         }
     }
 }
+
+// reference of test method: https://www.w3.org/XML/2005/01/xml-id/runtests.xsl
+#[test]
+fn xml_id_tests() {
+    let mut reader = XMLReaderBuilder::new()
+        .set_handler(TreeBuildHandler::default())
+        .build();
+    reader
+        .parse_uri(
+            URIString::parse_file_path(
+                Path::new("resources/xml-id/test-suite.xml")
+                    .canonicalize()
+                    .unwrap(),
+            )
+            .unwrap(),
+            None,
+        )
+        .unwrap();
+
+    let test_suite = reader.handler.document.clone();
+    for test_case in test_suite.get_elements_by_qname("test-case") {
+        eprintln!(
+            "--- id: {} ---",
+            test_case.get_attribute("id", None).unwrap()
+        );
+        if let Some(feature) = test_case.get_attribute("feature", None) {
+            eprintln!("skip because the feature '{feature}' is not supported.");
+            continue;
+        }
+
+        let file_path = test_case
+            .get_elements_by_qname("file-path")
+            .next()
+            .unwrap()
+            .first_child()
+            .unwrap()
+            .text_content();
+        for scenario in test_case.get_elements_by_qname("scenario") {
+            let input_file = scenario
+                .get_elements_by_qname("input-file")
+                .next()
+                .unwrap()
+                .first_child()
+                .unwrap()
+                .text_content();
+            let target_file = format!("resources/xml-id/{file_path}/{input_file}");
+            eprintln!("target-file='{target_file}'");
+            let expected = scenario
+                .get_elements_by_qname("result")
+                .next()
+                .unwrap()
+                .first_child()
+                .unwrap()
+                .text_content();
+
+            reader
+                .parse_uri(
+                    URIString::parse_file_path(Path::new(&target_file).canonicalize().unwrap())
+                        .unwrap(),
+                    None,
+                )
+                .unwrap();
+            let mut buf = String::new();
+            let document = reader.handler.document.clone();
+            let mut children = document.document_element().map(Node::<dyn NodeSpec>::from);
+            while let Some(child) = children {
+                if let Some(element) = child.as_element() {
+                    for att in element.attributes() {
+                        if att.is_id() {
+                            let id = att.value();
+                            if document
+                                .get_element_by_id(&id)
+                                .unwrap()
+                                .is_same_node(element.clone())
+                            {
+                                write!(
+                                    buf,
+                                    "{} on {} is an ID ({}) ",
+                                    att.name(),
+                                    element.name(),
+                                    att.value()
+                                )
+                                .unwrap();
+                            }
+                        } else if att.name().as_ref() == "ref" {
+                            if let Some(elem) = document.get_element_by_id(&att.value()) {
+                                write!(buf, "Found {} ", elem.name()).unwrap();
+                            } else {
+                                write!(buf, "Found no element with id {} ", att.value()).unwrap();
+                            }
+                        }
+                    }
+                }
+
+                if let Some(first) = child.first_child() {
+                    children = Some(first);
+                } else if let Some(next) = child.next_sibling() {
+                    children = Some(next);
+                } else {
+                    children = None;
+                    let mut parent = child.parent_node();
+                    while let Some(now) = parent {
+                        if now.is_same_node(document.document_element().unwrap()) {
+                            break;
+                        }
+                        if let Some(next) = now.next_sibling() {
+                            children = Some(next);
+                            break;
+                        }
+                        parent = now.parent_node();
+                    }
+                }
+            }
+
+            assert_eq!(buf, expected);
+        }
+    }
+}

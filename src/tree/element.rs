@@ -73,6 +73,13 @@ impl InternalNodeSpec for ElementSpec {
     }
 }
 
+/// The internal or leaf node of the document tree that represents an element of the XML document.
+///
+/// It mostly covers the information provided by the "Element Information Item"
+/// in the [XML Infoset](https://www.w3.org/TR/xml-infoset/).
+///
+/// # Reference
+/// [2.2. Element Information Items](https://www.w3.org/TR/xml-infoset/#infoitem.element)
 pub type Element = Node<ElementSpec>;
 
 impl Element {
@@ -164,7 +171,7 @@ impl Element {
         self.namespace().map(|namespace| namespace.namespace_name())
     }
 
-    pub fn get_attribute(
+    pub fn get_attribute_node(
         &self,
         local_name: &str,
         namespace_name: Option<&str>,
@@ -178,6 +185,11 @@ impl Element {
                 .get(local_name, namespace_name)?,
             owner_document: self.owner_document.clone(),
         })
+    }
+
+    pub fn get_attribute(&self, local_name: &str, namespace_name: Option<&str>) -> Option<String> {
+        self.get_attribute_node(local_name, namespace_name)
+            .map(|attr| attr.value())
     }
 
     /// Set attributes for elements.
@@ -323,6 +335,26 @@ impl Element {
         Ok(())
     }
 
+    /// Check whether attributes matching both the local name and namespace name are specified.
+    pub fn has_attribute(&self, local_name: &str, namespace_name: Option<&str>) -> bool {
+        self.get_attribute_node(local_name, namespace_name)
+            .is_some()
+    }
+
+    /// Check whether the `attribute` is specified for this element.
+    ///
+    /// # Note
+    /// This method performs a stricter check than [`Element::has_attribute`].  \
+    /// It returns `true` only if all values held by `attribute` match a certain attribute
+    /// specified in this element, and only if that attribute and `attribute` are the same node.
+    pub fn has_attribute_node(&self, attribute: Attribute) -> bool {
+        self.get_attribute_node(
+            &attribute.local_name(),
+            attribute.namespace_name().as_deref(),
+        )
+        .is_some_and(|attr| attr.is_same_node(attribute))
+    }
+
     /// Returns an iterator that scans attributes specified by this element.
     ///
     /// # Note
@@ -339,7 +371,7 @@ impl Element {
     }
 
     /// Search for the prefix bound to the namespace name `namespace_name`.  \
-    /// If it is not found, return `None`.
+    /// If it is not found, return [`None`].
     ///
     /// # Note
     /// A namespace may bind to more than one prefix.  \
@@ -380,6 +412,11 @@ impl Element {
         implicit
     }
 
+    /// Returns the namespace declaration on `self` or a nearest ancestor that binds `prefix`.  \
+    /// If no such declaration exists, returns [`None`].
+    ///
+    /// # Note
+    /// If `prefix` is bound to some namespace name, that namespace name is always unique.
     pub fn search_namespace_by_prefix(&self, prefix: Option<&str>) -> Option<Namespace> {
         let mut implicit = None::<Namespace>;
         let mut current = Some(Node::<dyn InternalNodeSpec>::from(self.clone()));
@@ -513,6 +550,148 @@ impl Element {
         {
             namespace.unset_owner_element();
         }
+    }
+
+    /// If the element or any of its immediate ancestors has an `xml:space` attribute, it returns:
+    ///
+    /// - `Some(true)` if the value is "preserve"
+    /// - `Some(false)` if the value is "default"
+    /// - `None` for any other value
+    ///
+    /// If no such element exists, it returns `None`.
+    ///
+    /// # Reference
+    /// [2.10 White Space Handling](https://www.w3.org/TR/xml/#sec-white-space)
+    pub fn space_preserve(&self) -> Option<bool> {
+        if let Some(attribute) = self.get_attribute_node("space", Some(XML_XML_NAMESPACE)) {
+            let value = attribute.value();
+            return if value == "preserve" {
+                Some(true)
+            } else if value == "default" {
+                Some(false)
+            } else {
+                None
+            };
+        }
+
+        let mut parent = self.parent_node();
+        while let Some(now) = parent {
+            parent = now.parent_node();
+            if let Some(attribute) = now
+                .as_element()
+                .and_then(|element| element.get_attribute_node("space", Some(XML_XML_NAMESPACE)))
+            {
+                let value = attribute.value();
+                return if value == "preserve" {
+                    Some(true)
+                } else if value == "default" {
+                    Some(false)
+                } else {
+                    None
+                };
+            }
+        }
+        None
+    }
+
+    /// If any recent ancestor, including `self`, has an `xml:lang` attribute,
+    /// return [`None`] if the attribute value is an empty string,
+    /// otherwise return the attribute value wrapped in [`Some`].  \
+    /// If no ancestor has an `xml:lang` attribute specified, return [`None`].
+    ///
+    /// # Reference
+    /// [2.12 Language Identification](https://www.w3.org/TR/xml/#sec-lang-tag)
+    pub fn language(&self) -> Option<String> {
+        if let Some(attribute) = self.get_attribute_node("lang", Some(XML_XML_NAMESPACE)) {
+            let value = attribute.value();
+            return (!value.is_empty()).then_some(value);
+        }
+
+        let mut parent = self.parent_node();
+        while let Some(now) = parent {
+            parent = now.parent_node();
+            if let Some(attribute) = now
+                .as_element()
+                .and_then(|element| element.get_attribute_node("lang", Some(XML_XML_NAMESPACE)))
+            {
+                let value = attribute.value();
+                return (!value.is_empty()).then_some(value);
+            }
+        }
+        None
+    }
+
+    /// Returns the descendant elements whose QName is `qname`.
+    ///
+    /// `self` is not included in the returned elements.
+    pub fn get_elements_by_qname(&self, qname: &str) -> impl Iterator<Item = Element> {
+        let mut children = self.first_child();
+        let mut ret = vec![];
+        while let Some(child) = children {
+            if let Some(element) = child.as_element()
+                && element.name().as_ref() == qname
+            {
+                ret.push(element);
+            }
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = child.parent_node();
+                while let Some(now) = parent {
+                    if self.is_same_node(now.clone()) {
+                        break;
+                    }
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
+        ret.into_iter()
+    }
+
+    /// Returns the descendant elements whose expanded name is {`namespace_name`}`local_name`.
+    ///
+    /// `self` is not included in the returned elements.
+    pub fn get_elements_by_expanded_name(
+        &self,
+        local_name: &str,
+        namespace_name: Option<&str>,
+    ) -> impl Iterator<Item = Element> {
+        let mut children = self.first_child();
+        let mut ret = vec![];
+        while let Some(child) = children {
+            if let Some(element) = child.as_element()
+                && element.local_name().as_ref() == local_name
+                && element.namespace_name().as_deref() == namespace_name
+            {
+                ret.push(element);
+            }
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = child.parent_node();
+                while let Some(now) = parent {
+                    if self.is_same_node(now.clone()) {
+                        break;
+                    }
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
+        ret.into_iter()
     }
 }
 
@@ -699,5 +878,67 @@ impl NamespaceMap {
         self.prefix.insert(prefix, namespace.core.clone());
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{sax::parser::XMLReaderBuilder, tree::TreeBuildHandler};
+
+    #[test]
+    fn get_language_tests() {
+        let mut parser = XMLReaderBuilder::new()
+            .set_handler(TreeBuildHandler::default())
+            .build();
+
+        const CASE: &str = r#"<root>
+            <child xml:lang="ja">
+                <child2 />
+                <child3 xml:lang="ch" />
+            </child>
+            <child4 xml:lang="en">
+                <child5 xml:lang="">
+                    <child6 />
+                    <child7 xml:lang="fr" />
+                </child5>
+            </child4>
+        </root>"#;
+
+        parser.parse_str(CASE, None).unwrap();
+        assert!(!parser.handler.fatal_error);
+        let document = parser.handler.document;
+        let mut children = document.first_child();
+        while let Some(child) = children {
+            if let Some(element) = child.as_element() {
+                let lang = element.language();
+                match element.name().as_ref() {
+                    "root" => assert_eq!(lang.as_deref(), None),
+                    "child" => assert_eq!(lang.as_deref(), Some("ja")),
+                    "child2" => assert_eq!(lang.as_deref(), Some("ja")),
+                    "child3" => assert_eq!(lang.as_deref(), Some("ch")),
+                    "child4" => assert_eq!(lang.as_deref(), Some("en")),
+                    "child5" => assert_eq!(lang.as_deref(), None),
+                    "child6" => assert_eq!(lang.as_deref(), None),
+                    "child7" => assert_eq!(lang.as_deref(), Some("fr")),
+                    _ => unreachable!(),
+                }
+            }
+
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut parent = child.parent_node();
+                while let Some(now) = parent {
+                    if let Some(next) = now.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = now.parent_node();
+                }
+            }
+        }
     }
 }

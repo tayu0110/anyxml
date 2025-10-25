@@ -1,7 +1,7 @@
 // deno run -A resources/get-xmlconf.ts
-import * as path from "jsr:@std/path";
-import { exists } from "jsr:@std/fs/exists";
-import unzipper from "npm:unzipper";
+import * as path from "jsr:@std/path@1.1.0";
+import { exists } from "jsr:@std/fs@1.0.18";
+import unzipper from "npm:unzipper@0.12.3";
 
 const XMLTS_BASENAME: string = "xmlts20130923";
 const XMLTS_FILENAME: string = `${XMLTS_BASENAME}.zip`;

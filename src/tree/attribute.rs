@@ -6,6 +6,7 @@ use std::{
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE,
     save::write_escaped_att_value,
+    sax::AttributeType,
     tree::{
         Element, NodeType, XMLTreeError,
         convert::NodeKind,
@@ -93,6 +94,19 @@ impl InternalNodeSpec for AttributeSpec {
     }
 }
 
+/// The internal or leaf node of the document tree that represents an attribute of the XML document.
+///
+/// It mostly covers the information provided by the "Attribute Information Item"
+/// in the [XML Infoset](https://www.w3.org/TR/xml-infoset/).
+///
+/// # Note
+/// An [`Attribute`] node can have an [`Element`] node as its parent,
+/// but it cannot be a child of an [`Element`] node.
+///
+/// This structure is based on the [XPath 1.0 data model](https://www.w3.org/TR/1999/REC-xpath-19991116/#data-model).
+///
+/// # Reference
+/// [2.3. Attribute Information Items](https://www.w3.org/TR/xml-infoset/#infoitem.attribute)
 pub type Attribute = Node<AttributeSpec>;
 
 impl Attribute {
@@ -303,6 +317,9 @@ impl Attribute {
         buf
     }
 
+    /// If this attribute is explicitly specified, it returns `true`.  \
+    /// If it is implicitly specified, such as through a default value
+    /// in an attribute list declaration, it returns `false`.
     pub fn is_specified(&self) -> bool {
         self.core.borrow().spec.specified
     }
@@ -313,6 +330,22 @@ impl Attribute {
 
     pub(crate) fn unset_specified(&mut self) {
         self.core.borrow_mut().spec.specified = false;
+    }
+
+    /// If this attribute is the ID attribute, return `true`.
+    ///
+    /// # Reference
+    /// - [3.3.1 Attribute Types](https://www.w3.org/TR/xml/#sec-attribute-types)
+    /// - [xml:id Version 1.0](https://www.w3.org/TR/xml-id/)
+    pub fn is_id(&self) -> bool {
+        self.name().as_ref() == "xml:id"
+            || self
+                .owner_document()
+                .document_type()
+                .and_then(|doctype| {
+                    doctype.get_attlist_decl(&self.owner_element()?.name(), &self.name())
+                })
+                .is_some_and(|attlist| matches!(*attlist.attr_type(), AttributeType::ID))
     }
 }
 

@@ -25,16 +25,33 @@ impl URIStr {
         }
     }
 
+    /// Resolve the relative reference `reference` using `self` as the base URI.
+    ///
+    /// `self` must be convertible to an [absolute URI](https://datatracker.ietf.org/doc/html/rfc3986#section-4.3)
+    /// through [fragment](https://datatracker.ietf.org/doc/html/rfc3986#section-3.5) removal
+    /// and normalization.
+    ///
     /// # Reference
-    /// [5.2.  Relative Resolution](https://datatracker.ietf.org/doc/html/rfc3986#section-5.2)
+    /// - [5.1.  Establishing a Base URI](https://datatracker.ietf.org/doc/html/rfc3986#section-5.1)
+    /// - [5.2.  Relative Resolution](https://datatracker.ietf.org/doc/html/rfc3986#section-5.2)
     pub fn resolve(&self, reference: &Self) -> URIString {
         use Component::*;
 
-        assert!(
-            self.is_absolute(),
-            "'{}' is not absolute",
-            self.as_escaped_str()
-        );
+        let base = if self.is_absolute() {
+            Cow::Borrowed(self)
+        } else {
+            let mut base = self.to_owned();
+            base.normalize();
+            if let Some(frag) = base.uri.bytes().position(|b| b == b'#') {
+                base.uri.truncate(frag);
+            }
+            assert!(
+                base.is_absolute(),
+                "'{}' is not absolute",
+                base.as_escaped_str()
+            );
+            Cow::Owned(base)
+        };
 
         let mut ref_components = reference.components().peekable();
         if ref_components
@@ -52,13 +69,13 @@ impl URIStr {
         {
             // has authority
             let mut ret = URIString {
-                uri: [self.scheme().unwrap(), ":", &reference.uri].concat(),
+                uri: [base.scheme().unwrap(), ":", &reference.uri].concat(),
             };
             ret.normalize();
             return ret;
         }
 
-        let mut components = self.components().peekable();
+        let mut components = base.components().peekable();
         let mut uri = String::new();
         if let Some(Scheme(scheme)) = components.next_if(|comp| matches!(comp, Scheme(_))) {
             uri.push_str(scheme);
@@ -139,10 +156,13 @@ impl URIStr {
         URIString { uri }
     }
 
+    /// Return the escaped URI string.
     pub fn as_escaped_str(&self) -> &str {
         &self.uri
     }
 
+    /// Return the unescaped URI string.  \
+    /// If unescaping fails, return `None`.
     pub fn as_unescaped_str(&self) -> Option<Cow<'_, str>> {
         unescape(&self.uri).ok()
     }
@@ -159,11 +179,15 @@ impl URIStr {
         self.scheme().is_none()
     }
 
+    /// # Reference
+    /// [3.1.  Scheme](https://datatracker.ietf.org/doc/html/rfc3986#section-3.1)
     pub fn scheme(&self) -> Option<&str> {
         let pos = self.uri.bytes().position(is_reserved)?;
         (self.uri.as_bytes()[pos] == b':').then_some(&self.uri[..pos])
     }
 
+    /// # Reference
+    /// [3.2.  Authority](https://datatracker.ietf.org/doc/html/rfc3986#section-3.2)
     pub fn authority(&self) -> Option<&str> {
         let rem = self
             .uri
@@ -172,10 +196,14 @@ impl URIStr {
         Some(rem.split_once('/').map(|p| p.0).unwrap_or(rem))
     }
 
+    /// # Reference
+    /// [3.2.1.  User Information](https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.1)
     pub fn userinfo(&self) -> Option<&str> {
         Some(self.authority()?.split_once('@')?.0)
     }
 
+    /// # Reference
+    /// [3.2.2.  Host](https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.2)
     pub fn host(&self) -> Option<&str> {
         let mut auth = self.authority()?;
         if let Some((_userinfo, rem)) = auth.split_once('@') {
@@ -189,11 +217,15 @@ impl URIStr {
         Some(auth)
     }
 
+    /// # Reference
+    /// [3.2.3.  Port](https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.3)
     pub fn port(&self) -> Option<&str> {
         let (_, port) = self.authority()?.rsplit_once(':')?;
         port.bytes().all(|b| b.is_ascii_digit()).then_some(port)
     }
 
+    /// # Reference
+    /// [3.3.  Path](https://datatracker.ietf.org/doc/html/rfc3986#section-3.3)
     pub fn path(&self) -> &str {
         let mut path = &self.uri;
         if let Some(scheme) = self.scheme() {
@@ -209,6 +241,8 @@ impl URIStr {
         path.split_once(['?', '#']).map(|p| p.0).unwrap_or(path)
     }
 
+    /// # Reference
+    /// [3.4.  Query](https://datatracker.ietf.org/doc/html/rfc3986#section-3.4)
     pub fn query(&self) -> Option<&str> {
         let pos = self.uri.bytes().position(|b| b == b'?' || b == b'#')?;
         if self.uri.as_bytes()[pos] == b'#' {
@@ -219,11 +253,14 @@ impl URIStr {
         Some(&query[..pos])
     }
 
+    /// # Reference
+    /// [3.5.  Fragment](https://datatracker.ietf.org/doc/html/rfc3986#section-3.5)
     pub fn fragment(&self) -> Option<&str> {
         let pos = self.uri.bytes().position(|b| b == b'#')?;
         Some(&self.uri[pos + 1..])
     }
 
+    /// Return an iterator that scans the URI components.
     pub fn components(&self) -> Components<'_> {
         Components::new(&self.uri)
     }

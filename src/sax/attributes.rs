@@ -132,6 +132,12 @@ impl Attributes {
         use std::collections::hash_map::Entry::*;
 
         let index = self.attributes.len();
+        match self.index_by_qname.entry(attribute.qname.clone()) {
+            Vacant(entry) => {
+                entry.insert(index);
+            }
+            Occupied(_) => return Err((attribute, XMLError::ParserDuplicateAttributes)),
+        }
         if let Some(local_name) = attribute.local_name.clone() {
             match self.index_by_expanded_name.entry(local_name) {
                 Vacant(entry) => {
@@ -153,44 +159,9 @@ impl Attributes {
                 }
             }
             self.index_by_qname.insert(attribute.qname.clone(), index);
-            self.attributes.push(attribute);
-            Ok(index)
-        } else {
-            match self.index_by_qname.entry(attribute.qname.clone()) {
-                Vacant(entry) => {
-                    entry.insert(index);
-                    self.attributes.push(attribute);
-                    Ok(index)
-                }
-                Occupied(_) => Err((attribute, XMLError::ParserDuplicateAttributes)),
-            }
         }
-    }
-
-    pub(crate) fn set_namespace(
-        &mut self,
-        index: usize,
-        mut resolve_prefix: impl FnMut(&str) -> Option<Arc<str>>,
-    ) {
-        let attribute = &mut self.attributes[index];
-        let prefix = if let Some(local_name) = attribute.local_name.clone() {
-            if local_name.len() == attribute.qname.len() {
-                // According to the namespace specification, attribute names without prefixes
-                // do not belong to the default namespace, but rather belong to no namespace.
-                // Therefore, we need to do nothing.
-                attribute.uri = None;
-                return;
-            }
-            let prefix_len = attribute.qname.len() - local_name.len() - 1;
-            &attribute.qname[..prefix_len]
-        } else if let Some((prefix, local_name)) = attribute.qname.split_once(':') {
-            attribute.local_name = Some(local_name.into());
-            prefix
-        } else {
-            attribute.local_name = Some(attribute.qname.clone());
-            return;
-        };
-        attribute.uri = resolve_prefix(prefix);
+        self.attributes.push(attribute);
+        Ok(index)
     }
 }
 
