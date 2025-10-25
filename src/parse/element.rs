@@ -120,7 +120,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserUnexpectedEOF);
         }
 
-        let mut atts = Attributes::new();
+        let mut atts = vec![];
         let mut att_name = String::new();
         let mut att_value = String::new();
         while !matches!(self.source.content_bytes()[0], b'/' | b'>') {
@@ -164,15 +164,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 (declared, before_normalize != att_value.len())
             };
 
-            self.add_attribute(
-                &mut atts,
+            atts.push(self.create_attribute(
                 &att_name,
                 &att_value,
                 prefix_length,
                 true,
                 declared,
                 modified,
-            );
+            ));
 
             s = self.skip_whitespaces()?;
             if self.source.content_bytes().is_empty() {
@@ -189,7 +188,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 match default_decl {
                     DefaultDecl::REQUIRED => {
                         if self.config.is_enable(ParserOption::Validation)
-                            && !atts.contains_qname(attr)
+                            && atts.iter().all(|att| att.qname.as_ref() != attr)
                         {
                             // [VC: Required Attribute]
                             validity_error!(
@@ -202,7 +201,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         }
                     }
                     DefaultDecl::None(def) | DefaultDecl::FIXED(def) => {
-                        if !atts.contains_qname(attr) {
+                        if atts.iter().all(|att| att.qname.as_ref() != attr) {
                             if self.config.is_enable(ParserOption::Validation)
                                 && *is_external_markup
                                 && self.standalone == Some(true)
@@ -217,15 +216,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                                 );
                             }
                             let prefix_length = attr.find(':').unwrap_or(0);
-                            self.add_attribute(
-                                &mut atts,
+                            atts.push(self.create_attribute(
                                 attr,
                                 def,
                                 prefix_length,
                                 false,
                                 true,
                                 false,
-                            );
+                            ));
                         }
                     }
                     _ => {}
@@ -235,29 +233,60 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         self.attlistdecls = attlistdecls;
 
         // resolve namespaces for attribtues
-        if self.config.is_enable(ParserOption::Namespaces) {
-            for i in 0..atts.len() {
-                let att = &atts[i];
-                if att.is_nsdecl() {
-                    continue;
-                }
-                atts.set_namespace(i, |prefix| {
-                    if let Some(namespace) = self.namespaces.get(prefix) {
-                        Some(namespace.namespace_name)
+        let atts = {
+            let mut attributes = Attributes::new();
+            for mut att in atts {
+                if !att.is_nsdecl()
+                    && self.config.is_enable(ParserOption::Namespaces)
+                    && let Some(local_name) = att.local_name.as_deref()
+                {
+                    if local_name.len() == att.qname.len() {
+                        // According to the namespace specification, attribute names without prefixes
+                        // do not belong to the default namespace, but rather belong to no namespace.
+                        // Therefore, we need to do nothing.
+                        att.uri = None;
                     } else {
-                        // It is unclear what to do when the corresponding namespace cannot be found,
-                        // but for now, we will do nothing except for report an error.
-                        ns_error!(
-                            self,
-                            ParserUndefinedNamespace,
-                            "The namespace name for the prefix '{}' has not been declared.",
-                            prefix
-                        );
-                        None
+                        let prefix_len = att.qname.len() - local_name.len() - 1;
+                        let prefix = &att.qname[..prefix_len];
+                        att.uri = if let Some(namespace) = self.namespaces.get(prefix) {
+                            Some(namespace.namespace_name.clone())
+                        } else {
+                            // It is unclear what to do when the corresponding namespace cannot be found,
+                            // but for now, we will do nothing except for report an error.
+                            ns_error!(
+                                self,
+                                ParserUndefinedNamespace,
+                                "The namespace name for the prefix '{}' has not been declared.",
+                                prefix
+                            );
+                            None
+                        };
                     }
-                });
+                }
+                if let Err((att, _)) = attributes.push(att) {
+                    // check attribute constraints
+                    if self.config.is_enable(ParserOption::Namespaces) {
+                        // [NSC: Attributes Unique]
+                        fatal_error!(
+                            self,
+                            ParserDuplicateAttributes,
+                            "The attribute '{{{}}}{}' is duplicated",
+                            att.uri.as_deref().unwrap_or("(null)"),
+                            att.local_name.as_deref().unwrap()
+                        );
+                    } else {
+                        // [WFC: Unique Att Spec]
+                        fatal_error!(
+                            self,
+                            ParserDuplicateAttributes,
+                            "The attribute '{}' is duplicated.",
+                            att.qname
+                        );
+                    }
+                }
             }
-        }
+            attributes
+        };
         if self.config.is_enable(ParserOption::Validation) {
             let mut notation_attribute = false;
             for att in &atts {
@@ -735,16 +764,15 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         }
     }
 
-    fn add_attribute(
+    fn create_attribute(
         &mut self,
-        atts: &mut Attributes,
         att_name: &str,
         att_value: &str,
         prefix_length: usize,
         specified: bool,
         declared: bool,
         modified: bool,
-    ) {
+    ) -> Attribute {
         let mut att = if self.config.is_enable(ParserOption::Namespaces) {
             let mut uri = None;
             if (prefix_length == 5 && &att_name[..prefix_length] == "xmlns") || att_name == "xmlns"
@@ -882,26 +910,6 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 att.value
             );
         }
-        if let Err((att, _)) = atts.push(att) {
-            // check attribute constraints
-            if self.config.is_enable(ParserOption::Namespaces) {
-                // [NSC: Attributes Unique]
-                fatal_error!(
-                    self,
-                    ParserDuplicateAttributes,
-                    "The attribute '{{{}}}{}' is duplicated",
-                    att.uri.as_deref().unwrap_or("(null)"),
-                    att.local_name.as_deref().unwrap()
-                );
-            } else {
-                // [WFC: Unique Att Spec]
-                fatal_error!(
-                    self,
-                    ParserDuplicateAttributes,
-                    "The attribute '{}' is duplicated.",
-                    att.qname
-                );
-            }
-        }
+        att
     }
 }
