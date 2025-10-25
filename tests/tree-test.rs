@@ -260,7 +260,12 @@ fn xml_id_tests() {
         .build();
     reader
         .parse_uri(
-            URIString::parse_file_path("resources/xml-id/test-suite.xml").unwrap(),
+            URIString::parse_file_path(
+                Path::new("resources/xml-id/test-suite.xml")
+                    .canonicalize()
+                    .unwrap(),
+            )
+            .unwrap(),
             None,
         )
         .unwrap();
@@ -302,7 +307,11 @@ fn xml_id_tests() {
                 .text_content();
 
             reader
-                .parse_uri(URIString::parse_file_path(target_file).unwrap(), None)
+                .parse_uri(
+                    URIString::parse_file_path(Path::new(&target_file).canonicalize().unwrap())
+                        .unwrap(),
+                    None,
+                )
                 .unwrap();
             let mut buf = String::new();
             let document = reader.handler.document.clone();
