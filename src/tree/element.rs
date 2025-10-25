@@ -335,6 +335,26 @@ impl Element {
         Ok(())
     }
 
+    /// Check whether attributes matching both the local name and namespace name are specified.
+    pub fn has_attribute(&self, local_name: &str, namespace_name: Option<&str>) -> bool {
+        self.get_attribute_node(local_name, namespace_name)
+            .is_some()
+    }
+
+    /// Check whether the `attribute` is specified for this element.
+    ///
+    /// # Note
+    /// This method performs a stricter check than [`Element::has_attribute`].  \
+    /// It returns `true` only if all values held by `attribute` match a certain attribute
+    /// specified in this element, and only if that attribute and `attribute` are the same node.
+    pub fn has_attribute_node(&self, attribute: Attribute) -> bool {
+        self.get_attribute_node(
+            &attribute.local_name(),
+            attribute.namespace_name().as_deref(),
+        )
+        .is_some_and(|attr| attr.is_same_node(attribute))
+    }
+
     /// Returns an iterator that scans attributes specified by this element.
     ///
     /// # Note
@@ -392,6 +412,11 @@ impl Element {
         implicit
     }
 
+    /// Returns the namespace declaration on `self` or a nearest ancestor that binds `prefix`. \
+    /// If no such declaration exists, returns `None`.
+    ///
+    /// # Note
+    /// If `prefix` is bound to some namespace name, that namespace name is always unique.
     pub fn search_namespace_by_prefix(&self, prefix: Option<&str>) -> Option<Namespace> {
         let mut implicit = None::<Namespace>;
         let mut current = Some(Node::<dyn InternalNodeSpec>::from(self.clone()));
