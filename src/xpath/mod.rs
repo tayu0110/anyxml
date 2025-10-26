@@ -23,6 +23,7 @@ pub enum XPathError {
     WrongTypeConversion,
     UnresolvableFunctionName,
     UnresolvableVariableName,
+    InternalError,
 }
 
 pub struct XPathExpression {
@@ -33,8 +34,18 @@ pub struct XPathExpression {
 
 impl XPathExpression {
     pub fn evaluate(&mut self, document: Document) -> Result<XPathObject, XPathError> {
+        // clear context
+        self.context.stack.clear();
+
+        // initialize value stack and context
+        let mut initial = XPathNodeSet::default();
+        initial.push(&document);
+        self.context.push_object(initial.into());
+        self.context.node = Some(document.into());
+
+        // start evaluation
         self.do_evaluate(self.root)?;
-        todo!()
+        self.context.stack.pop().ok_or(XPathError::InternalError)
     }
 
     fn do_evaluate(&mut self, op: usize) -> Result<(), XPathError> {
