@@ -274,14 +274,19 @@ fn parse_node_test(
     } else if let Some(rem) = xpath.strip_prefix("processing-instruction(") {
         if let Some(rem) = rem.strip_prefix(')') {
             *xpath = rem;
-            Ok(NodeTest::ProcessingInstruction(usize::MAX))
+            Ok(NodeTest::ProcessingInstruction(None))
         } else {
             *xpath = rem;
             let literal = parse_literal(xpath, tree)?;
             *xpath = xpath
                 .strip_prefix(')')
                 .ok_or(XPathCompileError::InvalidNodeTest)?;
-            Ok(NodeTest::ProcessingInstruction(literal))
+            if let XPathSyntaxTree::Literal(literal) = &tree[literal] {
+                Ok(NodeTest::ProcessingInstruction(Some(literal.clone())))
+            } else {
+                // is it correct ???
+                Ok(NodeTest::ProcessingInstruction(None))
+            }
         }
     } else {
         let (ncname, rem) = parse_ncname(xpath)?;

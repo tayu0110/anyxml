@@ -1,17 +1,19 @@
 mod compile;
 mod function;
 mod ops;
+mod step;
 
 use std::{borrow::Cow, collections::HashMap};
 
 pub use compile::*;
 
 use crate::{
+    XML_NS_NAMESPACE, XML_XML_NAMESPACE,
     tree::{
-        Attribute, Comment, Document, Element, Node, ProcessingInstruction, Text,
+        Attribute, Comment, Document, Element, Node, NodeType, ProcessingInstruction, Text,
         convert::NodeKind, namespace::Namespace, node::NodeSpec,
     },
-    xpath::function::FunctionLibrary,
+    xpath::{function::FunctionLibrary, step::location_step},
 };
 
 pub enum XPathError {
@@ -47,28 +49,101 @@ impl XPathExpression {
             XPathSyntaxTree::Slash(left, right) => {
                 self.do_evaluate(left)?;
                 self.do_evaluate(right)?;
-                let right = self.context.stack.pop().unwrap();
-                let left = self.context.stack.pop().unwrap();
-                todo!("Slash")
             }
-            XPathSyntaxTree::LocationPathRoot => todo!(),
+            XPathSyntaxTree::LocationPathRoot => {
+                let mut node_set = XPathNodeSet::default();
+                node_set.push(self.context.node.clone().unwrap().owner_document());
+                self.context.push_object(node_set.into());
+            }
             XPathSyntaxTree::Step {
                 axis,
                 ref node_test,
-            } => todo!(),
+            } => {
+                let XPathObject::NodeSet(current_node_set) = self.context.stack.pop().unwrap()
+                else {
+                    return Err(XPathError::IncorrectOperandType);
+                };
+
+                let old_context_node = self.context.node.take();
+                let old_context_position = self.context.position;
+                let old_context_size = self.context.size;
+
+                self.context.size = current_node_set.len();
+                let mut new_node_set = XPathNodeSet::default();
+                for (i, node) in current_node_set.iter().enumerate() {
+                    self.context.position = i + 1;
+                    self.context.node = Some(node);
+                    location_step(&self.context, axis, node_test, &mut new_node_set);
+                }
+
+                self.context.node = old_context_node;
+                self.context.position = old_context_position;
+                self.context.size = old_context_size;
+                self.context.push_object(new_node_set.into());
+            }
             XPathSyntaxTree::Predicate {
                 argument,
                 expression,
             } => {
                 self.do_evaluate(argument)?;
-                todo!()
+                let XPathObject::NodeSet(node_set) = self.context.stack.pop().unwrap() else {
+                    return Err(XPathError::IncorrectOperandType);
+                };
+
+                let old_context_node = self.context.node.take();
+                let old_context_position = self.context.position;
+                let old_context_size = self.context.size;
+                self.context.size = node_set.len();
+                let mut new = XPathNodeSet::default();
+                for (i, node) in node_set.iter().enumerate() {
+                    self.context.position = i + 1;
+                    self.context.node = Some(node.clone());
+                    self.do_evaluate(expression)?;
+                    let ret = match self.context.stack.pop().unwrap() {
+                        XPathObject::Number(number) => number == (i + 1) as f64,
+                        object => object.as_boolean()?,
+                    };
+                    if ret {
+                        new.push(node);
+                    }
+                }
+
+                self.context.node = old_context_node;
+                self.context.position = old_context_position;
+                self.context.size = old_context_size;
+                self.context.push_object(new.into());
             }
             XPathSyntaxTree::FilterExpr {
                 expression,
                 predicate,
             } => {
                 self.do_evaluate(expression)?;
-                todo!()
+                let XPathObject::NodeSet(node_set) = self.context.stack.pop().unwrap() else {
+                    return Err(XPathError::IncorrectOperandType);
+                };
+
+                let old_context_node = self.context.node.take();
+                let old_context_position = self.context.position;
+                let old_context_size = self.context.size;
+                self.context.size = node_set.len();
+                let mut new = XPathNodeSet::default();
+                for (i, node) in node_set.iter().enumerate() {
+                    self.context.position = i + 1;
+                    self.context.node = Some(node.clone());
+                    self.do_evaluate(predicate)?;
+                    let ret = match self.context.stack.pop().unwrap() {
+                        XPathObject::Number(number) => number == (i + 1) as f64,
+                        object => object.as_boolean()?,
+                    };
+                    if ret {
+                        new.push(node);
+                    }
+                }
+
+                self.context.node = old_context_node;
+                self.context.position = old_context_position;
+                self.context.size = old_context_size;
+                self.context.push_object(new.into());
             }
             XPathSyntaxTree::FunctionCall {
                 ref name,
@@ -477,8 +552,30 @@ impl VariableSet {
     }
 }
 
-#[derive(Default)]
-struct NamespaceSet;
+struct NamespaceSet {
+    // (prefix, namespace name)
+    prefix_map: HashMap<Cow<'static, str>, Cow<'static, str>>,
+}
+
+impl NamespaceSet {
+    fn get_namespace_name(&self, prefix: Option<&str>) -> Option<&str> {
+        let prefix = prefix.unwrap_or("");
+        self.prefix_map
+            .get(prefix)
+            .map(|namespace_name| namespace_name.as_ref())
+    }
+}
+
+impl Default for NamespaceSet {
+    fn default() -> Self {
+        Self {
+            prefix_map: HashMap::from([
+                (Cow::Borrowed("xml"), Cow::Borrowed(XML_XML_NAMESPACE)),
+                (Cow::Borrowed("xmlns"), Cow::Borrowed(XML_NS_NAMESPACE)),
+            ]),
+        }
+    }
+}
 
 pub enum XPathCompileError {
     InvalidAbsoluteLocationPath,
@@ -518,8 +615,158 @@ enum NodeTest {
     QName(Box<str>),
     Comment,
     Text,
-    ProcessingInstruction(usize),
+    ProcessingInstruction(Option<Box<str>>),
     Node,
+}
+
+impl NodeTest {
+    fn verify_node_type(&self, node_type: NodeType) -> bool {
+        use NodeType::*;
+
+        matches!(
+            node_type,
+            Document
+                | Element
+                | Attribute
+                | Namespace
+                | ProcessingInstruction
+                | Comment
+                | Text
+                | CDATASection
+        )
+    }
+
+    fn match_node(
+        &self,
+        node: &Node<dyn NodeSpec>,
+        principal_node_type: NodeType,
+        namespace_set: &NamespaceSet,
+    ) -> bool {
+        assert!(matches!(
+            principal_node_type,
+            NodeType::Attribute | NodeType::Element | NodeType::Namespace
+        ));
+        if !self.verify_node_type(node.node_type()) {
+            return false;
+        }
+        match node.downcast() {
+            NodeKind::Document(_) => self.match_document(),
+            NodeKind::Element(element) => self.match_element(
+                &element,
+                matches!(principal_node_type, NodeType::Element),
+                namespace_set,
+            ),
+            NodeKind::Attribute(attribute) => self.match_attribute(
+                &attribute,
+                matches!(principal_node_type, NodeType::Attribute),
+                namespace_set,
+            ),
+            NodeKind::Namespace(namespace) => self.match_namespace(
+                &namespace,
+                matches!(principal_node_type, NodeType::Namespace),
+            ),
+            NodeKind::ProcessingInstruction(pi) => self.match_processing_instruction(&pi),
+            NodeKind::Comment(_) => self.match_comment(),
+            NodeKind::Text(_) | NodeKind::CDATASection(_) => self.match_text(),
+            _ => false,
+        }
+    }
+
+    fn match_document(&self) -> bool {
+        matches!(self, NodeTest::Node)
+    }
+
+    fn match_element(
+        &self,
+        element: &Element,
+        principal: bool,
+        namespace_set: &NamespaceSet,
+    ) -> bool {
+        match self {
+            NodeTest::Any => principal,
+            NodeTest::Node => true,
+            NodeTest::AnyLocalName(local) => local.as_ref() == element.local_name().as_ref(),
+            NodeTest::QName(qname) => {
+                if let Some((prefix, local_name)) = qname.split_once(':') {
+                    element
+                        .search_namespace_by_prefix(Some(prefix))
+                        .map(|namespace| namespace.namespace_name())
+                        .as_deref()
+                        .or_else(|| namespace_set.get_namespace_name(Some(prefix)))
+                        .is_some_and(|namespace_name| {
+                            element.namespace_name().as_deref() == Some(namespace_name)
+                                && local_name == element.local_name().as_ref()
+                        })
+                } else {
+                    qname.as_ref() == element.name().as_ref() && element.namespace_name().is_none()
+                }
+            }
+            NodeTest::Comment | NodeTest::ProcessingInstruction(_) | NodeTest::Text => false,
+        }
+    }
+
+    fn match_attribute(
+        &self,
+        attribute: &Attribute,
+        principal: bool,
+        namespace_set: &NamespaceSet,
+    ) -> bool {
+        match self {
+            NodeTest::Any => principal,
+            NodeTest::Node => true,
+            NodeTest::AnyLocalName(local) => local.as_ref() == attribute.local_name().as_ref(),
+            NodeTest::QName(qname) => {
+                if let Some((prefix, local_name)) = qname.split_once(':') {
+                    attribute
+                        .owner_element()
+                        .and_then(|element| element.search_namespace_by_prefix(Some(prefix)))
+                        .map(|namespace| namespace.namespace_name())
+                        .as_deref()
+                        .or_else(|| namespace_set.get_namespace_name(Some(prefix)))
+                        .is_some_and(|namespace_name| {
+                            attribute.namespace_name().as_deref() == Some(namespace_name)
+                                && local_name == attribute.local_name().as_ref()
+                        })
+                } else {
+                    qname.as_ref() == attribute.name().as_ref()
+                        && attribute.namespace_name().is_none()
+                }
+            }
+            NodeTest::Comment | NodeTest::ProcessingInstruction(_) | NodeTest::Text => false,
+        }
+    }
+
+    fn match_namespace(&self, namespace: &Namespace, principal: bool) -> bool {
+        match self {
+            NodeTest::Any => principal,
+            NodeTest::Node => true,
+            NodeTest::QName(name) | NodeTest::AnyLocalName(name) => {
+                name.as_ref() == namespace.prefix().as_deref().unwrap_or_default()
+            }
+            NodeTest::Comment | NodeTest::ProcessingInstruction(_) | NodeTest::Text => false,
+        }
+    }
+
+    fn match_processing_instruction(&self, pi: &ProcessingInstruction) -> bool {
+        match self {
+            NodeTest::Node => true,
+            NodeTest::QName(target) | NodeTest::AnyLocalName(target) => {
+                target.as_ref() == pi.target().as_ref()
+            }
+            NodeTest::ProcessingInstruction(literal) => literal
+                .as_deref()
+                .is_none_or(|literal| literal == pi.target().as_ref()),
+            NodeTest::Any | NodeTest::Comment | NodeTest::Text => false,
+        }
+    }
+
+    fn match_comment(&self) -> bool {
+        matches!(self, NodeTest::Comment | NodeTest::Node)
+    }
+
+    fn match_text(&self) -> bool {
+        matches!(self, NodeTest::Text | NodeTest::Node)
+    }
 }
 
 enum XPathSyntaxTree {
