@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use crate::{
-    tree::NodeType,
+    tree::{NodeType, namespace::Namespace},
     xpath::{Axis, NodeTest, XPathContext, XPathNodeSet},
 };
 
@@ -114,7 +116,44 @@ pub(super) fn location_step(
                 }
             }
         }
-        Axis::Namespace => todo!("namespace"),
+        Axis::Namespace => {
+            let mut namespace_map = HashMap::new();
+            if let Some(element) = context_node.as_element() {
+                for namespace in element.namespaces() {
+                    namespace_map.insert(namespace.prefix().unwrap_or_default(), namespace.clone());
+                    if node_test.match_namespace(&namespace, true) {
+                        node_set.push(namespace);
+                    }
+                }
+
+                let mut parent = element.parent_node();
+                while let Some(now) = parent {
+                    parent = now.parent_node();
+                    if let Some(elem) = now.as_element() {
+                        for namespace in elem.namespaces() {
+                            if namespace_map
+                                .insert(namespace.prefix().unwrap_or_default(), namespace.clone())
+                                .is_none()
+                            {
+                                // According to the XPath data model, we must collect namespace nodes
+                                // whose parent element is the context node (here, `element`).
+                                // Therefore, we should not return the namespace node of another
+                                // element (here, `elem`), but instead generate a new namespace node.
+                                let new = Namespace::new(
+                                    namespace.prefix(),
+                                    namespace.namespace_name(),
+                                    element.clone(),
+                                );
+                                node_set.push(new);
+                            }
+                        }
+                    }
+                }
+
+                // Since only explicit declarations are collected,
+                // we need not scan `context.namespaces`.
+            }
+        }
         Axis::Parent => {
             if let Some(parent) = context_node.parent_node().map(From::from)
                 && node_test.match_node(&parent, NodeType::Element, &context.namespaces)

@@ -359,8 +359,8 @@ impl Element {
     ///
     /// # Note
     /// Due to implementation limitations, it is not possible to prevent iterator invalidation.  \
-    /// For example, by cloning an `Element` that has called `attributes` and binding it
-    /// to a mutable variable, you can modify attributes while retaining the iterator.  \
+    /// For example, by cloning an [`Element`] that has called [`Element::attributes`] and binding
+    /// it to a mutable variable, you can modify attributes while retaining the iterator.  \
     /// Of course, the result of such an operation is undefined.
     pub fn attributes(&self) -> AttributeIter<'_> {
         AttributeIter {
@@ -552,6 +552,23 @@ impl Element {
         }
     }
 
+    /// Returns an iterator that scans namespace declarations on this element.
+    ///
+    /// Iterator elements do not contain implicit declarations.
+    ///
+    /// # Note
+    /// Due to implementation limitations, it is not possible to prevent iterator invalidation.  \
+    /// For example, by cloning an [`Element`] that has called [`Element::namespaces`] and binding
+    /// it to a mutable variable, you can modify attributes while retaining the iterator.  \
+    /// Of course, the result of such an operation is undefined.
+    pub fn namespaces(&self) -> NamespaceIter<'_> {
+        NamespaceIter {
+            element: self.clone(),
+            index: 0,
+            _ref: PhantomData,
+        }
+    }
+
     /// If the element or any of its immediate ancestors has an `xml:space` attribute, it returns:
     ///
     /// - `Some(true)` if the value is "preserve"
@@ -699,11 +716,7 @@ impl std::fmt::Display for Element {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<{}", self.name())?;
 
-        for core in self.core.borrow().spec.namespace_decl.prefix.values() {
-            let namespace = Namespace {
-                core: core.clone(),
-                owner_document: self.owner_document.clone(),
-            };
+        for namespace in self.namespaces() {
             if namespace.is_explicit() {
                 write!(f, " {}", namespace)?;
             }
@@ -823,15 +836,17 @@ impl<'a> Iterator for AttributeIter<'a> {
 
 #[derive(Default)]
 struct NamespaceMap {
+    data: Vec<Rc<RefCell<NodeCore<NamespaceSpec>>>>,
     // (namespace name, set of prefix)
     // Since a single namespace can bind multiple prefixes, prefixes are maintained as a set.
     namespace_name: HashMap<Rc<str>, BTreeSet<Rc<str>>>,
-    prefix: HashMap<Rc<str>, Rc<RefCell<NodeCore<NamespaceSpec>>>>,
+    prefix: HashMap<Rc<str>, usize>,
 }
 
 impl NamespaceMap {
     fn get_by_prefix(&self, prefix: Option<&str>) -> Option<Rc<RefCell<NodeCore<NamespaceSpec>>>> {
-        self.prefix.get(prefix.unwrap_or("")).cloned()
+        let &index = self.prefix.get(prefix.unwrap_or(""))?;
+        self.data.get(index).cloned()
     }
 
     fn get_by_namespace_name(
@@ -846,7 +861,8 @@ impl NamespaceMap {
         use std::collections::hash_map::Entry::*;
 
         let prefix = prefix.unwrap_or_default();
-        let namespace = self.prefix.remove(prefix)?;
+        let index = self.prefix.remove(prefix)?;
+        let namespace = self.data.remove(index);
         let namespace_name = namespace.borrow().spec.namespace_name.clone();
         if let Occupied(mut entry) = self.namespace_name.entry(namespace_name) {
             entry.get_mut().remove(prefix);
@@ -854,18 +870,21 @@ impl NamespaceMap {
                 entry.remove();
             }
         }
+        for index in self.prefix.values_mut().filter(|i| **i > index) {
+            *index -= 1;
+        }
         Some(namespace)
     }
 
     fn push(&mut self, namespace: Namespace) -> Result<(), XMLTreeError> {
         let prefix = namespace.prefix().unwrap_or_default();
         let namespace_name = namespace.namespace_name();
-        if let Some(core) = self.prefix.get(&prefix) {
-            return if core.borrow().spec.namespace_name != namespace.namespace_name() {
+        if let Some(index) = self.prefix.get(&prefix).copied() {
+            return if self.data[index].borrow().spec.namespace_name != namespace.namespace_name() {
                 Err(XMLTreeError::AlreadyBoundPrefix)
             } else {
                 if namespace.is_explicit() {
-                    self.prefix.insert(prefix, namespace.core);
+                    self.data[index] = namespace.core;
                 }
                 Ok(())
             };
@@ -875,9 +894,39 @@ impl NamespaceMap {
             .entry(namespace_name)
             .or_default()
             .insert(prefix.clone());
-        self.prefix.insert(prefix, namespace.core.clone());
+        self.prefix.insert(prefix, self.data.len());
+        self.data.push(namespace.core);
 
         Ok(())
+    }
+}
+
+pub struct NamespaceIter<'a> {
+    element: Element,
+    index: usize,
+    _ref: PhantomData<&'a Element>,
+}
+
+impl<'a> Iterator for NamespaceIter<'a> {
+    type Item = Namespace;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let map = &self.element.core.borrow().spec.namespace_decl;
+        if self.index >= map.data.len() {
+            return None;
+        }
+
+        while self.index < map.data.len() {
+            let ret = Namespace {
+                core: map.data[self.index].clone(),
+                owner_document: self.element.owner_document.clone(),
+            };
+            self.index += 1;
+            if ret.is_explicit() {
+                return Some(ret);
+            }
+        }
+        None
     }
 }
 
