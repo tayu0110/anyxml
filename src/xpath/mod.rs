@@ -91,7 +91,17 @@ impl XPathExpression {
                 self.context.node = old_context_node;
                 self.context.position = old_context_position;
                 self.context.size = old_context_size;
-                new_node_set.sort();
+                if matches!(
+                    axis,
+                    Axis::Ancestor
+                        | Axis::AncestorOrSelf
+                        | Axis::Preceding
+                        | Axis::PrecedingSibling
+                ) {
+                    new_node_set.reverse_sort();
+                } else {
+                    new_node_set.sort();
+                }
                 self.context.push_object(new_node_set.into());
             }
             XPathSyntaxTree::Predicate {
@@ -539,6 +549,11 @@ impl XPathNodeSet {
     pub(crate) fn sort(&mut self) {
         self.nodes
             .sort_unstable_by(|l, r| l.compare_document_order(r).unwrap());
+    }
+
+    pub(crate) fn reverse_sort(&mut self) {
+        self.nodes
+            .sort_unstable_by(|l, r| r.compare_document_order(l).unwrap());
     }
 
     pub fn union(&self, other: &Self) -> Self {

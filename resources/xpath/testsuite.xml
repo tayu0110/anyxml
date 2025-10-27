@@ -26,11 +26,11 @@
         <input-file>&xalan-tests;/axes/axes01.xml</input-file>
         <test-case>
             <xpath>name(/.//center/ancestor::*)</xpath>
-            <output>far-north,</output>
+            <output>near-north,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/ancestor::*[1])</xpath>
-            <output>far-north,</output>
+            <output>near-north,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/ancestor::*[2])</xpath>
@@ -38,30 +38,30 @@
         </test-case>
         <test-case>
             <xpath>name(/.//center/ancestor::*[3])</xpath>
-            <output>near-north,</output>
+            <output>far-north,</output>
         </test-case>
     </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/axes/axes02.xml</input-file>
         <test-case>
             <xpath>name(/.//center/ancestor-or-self::*)</xpath>
-            <output>far-north,</output>
+            <output>center,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/ancestor-or-self::*[1])</xpath>
-            <output>far-north,</output>
+            <output>center,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/ancestor-or-self::*[2])</xpath>
-            <output>north,</output>
-        </test-case>
-        <test-case>
-            <xpath>name(/.//center/ancestor-or-self::*[3])</xpath>
             <output>near-north,</output>
         </test-case>
         <test-case>
+            <xpath>name(/.//center/ancestor-or-self::*[3])</xpath>
+            <output>north,</output>
+        </test-case>
+        <test-case>
             <xpath>name(/.//center/ancestor-or-self::*[4])</xpath>
-            <output>center,</output>
+            <output>far-north,</output>
         </test-case>
     </test-cases>
     <test-cases>
@@ -191,15 +191,15 @@
         <input-file>&xalan-tests;/axes/axes08.xml</input-file>
         <test-case>
             <xpath>name(/.//center/preceding::*)</xpath>
-            <output>way-out-yonder-west,</output>
+            <output>near-west,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/preceding::*[1])</xpath>
-            <output>way-out-yonder-west,</output>
+            <output>near-west,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/preceding::*[2])</xpath>
-            <output>out-yonder-west,</output>
+            <output>west,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/preceding::*[3])</xpath>
@@ -207,11 +207,11 @@
         </test-case>
         <test-case>
             <xpath>name(/.//center/preceding::*[4])</xpath>
-            <output>west,</output>
+            <output>out-yonder-west,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/preceding::*[5])</xpath>
-            <output>near-west,</output>
+            <output>way-out-yonder-west,</output>
         </test-case>
     </test-cases>
     <test-cases>
@@ -237,11 +237,11 @@
         <input-file>&xalan-tests;/axes/axes10.xml</input-file>
         <test-case>
             <xpath>name(/.//center/preceding-sibling::*)</xpath>
-            <output>far-west,</output>
+            <output>near-west,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/preceding-sibling::*[1])</xpath>
-            <output>far-west,</output>
+            <output>near-west,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/preceding-sibling::*[2])</xpath>
@@ -249,7 +249,7 @@
         </test-case>
         <test-case>
             <xpath>name(/.//center/preceding-sibling::*[3])</xpath>
-            <output>near-west,</output>
+            <output>far-west,</output>
         </test-case>
     </test-cases>
     <test-cases>
@@ -263,7 +263,7 @@
             <output>near-north,</output>
         </test-case>
     </test-cases>
-    <!-- <test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/axes/axes12.xml</input-file>
         <test-case>
             <xpath>name(/.//center/self::*)</xpath>
@@ -274,7 +274,7 @@
             <output>center,</output>
         </test-case>
     </test-cases>
-    <test-cases>
+    <!-- <test-cases>
         <input-file>&xalan-tests;/axes/axes13.xml</input-file>
         <test-case>
             <xpath>string(//text()[ancestor::*[@new='true'][not(text())]][1])</xpath>
