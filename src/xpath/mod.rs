@@ -118,14 +118,25 @@ impl XPathExpression {
                 let old_context_size = self.context.size;
                 self.context.size = node_set.len();
                 let mut new = XPathNodeSet::default();
+                let stack_depth = self.context.stack.len();
                 for (i, node) in node_set.iter().enumerate() {
                     self.context.position = i + 1;
                     self.context.node = Some(node.clone());
+                    let mut context_node_set = XPathNodeSet::default();
+                    context_node_set.push(node.clone());
+                    self.context.push_object(context_node_set.into());
                     self.do_evaluate(expression)?;
                     let ret = match self.context.stack.pop().unwrap() {
                         XPathObject::Number(number) => number == (i + 1) as f64,
                         object => object.as_boolean()?,
                     };
+                    assert!(
+                        stack_depth == self.context.stack.len()
+                            || stack_depth + 1 == self.context.stack.len()
+                    );
+                    if stack_depth < self.context.stack.len() {
+                        self.context.stack.pop();
+                    }
                     if ret {
                         new.push(node);
                     }
@@ -151,14 +162,25 @@ impl XPathExpression {
                 let old_context_size = self.context.size;
                 self.context.size = node_set.len();
                 let mut new = XPathNodeSet::default();
+                let stack_depth = self.context.stack.len();
                 for (i, node) in node_set.iter().enumerate() {
                     self.context.position = i + 1;
                     self.context.node = Some(node.clone());
+                    let mut context_node_set = XPathNodeSet::default();
+                    context_node_set.push(node.clone());
+                    self.context.push_object(context_node_set.into());
                     self.do_evaluate(predicate)?;
                     let ret = match self.context.stack.pop().unwrap() {
                         XPathObject::Number(number) => number == (i + 1) as f64,
                         object => object.as_boolean()?,
                     };
+                    assert!(
+                        stack_depth == self.context.stack.len()
+                            || stack_depth + 1 == self.context.stack.len()
+                    );
+                    if stack_depth < self.context.stack.len() {
+                        self.context.stack.pop();
+                    }
                     if ret {
                         new.push(node);
                     }

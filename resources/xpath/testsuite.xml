@@ -274,19 +274,23 @@
             <output>center,</output>
         </test-case>
     </test-cases>
-    <!-- <test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/axes/axes13.xml</input-file>
         <test-case>
             <xpath>string(//text()[ancestor::*[@new='true'][not(text())]][1])</xpath>
             <output>is new,</output>
         </test-case>
         <test-case>
-            <xpath>string(//text()[ancestor::*[@new='true'][not(text())]][2])</xpath>
-            <output>is not new,</output>
+            <xpath>string(//text()[ancestor::*[2][@new]][1])</xpath>
+            <output>is new,</output>
         </test-case>
         <test-case>
-            <xpath>string(//text()[ancestor::*[2][@new])</xpath>
+            <xpath>string(//text()[ancestor::*[2][@new]][2])</xpath>
             <output>is new but has text,</output>
         </test-case>
-    </test-cases> -->
+        <test-case>
+            <xpath>string(//text()[ancestor::*[2][@new]][3])</xpath>
+            <output>is not new,</output>
+        </test-case>
+    </test-cases>
 </test-suite>
