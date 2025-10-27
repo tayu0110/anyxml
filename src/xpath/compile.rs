@@ -220,9 +220,9 @@ fn parse_axis_specifier(xpath: &mut &str) -> Result<Axis, XPathCompileError> {
         }
     } else if let Some(rem) = xpath.strip_prefix("following") {
         if let Some(rem) = rem.strip_prefix("-sibling") {
-            (rem, Axis::Following)
-        } else {
             (rem, Axis::FollowingSibling)
+        } else {
+            (rem, Axis::Following)
         }
     } else if let Some(rem) = xpath.strip_prefix("namespace") {
         (rem, Axis::Namespace)
