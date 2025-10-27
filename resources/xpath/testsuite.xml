@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE test-suite [
+    <!ELEMENT test-suite (test-cases+)>
+    <!ELEMENT test-cases (input-file,test-case+)>
+    <!ELEMENT input-file (#PCDATA)>
+    <!ELEMENT test-case (xpath,output)>
+    <!ELEMENT xpath (#PCDATA)>
+    <!ELEMENT output (#PCDATA)>
+
+    <!ENTITY xalan-tests "resources/XSLT-testsuite-04/TESTS/Xalan_Conformance_Tests">
+    <!ENTITY msft-tests "resources/XSLT-testsuite-04/TESTS/MSFT_Conformance_Tests">
+]>
+<test-suite>
+    <test-cases>
+        <input-file>&xalan-tests;/attribset/attribset20.xml</input-file>
+        <test-case>
+            <xpath>/docs/doc/*/@ped:att1</xpath>
+            <output>a,c,</output>
+        </test-case>
+        <test-case>
+            <xpath>/docs/doc/*/@xml:att1</xpath>
+            <output>b,d,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/axes/axes01.xml</input-file>
+        <test-case>
+            <xpath>name(/.//center/ancestor::*)</xpath>
+            <output>far-north</output>
+        </test-case>
+        <test-case>
+            <xpath>name(/.//center/ancestor::*[1])</xpath>
+            <output>far-north</output>
+        </test-case>
+        <test-case>
+            <xpath>name(/.//center/ancestor::*[2])</xpath>
+            <output>north</output>
+        </test-case>
+        <test-case>
+            <xpath>name(/.//center/ancestor::*[3])</xpath>
+            <output>near-north</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/axes/axes02.xml</input-file>
+        <test-case>
+            <xpath>name(/.//center/ancestor-or-self::*)</xpath>
+            <output>far-north</output>
+        </test-case>
+        <test-case>
+            <xpath>name(/.//center/ancestor-or-self::*[1])</xpath>
+            <output>far-north</output>
+        </test-case>
+        <test-case>
+            <xpath>name(/.//center/ancestor-or-self::*[2])</xpath>
+            <output>north</output>
+        </test-case>
+        <test-case>
+            <xpath>name(/.//center/ancestor-or-self::*[3])</xpath>
+            <output>near-north</output>
+        </test-case>
+        <test-case>
+            <xpath>name(/.//center/ancestor-or-self::*[4])</xpath>
+            <output>center</output>
+        </test-case>
+    </test-cases>
+</test-suite>

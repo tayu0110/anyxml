@@ -10,12 +10,13 @@ pub use compile::*;
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE,
     tree::{
-        Attribute, Comment, Document, Element, Node, NodeType, ProcessingInstruction, Text,
-        convert::NodeKind, namespace::Namespace, node::NodeSpec,
+        Attribute, CDATASection, Comment, Document, Element, Node, NodeType, ProcessingInstruction,
+        Text, convert::NodeKind, namespace::Namespace, node::NodeSpec,
     },
     xpath::{function::FunctionLibrary, step::location_step},
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XPathError {
     IncorrectOperandType,
     IncorrectNumberOfArgument,
@@ -166,7 +167,8 @@ impl XPathExpression {
                 for arg in arguments {
                     self.do_evaluate(arg)?;
                 }
-                func(&mut self.context, num_args)?;
+                let object = func(&mut self.context, num_args)?;
+                self.context.push_object(object);
             }
             XPathSyntaxTree::Equal(left, right) => {
                 self.do_evaluate(left)?;
@@ -463,6 +465,31 @@ impl From<XPathNodeSet> for XPathObject {
     }
 }
 
+macro_rules! impl_node_to_xpath_object {
+    ( $( $t:ty ),* ) => {
+        $(
+            impl From<$t> for XPathObject {
+                fn from(value: $t) -> Self {
+                    let mut nodeset = XPathNodeSet::default();
+                    nodeset.push(value);
+                    XPathObject::NodeSet(nodeset)
+                }
+            }
+        )*
+    };
+}
+
+impl_node_to_xpath_object!(
+    Document,
+    Element,
+    Attribute,
+    Namespace,
+    ProcessingInstruction,
+    Comment,
+    Text,
+    CDATASection
+);
+
 #[derive(Clone, Default)]
 pub struct XPathNodeSet {
     nodes: Vec<Node<dyn NodeSpec>>,
@@ -588,6 +615,7 @@ impl Default for NamespaceSet {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XPathCompileError {
     InvalidAbsoluteLocationPath,
     InvalidNodeTest,

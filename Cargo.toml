@@ -39,6 +39,10 @@ path = "tests/stax-test.rs"
 name = "tree-test"
 path = "tests/tree-test.rs"
 
+[[test]]
+name = "xpath-test"
+path = "tests/xpath-test.rs"
+
 
 [lints.clippy]
 type_complexity = "allow"

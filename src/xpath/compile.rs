@@ -433,7 +433,7 @@ fn parse_function_call(
         skip_whitespaces(xpath);
     }
 
-    *xpath = rem
+    *xpath = xpath
         .strip_prefix(')')
         .ok_or(XPathCompileError::InvalidFunctionCall)?;
 
@@ -862,7 +862,7 @@ fn parse_ncname(xpath: &str) -> Result<(&str, &str), XPathCompileError> {
 
     let pos = xpath
         .find(|c: char| c == ':' || !version.is_name_char(c))
-        .unwrap();
+        .unwrap_or(xpath.len());
     Ok(xpath.split_at(pos))
 }
 
