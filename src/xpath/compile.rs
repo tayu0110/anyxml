@@ -24,6 +24,7 @@ fn parse_location_path(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
+    skip_whitespaces(xpath);
     if xpath.starts_with('/') {
         parse_absolute_location_path(xpath, tree)
     } else {
@@ -40,6 +41,7 @@ fn parse_absolute_location_path(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
+    skip_whitespaces(xpath);
     *xpath = xpath
         .strip_prefix('/')
         .ok_or(XPathCompileError::InvalidAbsoluteLocationPath)?;
@@ -71,6 +73,7 @@ fn parse_absolute_location_path(
     // RelativeLocationPath starts with Step,
     // and Step starts with AxisSpecifier, NodeTest or AbbreviatedStep ('.', '..').
 
+    skip_whitespaces(xpath);
     if xpath.starts_with(|c: char| {
         // '.'              : AbbreviatedStep ('.', '..')
         // '*'              : NameTest
@@ -99,6 +102,7 @@ fn parse_relative_location_path(
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
     let mut left = parse_step(xpath, tree)?;
+    skip_whitespaces(xpath);
     while let Some(rem) = xpath.strip_prefix('/') {
         let new = if let Some(rem) = rem.strip_prefix('/') {
             // '//' is equal to '/descendant-or-self::node()'
@@ -121,6 +125,7 @@ fn parse_relative_location_path(
         };
         left = tree.len();
         tree.push(new);
+        skip_whitespaces(xpath);
     }
     Ok(left)
 }
@@ -133,6 +138,7 @@ fn parse_step(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
+    skip_whitespaces(xpath);
     if let Some(rem) = xpath.strip_prefix('.') {
         // AbbreviatedStep
 
@@ -160,6 +166,7 @@ fn parse_step(
     let mut argument = tree.len();
     tree.push(XPathSyntaxTree::Step { axis, node_test });
 
+    skip_whitespaces(xpath);
     while xpath.starts_with('[') {
         let expression = parse_predicate(xpath, tree)?;
         let new = XPathSyntaxTree::Predicate {
@@ -168,6 +175,7 @@ fn parse_step(
         };
         argument = tree.len();
         tree.push(new);
+        skip_whitespaces(xpath);
     }
     Ok(argument)
 }
@@ -190,6 +198,7 @@ fn parse_step(
 /// [13] AbbreviatedAxisSpecifier ::= '@'?
 /// ```
 fn parse_axis_specifier(xpath: &mut &str) -> Result<Axis, XPathCompileError> {
+    skip_whitespaces(xpath);
     let (rem, axis) = if let Some(rem) = xpath.strip_prefix('@') {
         *xpath = rem;
         return Ok(Axis::Attribute);
@@ -231,6 +240,7 @@ fn parse_axis_specifier(xpath: &mut &str) -> Result<Axis, XPathCompileError> {
         return Ok(Axis::Child);
     };
 
+    skip_whitespaces(xpath);
     if let Some(rem) = rem.strip_prefix("::") {
         // Only when `::` follows an AxisName is it considered a match
         // for that specific AxisName.
@@ -259,25 +269,40 @@ fn parse_node_test(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<NodeTest, XPathCompileError> {
+    skip_whitespaces(xpath);
     if let Some(rem) = xpath.strip_prefix('*') {
         *xpath = rem;
         Ok(NodeTest::Any)
-    } else if let Some(rem) = xpath.strip_prefix("text()") {
+    } else if let Some(rem) = xpath.strip_prefix("text(") {
         *xpath = rem;
+        skip_whitespaces(xpath);
+        *xpath = xpath
+            .strip_prefix(')')
+            .ok_or(XPathCompileError::InvalidNodeTest)?;
         Ok(NodeTest::Text)
-    } else if let Some(rem) = xpath.strip_prefix("comment()") {
+    } else if let Some(rem) = xpath.strip_prefix("comment(") {
         *xpath = rem;
+        skip_whitespaces(xpath);
+        *xpath = xpath
+            .strip_prefix(')')
+            .ok_or(XPathCompileError::InvalidNodeTest)?;
         Ok(NodeTest::Comment)
-    } else if let Some(rem) = xpath.strip_prefix("node()") {
+    } else if let Some(rem) = xpath.strip_prefix("node(") {
         *xpath = rem;
+        skip_whitespaces(xpath);
+        *xpath = xpath
+            .strip_prefix(')')
+            .ok_or(XPathCompileError::InvalidNodeTest)?;
         Ok(NodeTest::Node)
     } else if let Some(rem) = xpath.strip_prefix("processing-instruction(") {
+        skip_whitespaces(xpath);
         if let Some(rem) = rem.strip_prefix(')') {
             *xpath = rem;
             Ok(NodeTest::ProcessingInstruction(None))
         } else {
             *xpath = rem;
             let literal = parse_literal(xpath, tree)?;
+            skip_whitespaces(xpath);
             *xpath = xpath
                 .strip_prefix(')')
                 .ok_or(XPathCompileError::InvalidNodeTest)?;
@@ -321,10 +346,12 @@ fn parse_predicate(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
+    skip_whitespaces(xpath);
     *xpath = xpath
         .strip_prefix('[')
         .ok_or(XPathCompileError::InvalidPredicate)?;
     let ret = parse_expr(xpath, tree)?;
+    skip_whitespaces(xpath);
     *xpath = xpath
         .strip_prefix(']')
         .ok_or(XPathCompileError::InvalidPredicate)?;
@@ -352,11 +379,14 @@ fn parse_primary_expr(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
+    skip_whitespaces(xpath);
     if xpath.starts_with('$') {
         parse_variable_reference(xpath, tree)
     } else if let Some(rem) = xpath.strip_prefix('(') {
         *xpath = rem;
         let ret = parse_expr(xpath, tree)?;
+        *xpath = rem;
+        skip_whitespaces(xpath);
         *xpath = xpath
             .strip_prefix(')')
             .ok_or(XPathCompileError::InvalidPrimaryExpr)?;
@@ -377,10 +407,14 @@ fn parse_function_call(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
+    skip_whitespaces(xpath);
     let (name, rem) = parse_function_name(xpath)?;
+    *xpath = rem;
+    skip_whitespaces(xpath);
     *xpath = rem
         .strip_prefix('(')
         .ok_or(XPathCompileError::InvalidFunctionCall)?;
+    skip_whitespaces(xpath);
     if let Some(rem) = xpath.strip_prefix(')') {
         *xpath = rem;
         let ret = tree.len();
@@ -392,9 +426,11 @@ fn parse_function_call(
     }
 
     let mut arguments = vec![parse_argument(xpath, tree)?];
+    skip_whitespaces(xpath);
     while let Some(rem) = xpath.strip_prefix(',') {
         *xpath = rem;
         arguments.push(parse_argument(xpath, tree)?);
+        skip_whitespaces(xpath);
     }
 
     *xpath = rem
@@ -427,12 +463,14 @@ fn parse_union_expr(
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
     let mut left = parse_path_expr(xpath, tree)?;
+    skip_whitespaces(xpath);
     while let Some(rem) = xpath.strip_prefix('|') {
         *xpath = rem;
         let right = parse_path_expr(xpath, tree)?;
         let new = XPathSyntaxTree::Union(left, right);
         left = tree.len();
         tree.push(new);
+        skip_whitespaces(xpath);
     }
     Ok(left)
 }
@@ -447,6 +485,7 @@ fn parse_path_expr(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
+    skip_whitespaces(xpath);
     let filter_expr =
         if xpath.starts_with(|c: char| matches!(c, '$' | '(' | '"' | '\'') || c.is_ascii_digit()) {
             // VariableReference, grouped Expr, Literal, Number
@@ -456,11 +495,15 @@ fn parse_path_expr(
             false
         } else {
             // Check if `xpath` starts with FunctionCall.
-            parse_function_name(xpath).is_ok_and(|(_, rem)| rem.starts_with('('))
+            parse_function_name(xpath).is_ok_and(|(_, mut rem)| {
+                skip_whitespaces(&mut rem);
+                rem.starts_with('(')
+            })
         };
 
     if filter_expr {
         let mut left = parse_filter_expr(xpath, tree)?;
+        skip_whitespaces(xpath);
         if let Some(rem) = xpath.strip_prefix('/') {
             let new = if let Some(rem) = rem.strip_prefix('/') {
                 // '//' is equal to '/descendant-or-self::node()'
@@ -499,6 +542,7 @@ fn parse_filter_expr(
 ) -> Result<usize, XPathCompileError> {
     let mut expression = parse_primary_expr(xpath, tree)?;
 
+    skip_whitespaces(xpath);
     while xpath.starts_with('[') {
         let predicate = parse_predicate(xpath, tree)?;
         let new = XPathSyntaxTree::FilterExpr {
@@ -507,6 +551,7 @@ fn parse_filter_expr(
         };
         expression = tree.len();
         tree.push(new);
+        skip_whitespaces(xpath);
     }
     Ok(expression)
 }
@@ -519,12 +564,14 @@ fn parse_or_expr(
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
     let mut left = parse_and_expr(xpath, tree)?;
+    skip_whitespaces(xpath);
     while let Some(rem) = xpath.strip_prefix("or") {
         *xpath = rem;
         let right = parse_and_expr(xpath, tree)?;
         let new = XPathSyntaxTree::Or(left, right);
         left = tree.len();
         tree.push(new);
+        skip_whitespaces(xpath);
     }
     Ok(left)
 }
@@ -537,12 +584,14 @@ fn parse_and_expr(
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
     let mut left = parse_equality_expr(xpath, tree)?;
+    skip_whitespaces(xpath);
     while let Some(rem) = xpath.strip_prefix("and") {
         *xpath = rem;
         let right = parse_equality_expr(xpath, tree)?;
         let new = XPathSyntaxTree::And(left, right);
         left = tree.len();
         tree.push(new);
+        skip_whitespaces(xpath);
     }
     Ok(left)
 }
@@ -557,15 +606,18 @@ fn parse_equality_expr(
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
     let mut left = parse_relation_expr(xpath, tree)?;
-    while xpath.starts_with('=') || xpath.starts_with("!=") {
+    loop {
+        skip_whitespaces(xpath);
         let new = if let Some(rem) = xpath.strip_prefix('=') {
             *xpath = rem;
             let right = parse_relation_expr(xpath, tree)?;
             XPathSyntaxTree::Equal(left, right)
-        } else {
-            *xpath = xpath.strip_prefix("!=").unwrap();
+        } else if let Some(rem) = xpath.strip_prefix("!=") {
+            *xpath = rem;
             let right = parse_relation_expr(xpath, tree)?;
             XPathSyntaxTree::NotEqual(left, right)
+        } else {
+            break;
         };
         left = tree.len();
         tree.push(new);
@@ -586,6 +638,7 @@ fn parse_relation_expr(
 ) -> Result<usize, XPathCompileError> {
     let mut left = parse_additive_expr(xpath, tree)?;
     loop {
+        skip_whitespaces(xpath);
         let new = if let Some(rem) = xpath.strip_prefix('<') {
             if let Some(rem) = rem.strip_prefix('=') {
                 *xpath = rem;
@@ -626,6 +679,7 @@ fn parse_additive_expr(
 ) -> Result<usize, XPathCompileError> {
     let mut left = parse_multiplicative_expr(xpath, tree)?;
     loop {
+        skip_whitespaces(xpath);
         let new = if let Some(rem) = xpath.strip_prefix('+') {
             *xpath = rem;
             let rigth = parse_multiplicative_expr(xpath, tree)?;
@@ -655,6 +709,7 @@ fn parse_multiplicative_expr(
 ) -> Result<usize, XPathCompileError> {
     let mut left = parse_unary_expr(xpath, tree)?;
     loop {
+        skip_whitespaces(xpath);
         let new = if let Some(rem) = xpath.strip_prefix('*') {
             *xpath = rem;
             let rigth = parse_unary_expr(xpath, tree)?;
@@ -683,6 +738,7 @@ fn parse_unary_expr(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
+    skip_whitespaces(xpath);
     if let Some(rem) = xpath.strip_prefix('-') {
         *xpath = rem;
         let child = parse_unary_expr(xpath, tree)?;
@@ -702,6 +758,7 @@ fn parse_literal(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
+    skip_whitespaces(xpath);
     let quote = xpath
         .chars()
         .next()
@@ -723,6 +780,7 @@ fn parse_number(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
+    skip_whitespaces(xpath);
     if let Some(rem) = xpath.strip_prefix('.') {
         let rem = rem.trim_start_matches(|c: char| c.is_ascii_digit());
         if rem.len() + 1 == xpath.len() {
@@ -781,6 +839,7 @@ fn parse_variable_reference(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
+    skip_whitespaces(xpath);
     let rem = xpath
         .strip_prefix('$')
         .ok_or(XPathCompileError::InvalidVariableReference)?;
@@ -824,4 +883,9 @@ fn parse_qname(xpath: &str) -> Result<(&str, &str), XPathCompileError> {
         // Treat a colon as following an unprefixed qualified name
         Ok(xpath.split_at(ncname.len()))
     }
+}
+
+fn skip_whitespaces(xpath: &mut &str) {
+    const XML_VERSION: XMLVersion = XMLVersion::XML10;
+    *xpath = xpath.trim_start_matches(|c| XML_VERSION.is_whitespace(c));
 }
