@@ -127,6 +127,7 @@ fn id(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPathE
             }
         }
     }
+    node_set.sort();
     Ok(node_set.into())
 }
 
@@ -202,12 +203,11 @@ fn name(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPat
     }
 
     let node = if num_args == 1 {
-        context
+        let nodeset = context
             .pop_object()
             .ok_or(XPathError::IncorrectNumberOfArgument)?
-            .as_nodeset()?
-            .first()
-            .cloned()
+            .as_nodeset()?;
+        nodeset.first().cloned()
     } else {
         context.node.clone()
     };

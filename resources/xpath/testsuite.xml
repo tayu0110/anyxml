@@ -26,42 +26,42 @@
         <input-file>&xalan-tests;/axes/axes01.xml</input-file>
         <test-case>
             <xpath>name(/.//center/ancestor::*)</xpath>
-            <output>far-north</output>
+            <output>far-north,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/ancestor::*[1])</xpath>
-            <output>far-north</output>
+            <output>far-north,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/ancestor::*[2])</xpath>
-            <output>north</output>
+            <output>north,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/ancestor::*[3])</xpath>
-            <output>near-north</output>
+            <output>near-north,</output>
         </test-case>
     </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/axes/axes02.xml</input-file>
         <test-case>
             <xpath>name(/.//center/ancestor-or-self::*)</xpath>
-            <output>far-north</output>
+            <output>far-north,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/ancestor-or-self::*[1])</xpath>
-            <output>far-north</output>
+            <output>far-north,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/ancestor-or-self::*[2])</xpath>
-            <output>north</output>
+            <output>north,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/ancestor-or-self::*[3])</xpath>
-            <output>near-north</output>
+            <output>near-north,</output>
         </test-case>
         <test-case>
             <xpath>name(/.//center/ancestor-or-self::*[4])</xpath>
-            <output>center</output>
+            <output>center,</output>
         </test-case>
     </test-cases>
 </test-suite>

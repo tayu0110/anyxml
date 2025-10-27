@@ -91,6 +91,7 @@ impl XPathExpression {
                 self.context.node = old_context_node;
                 self.context.position = old_context_position;
                 self.context.size = old_context_size;
+                new_node_set.sort();
                 self.context.push_object(new_node_set.into());
             }
             XPathSyntaxTree::Predicate {
@@ -123,6 +124,7 @@ impl XPathExpression {
                 self.context.node = old_context_node;
                 self.context.position = old_context_position;
                 self.context.size = old_context_size;
+                new.sort();
                 self.context.push_object(new.into());
             }
             XPathSyntaxTree::FilterExpr {
@@ -155,6 +157,7 @@ impl XPathExpression {
                 self.context.node = old_context_node;
                 self.context.position = old_context_position;
                 self.context.size = old_context_size;
+                new.sort();
                 self.context.push_object(new.into());
             }
             XPathSyntaxTree::FunctionCall {
@@ -533,11 +536,17 @@ impl XPathNodeSet {
         self.nodes.clear();
     }
 
+    pub(crate) fn sort(&mut self) {
+        self.nodes
+            .sort_unstable_by(|l, r| l.compare_document_order(r).unwrap());
+    }
+
     pub fn union(&self, other: &Self) -> Self {
         let mut ret = self.clone();
         for node in other.iter() {
             ret.push(node);
         }
+        ret.sort();
         ret
     }
 
@@ -553,6 +562,7 @@ impl XPathNodeSet {
                 ret.push(node);
             }
         }
+        ret.sort();
         ret
     }
 
@@ -563,6 +573,7 @@ impl XPathNodeSet {
                 ret.push(node);
             }
         }
+        ret.sort();
         ret
     }
 }
@@ -648,6 +659,7 @@ enum Axis {
     SelfNode,
 }
 
+#[derive(Debug)]
 enum NodeTest {
     Any,
     AnyLocalName(Box<str>),
@@ -808,6 +820,7 @@ impl NodeTest {
     }
 }
 
+#[derive(Debug)]
 enum XPathSyntaxTree {
     Union(usize, usize),
     Slash(usize, usize),

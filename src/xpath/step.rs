@@ -24,7 +24,8 @@ pub(super) fn location_step(
             let mut parent = context_node.parent_node();
             while let Some(now) = parent {
                 parent = now.parent_node();
-                if node_test.match_node(&context_node, NodeType::Element, &context.namespaces) {
+                if node_test.match_node(&now.clone().into(), NodeType::Element, &context.namespaces)
+                {
                     node_set.push(now);
                 }
             }
