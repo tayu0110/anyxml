@@ -953,6 +953,9 @@ impl Element {
                 children = None;
                 let mut par = child.parent_node();
                 while let Some(now) = par {
+                    if self.is_same_node(&now) {
+                        break;
+                    }
                     if let Some(next) = now.next_sibling() {
                         children = Some(next);
                         break;
