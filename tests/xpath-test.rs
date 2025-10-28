@@ -106,7 +106,7 @@ fn xpath_evaluation_tests() {
 
             assert_eq!(
                 buf, output,
-                "--- input-file: {input_file} xpath: {xpath} ---\nbuf: {buf}\noutput:{output}"
+                "\n--- input-file: {input_file} xpath: {xpath} ---\nbuf: {buf}\noutput:{output}"
             );
         }
     }

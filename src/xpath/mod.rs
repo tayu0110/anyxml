@@ -145,7 +145,6 @@ impl XPathExpression {
                 self.context.node = old_context_node;
                 self.context.position = old_context_position;
                 self.context.size = old_context_size;
-                new.sort();
                 self.context.push_object(new.into());
             }
             XPathSyntaxTree::FilterExpr {
@@ -153,9 +152,19 @@ impl XPathExpression {
                 predicate,
             } => {
                 self.do_evaluate(expression)?;
-                let XPathObject::NodeSet(node_set) = self.context.stack.pop().unwrap() else {
+                let XPathObject::NodeSet(mut node_set) = self.context.stack.pop().unwrap() else {
                     return Err(XPathError::IncorrectOperandType);
                 };
+                // Since predicates for expressions are treated as filters on the child axis,
+                // the node set is sorted in document order.
+                //
+                // # Reference
+                // [3.3 Node-sets](https://www.w3.org/TR/1999/REC-xpath-19991116/#node-sets)
+                // "Predicates are used to filter expressions in the same way that they are used
+                // in location paths. It is an error if the expression to be filtered does not
+                // evaluate to a node-set. The Predicate filters the node-set with respect to the
+                // child axis."
+                node_set.sort();
 
                 let old_context_node = self.context.node.take();
                 let old_context_position = self.context.position;
@@ -189,7 +198,6 @@ impl XPathExpression {
                 self.context.node = old_context_node;
                 self.context.position = old_context_position;
                 self.context.size = old_context_size;
-                new.sort();
                 self.context.push_object(new.into());
             }
             XPathSyntaxTree::FunctionCall {

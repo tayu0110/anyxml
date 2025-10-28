@@ -142,6 +142,7 @@ fn parse_step(
     if let Some(rem) = xpath.strip_prefix('.') {
         // AbbreviatedStep
 
+        let ret = tree.len();
         if let Some(rem) = rem.strip_prefix('.') {
             *xpath = rem;
             tree.push(XPathSyntaxTree::Step {
@@ -155,7 +156,7 @@ fn parse_step(
                 node_test: NodeTest::Node,
             });
         };
-        return Ok(tree.len());
+        return Ok(ret);
     }
 
     // Step
@@ -385,7 +386,6 @@ fn parse_primary_expr(
     } else if let Some(rem) = xpath.strip_prefix('(') {
         *xpath = rem;
         let ret = parse_expr(xpath, tree)?;
-        *xpath = rem;
         skip_whitespaces(xpath);
         *xpath = xpath
             .strip_prefix(')')
