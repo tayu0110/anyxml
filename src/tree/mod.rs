@@ -502,6 +502,68 @@ fn compare_document_order(
         (NodeType::Namespace, NodeType::Namespace) => {
             let lp = lp.as_namespace().unwrap();
             let rp = rp.as_namespace().unwrap();
+            let elem = lp.parent_node().unwrap().as_element().unwrap();
+            let (mut li, mut ri) = (usize::MAX, usize::MAX);
+            for (i, namespace) in elem.namespaces().enumerate() {
+                if namespace.is_same_node(&lp) {
+                    li = i;
+                } else if namespace.is_same_node(&rp) {
+                    ri = i;
+                }
+                if li < usize::MAX && ri < usize::MAX {
+                    break;
+                }
+            }
+            // If they all belong to the same element, determine them in that order.
+            // If only one belongs to the parent element, the other is treated as
+            // a declaration derived from an ancestor element.
+            // (And such ancestor-derived declarations are treated as preceding.)
+            if li < usize::MAX && ri < usize::MAX {
+                return li.partial_cmp(&ri);
+            } else if li < usize::MAX {
+                return Some(Greater);
+            } else if ri < usize::MAX {
+                return Some(Less);
+            }
+
+            let mut parent = elem.parent_node();
+            while let Some(now) = parent {
+                if let Some(element) = now.as_element() {
+                    if element
+                        .search_namespace_by_prefix(lp.prefix().as_deref())
+                        .filter(|ns| lp.is_same_node(ns))
+                        .is_some()
+                    {
+                        if elem
+                            .search_namespace_by_prefix(rp.prefix().as_deref())
+                            .filter(|ns| rp.is_same_node(ns))
+                            .is_none()
+                        {
+                            return Some(Greater);
+                        }
+
+                        let (mut li, mut ri) = (usize::MAX, usize::MAX);
+                        for (i, namespace) in element.namespaces().enumerate() {
+                            if namespace.is_same_node(&lp) {
+                                li = i;
+                            } else if namespace.is_same_node(&rp) {
+                                ri = i;
+                            }
+                            if li < usize::MAX && ri < usize::MAX {
+                                break;
+                            }
+                        }
+                        return li.partial_cmp(&ri);
+                    } else if element
+                        .search_namespace_by_prefix(rp.prefix().as_deref())
+                        .filter(|ns| rp.is_same_node(ns))
+                        .is_some()
+                    {
+                        return Some(Less);
+                    }
+                }
+                parent = now.parent_node();
+            }
             // Since prefixes are unique within elements,
             // they can be safely used for comparison.
             return lp

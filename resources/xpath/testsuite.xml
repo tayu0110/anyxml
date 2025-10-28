@@ -734,4 +734,11 @@
             <output>Test for source tree depth,Level A,Level B,Level C,Level D,Level E,Level F,Level G,Level H,Level I,Level J,Level K,Level L,Level M,Level N,Level O,</output>
         </test-case>
     </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/axes/axes59.xml</input-file>
+        <test-case>
+            <xpath>//doc/namespace::*</xpath>
+            <output>http://somebody.elses.extension,http://xml.apache.org/xslt/java,http://tester.com,http://buster.com,http://administrator.com,</output>
+        </test-case>
+    </test-cases>
 </test-suite>
