@@ -81,7 +81,27 @@ pub(super) fn location_step(
             }
         }
         Axis::Following => {
-            let mut following = Some(context_node.clone());
+            let mut following = match context_node.node_type() {
+                NodeType::Attribute | NodeType::Namespace => {
+                    context_node.parent_node().and_then(|parent| {
+                        if let Some(first) = parent.first_child() {
+                            Some(first)
+                        } else if let Some(next) = parent.next_sibling() {
+                            Some(next)
+                        } else {
+                            let mut parent = parent.parent_node();
+                            while let Some(now) = parent {
+                                if let Some(next) = now.next_sibling() {
+                                    return Some(next);
+                                }
+                                parent = now.parent_node();
+                            }
+                            None
+                        }
+                    })
+                }
+                _ => Some(context_node.clone()),
+            };
             while let Some(now) = following {
                 if !context_node.is_same_node(&now)
                     && let Some(first) = now.first_child()
