@@ -411,7 +411,7 @@ fn parse_function_call(
     let (name, rem) = parse_function_name(xpath)?;
     *xpath = rem;
     skip_whitespaces(xpath);
-    *xpath = rem
+    *xpath = xpath
         .strip_prefix('(')
         .ok_or(XPathCompileError::InvalidFunctionCall)?;
     skip_whitespaces(xpath);
