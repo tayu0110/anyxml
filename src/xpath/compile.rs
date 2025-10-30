@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     XMLVersion,
     xpath::{Axis, NodeTest, XPathCompileError, XPathContext, XPathExpression, XPathSyntaxTree},
@@ -56,7 +58,8 @@ fn parse_absolute_location_path(
         let right = tree.len();
         tree.push(XPathSyntaxTree::Step {
             axis: Axis::DescendantOrSelf,
-            node_test: NodeTest::Node,
+            node_test: Arc::new(NodeTest::Node),
+            predicate: usize::MAX,
         });
 
         let left = tree.len();
@@ -111,7 +114,8 @@ fn parse_relative_location_path(
             let right = tree.len();
             tree.push(XPathSyntaxTree::Step {
                 axis: Axis::DescendantOrSelf,
-                node_test: NodeTest::Node,
+                node_test: Arc::new(NodeTest::Node),
+                predicate: usize::MAX,
             });
             let new = XPathSyntaxTree::Slash(left, right);
             left = tree.len();
@@ -147,13 +151,15 @@ fn parse_step(
             *xpath = rem;
             tree.push(XPathSyntaxTree::Step {
                 axis: Axis::Parent,
-                node_test: NodeTest::Node,
+                node_test: Arc::new(NodeTest::Node),
+                predicate: usize::MAX,
             });
         } else {
             *xpath = rem;
             tree.push(XPathSyntaxTree::Step {
                 axis: Axis::SelfNode,
-                node_test: NodeTest::Node,
+                node_test: Arc::new(NodeTest::Node),
+                predicate: usize::MAX,
             });
         };
         return Ok(ret);
@@ -164,21 +170,32 @@ fn parse_step(
     let axis = parse_axis_specifier(xpath)?;
     let node_test = parse_node_test(xpath, tree)?;
 
-    let mut argument = tree.len();
-    tree.push(XPathSyntaxTree::Step { axis, node_test });
+    let mut prev = tree.len();
+    let ret = prev;
+    tree.push(XPathSyntaxTree::Step {
+        axis,
+        node_test: Arc::new(node_test),
+        predicate: usize::MAX,
+    });
 
     skip_whitespaces(xpath);
     while xpath.starts_with('[') {
         let expression = parse_predicate(xpath, tree)?;
         let new = XPathSyntaxTree::Predicate {
-            argument,
             expression,
+            next: usize::MAX,
         };
-        argument = tree.len();
+        let nt = tree.len();
+        match &mut tree[prev] {
+            XPathSyntaxTree::Step { predicate, .. } => *predicate = nt,
+            XPathSyntaxTree::Predicate { next, .. } => *next = nt,
+            _ => {}
+        }
+        prev = nt;
         tree.push(new);
         skip_whitespaces(xpath);
     }
-    Ok(argument)
+    Ok(ret)
 }
 
 /// ```text
@@ -511,7 +528,8 @@ fn parse_path_expr(
                 let right = tree.len();
                 tree.push(XPathSyntaxTree::Step {
                     axis: Axis::DescendantOrSelf,
-                    node_test: NodeTest::Node,
+                    node_test: Arc::new(NodeTest::Node),
+                    predicate: usize::MAX,
                 });
 
                 let root = tree.len();

@@ -3,7 +3,7 @@ mod function;
 mod ops;
 mod step;
 
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 pub use compile::*;
 
@@ -70,11 +70,14 @@ impl XPathExpression {
             XPathSyntaxTree::Step {
                 axis,
                 ref node_test,
+                predicate,
             } => {
                 let XPathObject::NodeSet(current_node_set) = self.context.stack.pop().unwrap()
                 else {
                     return Err(XPathError::IncorrectOperandType);
                 };
+
+                let node_test = node_test.clone();
 
                 let old_context_node = self.context.node.take();
                 let old_context_position = self.context.position;
@@ -85,12 +88,35 @@ impl XPathExpression {
                 for (i, node) in current_node_set.iter().enumerate() {
                     self.context.position = i + 1;
                     self.context.node = Some(node);
-                    location_step(&self.context, axis, node_test, &mut new_node_set);
+                    if predicate < usize::MAX {
+                        let mut node_set = XPathNodeSet::default();
+                        location_step(&self.context, axis, &node_test, &mut node_set);
+                        if matches!(
+                            axis,
+                            Axis::Ancestor
+                                | Axis::AncestorOrSelf
+                                | Axis::Preceding
+                                | Axis::PrecedingSibling
+                        ) {
+                            node_set.reverse_sort();
+                        } else {
+                            node_set.sort();
+                        }
+                        self.context.push_object(node_set.into());
+                        self.do_evaluate(predicate)?;
+                        let node_set = self.context.pop_object().unwrap().as_nodeset()?;
+                        for node in &node_set {
+                            new_node_set.push(node);
+                        }
+                    } else {
+                        location_step(&self.context, axis, &node_test, &mut new_node_set);
+                    }
                 }
 
                 self.context.node = old_context_node;
                 self.context.position = old_context_position;
                 self.context.size = old_context_size;
+
                 if matches!(
                     axis,
                     Axis::Ancestor
@@ -102,13 +128,10 @@ impl XPathExpression {
                 } else {
                     new_node_set.sort();
                 }
+
                 self.context.push_object(new_node_set.into());
             }
-            XPathSyntaxTree::Predicate {
-                argument,
-                expression,
-            } => {
-                self.do_evaluate(argument)?;
+            XPathSyntaxTree::Predicate { expression, next } => {
                 let XPathObject::NodeSet(node_set) = self.context.stack.pop().unwrap() else {
                     return Err(XPathError::IncorrectOperandType);
                 };
@@ -145,7 +168,12 @@ impl XPathExpression {
                 self.context.node = old_context_node;
                 self.context.position = old_context_position;
                 self.context.size = old_context_size;
+                let is_empty = new.is_empty();
                 self.context.push_object(new.into());
+
+                if !is_empty && next < usize::MAX {
+                    self.do_evaluate(next)?;
+                }
             }
             XPathSyntaxTree::FilterExpr {
                 expression,
@@ -872,11 +900,12 @@ enum XPathSyntaxTree {
     LocationPathRoot,
     Step {
         axis: Axis,
-        node_test: NodeTest,
+        node_test: Arc<NodeTest>,
+        predicate: usize,
     },
     Predicate {
-        argument: usize,
         expression: usize,
+        next: usize,
     },
     FilterExpr {
         expression: usize,

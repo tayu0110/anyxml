@@ -281,15 +281,15 @@
             <output>is new,</output>
         </test-case>
         <test-case>
-            <xpath>string(//text()[ancestor::*[2][@new]][1])</xpath>
+            <xpath>string((//text()[ancestor::*[2][@new]])[1])</xpath>
             <output>is new,</output>
         </test-case>
         <test-case>
-            <xpath>string(//text()[ancestor::*[2][@new]][2])</xpath>
+            <xpath>string((//text()[ancestor::*[2][@new]])[2])</xpath>
             <output>is new but has text,</output>
         </test-case>
         <test-case>
-            <xpath>string(//text()[ancestor::*[2][@new]][3])</xpath>
+            <xpath>string((//text()[ancestor::*[2][@new]])[3])</xpath>
             <output>is not new,</output>
         </test-case>
     </test-cases>
@@ -546,57 +546,57 @@
             <output>south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//center/child::*/descendant::*[1])</xpath>
+            <xpath>name((//center/child::*/descendant::*)[1])</xpath>
             <output>south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//center/child::*/descendant::*[2])</xpath>
+            <xpath>name((//center/child::*/descendant::*)[2])</xpath>
             <output>far-south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//center/child::*/descendant::*[3])</xpath>
+            <xpath>name((//center/child::*/descendant::*)[3])</xpath>
             <output>,</output>
         </test-case>
     </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/axes/axes50.xml</input-file>
         <test-case>
-            <xpath>name(//center/descendant::*/child::*)</xpath>
+            <xpath>name((//center/descendant::*/child::*))</xpath>
             <output>south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//center/descendant::*/child::*[1])</xpath>
+            <xpath>name((//center/descendant::*/child::*)[1])</xpath>
             <output>south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//center/descendant::*/child::*[2])</xpath>
+            <xpath>name((//center/descendant::*/child::*)[2])</xpath>
             <output>far-south,</output>
         </test-case>
     </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/axes/axes51.xml</input-file>
         <test-case>
-            <xpath>name(//near-north/center//child::*)</xpath>
+            <xpath>name((//near-north/center//child::*))</xpath>
             <output>near-south-east,</output>
         </test-case>
         <test-case>
-            <xpath>name(//near-north/center//child::*[1])</xpath>
+            <xpath>name((//near-north/center//child::*)[1])</xpath>
             <output>near-south-east,</output>
         </test-case>
         <test-case>
-            <xpath>name(//near-north/center//child::*[2])</xpath>
+            <xpath>name((//near-north/center//child::*)[2])</xpath>
             <output>near-south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//near-north/center//child::*[3])</xpath>
+            <xpath>name((//near-north/center//child::*)[3])</xpath>
             <output>south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//near-north/center//child::*[4])</xpath>
+            <xpath>name((//near-north/center//child::*)[4])</xpath>
             <output>far-south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//near-north/center//child::*[5])</xpath>
+            <xpath>name((//near-north/center//child::*)[5])</xpath>
             <output>near-south-west,</output>
         </test-case>
     </test-cases>
@@ -676,54 +676,54 @@
     <test-cases>
         <input-file>&xalan-tests;/axes/axes55.xml</input-file>
         <test-case>
-            <xpath>name(//near-north/center//*)</xpath>
+            <xpath>name((//near-north/center//*))</xpath>
             <output>near-south-east,</output>
         </test-case>
         <test-case>
-            <xpath>name(//near-north/center//*[1])</xpath>
+            <xpath>name((//near-north/center//*)[1])</xpath>
             <output>near-south-east,</output>
         </test-case>
         <test-case>
-            <xpath>name(//near-north/center//*[2])</xpath>
+            <xpath>name((//near-north/center//*)[2])</xpath>
             <output>near-south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//near-north/center//*[3])</xpath>
+            <xpath>name((//near-north/center//*)[3])</xpath>
             <output>south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//near-north/center//*[4])</xpath>
+            <xpath>name((//near-north/center//*)[4])</xpath>
             <output>far-south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//near-north/center//*[5])</xpath>
+            <xpath>name((//near-north/center//*)[5])</xpath>
             <output>near-south-west,</output>
         </test-case>
     </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/axes/axes56.xml</input-file>
         <test-case>
-            <xpath>name(//doc//xx/descendant::*)</xpath>
+            <xpath>name((//doc//xx/descendant::*))</xpath>
             <output>xxchild,</output>
         </test-case>
         <test-case>
-            <xpath>name(//doc//xx/descendant::*[1])</xpath>
+            <xpath>name((//doc//xx/descendant::*)[1])</xpath>
             <output>xxchild,</output>
         </test-case>
         <test-case>
-            <xpath>name(//doc//xx/descendant::*[2])</xpath>
+            <xpath>name((//doc//xx/descendant::*)[2])</xpath>
             <output>xxchild,</output>
         </test-case>
         <test-case>
-            <xpath>name(//doc//xx/descendant::*[3])</xpath>
+            <xpath>name((//doc//xx/descendant::*)[3])</xpath>
             <output>childofxx,</output>
         </test-case>
         <test-case>
-            <xpath>name(//doc//xx/descendant::*[4])</xpath>
+            <xpath>name((//doc//xx/descendant::*)[4])</xpath>
             <output>xxsub,</output>
         </test-case>
         <test-case>
-            <xpath>name(//doc//xx/descendant::*[5])</xpath>
+            <xpath>name((//doc//xx/descendant::*)[5])</xpath>
             <output>xxsubsub,</output>
         </test-case>
     </test-cases>
@@ -953,27 +953,27 @@
     <test-cases>
         <input-file>&xalan-tests;/axes/axes82.xml</input-file>
         <test-case>
-            <xpath>name(//center//*)</xpath>
+            <xpath>name((//center//*))</xpath>
             <output>near-south-west,</output>
         </test-case>
         <test-case>
-            <xpath>name(//center//*[1])</xpath>
+            <xpath>name((//center//*)[1])</xpath>
             <output>near-south-west,</output>
         </test-case>
         <test-case>
-            <xpath>name(//center//*[2])</xpath>
+            <xpath>name((//center//*)[2])</xpath>
             <output>near-south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//center//*[3])</xpath>
+            <xpath>name((//center//*)[3])</xpath>
             <output>south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//center//*[4])</xpath>
+            <xpath>name((//center//*)[4])</xpath>
             <output>far-south,</output>
         </test-case>
         <test-case>
-            <xpath>name(//center//*[5])</xpath>
+            <xpath>name((//center//*)[5])</xpath>
             <output>near-south-east,</output>
         </test-case>
     </test-cases>
@@ -1011,54 +1011,54 @@
     <test-cases>
         <input-file>&xalan-tests;/axes/axes84.xml</input-file>
         <test-case>
-            <xpath>name(//*[count(ancestor::*) &gt;= 2]/../parent::*)</xpath>
+            <xpath>name((//*[count(ancestor::*) &gt;= 2]/../parent::*))</xpath>
             <output>far-north,</output>
         </test-case>
         <test-case>
-            <xpath>name(//*[count(ancestor::*) &gt;= 2]/../parent::*[1])</xpath>
+            <xpath>name((//*[count(ancestor::*) &gt;= 2]/../parent::*)[1])</xpath>
             <output>far-north,</output>
         </test-case>
         <test-case>
-            <xpath>name(//*[count(ancestor::*) &gt;= 2]/../parent::*[2])</xpath>
+            <xpath>name((//*[count(ancestor::*) &gt;= 2]/../parent::*)[2])</xpath>
             <output>north,</output>
         </test-case>
         <test-case>
-            <xpath>name(//*[count(ancestor::*) &gt;= 2]/../parent::*[3])</xpath>
+            <xpath>name((//*[count(ancestor::*) &gt;= 2]/../parent::*)[3])</xpath>
             <output>near-north,</output>
         </test-case>
         <test-case>
-            <xpath>name(//*[count(ancestor::*) &gt;= 2]/../parent::*[4])</xpath>
+            <xpath>name((//*[count(ancestor::*) &gt;= 2]/../parent::*)[4])</xpath>
             <output>center,</output>
         </test-case>
         <test-case>
-            <xpath>name(//*[count(ancestor::*) &gt;= 2]/../parent::*[5])</xpath>
+            <xpath>name((//*[count(ancestor::*) &gt;= 2]/../parent::*)[5])</xpath>
             <output>near-south,</output>
         </test-case>
     </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/axes/axes85.xml</input-file>
         <test-case>
-            <xpath>name(//*[count(./*/*) &gt; 0])</xpath>
+            <xpath>name((//*[count(./*/*) &gt; 0]))</xpath>
             <output>far-north,</output>
         </test-case>
         <test-case>
-            <xpath>name(//*[count(./*/*) &gt; 0][1])</xpath>
+            <xpath>name((//*[count(./*/*) &gt; 0])[1])</xpath>
             <output>far-north,</output>
         </test-case>
         <test-case>
-            <xpath>name(//*[count(./*/*) &gt; 0][2])</xpath>
+            <xpath>name((//*[count(./*/*) &gt; 0])[2])</xpath>
             <output>north,</output>
         </test-case>
         <test-case>
-            <xpath>name(//*[count(./*/*) &gt; 0][3])</xpath>
+            <xpath>name((//*[count(./*/*) &gt; 0])[3])</xpath>
             <output>near-north,</output>
         </test-case>
         <test-case>
-            <xpath>name(//*[count(./*/*) &gt; 0][4])</xpath>
+            <xpath>name((//*[count(./*/*) &gt; 0])[4])</xpath>
             <output>center,</output>
         </test-case>
         <test-case>
-            <xpath>name(//*[count(./*/*) &gt; 0][5])</xpath>
+            <xpath>name((//*[count(./*/*) &gt; 0])[5])</xpath>
             <output>near-south,</output>
         </test-case>
     </test-cases>
@@ -1532,7 +1532,7 @@
             <output>far-north,</output>
         </test-case>
     </test-cases>
-    <!-- <test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/axes/axes122.xml</input-file>
         <test-case>
             <xpath>count(/descendant-or-self::*/@att1)</xpath>
@@ -1544,7 +1544,7 @@
         </test-case>
         <test-case>
             <xpath>//doc/descendant-or-self::*/@att1[last()]</xpath>
-            <output>e,</output>
+            <output>e,d,c,b,a,</output>
         </test-case>
         <test-case>
             <xpath>//doc/descendant-or-self::*[last()]/@att1</xpath>
@@ -1556,27 +1556,27 @@
         </test-case>
         <test-case>
             <xpath>count(//baz/ancestor-or-self::*/@att1)</xpath>
-            <output>5</output>
+            <output>5,</output>
         </test-case>
         <test-case>
             <xpath>//baz/ancestor-or-self::*/@att1[last()]</xpath>
-            <output>e</output>
+            <output>e,d,c,b,a,</output>
         </test-case>
         <test-case>
             <xpath>(//baz/ancestor-or-self::*)/@att1[last()]</xpath>
-            <output>e</output>
+            <output>e,d,c,b,a,</output>
         </test-case>
         <test-case>
             <xpath>(//baz/ancestor-or-self::*/@att1)[last()]</xpath>
-            <output>a</output>
+            <output>a,</output>
         </test-case>
         <test-case>
             <xpath>(//baz/ancestor::*|self::*)/@att1[last()]</xpath>
-            <output>e</output>
+            <output>e,d,c,b,</output>
         </test-case>
         <test-case>
             <xpath>((//baz/ancestor::*|//baz/self::*)/@att1)[last()]</xpath>
-            <output>a</output>
+            <output>a,</output>
         </test-case>
-    </test-cases> -->
+    </test-cases>
 </test-suite>
