@@ -613,10 +613,23 @@ fn round(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPa
         return Err(XPathError::IncorrectNumberOfArgument);
     }
 
-    let number = context
+    let x = context
         .pop_object()
         .ok_or(XPathError::IncorrectNumberOfArgument)?
         .as_number()?;
 
-    Ok(number.round().into())
+    // `f64::round` rounds away from zero, but XPath's `round` rounds toward positive infinity.
+    // Since Rust does not allow specifying rounding modes, manual calculation is required.
+    //  example:
+    //      Rust:  (-2.5f64).round() == -3
+    //      XPath: round(-2.5) = -2
+    //
+    // Here, I will implement based on the following reference.
+    // https://stackoverflow.com/a/28124775
+    let y = x.floor();
+    if x == y {
+        Ok(y.into())
+    } else {
+        Ok((2. * x - y).floor().copysign(x).into())
+    }
 }
