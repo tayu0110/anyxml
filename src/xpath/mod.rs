@@ -38,14 +38,14 @@ impl XPathExpression {
         // clear context
         self.context.stack.clear();
 
-        // initialize value stack and context
-        let mut initial = XPathNodeSet::default();
-        initial.push(&document);
-        self.context.push_object(initial.into());
+        // initialize context
         self.context.node = Some(document.into());
+        self.context.position = 1;
+        self.context.size = 1;
 
         // start evaluation
         self.do_evaluate(self.root)?;
+        assert_eq!(self.context.stack.len(), 1);
         self.context.stack.pop().ok_or(XPathError::InternalError)
     }
 
@@ -68,13 +68,22 @@ impl XPathExpression {
                 self.context.push_object(node_set.into());
             }
             XPathSyntaxTree::Step {
+                first,
                 axis,
                 ref node_test,
                 predicate,
             } => {
-                let XPathObject::NodeSet(current_node_set) = self.context.stack.pop().unwrap()
-                else {
-                    return Err(XPathError::IncorrectOperandType);
+                let current_node_set = if !first {
+                    self.context
+                        .stack
+                        .pop()
+                        .ok_or(XPathError::InternalError)?
+                        .as_nodeset()
+                        .map_err(|_| XPathError::IncorrectOperandType)?
+                } else {
+                    let mut node_set = XPathNodeSet::default();
+                    node_set.push(self.context.node.clone().unwrap());
+                    node_set
                 };
 
                 let node_test = node_test.clone();
@@ -145,23 +154,16 @@ impl XPathExpression {
                 for (i, node) in node_set.iter().enumerate() {
                     self.context.position = i + 1;
                     self.context.node = Some(node.clone());
-                    let mut context_node_set = XPathNodeSet::default();
-                    context_node_set.push(node.clone());
-                    self.context.push_object(context_node_set.into());
                     self.do_evaluate(expression)?;
                     let ret = match self.context.stack.pop().unwrap() {
                         XPathObject::Number(number) => number == (i + 1) as f64,
                         object => object.as_boolean()?,
                     };
                     assert!(
-                        stack_depth == self.context.stack.len()
-                            || stack_depth + 1 == self.context.stack.len(),
+                        stack_depth == self.context.stack.len(),
                         "stack_depth: {stack_depth}, context stack: {}",
                         self.context.stack.len(),
                     );
-                    if stack_depth < self.context.stack.len() {
-                        self.context.stack.pop();
-                    }
                     if ret {
                         new.push(node);
                     }
@@ -205,21 +207,12 @@ impl XPathExpression {
                 for (i, node) in node_set.iter().enumerate() {
                     self.context.position = i + 1;
                     self.context.node = Some(node.clone());
-                    let mut context_node_set = XPathNodeSet::default();
-                    context_node_set.push(node.clone());
-                    self.context.push_object(context_node_set.into());
                     self.do_evaluate(predicate)?;
                     let ret = match self.context.stack.pop().unwrap() {
                         XPathObject::Number(number) => number == (i + 1) as f64,
                         object => object.as_boolean()?,
                     };
-                    assert!(
-                        stack_depth == self.context.stack.len()
-                            || stack_depth + 1 == self.context.stack.len()
-                    );
-                    if stack_depth < self.context.stack.len() {
-                        self.context.stack.pop();
-                    }
+                    assert!(stack_depth == self.context.stack.len());
                     if ret {
                         new.push(node);
                     }
@@ -703,6 +696,7 @@ impl Default for NamespaceSet {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XPathCompileError {
+    ExpressionNotTerminated,
     InvalidAbsoluteLocationPath,
     InvalidNodeTest,
     InvalidPredicate,
@@ -901,6 +895,7 @@ enum XPathSyntaxTree {
     Slash(usize, usize),
     LocationPathRoot,
     Step {
+        first: bool,
         axis: Axis,
         node_test: Arc<NodeTest>,
         predicate: usize,

@@ -2068,11 +2068,11 @@
             <output>b,b,</output>
         </test-case>
     </test-cases>
-    <!-- <test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/match/match05.xml</input-file>
         <test-case>
             <xpath>/letters/letter[.='b' or .='h']</xpath>
             <output>b,b,h,</output>
         </test-case>
-    </test-cases> -->
+    </test-cases>
 </test-suite>

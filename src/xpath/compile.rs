@@ -8,6 +8,10 @@ use crate::{
 pub fn compile(mut xpath: &str) -> Result<XPathExpression, XPathCompileError> {
     let mut tree = vec![];
     let root = parse_expr(&mut xpath, &mut tree)?;
+    xpath = xpath.trim_start_matches(|c| XMLVersion::default().is_whitespace(c));
+    if !xpath.is_empty() {
+        return Err(XPathCompileError::ExpressionNotTerminated);
+    }
 
     // Optimization will not be implemented yet.
     // For now, the priority is correct operation over performance.
@@ -30,7 +34,7 @@ fn parse_location_path(
     if xpath.starts_with('/') {
         parse_absolute_location_path(xpath, tree)
     } else {
-        parse_relative_location_path(xpath, tree)
+        parse_relative_location_path(xpath, tree, true)
     }
 }
 
@@ -57,6 +61,7 @@ fn parse_absolute_location_path(
 
         let right = tree.len();
         tree.push(XPathSyntaxTree::Step {
+            first: false,
             axis: Axis::DescendantOrSelf,
             node_test: Arc::new(NodeTest::Node),
             predicate: usize::MAX,
@@ -65,7 +70,7 @@ fn parse_absolute_location_path(
         let left = tree.len();
         tree.push(XPathSyntaxTree::Slash(root, right));
 
-        let right = parse_relative_location_path(xpath, tree)?;
+        let right = parse_relative_location_path(xpath, tree, false)?;
         let new = XPathSyntaxTree::Slash(left, right);
         let ret = tree.len();
         tree.push(new);
@@ -84,7 +89,7 @@ fn parse_absolute_location_path(
         // NameStartChar    : NameTest, AxisName
         matches!(c, '.' | '*' | '@') || (c != ':' && XMLVersion::default().is_name_start_char(c))
     }) {
-        let right = parse_relative_location_path(xpath, tree)?;
+        let right = parse_relative_location_path(xpath, tree, false)?;
         let new = XPathSyntaxTree::Slash(root, right);
         let ret = tree.len();
         tree.push(new);
@@ -103,8 +108,9 @@ fn parse_absolute_location_path(
 fn parse_relative_location_path(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
+    is_first_step: bool,
 ) -> Result<usize, XPathCompileError> {
-    let mut left = parse_step(xpath, tree)?;
+    let mut left = parse_step(xpath, tree, is_first_step)?;
     skip_whitespaces(xpath);
     while let Some(rem) = xpath.strip_prefix('/') {
         let new = if let Some(rem) = rem.strip_prefix('/') {
@@ -113,6 +119,7 @@ fn parse_relative_location_path(
             *xpath = rem;
             let right = tree.len();
             tree.push(XPathSyntaxTree::Step {
+                first: false,
                 axis: Axis::DescendantOrSelf,
                 node_test: Arc::new(NodeTest::Node),
                 predicate: usize::MAX,
@@ -120,11 +127,11 @@ fn parse_relative_location_path(
             let new = XPathSyntaxTree::Slash(left, right);
             left = tree.len();
             tree.push(new);
-            let right = parse_step(xpath, tree)?;
+            let right = parse_step(xpath, tree, false)?;
             XPathSyntaxTree::Slash(left, right)
         } else {
             *xpath = rem;
-            let right = parse_step(xpath, tree)?;
+            let right = parse_step(xpath, tree, false)?;
             XPathSyntaxTree::Slash(left, right)
         };
         left = tree.len();
@@ -141,6 +148,7 @@ fn parse_relative_location_path(
 fn parse_step(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
+    is_first_step: bool,
 ) -> Result<usize, XPathCompileError> {
     skip_whitespaces(xpath);
     if let Some(rem) = xpath.strip_prefix('.') {
@@ -150,6 +158,7 @@ fn parse_step(
         if let Some(rem) = rem.strip_prefix('.') {
             *xpath = rem;
             tree.push(XPathSyntaxTree::Step {
+                first: is_first_step,
                 axis: Axis::Parent,
                 node_test: Arc::new(NodeTest::Node),
                 predicate: usize::MAX,
@@ -157,6 +166,7 @@ fn parse_step(
         } else {
             *xpath = rem;
             tree.push(XPathSyntaxTree::Step {
+                first: is_first_step,
                 axis: Axis::SelfNode,
                 node_test: Arc::new(NodeTest::Node),
                 predicate: usize::MAX,
@@ -173,6 +183,7 @@ fn parse_step(
     let mut prev = tree.len();
     let ret = prev;
     tree.push(XPathSyntaxTree::Step {
+        first: is_first_step,
         axis,
         node_test: Arc::new(node_test),
         predicate: usize::MAX,
@@ -527,6 +538,7 @@ fn parse_path_expr(
                 *xpath = rem;
                 let right = tree.len();
                 tree.push(XPathSyntaxTree::Step {
+                    first: false,
                     axis: Axis::DescendantOrSelf,
                     node_test: Arc::new(NodeTest::Node),
                     predicate: usize::MAX,
@@ -535,11 +547,11 @@ fn parse_path_expr(
                 let root = tree.len();
                 tree.push(XPathSyntaxTree::Slash(left, right));
 
-                let right = parse_relative_location_path(xpath, tree)?;
+                let right = parse_relative_location_path(xpath, tree, false)?;
                 XPathSyntaxTree::Slash(root, right)
             } else {
                 *xpath = rem;
-                let right = parse_relative_location_path(xpath, tree)?;
+                let right = parse_relative_location_path(xpath, tree, false)?;
                 XPathSyntaxTree::Slash(left, right)
             };
             left = tree.len();
