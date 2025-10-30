@@ -1,7 +1,7 @@
 use std::{fmt::Write as _, path::Path};
 
 use anyxml::{
-    sax::parser::XMLReaderBuilder,
+    sax::parser::{ParserOption, XMLReaderBuilder},
     tree::{TreeBuildHandler, convert::NodeKind},
     uri::URIString,
     xpath::{self, XPathObject},
@@ -11,6 +11,7 @@ use anyxml::{
 fn xpath_evaluation_tests() {
     let mut reader = XMLReaderBuilder::new()
         .set_handler(TreeBuildHandler::default())
+        .enable_option(ParserOption::ExternalGeneralEntities)
         .build();
     reader
         .parse_uri(

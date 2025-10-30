@@ -1579,4 +1579,500 @@
             <output>a,</output>
         </test-case>
     </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/axes/axes123.xml</input-file>
+        <test-case>
+            <xpath>name(//center/@center-attr-1/../..)</xpath>
+            <output>near-north,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/axes/axes124.xml</input-file>
+        <test-case>
+            <xpath>//center/comment()</xpath>
+            <output>Center Comment,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/boolean/boolean01.xml</input-file>
+        <test-case>
+            <xpath>true()</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>true() and true()</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>true() or true()</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>not(true())</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>boolean('')</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>1&gt;2</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>1&gt;=2</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>false()</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>1=1</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>1=2</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>1 = 1.00</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>0 = -0</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>1 = '001'</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>true() = '0'</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>false() = ''</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>true()=2</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>false()=0</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>false() and false()</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>'foo' and 'fop'</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>true() and false()</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>false() and true()</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>'1' and '0'</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>true() or false()</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>false() or true()</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>false() or false()</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>0 or ''</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>not(false())</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>not(false() = false())</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>not(true() = false())</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>not('')</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>not('0')</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>boolean('0')</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>boolean(0)</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>boolean(-0)</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>boolean(1)</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>boolean(1 div 0)</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>0 div 0</xpath>
+            <output>NaN,</output>
+        </test-case>
+        <test-case>
+            <xpath>boolean(0 div 0)</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>1&gt;1</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>2&gt;1</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>1&lt;2</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>1&lt;1</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>2&lt;1</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>'2'&gt;'1'</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>0 &gt; -0</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>2&gt;=2</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>2&gt;=1</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>1&lt;=2</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>1&lt;=1</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>2&lt;=1</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>false() and 1 div 0</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>true() or 1 div 0</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>1!=1</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>1!=2</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>1 != 1.00</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>false()!=true()</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>true()!=false()</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>false()!=false()</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>'ace' != 'ace'</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>'ace' != 'abc'</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>'H' != '  H'</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>'H' != 'H  '</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>1.9999999 &lt; 2.0</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>2.0000001 &lt; 2.0</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>1.9999999 &lt; 2</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>2 &lt; 2.0</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>'001' = 1</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>0=false()</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>'0'=true()</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>boolean('1')</xpath>
+            <output>true,</output>
+        </test-case>
+    </test-cases>
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/boolean/boolean40.xml</input-file>
+        <test-case>
+            <xpath>boolean(//doc)</xpath>
+            <output>true,</output>
+        </test-case>
+    </test-cases> -->
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/boolean/boolean41.xml</input-file>
+        <test-case>
+            <xpath>boolean(//foo)</xpath>
+            <output>false,</output>
+        </test-case>
+    </test-cases> -->
+    <test-cases>
+        <input-file>&xalan-tests;/boolean/boolean70.xml</input-file>
+        <test-case>
+            <xpath>//doc/j[@l='12'] = //doc/j[@w='33']</xpath>
+            <output>true,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/boolean/boolean71.xml</input-file>
+        <test-case>
+            <xpath>//doc/j[@l='12'] = //doc/j[@w='17']</xpath>
+            <output>false,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/boolean/boolean72.xml</input-file>
+        <test-case>
+            <xpath>//doc/j[@l='12'] = //doc/j[@w='45']</xpath>
+            <output>true,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/boolean/boolean73.xml</input-file>
+        <test-case>
+            <xpath>//doc/j[@l='12'] != //doc/j[@w='33']</xpath>
+            <output>true,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/boolean/boolean74.xml</input-file>
+        <test-case>
+            <xpath>//doc/j[@l='12'] != //doc/j[@l='17']</xpath>
+            <output>true,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/boolean/boolean75.xml</input-file>
+        <test-case>
+            <xpath>//doc/j[@l='12'] != //doc/j[@w='45']</xpath>
+            <output>true,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/boolean/boolean76.xml</input-file>
+        <test-case>
+            <xpath>//doc/j[@l='16'] != //doc/j[@w='78']</xpath>
+            <output>false,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/copy/copy16.xml</input-file>
+        <test-case>
+            <xpath>id(/main/b)</xpath>
+            <output>W,X,Y,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/copy/copy24.xml</input-file>
+        <test-case>
+            <xpath>/processing-instruction('a-pi')</xpath>
+            <output>some data,</output>
+        </test-case>
+        <test-case>
+            <xpath>/processing-instruction()</xpath>
+            <output>some data,another,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/expression/expression01.xml</input-file>
+        <test-case>
+            <xpath>//doc/para[@id='1' and lang('en')]</xpath>
+            <output>en,</output>
+        </test-case>
+    </test-cases>
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/expression/expression03.xml</input-file>
+        <test-case>
+            <xpath>//doc/para[@id='3' and lang('en')]</xpath>
+            <output>EN,</output>
+        </test-case>
+    </test-cases> -->
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/expression/expression04.xml</input-file>
+        <test-case>
+            <xpath>//doc/div/para[lang('en')]</xpath>
+            <output>en,</output>
+        </test-case>
+    </test-cases> -->
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/expression/expression05.xml</input-file>
+        <test-case>
+            <xpath>//doc/para[@id='3' and lang('en')]</xpath>
+            <output>EN,</output>
+        </test-case>
+    </test-cases> -->
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/idkey/idkey04.xml</input-file>
+        <test-case>
+            <xpath>id('c')/@id</xpath>
+            <output>c,</output>
+        </test-case>
+    </test-cases> -->
+    <test-cases>
+        <input-file>&xalan-tests;/idkey/idkey09.xml</input-file>
+        <test-case>
+            <xpath>id('c')/@id</xpath>
+            <output></output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/idkey/idkey23.xml</input-file>
+        <test-case>
+            <xpath>id('nomatch')/@id</xpath>
+            <output></output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/idkey/idkey24.xml</input-file>
+        <test-case>
+            <xpath>id('d b c')/@id</xpath>
+            <output>b,c,d,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/idkey/idkey26.xml</input-file>
+        <test-case>
+            <xpath>id(main/b)</xpath>
+            <output>W,X,Y,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/idkey/idkey57.xml</input-file>
+        <test-case>
+            <xpath>id(main/@list)</xpath>
+            <output>W,Y,Z,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/idkey/idkey61.xml</input-file>
+        <test-case>
+            <xpath>count(id('d b c k'))</xpath>
+            <output>3,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/idkey/idkey62.xml</input-file>
+        <test-case>
+            <xpath>count(id('c'))</xpath>
+            <output>1,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/idkey/idkey63.xml</input-file>
+        <test-case>
+            <xpath>count(id('k'))</xpath>
+            <output>0,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/match/match01.xml</input-file>
+        <test-case>
+            <xpath>//foo/@att1</xpath>
+            <output>c,b,a,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/match/match04.xml</input-file>
+        <test-case>
+            <xpath>/letters/letter[.='b']</xpath>
+            <output>b,b,</output>
+        </test-case>
+    </test-cases>
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/match/match05.xml</input-file>
+        <test-case>
+            <xpath>/letters/letter[.='b' or .='h']</xpath>
+            <output>b,b,h,</output>
+        </test-case>
+    </test-cases> -->
 </test-suite>

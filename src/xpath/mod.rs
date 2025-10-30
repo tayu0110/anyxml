@@ -155,7 +155,9 @@ impl XPathExpression {
                     };
                     assert!(
                         stack_depth == self.context.stack.len()
-                            || stack_depth + 1 == self.context.stack.len()
+                            || stack_depth + 1 == self.context.stack.len(),
+                        "stack_depth: {stack_depth}, context stack: {}",
+                        self.context.stack.len(),
                     );
                     if stack_depth < self.context.stack.len() {
                         self.context.stack.pop();
