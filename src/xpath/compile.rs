@@ -228,7 +228,7 @@ fn parse_step(
 /// ```
 fn parse_axis_specifier(xpath: &mut &str) -> Result<Axis, XPathCompileError> {
     skip_whitespaces(xpath);
-    let (rem, axis) = if let Some(rem) = xpath.strip_prefix('@') {
+    let (mut rem, axis) = if let Some(rem) = xpath.strip_prefix('@') {
         *xpath = rem;
         return Ok(Axis::Attribute);
     } else if let Some(rem) = xpath.strip_prefix("ancestor") {
@@ -269,7 +269,7 @@ fn parse_axis_specifier(xpath: &mut &str) -> Result<Axis, XPathCompileError> {
         return Ok(Axis::Child);
     };
 
-    skip_whitespaces(xpath);
+    skip_whitespaces(&mut rem);
     if let Some(rem) = rem.strip_prefix("::") {
         // Only when `::` follows an AxisName is it considered a match
         // for that specific AxisName.
