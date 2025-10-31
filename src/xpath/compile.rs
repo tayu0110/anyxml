@@ -302,28 +302,43 @@ fn parse_node_test(
     if let Some(rem) = xpath.strip_prefix('*') {
         *xpath = rem;
         Ok(NodeTest::Any)
-    } else if let Some(rem) = xpath.strip_prefix("text(") {
+    } else if let Some(rem) = xpath.strip_prefix("text").and_then(|mut rem| {
+        skip_whitespaces(&mut rem);
+        rem.strip_prefix('(')
+    }) {
         *xpath = rem;
         skip_whitespaces(xpath);
         *xpath = xpath
             .strip_prefix(')')
             .ok_or(XPathCompileError::InvalidNodeTest)?;
         Ok(NodeTest::Text)
-    } else if let Some(rem) = xpath.strip_prefix("comment(") {
+    } else if let Some(rem) = xpath.strip_prefix("comment").and_then(|mut rem| {
+        skip_whitespaces(&mut rem);
+        rem.strip_prefix('(')
+    }) {
         *xpath = rem;
         skip_whitespaces(xpath);
         *xpath = xpath
             .strip_prefix(')')
             .ok_or(XPathCompileError::InvalidNodeTest)?;
         Ok(NodeTest::Comment)
-    } else if let Some(rem) = xpath.strip_prefix("node(") {
+    } else if let Some(rem) = xpath.strip_prefix("node").and_then(|mut rem| {
+        skip_whitespaces(&mut rem);
+        rem.strip_prefix('(')
+    }) {
         *xpath = rem;
         skip_whitespaces(xpath);
         *xpath = xpath
             .strip_prefix(')')
             .ok_or(XPathCompileError::InvalidNodeTest)?;
         Ok(NodeTest::Node)
-    } else if let Some(rem) = xpath.strip_prefix("processing-instruction(") {
+    } else if let Some(rem) = xpath
+        .strip_prefix("processing-instruction")
+        .and_then(|mut rem| {
+            skip_whitespaces(&mut rem);
+            rem.strip_prefix('(')
+        })
+    {
         skip_whitespaces(xpath);
         if let Some(rem) = rem.strip_prefix(')') {
             *xpath = rem;

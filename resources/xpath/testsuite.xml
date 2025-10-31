@@ -3410,4 +3410,18 @@
             <output>OK,</output>
         </test-case>
     </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select17.xml</input-file>
+        <test-case>
+            <xpath>normalize-space(/doc/comment())</xpath>
+            <output>Good,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select18.xml</input-file>
+        <test-case>
+            <xpath>normalize-space(/doc/comment ())</xpath>
+            <output>Good,</output>
+        </test-case>
+    </test-cases>
 </test-suite>
