@@ -15,10 +15,10 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Fix git config to use LF
-        run: |
-          git config --global core.autocrlf false
-          git config --global core.eol lf
+      # - name: Fix git config to use LF
+      #   run: |
+      #     git config --global core.autocrlf false
+      #     git config --global core.eol lf
 
       - name: Checkout repository
         uses: actions/checkout@v5

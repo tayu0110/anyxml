@@ -1,6 +1,7 @@
 use crate::{
     encoding::{DecodeError, EncodeError},
     uri::ParseRIError,
+    xpath::{XPathCompileError, XPathError},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -192,6 +193,8 @@ pub enum XMLError {
     URIParseFailure,
     URIBaseURINotAbsolute,
     URIBaseURINotFound,
+    // XPath errors
+    XPathError(XPathError),
 }
 
 impl std::fmt::Display for XMLError {
@@ -287,5 +290,17 @@ impl From<DecodeError> for XMLError {
 impl From<ParseRIError> for XMLError {
     fn from(_: ParseRIError) -> Self {
         Self::URIParseFailure
+    }
+}
+
+impl From<XPathError> for XMLError {
+    fn from(value: XPathError) -> Self {
+        Self::XPathError(value)
+    }
+}
+
+impl From<XPathCompileError> for XMLError {
+    fn from(value: XPathCompileError) -> Self {
+        XPathError::from(value).into()
     }
 }

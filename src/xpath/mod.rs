@@ -3,20 +3,23 @@ mod function;
 mod ops;
 mod step;
 
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, io::Read, sync::Arc};
 
+use anyxml_uri::uri::URIStr;
 pub use compile::*;
 
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE,
+    error::XMLError,
+    sax::parser::XMLReaderBuilder,
     tree::{
         Attribute, CDATASection, Comment, Document, Element, Node, NodeType, ProcessingInstruction,
-        Text, convert::NodeKind, namespace::Namespace, node::NodeSpec,
+        Text, TreeBuildHandler, convert::NodeKind, namespace::Namespace, node::NodeSpec,
     },
     xpath::{function::FunctionLibrary, step::location_step},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XPathError {
     IncorrectOperandType,
     IncorrectNumberOfArgument,
@@ -24,7 +27,94 @@ pub enum XPathError {
     WrongTypeConversion,
     UnresolvableFunctionName,
     UnresolvableVariableName,
+    CompileError(XPathCompileError),
     InternalError,
+}
+
+impl From<XPathCompileError> for XPathError {
+    fn from(value: XPathCompileError) -> Self {
+        XPathError::CompileError(value)
+    }
+}
+
+/// Evaluate `xpath` as an XPath expression with `document` as the initial context node.
+///
+/// If successfully executed, it returns an [`XPathObject`] representing the evaluation
+/// result of the XPath expression.  \
+/// If the compilation or evaluation of the XPath expression fails, it returns [`Err`].
+pub fn evaluate(xpath: &str, document: Document) -> Result<XPathObject, XPathError> {
+    compile(xpath)?.evaluate(document)
+}
+
+/// Parse `xml` as the XML document and evaluate `xpath` as an XPath expression.
+///
+/// If successfully executed, it returns an [`XPathObject`] representing the evaluation
+/// result of the XPath expression.  \
+/// If the compilation or evaluation of the XPath expression fails,
+/// or if the XML document cannot be parsed, it returns [`Err`].
+///
+/// `uri` is treated as the base URI for the XML document, and it is recommended
+/// to specify it in documents that may retrieve external resources.
+pub fn evaluate_str(xpath: &str, xml: &str, uri: Option<&URIStr>) -> Result<XPathObject, XMLError> {
+    let mut expression = compile(xpath)?;
+    let mut reader = XMLReaderBuilder::new()
+        .set_handler(TreeBuildHandler::default())
+        .build();
+    reader.parse_str(xml, uri)?;
+
+    let document = reader.handler.document;
+    Ok(expression.evaluate(document)?)
+}
+
+/// Parse the XML document where `uri` is the base URI of the source, and evaluate `xpath`
+/// as an XPath expression.
+///
+/// If successfully executed, it returns an [`XPathObject`] representing the evaluation
+/// result of the XPath expression.  \
+/// If the compilation or evaluation of the XPath expression fails,
+/// or if the XML document cannot be parsed, it returns [`Err`].
+///
+/// `encoding` allows you to optionally specify the preferred encoding method to use.
+pub fn evaluate_uri(
+    xpath: &str,
+    uri: impl AsRef<URIStr>,
+    encoding: Option<&str>,
+) -> Result<XPathObject, XMLError> {
+    let mut expression = compile(xpath)?;
+    let mut reader = XMLReaderBuilder::new()
+        .set_handler(TreeBuildHandler::default())
+        .build();
+    reader.parse_uri(uri, encoding)?;
+
+    let document = reader.handler.document;
+    Ok(expression.evaluate(document)?)
+}
+
+/// Parse the XML documents using `reader` as the source and evaluate `xpath` as an XPath expression.
+///
+/// If successfully executed, it returns an [`XPathObject`] representing the evaluation
+/// result of the XPath expression.  \
+/// If the compilation or evaluation of the XPath expression fails,
+/// or if the XML document cannot be parsed, it returns [`Err`].
+///
+/// `encoding` allows you to optionally specify the preferred encoding method to use.
+///
+/// `uri` is treated as the base URI for the XML document, and it is recommended
+/// to specify it in documents that may retrieve external resources.
+pub fn evaluate_reader<'a>(
+    xpath: &str,
+    reader: impl Read + 'a,
+    encoding: Option<&str>,
+    uri: Option<&URIStr>,
+) -> Result<XPathObject, XMLError> {
+    let mut expression = compile(xpath)?;
+    let mut parser = XMLReaderBuilder::new()
+        .set_handler(TreeBuildHandler::default())
+        .build();
+    parser.parse_reader(reader, encoding, uri)?;
+
+    let document = parser.handler.document;
+    Ok(expression.evaluate(document)?)
 }
 
 pub struct XPathExpression {
@@ -34,6 +124,11 @@ pub struct XPathExpression {
 }
 
 impl XPathExpression {
+    /// Evaluate the precompiled XPath expression with `document` as the initial context node.
+    ///
+    /// If successfully executed, it returns an [`XPathObject`] representing the evaluation
+    /// result of the XPath expression.  \
+    /// If the evaluation of the XPath expression fails, it returns [`Err`].
     pub fn evaluate(&mut self, document: Document) -> Result<XPathObject, XPathError> {
         // clear context
         self.context.stack.clear();
@@ -694,7 +789,7 @@ impl Default for NamespaceSet {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XPathCompileError {
     ExpressionNotTerminated,
     InvalidAbsoluteLocationPath,

@@ -13,6 +13,8 @@ The current implementation supports the following features:
 - validate XML 1.0 document using DTD
 - handle namespace conforming to XML Namespace 1.0
 - build, modify and serialize XML document trees
+- execute XPath and lookup specific node in the document tree
+    - only XPath 1.0 is supported in the current implementation
 
 ## Parser
 You can use a SAX-like API designed with reference to Java SAX API.
@@ -186,6 +188,29 @@ root.append_child(document.create_text(" World!!")).unwrap();
 assert_eq!(document.to_string(), r#"<greeting>Hello World!!</greeting>"#);
 ```
 
+## XPath execution
+This crate supports XPath, enabling the search for specific nodes within the document tree.
+
+In the current implementation, only XPath 1.0 is available; features not explicitly defined in the XPath 1.0 specification (such as functions defined in the XSLT or XPointer specifications) cannot be used.
+
+In the following example, the `evaluate_str` function compiles the XPath, parses the document, and evaluates the XPath all at once.  \
+If you use the same XPath repeatedly, you can use the `compile` function to obtain a precompiled XPath expression.
+
+### Example
+```rust
+use anyxml::xpath::evaluate_str;
+
+const DOCUMENT: &str = r#"<root>
+    <greeting xml:lang='en'>Hello</greeting>
+    <greeting xml:lang='ja'>こんにちは</greeting>
+    <greeting xml:lang='ch'>你好</greeting>
+</root>
+"#;
+const XPATH: &str = "//greeting[lang('ja')]/text()";
+
+let text = evaluate_str(XPATH, DOCUMENT, None).unwrap().as_string().unwrap();
+assert_eq!(text.as_ref(), "こんにちは");
+```
 
 # Conformance
 This crate conforms to the following specifications:
