@@ -1,6 +1,6 @@
 // deno run -A resources/get-xslt-testsuite.ts
 import * as path from "jsr:@std/path@1.1.0";
-import { exists, move } from "jsr:@std/fs@1.0.18";
+import { copy, exists } from "jsr:@std/fs@1.0.18";
 import unzipper from "npm:unzipper@0.12.3";
 
 const tempdir = await Deno.makeTempDir();
@@ -38,7 +38,7 @@ const dir = await unzipper.Open.file(XSLTTS_FILE_FULLNAME);
 await dir.extract({ path: tempdir });
 console.log(`successfully extracted ${XSLTTS_FILE_FULLNAME} to ${tempdir}`);
 
-await move(`${tempdir}/testsuite`, XSLTTS_DIR_FULLNAME);
+await copy(`${tempdir}/testsuite`, XSLTTS_DIR_FULLNAME);
 console.log(
     `successfully renamed ${tempdir}/testsuite to ${XSLTTS_DIR_FULLNAME}`,
 );
