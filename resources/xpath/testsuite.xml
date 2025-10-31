@@ -3424,4 +3424,249 @@
             <output>Good,</output>
         </test-case>
     </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select19.xml</input-file>
+        <test-case>
+            <xpath>string-length(/doc)</xpath>
+            <output>36,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select20.xml</input-file>
+        <test-case>
+            <xpath>string-length (/doc)</xpath>
+            <output>36,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select21.xml</input-file>
+        <test-case>
+            <xpath>/doc/div + 3</xpath>
+            <output>12,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select22.xml</input-file>
+        <test-case>
+            <xpath>/doc/* +3</xpath>
+            <output>12,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select23.xml</input-file>
+        <test-case>
+            <xpath>/doc/@div - 5</xpath>
+            <output>15,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select24.xml</input-file>
+        <test-case>
+            <xpath>/doc/@div -5</xpath>
+            <output>15,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select25.xml</input-file>
+        <test-case>
+            <xpath>/doc/@div-5</xpath>
+            <output>12,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select26.xml</input-file>
+        <test-case>
+            <xpath>/doc/@*-5</xpath>
+            <output>15,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select27.xml</input-file>
+        <test-case>
+            <xpath>/doc/attribute :: div</xpath>
+            <output>20,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select28.xml</input-file>
+        <test-case>
+            <xpath>/doc/attribute :: *</xpath>
+            <output>20,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select29.xml</input-file>
+        <test-case>
+            <xpath>/doc/attribute*(/doc/div - 4)</xpath>
+            <output>40,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select30.xml</input-file>
+        <test-case>
+            <xpath>(/doc/* - 4)*/doc/*</xpath>
+            <output>45,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select31.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[div=9]</xpath>
+            <output>y9,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select32.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[*=9]/@s</xpath>
+            <output>w,x,y,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select33.xml</input-file>
+        <test-case>
+            <xpath>16-/doc/div</xpath>
+            <output>7,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select34.xml</input-file>
+        <test-case>
+            <xpath>25-/doc/*</xpath>
+            <output>16,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select35.xml</input-file>
+        <test-case>
+            <xpath>54 div/doc/*</xpath>
+            <output>6,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select36.xml</input-file>
+        <test-case>
+            <xpath>(/doc/* - 4) div 2</xpath>
+            <output>5,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select37.xml</input-file>
+        <test-case>
+            <xpath>' 6 ' div 2</xpath>
+            <output>3,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select38.xml</input-file>
+        <test-case>
+            <xpath>' 6 '*/doc/div</xpath>
+            <output>24,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/select/select40.xml</input-file>
+        <test-case>
+            <xpath>5.+/doc/*</xpath>
+            <output>11,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/string/string01.xml</input-file>
+        <test-case>
+            <xpath>string-length('This is a test')</xpath>
+            <output>14,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/string/string02.xml</input-file>
+        <test-case>
+            <xpath>string-length(doc)</xpath>
+            <output>4,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/string/string04.xml</input-file>
+        <test-case>
+            <xpath>string-length()</xpath>
+            <output>27,</output>
+        </test-case>
+        <test-case>
+            <xpath>string-length(doc/a)</xpath>
+            <output>12,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/string/string05.xml</input-file>
+        <test-case>
+            <xpath>string(doc)</xpath>
+            <output>Test,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/string/string06.xml</input-file>
+        <test-case>
+            <xpath>starts-with('ENCYCLOPEDIA', 'ENCY')</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>contains('ENCYCLOPEDIA', 'CYCL')</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>substring-before('1999/04/01', '/')</xpath>
+            <output>1999,</output>
+        </test-case>
+        <test-case>
+            <xpath>substring-after('1999/04/01', '/')</xpath>
+            <output>04/01,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/string/string10.xml</input-file>
+        <test-case>
+            <xpath>normalize-space('&#9;&#10;&#13;ab  cd&#9;&#10;&#13; ef&#9;&#10;&#13; ')</xpath>
+            <output>ab cd ef,</output>
+        </test-case>
+        <test-case>
+            <xpath>normalize-space(/doc/a)</xpath>
+            <output>This is a normalized text node from the source document.,</output>
+        </test-case>
+        <test-case>
+            <xpath>translate("bar","abc","ABC")</xpath>
+            <output>BAr,</output>
+        </test-case>
+        <test-case>
+            <xpath>concat("x","yz")</xpath>
+            <output>xyz,</output>
+        </test-case>
+        <test-case>
+            <xpath>substring('1999/04/01', 1, 4)</xpath>
+            <output>1999,</output>
+        </test-case>
+        <test-case>
+            <xpath>substring("12345", 1.5, 2.6)</xpath>
+            <output>234,</output>
+        </test-case>
+        <test-case>
+            <xpath>substring("12345", 0, 3)</xpath>
+            <output>12,</output>
+        </test-case>
+        <test-case>
+            <xpath>substring("12345", 0 div 0, 3)</xpath>
+            <output>,</output>
+        </test-case>
+        <test-case>
+            <xpath>substring("12345", 1, 0 div 0)</xpath>
+            <output>,</output>
+        </test-case>
+        <test-case>
+            <xpath>substring("12345", -42, 1 div 0)</xpath>
+            <output>12345,</output>
+        </test-case>
+        <test-case>
+            <xpath>substring("12345", -1 div 0, 1 div 0)</xpath>
+            <output>,</output>
+        </test-case>
+    </test-cases>
 </test-suite>

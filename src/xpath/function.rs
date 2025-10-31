@@ -365,17 +365,9 @@ fn substring(context: &mut XPathContext, num_args: usize) -> Result<XPathObject,
         .ok_or(XPathError::IncorrectNumberOfArgument)?
         .as_string()?;
 
-    if second.is_nan() || third.is_nan() || third.is_sign_negative() {
+    if second.is_nan() || second.is_infinite() || third.is_nan() || third.is_sign_negative() {
         // is this correct ??
         return Ok("".into());
-    }
-
-    if second.is_infinite() {
-        return if second == f64::NEG_INFINITY && third == f64::INFINITY {
-            Ok(first.into())
-        } else {
-            Ok("".into())
-        };
     }
 
     let start = second.round();
@@ -608,6 +600,15 @@ fn ceiling(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, X
     Ok(number.ceil().into())
 }
 
+fn xpath_round(x: f64) -> f64 {
+    let y = x.floor();
+    if x == y {
+        y
+    } else {
+        (2. * x - y).floor().copysign(x)
+    }
+}
+
 fn round(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPathError> {
     if num_args != 1 {
         return Err(XPathError::IncorrectNumberOfArgument);
@@ -626,10 +627,5 @@ fn round(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPa
     //
     // Here, I will implement based on the following reference.
     // https://stackoverflow.com/a/28124775
-    let y = x.floor();
-    if x == y {
-        Ok(y.into())
-    } else {
-        Ok((2. * x - y).floor().copysign(x).into())
-    }
+    Ok(xpath_round(x).into())
 }
