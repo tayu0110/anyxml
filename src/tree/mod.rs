@@ -529,36 +529,24 @@ fn compare_document_order(
             let mut parent = elem.parent_node();
             while let Some(now) = parent {
                 if let Some(element) = now.as_element() {
-                    if element
-                        .search_namespace_by_prefix(lp.prefix().as_deref())
-                        .filter(|ns| lp.is_same_node(ns))
-                        .is_some()
-                    {
-                        if elem
-                            .search_namespace_by_prefix(rp.prefix().as_deref())
-                            .filter(|ns| rp.is_same_node(ns))
-                            .is_none()
-                        {
-                            return Some(Greater);
+                    let (mut li, mut ri) = (usize::MAX, usize::MAX);
+                    for (i, namespace) in element.namespaces().enumerate() {
+                        if namespace.prefix().as_deref() == lp.prefix().as_deref() {
+                            li = i;
                         }
+                        if namespace.prefix().as_deref() == rp.prefix().as_deref() {
+                            ri = i;
+                        }
+                        if li < usize::MAX && ri < usize::MAX {
+                            break;
+                        }
+                    }
 
-                        let (mut li, mut ri) = (usize::MAX, usize::MAX);
-                        for (i, namespace) in element.namespaces().enumerate() {
-                            if namespace.is_same_node(&lp) {
-                                li = i;
-                            } else if namespace.is_same_node(&rp) {
-                                ri = i;
-                            }
-                            if li < usize::MAX && ri < usize::MAX {
-                                break;
-                            }
-                        }
+                    if li < usize::MAX && ri < usize::MAX {
                         return li.partial_cmp(&ri);
-                    } else if element
-                        .search_namespace_by_prefix(rp.prefix().as_deref())
-                        .filter(|ns| rp.is_same_node(ns))
-                        .is_some()
-                    {
+                    } else if li < usize::MAX {
+                        return Some(Greater);
+                    } else if ri < usize::MAX {
                         return Some(Less);
                     }
                 }

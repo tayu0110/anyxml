@@ -738,7 +738,7 @@
         <input-file>&xalan-tests;/axes/axes59.xml</input-file>
         <test-case>
             <xpath>//doc/namespace::*</xpath>
-            <output>http://somebody.elses.extension,http://xml.apache.org/xslt/java,http://tester.com,http://buster.com,http://administrator.com,</output>
+            <output>http://www.w3.org/XML/1998/namespace,http://somebody.elses.extension,http://xml.apache.org/xslt/java,http://tester.com,http://buster.com,http://administrator.com,http://www.w3.org/XML/1998/namespace,</output>
         </test-case>
     </test-cases>
     <test-cases>
@@ -787,15 +787,15 @@
         <input-file>&xalan-tests;/axes/axes68.xml</input-file>
         <test-case>
             <xpath>//doc/namespace::*</xpath>
-            <output>http://somebody.elses.extension,</output>
+            <output>http://www.w3.org/XML/1998/namespace,http://somebody.elses.extension,</output>
         </test-case>
         <test-case>
             <xpath>//section/namespace::*</xpath>
-            <output>http://somebody.elses.extension,http://foo.com,</output>
+            <output>http://www.w3.org/XML/1998/namespace,http://somebody.elses.extension,http://foo.com,</output>
         </test-case>
         <test-case>
             <xpath>//inner/namespace::*</xpath>
-            <output>http://somebody.elses.extension,http://foo.com,http://whiz.com/special/page,</output>
+            <output>http://www.w3.org/XML/1998/namespace,http://somebody.elses.extension,http://foo.com,http://whiz.com/special/page,</output>
         </test-case>
     </test-cases>
     <test-cases>
@@ -2308,6 +2308,62 @@
             <xpath>0 div 0 &gt;= 0</xpath>
             <output>false,</output>
         </test-case>
+        <test-case>
+            <xpath>0 div 0 &lt; 0</xpath>
+            <output>false,</output>
+        </test-case>
+        <test-case>
+            <xpath>(5 mod 2 = 1) and (5 mod -2 = 1) and (-5 mod 2 = -1) and (-5 mod -2 = -1)</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>2 * -number('xxx')</xpath>
+            <output>NaN,</output>
+        </test-case>
+        <test-case>
+            <xpath>2 div number('xxx')</xpath>
+            <output>NaN,</output>
+        </test-case>
+        <test-case>
+            <xpath>number('xxx') div 3</xpath>
+            <output>NaN,</output>
+        </test-case>
+        <test-case>
+            <xpath>2 mod number('xxx')</xpath>
+            <output>NaN,</output>
+        </test-case>
+        <test-case>
+            <xpath>number('xxx') mod 3</xpath>
+            <output>NaN,</output>
+        </test-case>
+        <test-case>
+            <xpath>floor(number('xxx'))</xpath>
+            <output>NaN,</output>
+        </test-case>
+        <test-case>
+            <xpath>ceiling(number('xxx'))</xpath>
+            <output>NaN,</output>
+        </test-case>
+        <test-case>
+            <xpath>round(number('xxx'))</xpath>
+            <output>NaN,</output>
+        </test-case>
+        <test-case>
+            <xpath>10+5+25+20+15+50+35+40</xpath>
+            <output>200,</output>
+        </test-case>
+        <test-case>
+            <xpath>100-9-7-4-17-18-5</xpath>
+            <output>40,</output>
+        </test-case>
+        <test-case>
+            <xpath>3*2+5*4-4*2-1</xpath>
+            <output>17,</output>
+        </test-case>
+        <test-case>
+            <xpath>9876543210</xpath>
+            <output>9876543210,</output>
+        </test-case>
     </test-cases>
     <!-- unsupported encoding -->
     <!-- <test-cases>
@@ -2317,4 +2373,446 @@
             <output>0,</output>
         </test-case>
     </test-cases> -->
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/math/math110.xml</input-file>
+        <test-case>
+            <xpath>number(1.75)</xpath>
+            <output>1.75,</output>
+        </test-case>
+        <test-case>
+            <xpath>number(7 div 4)</xpath>
+            <output>1.75,</output>
+        </test-case>
+        <test-case>
+            <xpath>(number(1.75) = (7 div 4))</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>number(0.109375 * 16)</xpath>
+            <output>1.75,</output>
+        </test-case>
+        <test-case>
+            <xpath>(number(1.75) = (0.109375 * 16))</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>number(/doc/k)</xpath>
+            <output>0.0004,</output>
+        </test-case>
+        <test-case>
+            <xpath>number(4 div 10000)</xpath>
+            <output>0.0004,</output>
+        </test-case>
+        <test-case>
+            <xpath>(number(k) = (4 div 10000))</xpath>
+            <output>true,</output>
+        </test-case>
+        <test-case>
+            <xpath>number(0.0001 * 4)</xpath>
+            <output>0.0004,</output>
+        </test-case>
+        <test-case>
+            <xpath>(number(k) = (0.0001 * 4))</xpath>
+            <output>true,</output>
+        </test-case>
+    </test-cases> -->
+    <test-cases>
+        <input-file>&xalan-tests;/math/math111.xml</input-file>
+        <test-case>
+            <xpath>string(number(/doc/number))</xpath>
+            <output>0,</output>
+        </test-case>
+        <test-case>
+            <xpath>string(number(/doc/number[1]))</xpath>
+            <output>0,</output>
+        </test-case>
+        <test-case>
+            <xpath>string(number(/doc/number[2]))</xpath>
+            <output>0.4,</output>
+        </test-case>
+        <test-case>
+            <xpath>string(number(/doc/number[3]))</xpath>
+            <output>4,</output>
+        </test-case>
+        <test-case>
+            <xpath>string(number(/doc/number[4]))</xpath>
+            <output>0.04,</output>
+        </test-case>
+        <test-case>
+            <xpath>string(number(/doc/number[5]))</xpath>
+            <output>0.004,</output>
+        </test-case>
+        <test-case>
+            <xpath>string(number(/doc/number[6]))</xpath>
+            <output>0.0004,</output>
+        </test-case>
+        <test-case>
+            <xpath>string(number(/doc/number[7]))</xpath>
+            <output>0.0000000000001,</output>
+        </test-case>
+        <test-case>
+            <xpath>string(number(/doc/number[8]))</xpath>
+            <output>0.0000000000000000000000000001,</output>
+        </test-case>
+        <test-case>
+            <xpath>string(number(/doc/number[9]))</xpath>
+            <output>0.0000000000001000000000000001,</output>
+        </test-case>
+        <test-case>
+            <xpath>string(number(/doc/number[10]))</xpath>
+            <output>0.0012,</output>
+        </test-case>
+        <test-case>
+            <xpath>string(number(/doc/number[11]))</xpath>
+            <output>0.012,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/namespace/namespace08.xml</input-file>
+        <test-case>
+            <xpath>name(/doc/a/@at1)</xpath>
+            <output>at1,</output>
+        </test-case>
+        <test-case>
+            <xpath>namespace-uri(/doc/a/@at1)</xpath>
+            <output>,</output>
+        </test-case>
+        <test-case>
+            <xpath>local-name(/doc/a/@at1)</xpath>
+            <output>at1,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/namespace/namespace29.xml</input-file>
+        <test-case>
+            <xpath>name(//processing-instruction())</xpath>
+            <output>a-pi,</output>
+        </test-case>
+        <test-case>
+            <xpath>namespace-uri(//processing-instruction())</xpath>
+            <output>,</output>
+        </test-case>
+        <test-case>
+            <xpath>local-name(//processing-instruction())</xpath>
+            <output>a-pi,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/namespace/namespace30.xml</input-file>
+        <test-case>
+            <xpath>name(//comment())</xpath>
+            <output>,</output>
+        </test-case>
+        <test-case>
+            <xpath>namespace-uri(//comment())</xpath>
+            <output>,</output>
+        </test-case>
+        <test-case>
+            <xpath>local-name(//comment())</xpath>
+            <output>,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/namespace/namespace31.xml</input-file>
+        <test-case>
+            <xpath>name(//text())</xpath>
+            <output>,</output>
+        </test-case>
+        <test-case>
+            <xpath>namespace-uri(//text())</xpath>
+            <output>,</output>
+        </test-case>
+        <test-case>
+            <xpath>local-name(//text())</xpath>
+            <output>,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/namespace/namespace33.xml</input-file>
+        <test-case>
+            <xpath>//namespace::*</xpath>
+            <output>http://www.w3.org/XML/1998/namespace,http://www.w3.org/XML/1998/namespace,http://somebody.elses.extension,http://www.w3.org/XML/1998/namespace,http://somebody.elses.extension,http://foo.com,http://www.w3.org/XML/1998/namespace,http://somebody.elses.extension,http://foo.com,http://whiz.com/special/page,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/node/node01.xml</input-file>
+        <test-case>
+            <xpath>//text()</xpath>
+            <output>&#xA;&#x20;&#x20;test&#xA;,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/node/node02.xml</input-file>
+        <test-case>
+            <xpath>//comment()</xpath>
+            <output> This is a comment ,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/node/node03.xml</input-file>
+        <test-case>
+            <xpath>//processing-instruction('a-pi')</xpath>
+            <output>some data,</output>
+        </test-case>
+        <test-case>
+            <xpath>//processing-instruction('*')</xpath>
+            <output></output>
+        </test-case>
+        <test-case>
+            <xpath>//processing-instruction()</xpath>
+            <output>some data,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/node/node16.xml</input-file>
+        <test-case>
+            <xpath>//center/attribute::*</xpath>
+            <output>c1,c2,c3,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/node/node17.xml</input-file>
+        <test-case>
+            <xpath>//doc/namespace::node()</xpath>
+            <output>http://www.w3.org/XML/1998/namespace,http://somebody.elses.extension,http://xml.apache.org/xslt/java,http://tester.com,http://buster.com,http://administrator.com,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/node/node18.xml</input-file>
+        <test-case>
+            <xpath>count(//doc//comment())</xpath>
+            <output>3,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position02.xml</input-file>
+        <test-case>
+            <xpath>/doc/*[position()=4]</xpath>
+            <output>4,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position03.xml</input-file>
+        <test-case>
+            <xpath>/doc/*[@test and position()=8]</xpath>
+            <output>4,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position04.xml</input-file>
+        <test-case>
+            <xpath>/doc/*[@test][position()=4]/num</xpath>
+            <output>4,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position06.xml</input-file>
+        <test-case>
+            <xpath>count(/doc/*)</xpath>
+            <output>8,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position07.xml</input-file>
+        <test-case>
+            <xpath>/doc/*[last()=position()]</xpath>
+            <output>h,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position09.xml</input-file>
+        <test-case>
+            <xpath>/doc/foo[3]/a[position()=3]/num/@val</xpath>
+            <output>9,</output>
+        </test-case>
+        <test-case>
+            <xpath>/doc/foo[3]/a[position()=2]/num/@val</xpath>
+            <output>8,</output>
+        </test-case>
+        <test-case>
+            <xpath>/doc/foo[3]/a[position()=1]/num/@val</xpath>
+            <output>7,</output>
+        </test-case>
+        <test-case>
+            <xpath>/doc/foo[2]/a[position()=3]/num/@val</xpath>
+            <output>6,</output>
+        </test-case>
+        <test-case>
+            <xpath>/doc/foo[2]/a[position()=2]/num/@val</xpath>
+            <output>5,</output>
+        </test-case>
+        <test-case>
+            <xpath>/doc/foo[2]/a[position()=1]/num/@val</xpath>
+            <output>4,</output>
+        </test-case>
+        <test-case>
+            <xpath>/doc/foo[1]/a[position()=3]/num/@val</xpath>
+            <output>3,</output>
+        </test-case>
+        <test-case>
+            <xpath>/doc/foo[1]/a[position()=2]/num/@val</xpath>
+            <output>2,</output>
+        </test-case>
+        <test-case>
+            <xpath>/doc/foo[1]/a[position()=1]/num/@val</xpath>
+            <output>1,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position11.xml</input-file>
+        <test-case>
+            <xpath>normalize-space(/letters/letter/text())</xpath>
+            <output>a,</output>
+        </test-case>
+    </test-cases>
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/position/position15.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[position()=4]</xpath>
+            <output>4,</output>
+        </test-case>
+    </test-cases> -->
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/position/position16.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[position()=3]</xpath>
+            <output>3,</output>
+        </test-case>
+    </test-cases> -->
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/position/position17.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[position()=1]</xpath>
+            <output>1,</output>
+        </test-case>
+    </test-cases> -->
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/position/position19.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[4]</xpath>
+            <output>4,</output>
+        </test-case>
+    </test-cases> -->
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/position/position20.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[3]</xpath>
+            <output>3,</output>
+        </test-case>
+    </test-cases> -->
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/position/position21.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[1]</xpath>
+            <output>1,</output>
+        </test-case>
+    </test-cases> -->
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/position/position22.xml</input-file>
+        <test-case>
+            <xpath>/doc/text()[1]</xpath>
+            <output>A,</output>
+        </test-case>
+    </test-cases> -->
+    <test-cases>
+        <input-file>&xalan-tests;/position/position52.xml</input-file>
+        <test-case>
+            <xpath>count(/doc/*/z[2])</xpath>
+            <output>5,</output>
+        </test-case>
+    </test-cases>
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/position/position53.xml</input-file>
+        <test-case>
+            <xpath>count(/doc/a/@*)</xpath>
+            <output>5,</output>
+        </test-case>
+    </test-cases> -->
+    <test-cases>
+        <input-file>&xalan-tests;/position/position60.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[position()&gt;2]</xpath>
+            <output>3,4,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position61.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[position()&lt;3]</xpath>
+            <output>1,2,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position62.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[position()&gt;=2]</xpath>
+            <output>2,3,4,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position63.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[position()&lt;=3]</xpath>
+            <output>1,2,3,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position64.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[position()!=2]</xpath>
+            <output>1,3,4,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position65.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[3-2]</xpath>
+            <output>1,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position66.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[0]</xpath>
+            <output></output>
+        </test-case>
+    </test-cases>
+    <!-- unsupported encoding -->
+    <!-- <test-cases>
+        <input-file>&xalan-tests;/position/position67.xml</input-file>
+        <test-case>
+            <xpath>/doc/a[number('3')]</xpath>
+            <output>3,</output>
+        </test-case>
+    </test-cases> -->
+    <test-cases>
+        <input-file>&xalan-tests;/position/position68.xml</input-file>
+        <test-case>
+            <xpath>/metadata/keyword[@tag='ticker']/@value</xpath>
+            <output>MSFT,IBM,Lotus,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position71.xml</input-file>
+        <test-case>
+            <xpath>name(/processing-instruction()[2])</xpath>
+            <output>b-pi,</output>
+        </test-case>
+    </test-cases>
+    <test-cases>
+        <input-file>&xalan-tests;/position/position76.xml</input-file>
+        <test-case>
+            <xpath>name(/doc/namespace::*[1])</xpath>
+            <output>xml,</output>
+        </test-case>
+    </test-cases>
 </test-suite>

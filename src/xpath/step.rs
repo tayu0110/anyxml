@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
+    XML_XML_NAMESPACE,
     tree::{NodeType, namespace::Namespace},
     xpath::{Axis, NodeTest, XPathContext, XPathNodeSet},
 };
@@ -169,6 +170,15 @@ pub(super) fn location_step(
                             }
                         }
                     }
+                }
+
+                if !namespace_map.contains_key("xml") {
+                    let new = Namespace::new(
+                        Some("xml".into()),
+                        XML_XML_NAMESPACE.into(),
+                        element.clone(),
+                    );
+                    node_set.push(new);
                 }
 
                 // Since only explicit declarations are collected,
