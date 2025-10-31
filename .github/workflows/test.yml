@@ -28,17 +28,16 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Download xmlconf test
-        run: deno run -A resources/get-xmlconf.ts
-            
+      - name: Download test suite
+        run: |
+          deno run -A resources/get-xmlconf.ts
+          deno run -A resources/get-xslt-testsuite.ts
+
       - name: Check Rust version
         run: |
           rustup --version
           rustc --version
           cargo --version
-
-      - name: Build crate
-        run: cargo build ${{ matrix.build }}
             
       - name: Run `cargo test --workspace`
         run: cargo test --workspace ${{ matrix.build }}
