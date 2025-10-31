@@ -133,17 +133,22 @@ To capture all errors except unrecoverable fatal error, configuring `ErrorHandle
 
 ### Example
 ```rust
-use anyxml::stax::{XMLStreamReader, events::XMLEvent::*};
+use anyxml::stax::{
+    events::XMLEvent::*,
+    XMLStreamReader
+};
 
 let mut reader = XMLStreamReader::default();
-reader.parse_str(r#"<greeting>Hello!!</greeting>"#, None).unwrap();
+reader
+    .parse_str(r#"<greeting>Hello!!</greeting>"#, None)
+    .unwrap();
 
-assert!(matches!(reader.next_event().unwrap(), StartDocument));
-assert!(matches!(reader.next_event().unwrap(), StartElement(_)));
-assert!(matches!(reader.next_event().unwrap(), Characters("Hello!!")));
-assert!(matches!(reader.next_event().unwrap(), EndElement(_)));
-assert!(matches!(reader.next_event().unwrap(), EndDocument));
-assert!(matches!(reader.next_event().unwrap(), Finished));
+assert!(matches!(reader.next_event(), Ok(StartDocument)));
+assert!(matches!(reader.next_event(), Ok(StartElement(_))));
+assert!(matches!(reader.next_event(), Ok(Characters("Hello!!"))));
+assert!(matches!(reader.next_event(), Ok(EndElement(_))));
+assert!(matches!(reader.next_event(), Ok(EndDocument)));
+assert!(matches!(reader.next_event(), Ok(Finished)));
 ```
 
 ## Tree Manipulation
@@ -158,34 +163,33 @@ This API assumes namespace support, so it may not accept prefixed names without 
 ```rust
 use anyxml::{
     sax::parser::XMLReaderBuilder,
-    tree::TreeBuildHandler,
+    tree::TreeBuildHandler
 };
 
-let mut reader = XMLReaderBuilder::new().set_handler(TreeBuildHandler::default()).build();
-reader.parse_str(r#"<greeting>Hello</greeting>"#, None).unwrap();
+let mut reader = XMLReaderBuilder::new()
+    .set_handler(TreeBuildHandler::default())
+    .build();
+reader
+    .parse_str(r#"<greeting>Hello</greeting>"#, None)
+    .unwrap();
 
 // If a fatal error occurs, the constructed tree is meaningless.
 assert!(!reader.handler.fatal_error);
 let document = reader.handler.document;
 
-let mut root = document
-    .first_child()
-    .unwrap()
-    .as_element()
-    .unwrap();
+let mut root = document.first_child().unwrap().as_element().unwrap();
 assert_eq!(root.name().as_ref(), "greeting");
 
-let text = root
-    .first_child()
-    .unwrap()
-    .as_text()
-    .unwrap();
+let text = root.first_child().unwrap().as_text().unwrap();
 assert_eq!(&*text.data(), "Hello");
 
 // modify the document tree
 root.append_child(document.create_text(" World!!")).unwrap();
 // serialize the document tree
-assert_eq!(document.to_string(), r#"<greeting>Hello World!!</greeting>"#);
+assert_eq!(
+    document.to_string(),
+    r#"<greeting>Hello World!!</greeting>"#
+);
 ```
 
 ## XPath execution
@@ -208,7 +212,10 @@ const DOCUMENT: &str = r#"<root>
 "#;
 const XPATH: &str = "//greeting[lang('ja')]/text()";
 
-let text = evaluate_str(XPATH, DOCUMENT, None).unwrap().as_string().unwrap();
+let text = evaluate_str(XPATH, DOCUMENT, None)
+    .unwrap()
+    .as_string()
+    .unwrap();
 assert_eq!(text.as_ref(), "こんにちは");
 ```
 
