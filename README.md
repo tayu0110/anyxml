@@ -226,10 +226,13 @@ This crate conforms to the following specifications:
 - [Namespaces in XML 1.0 (Third Edition)](https://www.w3.org/TR/2009/REC-xml-names-20091208/)
 - [XML Base (Second Edition)](https://www.w3.org/TR/2009/REC-xmlbase-20090128/)
 - [xml:id Version 1.0](https://www.w3.org/TR/2005/REC-xml-id-20050909/)
+- [XML Path Language (XPath) Version 1.0](https://www.w3.org/TR/1999/REC-xpath-19991116/)
 
 # Tests
 This crate passes the following tests:
 
 - [XML Conformance Test Suites](https://www.w3.org/XML/Test/)
 - [xml:id Conformance Test Suites](https://www.w3.org/XML/Test/xml-id/)
+- [OASIS XSLT Test Suites](https://www.oasis-open.org/committees/document.php?document_id=12171&wg_abbrev=xslt) (for XPath)
+    - This link is already broken and requires the Wayback Machine to access it.
 - some self-made tests
