@@ -1,7 +1,10 @@
 use std::{io::Read, sync::atomic::AtomicUsize};
 
 use crate::{
-    encoding::{DecodeError, Decoder, UTF8Decoder, UTF16BEDecoder, UTF16LEDecoder, find_decoder},
+    encoding::{
+        DecodeError, Decoder, UTF8Decoder, UTF16BEDecoder, UTF16LEDecoder, UTF32BEDecoder,
+        UTF32LEDecoder, find_decoder,
+    },
     error::XMLError,
     uri::{URIStr, URIString},
 };
@@ -249,9 +252,15 @@ impl<'a> InputSource<'a> {
         match self.buffer[..4] {
             // Cases where BOM was found:
             // UCS-4, big-endian machine (1234 order)
-            [0x00, 0x00, 0xFE, 0xFF] => return Err(XMLError::ParserUnsupportedEncoding),
+            [0x00, 0x00, 0xFE, 0xFF] => {
+                self.buffer_next = 4;
+                self.decoder = Box::new(UTF32BEDecoder);
+            }
             // UCS-4, little-endian machine (4321 order)
-            [0xFF, 0xFE, 0x00, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
+            [0xFF, 0xFE, 0x00, 0x00] => {
+                self.buffer_next = 4;
+                self.decoder = Box::new(UTF32LEDecoder);
+            }
             // UCS-4, unusual octet order (2143)
             [0x00, 0x00, 0xFF, 0xFE] => return Err(XMLError::ParserUnsupportedEncoding),
             // UCS-4, unusual octet order (3412)
@@ -273,9 +282,13 @@ impl<'a> InputSource<'a> {
             }
             // Cases where BOM was not found:
             // UCS-4 or other 32-bit encoding, big-endian machine (1234 order)
-            [0x00, 0x00, 0x00, 0x3C] => return Err(XMLError::ParserUnsupportedEncoding),
+            [0x00, 0x00, 0x00, 0x3C] => {
+                self.decoder = Box::new(UTF32BEDecoder);
+            }
             // UCS-4 or other 32-bit encoding, little-endian machine (4321 order)
-            [0x3C, 0x00, 0x00, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
+            [0x3C, 0x00, 0x00, 0x00] => {
+                self.decoder = Box::new(UTF32LEDecoder);
+            }
             // UCS-4 or other 32-bit encoding, unusual octet order (2143)
             [0x00, 0x00, 0x3C, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
             // UCS-4 or other 32-bit encoding, unusual octet order (3412)

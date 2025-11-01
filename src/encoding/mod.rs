@@ -1,4 +1,5 @@
 mod iso_8859;
+mod ucs4;
 mod utf16;
 
 use std::{
@@ -8,21 +9,7 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
-use crate::encoding::iso_8859::{
-    ISO_8859_1_NAME, ISO_8859_2_NAME, ISO_8859_3_NAME, ISO_8859_4_NAME, ISO_8859_5_NAME,
-    ISO_8859_6_NAME, ISO_8859_7_NAME, ISO_8859_8_NAME, ISO_8859_9_NAME, ISO_8859_10_NAME,
-    ISO_8859_11_NAME, ISO_8859_13_NAME, ISO_8859_14_NAME, ISO_8859_15_NAME, ISO_8859_16_NAME,
-    ISO8859_1Decoder, ISO8859_1Encoder, ISO8859_2Decoder, ISO8859_2Encoder, ISO8859_3Decoder,
-    ISO8859_3Encoder, ISO8859_4Decoder, ISO8859_4Encoder, ISO8859_5Decoder, ISO8859_5Encoder,
-    ISO8859_6Decoder, ISO8859_6Encoder, ISO8859_7Decoder, ISO8859_7Encoder, ISO8859_8Decoder,
-    ISO8859_8Encoder, ISO8859_9Decoder, ISO8859_9Encoder, ISO8859_10Decoder, ISO8859_10Encoder,
-    ISO8859_11Decoder, ISO8859_11Encoder, ISO8859_13Decoder, ISO8859_13Encoder, ISO8859_14Decoder,
-    ISO8859_14Encoder, ISO8859_15Decoder, ISO8859_15Encoder, ISO8859_16Decoder, ISO8859_16Encoder,
-};
-pub use crate::encoding::utf16::{
-    UTF16_NAME, UTF16BE_NAME, UTF16BEDecoder, UTF16BEEncoder, UTF16Decoder, UTF16Encoder,
-    UTF16LE_NAME, UTF16LEDecoder, UTF16LEEncoder,
-};
+pub use crate::encoding::{iso_8859::*, ucs4::*, utf16::*};
 
 pub trait Encoder {
     fn name(&self) -> &'static str;
@@ -196,6 +183,9 @@ pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {
         UTF16_NAME,
         UTF16BE_NAME,
         UTF16LE_NAME,
+        UTF32_NAME,
+        UTF32BE_NAME,
+        UTF32LE_NAME,
         UTF8_NAME,
     ];
     let len = NAMES.len();
@@ -308,6 +298,9 @@ pub static ENCODING_ALIASES: LazyLock<RwLock<BTreeMap<&'static str, &'static str
             ("latin10", ISO_8859_16_NAME),
             ("l10", ISO_8859_16_NAME),
             ("ISO885916", ISO_8859_16_NAME),
+            ("UTF32", UTF32_NAME),
+            ("UTF32BE", UTF32BE_NAME),
+            ("UTF32LE", UTF32LE_NAME),
         ]))
     });
 /// Register `alias` as an alias for the encoding name `real`.  \
@@ -354,6 +347,9 @@ pub static ENCODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, EncoderFactory>
         map.insert(ISO_8859_14_NAME, || Box::new(ISO8859_14Encoder));
         map.insert(ISO_8859_15_NAME, || Box::new(ISO8859_15Encoder));
         map.insert(ISO_8859_16_NAME, || Box::new(ISO8859_16Encoder));
+        map.insert(UTF32_NAME, || Box::new(UTF32Encoder::default()));
+        map.insert(UTF32BE_NAME, || Box::new(UTF32BEEncoder));
+        map.insert(UTF32LE_NAME, || Box::new(UTF32LEEncoder));
         RwLock::new(map)
     });
 pub fn find_encoder(encoding_name: &str) -> Option<Box<dyn Encoder>> {
@@ -401,6 +397,9 @@ pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>
         map.insert(ISO_8859_14_NAME, || Box::new(ISO8859_14Decoder));
         map.insert(ISO_8859_15_NAME, || Box::new(ISO8859_15Decoder));
         map.insert(ISO_8859_16_NAME, || Box::new(ISO8859_16Decoder));
+        map.insert(UTF32_NAME, || Box::new(UTF32Decoder::default()));
+        map.insert(UTF32BE_NAME, || Box::new(UTF32BEDecoder));
+        map.insert(UTF32LE_NAME, || Box::new(UTF32LEDecoder));
         RwLock::new(map)
     });
 pub fn find_decoder(encoding_name: &str) -> Option<Box<dyn Decoder>> {
