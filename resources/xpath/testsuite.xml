@@ -1876,22 +1876,20 @@
             <output>true,</output>
         </test-case>
     </test-cases>
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/boolean/boolean40.xml</input-file>
         <test-case>
             <xpath>boolean(//doc)</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/boolean/boolean41.xml</input-file>
         <test-case>
             <xpath>boolean(//foo)</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
+    </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/boolean/boolean70.xml</input-file>
         <test-case>
@@ -1966,38 +1964,34 @@
             <output>en,</output>
         </test-case>
     </test-cases>
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/expression/expression03.xml</input-file>
         <test-case>
             <xpath>//doc/para[@id='3' and lang('en')]</xpath>
             <output>EN,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/expression/expression04.xml</input-file>
         <test-case>
             <xpath>//doc/div/para[lang('en')]</xpath>
             <output>en,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/expression/expression05.xml</input-file>
         <test-case>
             <xpath>//doc/para[@id='3' and lang('en')]</xpath>
             <output>EN,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/idkey/idkey04.xml</input-file>
         <test-case>
             <xpath>id('c')/@id</xpath>
             <output>c,</output>
         </test-case>
-    </test-cases> -->
+    </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/idkey/idkey09.xml</input-file>
         <test-case>
@@ -2365,16 +2359,14 @@
             <output>9876543210,</output>
         </test-case>
     </test-cases>
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/math/math11.xml</input-file>
         <test-case>
             <xpath>number(/doc/foo)</xpath>
-            <output>0,</output>
+            <output>NaN,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/math/math110.xml</input-file>
         <test-case>
             <xpath>number(1.75)</xpath>
@@ -2405,7 +2397,7 @@
             <output>0.0004,</output>
         </test-case>
         <test-case>
-            <xpath>(number(k) = (4 div 10000))</xpath>
+            <xpath>(number(/doc/k) = (4 div 10000))</xpath>
             <output>true,</output>
         </test-case>
         <test-case>
@@ -2413,10 +2405,10 @@
             <output>0.0004,</output>
         </test-case>
         <test-case>
-            <xpath>(number(k) = (0.0001 * 4))</xpath>
+            <xpath>(number(/doc/k) = (0.0001 * 4))</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
+    </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/math/math111.xml</input-file>
         <test-case>
@@ -2666,62 +2658,55 @@
             <output>a,</output>
         </test-case>
     </test-cases>
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/position/position15.xml</input-file>
         <test-case>
             <xpath>/doc/a[position()=4]</xpath>
             <output>4,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/position/position16.xml</input-file>
         <test-case>
             <xpath>/doc/a[position()=3]</xpath>
             <output>3,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/position/position17.xml</input-file>
         <test-case>
             <xpath>/doc/a[position()=1]</xpath>
             <output>1,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/position/position19.xml</input-file>
         <test-case>
             <xpath>/doc/a[4]</xpath>
             <output>4,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/position/position20.xml</input-file>
         <test-case>
             <xpath>/doc/a[3]</xpath>
             <output>3,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/position/position21.xml</input-file>
         <test-case>
             <xpath>/doc/a[1]</xpath>
             <output>1,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/position/position22.xml</input-file>
         <test-case>
             <xpath>/doc/text()[1]</xpath>
             <output>A,</output>
         </test-case>
-    </test-cases> -->
+    </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/position/position52.xml</input-file>
         <test-case>
@@ -2729,14 +2714,13 @@
             <output>5,</output>
         </test-case>
     </test-cases>
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/position/position53.xml</input-file>
         <test-case>
             <xpath>count(/doc/a/@*)</xpath>
-            <output>5,</output>
+            <output>6,</output>
         </test-case>
-    </test-cases> -->
+    </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/position/position60.xml</input-file>
         <test-case>
@@ -2786,14 +2770,13 @@
             <output></output>
         </test-case>
     </test-cases>
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/position/position67.xml</input-file>
         <test-case>
             <xpath>/doc/a[number('3')]</xpath>
             <output>3,</output>
         </test-case>
-    </test-cases> -->
+    </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/position/position68.xml</input-file>
         <test-case>
@@ -3676,384 +3659,336 @@
             <output>,</output>
         </test-case>
     </test-cases>
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string37.xml</input-file>
         <test-case>
             <xpath>string(/doc/foo)</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string38.xml</input-file>
         <test-case>
             <xpath>string(0)</xpath>
             <output>0,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string39.xml</input-file>
         <test-case>
             <xpath>string(2)</xpath>
             <output>2,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string40.xml</input-file>
         <test-case>
             <xpath>string('test')</xpath>
             <output>test,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string41.xml</input-file>
         <test-case>
             <xpath>string('')</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string44.xml</input-file>
         <test-case>
             <xpath>starts-with('ENCYCLOPEDIA', 'EN')</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string45.xml</input-file>
         <test-case>
             <xpath>starts-with('ENCYCLOPEDIA', 'en')</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string46.xml</input-file>
         <test-case>
             <xpath>starts-with('ab', 'abc')</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string47.xml</input-file>
         <test-case>
             <xpath>starts-with('abc', 'bc')</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string48.xml</input-file>
         <test-case>
             <xpath>starts-with('abc', '')</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string49.xml</input-file>
         <test-case>
             <xpath>starts-with('','')</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string50.xml</input-file>
         <test-case>
             <xpath>starts-with('true()', 'tr')</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string51.xml</input-file>
         <test-case>
             <xpath>starts-with(doc, 'ENCY')</xpath>
-            <output>false,</output>
+            <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string52.xml</input-file>
         <test-case>
             <xpath>starts-with(doc, 'test')</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string53.xml</input-file>
         <test-case>
             <xpath>starts-with(doc/@attr, 'slam')</xpath>
-            <output>false,</output>
+            <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string54.xml</input-file>
         <test-case>
             <xpath>starts-with(doc/@attr, 'wich')</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string55.xml</input-file>
         <test-case>
             <xpath>contains('ENCYCLOPEDIA', 'TEST')</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string57.xml</input-file>
         <test-case>
             <xpath>contains(concat(.,'BC'),concat('A','B','C'))</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string58.xml</input-file>
         <test-case>
             <xpath>contains('ab', 'abc')</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string59.xml</input-file>
         <test-case>
             <xpath>contains('abc', 'bc')</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string60.xml</input-file>
         <test-case>
             <xpath>contains('abc', 'bcd')</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string61.xml</input-file>
         <test-case>
             <xpath>contains('abc', '')</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string62.xml</input-file>
         <test-case>
             <xpath>contains('','')</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string63.xml</input-file>
         <test-case>
             <xpath>contains('true()', 'e')</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string64.xml</input-file>
         <test-case>
             <xpath>contains(doc, 'CYCL')</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string65.xml</input-file>
         <test-case>
             <xpath>contains(doc, 'TEST')</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string66.xml</input-file>
         <test-case>
             <xpath>contains(doc/@attr, 'amwi')</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string67.xml</input-file>
         <test-case>
             <xpath>contains(doc/@attr, 'TEST')</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string68.xml</input-file>
         <test-case>
             <xpath>substring-before('ENCYCLOPEDIA', '/')</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string69.xml</input-file>
         <test-case>
             <xpath>substring-before('ENCYCLOPEDIA', 'C')</xpath>
             <output>EN,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string70.xml</input-file>
         <test-case>
             <xpath>substring-before('ENCYCLOPEDIA', 'c')</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string71.xml</input-file>
         <test-case>
             <xpath>substring-before(doc, '/')</xpath>
-            <output>,</output>
+            <output>1999,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string72.xml</input-file>
         <test-case>
             <xpath>substring-before(/doc/foo, '/')</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string73.xml</input-file>
         <test-case>
             <xpath>substring-before(doc/@attr, 'z')</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string74.xml</input-file>
         <test-case>
             <xpath>substring-before(doc/@attr, 'D')</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string75.xml</input-file>
         <test-case>
             <xpath>substring-before(doc/@attr, 'd')</xpath>
-            <output>,</output>
+            <output>abc,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string76.xml</input-file>
         <test-case>
             <xpath>substring-after('ENCYCLOPEDIA', '/')</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string77.xml</input-file>
         <test-case>
             <xpath>substring-after('ENCYCLOPEDIA', 'C')</xpath>
             <output>YCLOPEDIA,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string78.xml</input-file>
         <test-case>
             <xpath>substring-after('abcdefghijk','l')</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string79.xml</input-file>
         <test-case>
             <xpath>substring-after('1999/04/01', '1')</xpath>
             <output>999/04/01,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string80.xml</input-file>
         <test-case>
             <xpath>substring-after(doc, '/')</xpath>
-            <output>,</output>
+            <output>04/01,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string81.xml</input-file>
         <test-case>
             <xpath>substring-after(/doc/foo, '/')</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string82.xml</input-file>
         <test-case>
             <xpath>substring-after(doc/@attr, 'z')</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string83.xml</input-file>
         <test-case>
             <xpath>substring-after(doc/@attr, 'D')</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string84.xml</input-file>
         <test-case>
             <xpath>substring-after(doc/@attr, 'd')</xpath>
-            <output>,</output>
+            <output>efg,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string87.xml</input-file>
         <test-case>
             <xpath>translate(&#34;BAR&#34;,&#34;abc&#34;,&#34;ABC&#34;)</xpath>
             <output>BAR,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string88.xml</input-file>
         <test-case>
             <xpath>translate(&#34;bar&#34;,&#34;RAB&#34;,&#34;xyz&#34;)</xpath>
             <output>bar,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string89.xml</input-file>
         <test-case>
             <xpath>translate(&#34;BAR&#34;,&#34;Rab&#34;,&#34;TxX&#34;)</xpath>
@@ -4063,89 +3998,78 @@
             <xpath>translate("B&#039;B","&#039;","&#096;")</xpath>
             <output>B`B,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string90.xml</input-file>
         <test-case>
             <xpath>translate(/doc/a,&#34;abc&#34;,&#34;ABC&#34;)</xpath>
             <output>BAr,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string91.xml</input-file>
         <test-case>
             <xpath>translate(/doc/b,&#34;ABC&#34;,&#34;abc&#34;)</xpath>
             <output>baR,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string92.xml</input-file>
         <test-case>
             <xpath>translate(doc/a/@attrib,&#34;lo&#34;,&#34;IT&#34;)</xpath>
             <output>heIIT,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string93.xml</input-file>
         <test-case>
             <xpath>translate(doc/b/@attrib,&#34;LO&#34;,&#34;it&#34;)</xpath>
             <output>HEiit,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string94.xml</input-file>
         <test-case>
             <xpath>translate(doc/b/@attrib,&#34;lo&#34;,&#34;it&#34;)</xpath>
             <output>HELLO,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string95.xml</input-file>
         <test-case>
             <xpath>translate(&#34;zzaaazzz&#34;,&#34;abcz&#34;,&#34;ABC&#34;)</xpath>
             <output>AAA,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string96.xml</input-file>
         <test-case>
             <xpath>translate(&#34;ddaaadddd&#34;,&#34;abcd&#34;,&#34;ABCxy&#34;)</xpath>
             <output>xxAAAxxxx,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string97.xml</input-file>
         <test-case>
             <xpath>concat(&#34;a&#34;,&#34;b&#34;,&#34;c&#34;,&#34;d&#34;,&#34;ef&#34;)</xpath>
             <output>abcdef,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string98.xml</input-file>
         <test-case>
             <xpath>concat(doc/a, doc/b)</xpath>
             <output>ab,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string99.xml</input-file>
         <test-case>
-            <xpath>concat(a, b, c, d, e)</xpath>
+            <xpath>concat(/doc/a, /doc/b, /doc/c, /doc/d, /doc/e)</xpath>
             <output>abcdef,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string100.xml</input-file>
         <test-case>
             <xpath>concat(&#34;cd&#34;, &#34;34&#34;)</xpath>
@@ -4159,9 +4083,8 @@
             <xpath>concat(&#34;bc&#34;, string(23))</xpath>
             <output>bc23,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string103.xml</input-file>
         <test-case>
             <xpath>concat(/doc/a, 34)</xpath>
@@ -4171,9 +4094,8 @@
             <xpath>concat(false(),'ly')</xpath>
             <output>falsely,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string111.xml</input-file>
         <test-case>
             <xpath>substring('ENCYCLOPEDIA', 8, 3)</xpath>
@@ -4191,80 +4113,70 @@
             <xpath>substring('1999/04/01', 1, 0)</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string116.xml</input-file>
         <test-case>
             <xpath>substring(doc, 1, 4)</xpath>
-            <output>,</output>
+            <output>1999,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string117.xml</input-file>
         <test-case>
             <xpath>substring(foo, 2, 2)</xpath>
             <output>,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string118.xml</input-file>
         <test-case>
             <xpath>substring(doc/@attr, 1, 3)</xpath>
-            <output>,</output>
+            <output>abc,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string119.xml</input-file>
         <test-case>
             <xpath>substring(doc/@attr, 4)</xpath>
-            <output>,</output>
+            <output>defg,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string120.xml</input-file>
         <test-case>
             <xpath>substring(doc/@attr, 2.5, 3.6)</xpath>
             <output>cdef,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string125.xml</input-file>
         <test-case>
             <xpath>contains(/doc/main,/doc/sub)</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string126.xml</input-file>
         <test-case>
             <xpath>contains(/doc/main,/doc/sub)</xpath>
             <output>true,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string127.xml</input-file>
         <test-case>
             <xpath>contains(/doc/main,/doc/sub)</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
-    <!-- <test-cases>
+    </test-cases>
+    <test-cases>
         <input-file>&xalan-tests;/string/string128.xml</input-file>
         <test-case>
             <xpath>contains(/doc/main,/doc/sub)</xpath>
             <output>false,</output>
         </test-case>
-    </test-cases> -->
-    <!-- unsupported encoding -->
+    </test-cases>
     <test-cases>
         <input-file>&xalan-tests;/string/string136.xml</input-file>
         <test-case>
