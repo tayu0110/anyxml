@@ -8,7 +8,17 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
-use crate::encoding::iso_8859::{ISO_8859_1_NAME, ISO8859_1Decoder, ISO8859_1Encoder};
+use crate::encoding::iso_8859::{
+    ISO_8859_1_NAME, ISO_8859_2_NAME, ISO_8859_3_NAME, ISO_8859_4_NAME, ISO_8859_5_NAME,
+    ISO_8859_6_NAME, ISO_8859_7_NAME, ISO_8859_8_NAME, ISO_8859_9_NAME, ISO_8859_10_NAME,
+    ISO_8859_11_NAME, ISO_8859_13_NAME, ISO_8859_14_NAME, ISO_8859_15_NAME, ISO_8859_16_NAME,
+    ISO8859_1Decoder, ISO8859_1Encoder, ISO8859_2Decoder, ISO8859_2Encoder, ISO8859_3Decoder,
+    ISO8859_3Encoder, ISO8859_4Decoder, ISO8859_4Encoder, ISO8859_5Decoder, ISO8859_5Encoder,
+    ISO8859_6Decoder, ISO8859_6Encoder, ISO8859_7Decoder, ISO8859_7Encoder, ISO8859_8Decoder,
+    ISO8859_8Encoder, ISO8859_9Decoder, ISO8859_9Encoder, ISO8859_10Decoder, ISO8859_10Encoder,
+    ISO8859_11Decoder, ISO8859_11Encoder, ISO8859_13Decoder, ISO8859_13Encoder, ISO8859_14Decoder,
+    ISO8859_14Encoder, ISO8859_15Decoder, ISO8859_15Encoder, ISO8859_16Decoder, ISO8859_16Encoder,
+};
 pub use crate::encoding::utf16::{
     UTF16_NAME, UTF16BE_NAME, UTF16BEDecoder, UTF16BEEncoder, UTF16Decoder, UTF16Encoder,
     UTF16LE_NAME, UTF16LEDecoder, UTF16LEEncoder,
@@ -168,7 +178,21 @@ impl Decoder for UTF8Decoder {
 /// Encoding names are listed in lexical order.
 pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {
     const NAMES: &[&str] = &[
+        ISO_8859_10_NAME,
+        ISO_8859_13_NAME,
+        ISO_8859_14_NAME,
+        ISO_8859_15_NAME,
+        ISO_8859_16_NAME,
         ISO_8859_1_NAME,
+        ISO_8859_2_NAME,
+        ISO_8859_3_NAME,
+        ISO_8859_4_NAME,
+        ISO_8859_5_NAME,
+        ISO_8859_6_NAME,
+        ISO_8859_7_NAME,
+        ISO_8859_8_NAME,
+        ISO_8859_9_NAME,
+        ISO_8859_11_NAME,
         UTF16_NAME,
         UTF16BE_NAME,
         UTF16LE_NAME,
@@ -210,7 +234,80 @@ pub static ENCODING_ALIASES: LazyLock<RwLock<BTreeMap<&'static str, &'static str
             ("l1", ISO_8859_1_NAME),
             ("IBM819", ISO_8859_1_NAME),
             ("CP819", ISO_8859_1_NAME),
-            ("csISOLatin1", ISO_8859_1_NAME),
+            ("ISOLatin1", ISO_8859_1_NAME),
+            ("iso-ir-101", ISO_8859_2_NAME),
+            ("ISO_8859-2", ISO_8859_2_NAME),
+            ("ISO-8859-2", ISO_8859_2_NAME),
+            ("latin2", ISO_8859_2_NAME),
+            ("l2", ISO_8859_2_NAME),
+            ("ISOLatin2", ISO_8859_2_NAME),
+            ("iso-ir-109", ISO_8859_3_NAME),
+            ("ISO_8859-3", ISO_8859_3_NAME),
+            ("ISO-8859-3", ISO_8859_3_NAME),
+            ("latin3", ISO_8859_3_NAME),
+            ("l3", ISO_8859_3_NAME),
+            ("ISOLatin3", ISO_8859_3_NAME),
+            ("iso-ir-110", ISO_8859_4_NAME),
+            ("ISO_8859-4", ISO_8859_4_NAME),
+            ("ISO-8859-4", ISO_8859_4_NAME),
+            ("latin4", ISO_8859_4_NAME),
+            ("l4", ISO_8859_4_NAME),
+            ("ISOLatin4", ISO_8859_4_NAME),
+            ("iso-ir-144", ISO_8859_5_NAME),
+            ("ISO_8859-5", ISO_8859_5_NAME),
+            ("ISO-8859-5", ISO_8859_5_NAME),
+            ("cyrillic", ISO_8859_5_NAME),
+            ("ISOLatinCyrillic", ISO_8859_5_NAME),
+            ("iso-ir-127", ISO_8859_6_NAME),
+            ("ISO_8859-6", ISO_8859_6_NAME),
+            ("ISO-8859-6", ISO_8859_6_NAME),
+            ("ECMA-114", ISO_8859_6_NAME),
+            ("ASMO-708", ISO_8859_6_NAME),
+            ("arabic", ISO_8859_6_NAME),
+            ("ISOLatinArabic", ISO_8859_6_NAME),
+            ("iso-ir-126", ISO_8859_7_NAME),
+            ("ISO_8859-7", ISO_8859_7_NAME),
+            ("ISO-8859-7", ISO_8859_7_NAME),
+            ("ELOT_928", ISO_8859_7_NAME),
+            ("ECMA-118", ISO_8859_7_NAME),
+            ("greek", ISO_8859_7_NAME),
+            ("greek8", ISO_8859_7_NAME),
+            ("ISOLatinGreek", ISO_8859_7_NAME),
+            ("iso-ir-138", ISO_8859_8_NAME),
+            ("ISO_8859-8", ISO_8859_8_NAME),
+            ("ISO-8859-8", ISO_8859_8_NAME),
+            ("hebrew", ISO_8859_8_NAME),
+            ("ISOLatinHebrew", ISO_8859_8_NAME),
+            ("iso-ir-148", ISO_8859_9_NAME),
+            ("ISO_8859-9", ISO_8859_9_NAME),
+            ("ISO-8859-9", ISO_8859_9_NAME),
+            ("latin5", ISO_8859_9_NAME),
+            ("l5", ISO_8859_9_NAME),
+            ("ISOLatin5", ISO_8859_9_NAME),
+            ("iso-ir-157", ISO_8859_10_NAME),
+            ("l6", ISO_8859_10_NAME),
+            ("ISO_8859-10:1992", ISO_8859_10_NAME),
+            ("ISOLatin6", ISO_8859_10_NAME),
+            ("latin6", ISO_8859_10_NAME),
+            ("TIS620", ISO_8859_11_NAME),
+            ("ISO-8859-11", ISO_8859_11_NAME),
+            ("ISO885913", ISO_8859_13_NAME),
+            ("iso-ir-199", ISO_8859_14_NAME),
+            ("ISO_8859-14:1998", ISO_8859_14_NAME),
+            ("ISO_8859-14", ISO_8859_14_NAME),
+            ("latin8", ISO_8859_14_NAME),
+            ("iso-celtic", ISO_8859_14_NAME),
+            ("l8", ISO_8859_14_NAME),
+            ("ISO885914", ISO_8859_14_NAME),
+            ("ISO_8859-15", ISO_8859_15_NAME),
+            ("Latin-9", ISO_8859_15_NAME),
+            ("ISO885915", ISO_8859_15_NAME),
+            ("iso-ir-226", ISO_8859_16_NAME),
+            ("ISO_8859-16:2001", ISO_8859_16_NAME),
+            ("ISO_8859-16", ISO_8859_16_NAME),
+            ("latin10", ISO_8859_16_NAME),
+            ("l10", ISO_8859_16_NAME),
+            ("ISO885916", ISO_8859_16_NAME),
         ]))
     });
 /// Register `alias` as an alias for the encoding name `real`.  \
@@ -243,6 +340,20 @@ pub static ENCODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, EncoderFactory>
         map.insert(UTF16BE_NAME, || Box::new(UTF16BEEncoder));
         map.insert(UTF16LE_NAME, || Box::new(UTF16LEEncoder));
         map.insert(ISO_8859_1_NAME, || Box::new(ISO8859_1Encoder));
+        map.insert(ISO_8859_2_NAME, || Box::new(ISO8859_2Encoder));
+        map.insert(ISO_8859_3_NAME, || Box::new(ISO8859_3Encoder));
+        map.insert(ISO_8859_4_NAME, || Box::new(ISO8859_4Encoder));
+        map.insert(ISO_8859_5_NAME, || Box::new(ISO8859_5Encoder));
+        map.insert(ISO_8859_6_NAME, || Box::new(ISO8859_6Encoder));
+        map.insert(ISO_8859_7_NAME, || Box::new(ISO8859_7Encoder));
+        map.insert(ISO_8859_8_NAME, || Box::new(ISO8859_8Encoder));
+        map.insert(ISO_8859_9_NAME, || Box::new(ISO8859_9Encoder));
+        map.insert(ISO_8859_10_NAME, || Box::new(ISO8859_10Encoder));
+        map.insert(ISO_8859_11_NAME, || Box::new(ISO8859_11Encoder));
+        map.insert(ISO_8859_13_NAME, || Box::new(ISO8859_13Encoder));
+        map.insert(ISO_8859_14_NAME, || Box::new(ISO8859_14Encoder));
+        map.insert(ISO_8859_15_NAME, || Box::new(ISO8859_15Encoder));
+        map.insert(ISO_8859_16_NAME, || Box::new(ISO8859_16Encoder));
         RwLock::new(map)
     });
 pub fn find_encoder(encoding_name: &str) -> Option<Box<dyn Encoder>> {
@@ -276,6 +387,20 @@ pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>
         map.insert(UTF16BE_NAME, || Box::new(UTF16BEDecoder));
         map.insert(UTF16LE_NAME, || Box::new(UTF16LEDecoder));
         map.insert(ISO_8859_1_NAME, || Box::new(ISO8859_1Decoder));
+        map.insert(ISO_8859_2_NAME, || Box::new(ISO8859_2Decoder));
+        map.insert(ISO_8859_3_NAME, || Box::new(ISO8859_3Decoder));
+        map.insert(ISO_8859_4_NAME, || Box::new(ISO8859_4Decoder));
+        map.insert(ISO_8859_5_NAME, || Box::new(ISO8859_5Decoder));
+        map.insert(ISO_8859_6_NAME, || Box::new(ISO8859_6Decoder));
+        map.insert(ISO_8859_7_NAME, || Box::new(ISO8859_7Decoder));
+        map.insert(ISO_8859_8_NAME, || Box::new(ISO8859_8Decoder));
+        map.insert(ISO_8859_9_NAME, || Box::new(ISO8859_9Decoder));
+        map.insert(ISO_8859_10_NAME, || Box::new(ISO8859_10Decoder));
+        map.insert(ISO_8859_11_NAME, || Box::new(ISO8859_11Decoder));
+        map.insert(ISO_8859_13_NAME, || Box::new(ISO8859_13Decoder));
+        map.insert(ISO_8859_14_NAME, || Box::new(ISO8859_14Decoder));
+        map.insert(ISO_8859_15_NAME, || Box::new(ISO8859_15Decoder));
+        map.insert(ISO_8859_16_NAME, || Box::new(ISO8859_16Decoder));
         RwLock::new(map)
     });
 pub fn find_decoder(encoding_name: &str) -> Option<Box<dyn Decoder>> {

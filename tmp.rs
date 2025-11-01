@@ -1,102 +1,3 @@
-use crate::encoding::{DecodeError, Decoder, EncodeError, Encoder};
-
-pub const ISO_8859_1_NAME: &str = "ISO_8859-1:1987";
-
-pub struct ISO8859_1Encoder;
-impl Encoder for ISO8859_1Encoder {
-    fn name(&self) -> &'static str {
-        ISO_8859_1_NAME
-    }
-
-    fn encode(
-        &mut self,
-        src: &str,
-        dst: &mut [u8],
-        finish: bool,
-    ) -> Result<(usize, usize), EncodeError> {
-        if src.is_empty() {
-            return if finish {
-                Ok((0, 0))
-            } else {
-                Err(EncodeError::InputIsEmpty)
-            };
-        }
-
-        if dst.is_empty() {
-            return Err(EncodeError::OutputTooShort);
-        }
-
-        let (mut read, mut write) = (0, 0);
-        for c in src.chars() {
-            let b = c as u32;
-            read += c.len_utf8();
-            if b >= 256 {
-                return Err(EncodeError::Unmappable { read, write, c });
-            }
-            dst[write] = b as u8;
-            write += 1;
-            if write == dst.len() {
-                break;
-            }
-        }
-        Ok((read, write))
-    }
-}
-
-pub struct ISO8859_1Decoder;
-impl Decoder for ISO8859_1Decoder {
-    fn name(&self) -> &'static str {
-        ISO_8859_1_NAME
-    }
-
-    fn decode(
-        &mut self,
-        src: &[u8],
-        dst: &mut String,
-        finish: bool,
-    ) -> Result<(usize, usize), DecodeError> {
-        if src.is_empty() {
-            return if finish {
-                Ok((0, 0))
-            } else {
-                Err(DecodeError::InputIsEmpty)
-            };
-        }
-        let len = dst.capacity() - dst.len();
-        if len < 2 {
-            return Err(DecodeError::OutputTooShort);
-        }
-
-        let (mut read, mut write) = (0, 0);
-        for &b in src {
-            let c = b as char;
-            let l = c.len_utf8();
-            if write + l > len {
-                break;
-            }
-            dst.push(c);
-            read += 1;
-            write += l;
-        }
-        Ok((read, write))
-    }
-}
-
-pub const ISO_8859_2_NAME: &str = "ISO_8859-2:1987";
-pub const ISO_8859_3_NAME: &str = "ISO_8859-3:1988";
-pub const ISO_8859_4_NAME: &str = "ISO_8859-4:1988";
-pub const ISO_8859_5_NAME: &str = "ISO_8859-5:1988";
-pub const ISO_8859_6_NAME: &str = "ISO_8859-6:1987";
-pub const ISO_8859_7_NAME: &str = "ISO_8859-7:1987";
-pub const ISO_8859_8_NAME: &str = "ISO_8859-8:1988";
-pub const ISO_8859_9_NAME: &str = "ISO_8859-9:1989";
-pub const ISO_8859_10_NAME: &str = "ISO-8859-10";
-pub const ISO_8859_11_NAME: &str = "TIS-620";
-pub const ISO_8859_13_NAME: &str = "ISO-8859-13";
-pub const ISO_8859_14_NAME: &str = "ISO-8859-14";
-pub const ISO_8859_15_NAME: &str = "ISO-8859-15";
-pub const ISO_8859_16_NAME: &str = "ISO-8859-16";
-
 const ISO_8859_2_TO_UNICODE: [char; 128] = [
     '\u{80}', '\u{81}', '\u{82}', '\u{83}', '\u{84}', '\u{85}', '\u{86}', '\u{87}', '\u{88}',
     '\u{89}', '\u{8a}', '\u{8b}', '\u{8c}', '\u{8d}', '\u{8e}', '\u{8f}', '\u{90}', '\u{91}',
@@ -114,7 +15,6 @@ const ISO_8859_2_TO_UNICODE: [char; 128] = [
     '\u{f4}', '\u{151}', '\u{f6}', '\u{f7}', '\u{159}', '\u{16f}', '\u{fa}', '\u{171}', '\u{fc}',
     '\u{fd}', '\u{163}', '\u{2d9}',
 ];
-
 const UNICODE_TO_ISO_8859_2: &[(u16, u8)] = &[
     (128, 128),
     (129, 129),
@@ -245,7 +145,6 @@ const UNICODE_TO_ISO_8859_2: &[(u16, u8)] = &[
     (731, 178),
     (733, 189),
 ];
-
 const ISO_8859_3_TO_UNICODE: [char; 128] = [
     '\u{80}',
     '\u{81}',
@@ -376,7 +275,6 @@ const ISO_8859_3_TO_UNICODE: [char; 128] = [
     '\u{15d}',
     '\u{2d9}',
 ];
-
 const UNICODE_TO_ISO_8859_3: &[(u16, u8)] = &[
     (128, 128),
     (129, 129),
@@ -500,7 +398,6 @@ const UNICODE_TO_ISO_8859_3: &[(u16, u8)] = &[
     (728, 162),
     (729, 255),
 ];
-
 const ISO_8859_4_TO_UNICODE: [char; 128] = [
     '\u{80}', '\u{81}', '\u{82}', '\u{83}', '\u{84}', '\u{85}', '\u{86}', '\u{87}', '\u{88}',
     '\u{89}', '\u{8a}', '\u{8b}', '\u{8c}', '\u{8d}', '\u{8e}', '\u{8f}', '\u{90}', '\u{91}',
@@ -518,7 +415,6 @@ const ISO_8859_4_TO_UNICODE: [char; 128] = [
     '\u{f4}', '\u{f5}', '\u{f6}', '\u{f7}', '\u{f8}', '\u{173}', '\u{fa}', '\u{fb}', '\u{fc}',
     '\u{169}', '\u{16b}', '\u{2d9}',
 ];
-
 const UNICODE_TO_ISO_8859_4: &[(u16, u8)] = &[
     (128, 128),
     (129, 129),
@@ -649,7 +545,6 @@ const UNICODE_TO_ISO_8859_4: &[(u16, u8)] = &[
     (729, 255),
     (731, 178),
 ];
-
 const ISO_8859_5_TO_UNICODE: [char; 128] = [
     '\u{80}', '\u{81}', '\u{82}', '\u{83}', '\u{84}', '\u{85}', '\u{86}', '\u{87}', '\u{88}',
     '\u{89}', '\u{8a}', '\u{8b}', '\u{8c}', '\u{8d}', '\u{8e}', '\u{8f}', '\u{90}', '\u{91}',
@@ -668,7 +563,6 @@ const ISO_8859_5_TO_UNICODE: [char; 128] = [
     '\u{454}', '\u{455}', '\u{456}', '\u{457}', '\u{458}', '\u{459}', '\u{45a}', '\u{45b}',
     '\u{45c}', '\u{a7}', '\u{45e}', '\u{45f}',
 ];
-
 const UNICODE_TO_ISO_8859_5: &[(u16, u8)] = &[
     (128, 128),
     (129, 129),
@@ -799,7 +693,6 @@ const UNICODE_TO_ISO_8859_5: &[(u16, u8)] = &[
     (1119, 255),
     (8470, 240),
 ];
-
 const ISO_8859_6_TO_UNICODE: [char; 128] = [
     '\u{80}',
     '\u{81}',
@@ -930,7 +823,6 @@ const ISO_8859_6_TO_UNICODE: [char; 128] = [
     char::REPLACEMENT_CHARACTER,
     char::REPLACEMENT_CHARACTER,
 ];
-
 const UNICODE_TO_ISO_8859_6: &[(u16, u8)] = &[
     (128, 128),
     (129, 129),
@@ -1016,7 +908,6 @@ const UNICODE_TO_ISO_8859_6: &[(u16, u8)] = &[
     (1617, 241),
     (1618, 242),
 ];
-
 const ISO_8859_7_TO_UNICODE: [char; 128] = [
     '\u{80}',
     '\u{81}',
@@ -1147,7 +1038,6 @@ const ISO_8859_7_TO_UNICODE: [char; 128] = [
     '\u{3ce}',
     char::REPLACEMENT_CHARACTER,
 ];
-
 const UNICODE_TO_ISO_8859_7: &[(u16, u8)] = &[
     (128, 128),
     (129, 129),
@@ -1275,7 +1165,6 @@ const UNICODE_TO_ISO_8859_7: &[(u16, u8)] = &[
     (8364, 164),
     (8367, 165),
 ];
-
 const ISO_8859_8_TO_UNICODE: [char; 128] = [
     '\u{80}',
     '\u{81}',
@@ -1406,7 +1295,6 @@ const ISO_8859_8_TO_UNICODE: [char; 128] = [
     '\u{200f}',
     char::REPLACEMENT_CHARACTER,
 ];
-
 const UNICODE_TO_ISO_8859_8: &[(u16, u8)] = &[
     (128, 128),
     (129, 129),
@@ -1501,7 +1389,6 @@ const UNICODE_TO_ISO_8859_8: &[(u16, u8)] = &[
     (8207, 254),
     (8215, 223),
 ];
-
 const ISO_8859_9_TO_UNICODE: [char; 128] = [
     '\u{20ac}', '\u{81}', '\u{201a}', '\u{192}', '\u{201e}', '\u{2026}', '\u{2020}', '\u{2021}',
     '\u{2c6}', '\u{2030}', '\u{160}', '\u{2039}', '\u{152}', '\u{8d}', '\u{8e}', '\u{8f}',
@@ -1519,7 +1406,6 @@ const ISO_8859_9_TO_UNICODE: [char; 128] = [
     '\u{f1}', '\u{f2}', '\u{f3}', '\u{f4}', '\u{f5}', '\u{f6}', '\u{f7}', '\u{f8}', '\u{f9}',
     '\u{fa}', '\u{fb}', '\u{fc}', '\u{131}', '\u{15f}', '\u{ff}',
 ];
-
 const UNICODE_TO_ISO_8859_9: &[(u16, u8)] = &[
     (129, 129),
     (141, 141),
@@ -1650,7 +1536,6 @@ const UNICODE_TO_ISO_8859_9: &[(u16, u8)] = &[
     (8364, 128),
     (8482, 153),
 ];
-
 const ISO_8859_10_TO_UNICODE: [char; 128] = [
     '\u{80}', '\u{81}', '\u{82}', '\u{83}', '\u{84}', '\u{85}', '\u{86}', '\u{87}', '\u{88}',
     '\u{89}', '\u{8a}', '\u{8b}', '\u{8c}', '\u{8d}', '\u{8e}', '\u{8f}', '\u{90}', '\u{91}',
@@ -1668,7 +1553,6 @@ const ISO_8859_10_TO_UNICODE: [char; 128] = [
     '\u{14d}', '\u{f3}', '\u{f4}', '\u{f5}', '\u{f6}', '\u{169}', '\u{f8}', '\u{173}', '\u{fa}',
     '\u{fb}', '\u{fc}', '\u{fd}', '\u{fe}', '\u{138}',
 ];
-
 const UNICODE_TO_ISO_8859_10: &[(u16, u8)] = &[
     (128, 128),
     (129, 129),
@@ -1799,7 +1683,6 @@ const UNICODE_TO_ISO_8859_10: &[(u16, u8)] = &[
     (382, 188),
     (8213, 189),
 ];
-
 const ISO_8859_11_TO_UNICODE: [char; 128] = [
     '\u{20ac}',
     '\u{81}',
@@ -1930,7 +1813,6 @@ const ISO_8859_11_TO_UNICODE: [char; 128] = [
     char::REPLACEMENT_CHARACTER,
     char::REPLACEMENT_CHARACTER,
 ];
-
 const UNICODE_TO_ISO_8859_11: &[(u16, u8)] = &[
     (129, 129),
     (130, 130),
@@ -2053,7 +1935,6 @@ const UNICODE_TO_ISO_8859_11: &[(u16, u8)] = &[
     (8230, 133),
     (8364, 128),
 ];
-
 const ISO_8859_13_TO_UNICODE: [char; 128] = [
     '\u{80}', '\u{81}', '\u{82}', '\u{83}', '\u{84}', '\u{85}', '\u{86}', '\u{87}', '\u{88}',
     '\u{89}', '\u{8a}', '\u{8b}', '\u{8c}', '\u{8d}', '\u{8e}', '\u{8f}', '\u{90}', '\u{91}',
@@ -2071,7 +1952,6 @@ const ISO_8859_13_TO_UNICODE: [char; 128] = [
     '\u{146}', '\u{f3}', '\u{14d}', '\u{f5}', '\u{f6}', '\u{f7}', '\u{173}', '\u{142}', '\u{15b}',
     '\u{16b}', '\u{fc}', '\u{17c}', '\u{17e}', '\u{2019}',
 ];
-
 const UNICODE_TO_ISO_8859_13: &[(u16, u8)] = &[
     (128, 128),
     (129, 129),
@@ -2202,7 +2082,6 @@ const UNICODE_TO_ISO_8859_13: &[(u16, u8)] = &[
     (8221, 161),
     (8222, 165),
 ];
-
 const ISO_8859_14_TO_UNICODE: [char; 128] = [
     '\u{80}', '\u{81}', '\u{82}', '\u{83}', '\u{84}', '\u{85}', '\u{86}', '\u{87}', '\u{88}',
     '\u{89}', '\u{8a}', '\u{8b}', '\u{8c}', '\u{8d}', '\u{8e}', '\u{8f}', '\u{90}', '\u{91}',
@@ -2220,7 +2099,6 @@ const ISO_8859_14_TO_UNICODE: [char; 128] = [
     '\u{f1}', '\u{f2}', '\u{f3}', '\u{f4}', '\u{f5}', '\u{f6}', '\u{1e6b}', '\u{f8}', '\u{f9}',
     '\u{fa}', '\u{fb}', '\u{fc}', '\u{fd}', '\u{177}', '\u{ff}',
 ];
-
 const UNICODE_TO_ISO_8859_14: &[(u16, u8)] = &[
     (128, 128),
     (129, 129),
@@ -2351,7 +2229,6 @@ const UNICODE_TO_ISO_8859_14: &[(u16, u8)] = &[
     (7922, 172),
     (7923, 188),
 ];
-
 const ISO_8859_15_TO_UNICODE: [char; 128] = [
     '\u{80}', '\u{81}', '\u{82}', '\u{83}', '\u{84}', '\u{85}', '\u{86}', '\u{87}', '\u{88}',
     '\u{89}', '\u{8a}', '\u{8b}', '\u{8c}', '\u{8d}', '\u{8e}', '\u{8f}', '\u{90}', '\u{91}',
@@ -2369,7 +2246,6 @@ const ISO_8859_15_TO_UNICODE: [char; 128] = [
     '\u{f5}', '\u{f6}', '\u{f7}', '\u{f8}', '\u{f9}', '\u{fa}', '\u{fb}', '\u{fc}', '\u{fd}',
     '\u{fe}', '\u{ff}',
 ];
-
 const UNICODE_TO_ISO_8859_15: &[(u16, u8)] = &[
     (128, 128),
     (129, 129),
@@ -2500,7 +2376,6 @@ const UNICODE_TO_ISO_8859_15: &[(u16, u8)] = &[
     (382, 184),
     (8364, 164),
 ];
-
 const ISO_8859_16_TO_UNICODE: [char; 128] = [
     '\u{80}', '\u{81}', '\u{82}', '\u{83}', '\u{84}', '\u{85}', '\u{86}', '\u{87}', '\u{88}',
     '\u{89}', '\u{8a}', '\u{8b}', '\u{8c}', '\u{8d}', '\u{8e}', '\u{8f}', '\u{90}', '\u{91}',
@@ -2518,7 +2393,6 @@ const ISO_8859_16_TO_UNICODE: [char; 128] = [
     '\u{f3}', '\u{f4}', '\u{151}', '\u{f6}', '\u{15b}', '\u{171}', '\u{f9}', '\u{fa}', '\u{fb}',
     '\u{fc}', '\u{119}', '\u{21b}', '\u{ff}',
 ];
-
 const UNICODE_TO_ISO_8859_16: &[(u16, u8)] = &[
     (128, 128),
     (129, 129),
@@ -2649,201 +2523,3 @@ const UNICODE_TO_ISO_8859_16: &[(u16, u8)] = &[
     (8222, 165),
     (8364, 164),
 ];
-
-macro_rules! impl_iso8859_encoder_and_decoder {
-    ( $name:ident, $encoder:ident, $decoder:ident, $etable:ident, $dtable:ident ) => {
-        pub struct $encoder;
-        impl Encoder for $encoder {
-            fn name(&self) -> &'static str {
-                $name
-            }
-
-            fn encode(
-                &mut self,
-                src: &str,
-                dst: &mut [u8],
-                finish: bool,
-            ) -> Result<(usize, usize), EncodeError> {
-                if src.is_empty() {
-                    return if finish {
-                        Ok((0, 0))
-                    } else {
-                        Err(EncodeError::InputIsEmpty)
-                    };
-                }
-
-                if dst.is_empty() {
-                    return Err(EncodeError::OutputTooShort);
-                }
-
-                let (mut read, mut write) = (0, 0);
-                for c in src.chars() {
-                    let b = c as u32;
-                    read += c.len_utf8();
-                    if b < 128 {
-                        dst[write] = b as u8;
-                    } else if let Ok(pos) = $etable.binary_search_by_key(&b, |k| k.0 as u32) {
-                        dst[write] = $etable[pos].1;
-                    } else {
-                        return Err(EncodeError::Unmappable { read, write, c });
-                    }
-                    write += 1;
-                    if write == dst.len() {
-                        break;
-                    }
-                }
-                Ok((read, write))
-            }
-        }
-
-        pub struct $decoder;
-        impl Decoder for $decoder {
-            fn name(&self) -> &'static str {
-                $name
-            }
-
-            fn decode(
-                &mut self,
-                src: &[u8],
-                dst: &mut String,
-                finish: bool,
-            ) -> Result<(usize, usize), DecodeError> {
-                if src.is_empty() {
-                    return if finish {
-                        Ok((0, 0))
-                    } else {
-                        Err(DecodeError::InputIsEmpty)
-                    };
-                }
-                let len = dst.capacity() - dst.len();
-                if len < 4 {
-                    return Err(DecodeError::OutputTooShort);
-                }
-
-                let (mut read, mut write) = (0, 0);
-                for &b in src {
-                    let c = if b < 128 {
-                        b as char
-                    } else {
-                        $dtable[b as usize - 128]
-                    };
-                    let l = c.len_utf8();
-                    if write + l > len {
-                        break;
-                    }
-                    read += 1;
-                    if c == char::REPLACEMENT_CHARACTER {
-                        return Err(DecodeError::Malformed {
-                            read,
-                            write,
-                            length: 1,
-                            offset: 0,
-                        });
-                    }
-                    dst.push(c);
-                    write += l;
-                }
-                Ok((read, write))
-            }
-        }
-    };
-}
-
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_2_NAME,
-    ISO8859_2Encoder,
-    ISO8859_2Decoder,
-    UNICODE_TO_ISO_8859_2,
-    ISO_8859_2_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_3_NAME,
-    ISO8859_3Encoder,
-    ISO8859_3Decoder,
-    UNICODE_TO_ISO_8859_3,
-    ISO_8859_3_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_4_NAME,
-    ISO8859_4Encoder,
-    ISO8859_4Decoder,
-    UNICODE_TO_ISO_8859_4,
-    ISO_8859_4_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_5_NAME,
-    ISO8859_5Encoder,
-    ISO8859_5Decoder,
-    UNICODE_TO_ISO_8859_5,
-    ISO_8859_5_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_6_NAME,
-    ISO8859_6Encoder,
-    ISO8859_6Decoder,
-    UNICODE_TO_ISO_8859_6,
-    ISO_8859_6_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_7_NAME,
-    ISO8859_7Encoder,
-    ISO8859_7Decoder,
-    UNICODE_TO_ISO_8859_7,
-    ISO_8859_7_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_8_NAME,
-    ISO8859_8Encoder,
-    ISO8859_8Decoder,
-    UNICODE_TO_ISO_8859_8,
-    ISO_8859_8_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_9_NAME,
-    ISO8859_9Encoder,
-    ISO8859_9Decoder,
-    UNICODE_TO_ISO_8859_9,
-    ISO_8859_9_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_10_NAME,
-    ISO8859_10Encoder,
-    ISO8859_10Decoder,
-    UNICODE_TO_ISO_8859_10,
-    ISO_8859_10_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_11_NAME,
-    ISO8859_11Encoder,
-    ISO8859_11Decoder,
-    UNICODE_TO_ISO_8859_11,
-    ISO_8859_11_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_13_NAME,
-    ISO8859_13Encoder,
-    ISO8859_13Decoder,
-    UNICODE_TO_ISO_8859_13,
-    ISO_8859_13_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_14_NAME,
-    ISO8859_14Encoder,
-    ISO8859_14Decoder,
-    UNICODE_TO_ISO_8859_14,
-    ISO_8859_14_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_15_NAME,
-    ISO8859_15Encoder,
-    ISO8859_15Decoder,
-    UNICODE_TO_ISO_8859_15,
-    ISO_8859_15_TO_UNICODE
-);
-impl_iso8859_encoder_and_decoder!(
-    ISO_8859_16_NAME,
-    ISO8859_16Encoder,
-    ISO8859_16Decoder,
-    UNICODE_TO_ISO_8859_16,
-    ISO_8859_16_TO_UNICODE
-);
