@@ -1,0 +1,6 @@
+startDocument()
+declaration(1.0, ISO-8859-14, None)
+startElement(None, None, root, root)
+characters(Ḃḃ£ĊċḊ§Ẁ©ẂḋỲ®ŸḞḟĠġṀṁ¶ṖẁṗẃṠỳẄẅṡÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏŴÑÒÓÔÕÖṪØÙÚÛÜÝŶßàáâãäåæçèéêëìíîïŵñòóôõöṫøùúûüýŷÿ)
+endElement(None, None, root, root)
+endDocument()

@@ -1,0 +1,7 @@
+setDocumentLocator()
+startDocument()
+declaration(1.0, ISO-8859-1, None)
+startElement(None, root, root)
+characters(¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ)
+endElement(None, root, root)
+endDocument()

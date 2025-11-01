@@ -469,14 +469,13 @@ impl std::fmt::Display for Document {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut top_of_document = true;
         if self.version().is_some() || self.encoding().is_some() || self.standalone().is_some() {
+            // Regardless of the original document's encoding, documents output
+            // via `std::fmt::Display` are encoded in UTF-8.
             write!(
                 f,
-                "<?xml version=\"{}\"",
+                "<?xml version=\"{}\" encoding=\"UTF-8\"",
                 self.version().as_deref().unwrap_or("1.0")
             )?;
-            if let Some(encoding) = self.encoding() {
-                write!(f, " encoding=\"{}\"", encoding)?;
-            }
             if let Some(standalone) = self.standalone() {
                 if standalone {
                     write!(f, " standalone=\"yes\"")?;

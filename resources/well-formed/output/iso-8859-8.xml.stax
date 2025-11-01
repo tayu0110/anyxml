@@ -1,0 +1,6 @@
+startDocument()
+declaration(1.0, ISO-8859-8, None)
+startElement(None, None, root, root)
+characters(¢£¤¥¦§¨©×«¬®¯°±²³´µ¶·¸¹÷»¼½¾‗אבגדהוזחטיךכלםמןנסעףפץצקרשת)
+endElement(None, None, root, root)
+endDocument()

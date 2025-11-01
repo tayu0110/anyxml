@@ -63,7 +63,7 @@ impl Decoder for ISO8859_1Decoder {
             };
         }
         let len = dst.capacity() - dst.len();
-        if len < 2 {
+        if len < 4 {
             return Err(DecodeError::OutputTooShort);
         }
 

@@ -139,9 +139,13 @@ impl<'a> InputSource<'a> {
         if rem > 0 {
             let cap = self.decoded.len() - self.decoded_next;
             if cap < GROW_THRESHOLD {
-                self.decoded.drain(..self.decoded_next);
-                self.decoded.shrink_to(INPUT_CHUNK);
-                self.decoded_next = 0;
+                if self.compact {
+                    self.decoded.drain(..self.decoded_next);
+                    self.decoded.shrink_to(INPUT_CHUNK);
+                    self.decoded_next = 0;
+                } else {
+                    self.decoded.reserve_exact(INPUT_CHUNK);
+                }
             }
             if self.decoded.capacity() - self.decoded.len() > GROW_THRESHOLD {
                 match self.decoder.decode(

@@ -1,0 +1,3 @@
+Document(Document, '1.0', 'ISO-8859-16', None)
+  Element(Element, root, root, None, None)
+    Text(Text, 'ĄąŁ€„Š§š©Ș«ŹźŻ°±ČłŽ”¶·žčș»ŒœŸżÀÁÂĂÄĆÆÇÈÉÊËÌÍÎÏĐŃÒÓÔŐÖŚŰÙÚÛÜĘȚßàáâăäćæçèéêëìíîïđńòóôőöśűùúûüęțÿ')
