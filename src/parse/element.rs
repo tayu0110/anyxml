@@ -851,7 +851,20 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                             );
                         }
                     }
-                    Ok(_) => {}
+                    Ok(uri) => {
+                        // If any character is escaped, it is considered to contain a character
+                        // that should not be included in the URI.
+                        if let Some(unescaped) = uri.as_unescaped_str()
+                            && unescaped != uri.as_escaped_str()
+                        {
+                            ns_error!(
+                                self,
+                                ParserNamespaceNameNotURI,
+                                "The namespace name '{}' is not a URI.",
+                                unescaped
+                            );
+                        }
+                    }
                     Err(_) => {
                         ns_error!(
                             self,

@@ -180,7 +180,6 @@ const SKIP_TESTS: &[&str] = &[
     "weekly-iso-2022-jp",          // unsupported encoding
     "weekly-shift_jis",            // unsupported encoding
     "ibm-not-wf-P69-ibm69n05.xml", // error type, but requires VC validation
-    "rmt-ns10-006",                // unsupported encoding
     "invalid-bo-7",                // error type, but a Fatal Error occurs (Illegal XML character)
     "invalid-bo-8",                // error type, but a Fatal Error occurs (Illegal XML character)
     "invalid-bo-9",                // error type, but a Fatal Error occurs (Illegal XML character)
