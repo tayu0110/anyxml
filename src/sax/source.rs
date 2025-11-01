@@ -2,8 +2,8 @@ use std::{io::Read, sync::atomic::AtomicUsize};
 
 use crate::{
     encoding::{
-        DecodeError, Decoder, UTF8Decoder, UTF16BEDecoder, UTF16LEDecoder, UTF32BEDecoder,
-        UTF32LEDecoder, find_decoder,
+        DecodeError, Decoder, UCS4Unusual2143Decoder, UCS4Unusual3412Decoder, UTF8Decoder,
+        UTF16BEDecoder, UTF16LEDecoder, UTF32BEDecoder, UTF32LEDecoder, find_decoder,
     },
     error::XMLError,
     uri::{URIStr, URIString},
@@ -262,9 +262,15 @@ impl<'a> InputSource<'a> {
                 self.decoder = Box::new(UTF32LEDecoder);
             }
             // UCS-4, unusual octet order (2143)
-            [0x00, 0x00, 0xFF, 0xFE] => return Err(XMLError::ParserUnsupportedEncoding),
+            [0x00, 0x00, 0xFF, 0xFE] => {
+                self.buffer_next = 4;
+                self.decoder = Box::new(UCS4Unusual2143Decoder);
+            }
             // UCS-4, unusual octet order (3412)
-            [0xFE, 0xFF, 0x00, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
+            [0xFE, 0xFF, 0x00, 0x00] => {
+                self.buffer_next = 4;
+                self.decoder = Box::new(UCS4Unusual3412Decoder);
+            }
             // UTF-16, big-endian
             [0xFE, 0xFF, ..] => {
                 self.buffer_next = 2;
@@ -282,38 +288,28 @@ impl<'a> InputSource<'a> {
             }
             // Cases where BOM was not found:
             // UCS-4 or other 32-bit encoding, big-endian machine (1234 order)
-            [0x00, 0x00, 0x00, 0x3C] => {
-                self.decoder = Box::new(UTF32BEDecoder);
-            }
+            [0x00, 0x00, 0x00, 0x3C] => self.decoder = Box::new(UTF32BEDecoder),
             // UCS-4 or other 32-bit encoding, little-endian machine (4321 order)
-            [0x3C, 0x00, 0x00, 0x00] => {
-                self.decoder = Box::new(UTF32LEDecoder);
-            }
+            [0x3C, 0x00, 0x00, 0x00] => self.decoder = Box::new(UTF32LEDecoder),
             // UCS-4 or other 32-bit encoding, unusual octet order (2143)
-            [0x00, 0x00, 0x3C, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
+            [0x00, 0x00, 0x3C, 0x00] => self.decoder = Box::new(UCS4Unusual2143Decoder),
             // UCS-4 or other 32-bit encoding, unusual octet order (3412)
-            [0x00, 0x3C, 0x00, 0x00] => return Err(XMLError::ParserUnsupportedEncoding),
+            [0x00, 0x3C, 0x00, 0x00] => self.decoder = Box::new(UCS4Unusual3412Decoder),
             // UTF-16BE or big-endian ISO-10646-UCS-2 or other encoding  with a 16-bit
             // code unit in big-endian order and ASCII characters encoded as ASCII values
             // (the encoding declaration must be read to determine which)
-            [0x00, 0x3C, 0x00, 0x3F] => {
-                self.decoder = Box::new(UTF16BEDecoder);
-            }
+            [0x00, 0x3C, 0x00, 0x3F] => self.decoder = Box::new(UTF16BEDecoder),
             // UTF-16LE or little-endian ISO-10646-UCS-2 or other encoding with a 16-bit
             // code unit in little-endian order and ASCII characters encoded as ASCII values
             // (the encoding declaration must be read to determine which)
-            [0x3C, 0x00, 0x3F, 0x00] => {
-                self.decoder = Box::new(UTF16LEDecoder);
-            }
+            [0x3C, 0x00, 0x3F, 0x00] => self.decoder = Box::new(UTF16LEDecoder),
             // UTF-8, ISO 646, ASCII, some part of ISO 8859, Shift-JIS, EUC, or any other 7-bit,
             // 8-bit, or mixed-width encoding which ensures that the characters of ASCII have
             // their normal positions, width, and values; the actual encoding declaration must
             // be read to detect which of these applies, but since all of these encodings use
             // the same bit patterns for the relevant ASCII characters, the encoding declaration
             // itself may be read reliably
-            [0x3C, 0x3F, 0x78, 0x6D] => {
-                self.decoder = Box::new(UTF8Decoder);
-            }
+            [0x3C, 0x3F, 0x78, 0x6D] => self.decoder = Box::new(UTF8Decoder),
             // EBCDIC (in some flavor; the full encoding declaration must be read to tell
             // which code page is in use)
             [0x4C, 0x6F, 0xA7, 0x94] => return Err(XMLError::ParserUnsupportedEncoding),

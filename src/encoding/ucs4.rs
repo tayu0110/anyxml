@@ -156,7 +156,7 @@ impl Encoder for UTF32BEEncoder {
         for c in src.chars() {
             read += c.len_utf8();
             dst[..4].copy_from_slice(&(c as u32).to_be_bytes()[..]);
-            dst = &mut dst[2..];
+            dst = &mut dst[4..];
             write += 4;
             if dst.len() < 4 {
                 break;
@@ -250,7 +250,7 @@ impl Encoder for UTF32LEEncoder {
         for c in src.chars() {
             read += c.len_utf8();
             dst[..4].copy_from_slice(&(c as u32).to_le_bytes()[..]);
-            dst = &mut dst[2..];
+            dst = &mut dst[4..];
             write += 4;
             if dst.len() < 4 {
                 break;
@@ -285,6 +285,204 @@ impl Decoder for UTF32LEDecoder {
         for bytes in src.chunks_exact(4) {
             read += 4;
             let codepoint = u32::from_le_bytes(bytes.try_into().unwrap());
+            match char::from_u32(codepoint) {
+                Some(c) => {
+                    write += c.len_utf8();
+                    dst.push(c);
+                }
+                None => {
+                    return Err(DecodeError::Malformed {
+                        read,
+                        write,
+                        length: 4,
+                        offset: 0,
+                    });
+                }
+            }
+            if dst.capacity() - dst.len() < 4 {
+                break;
+            }
+        }
+
+        let rem = src.len() - read;
+        if finish && rem < 4 && rem != 0 && dst.capacity() - dst.len() >= 4 {
+            return Err(DecodeError::Malformed {
+                read: src.len(),
+                write,
+                length: src.len() - read,
+                offset: 0,
+            });
+        }
+
+        Ok((read, write))
+    }
+}
+
+// This is not an officially registered name, but it is set for convenience.
+const UCS4_UNUSUAL_2143_NAME: &str = "UCS4-UNUSUAL-2143";
+
+pub struct UCS4Unusual2143Encoder;
+impl Encoder for UCS4Unusual2143Encoder {
+    fn name(&self) -> &'static str {
+        UCS4_UNUSUAL_2143_NAME
+    }
+
+    fn encode(
+        &mut self,
+        src: &str,
+        mut dst: &mut [u8],
+        _finish: bool,
+    ) -> Result<(usize, usize), EncodeError> {
+        if src.is_empty() {
+            return Err(EncodeError::InputIsEmpty);
+        }
+        if dst.len() < 4 {
+            return Err(EncodeError::OutputTooShort);
+        }
+
+        let mut read = 0;
+        let mut write = 0;
+        for c in src.chars() {
+            read += c.len_utf8();
+            let bytes = (c as u32).to_be_bytes();
+            dst[0] = bytes[1];
+            dst[1] = bytes[0];
+            dst[2] = bytes[3];
+            dst[3] = bytes[2];
+            dst = &mut dst[4..];
+            write += 4;
+            if dst.len() < 4 {
+                break;
+            }
+        }
+        Ok((read, write))
+    }
+}
+
+pub struct UCS4Unusual2143Decoder;
+impl Decoder for UCS4Unusual2143Decoder {
+    fn name(&self) -> &'static str {
+        UCS4_UNUSUAL_2143_NAME
+    }
+
+    fn decode(
+        &mut self,
+        src: &[u8],
+        dst: &mut String,
+        finish: bool,
+    ) -> Result<(usize, usize), DecodeError> {
+        if src.is_empty() {
+            return Err(DecodeError::InputIsEmpty);
+        }
+        let cap = dst.capacity() - dst.len();
+        if cap < 4 {
+            return Err(DecodeError::OutputTooShort);
+        }
+
+        let mut read = 0;
+        let mut write = 0;
+        for bytes in src.chunks_exact(4) {
+            read += 4;
+            let codepoint = u32::from_le_bytes([bytes[2], bytes[3], bytes[0], bytes[1]]);
+            match char::from_u32(codepoint) {
+                Some(c) => {
+                    write += c.len_utf8();
+                    dst.push(c);
+                }
+                None => {
+                    return Err(DecodeError::Malformed {
+                        read,
+                        write,
+                        length: 4,
+                        offset: 0,
+                    });
+                }
+            }
+            if dst.capacity() - dst.len() < 4 {
+                break;
+            }
+        }
+
+        let rem = src.len() - read;
+        if finish && rem < 4 && rem != 0 && dst.capacity() - dst.len() >= 4 {
+            return Err(DecodeError::Malformed {
+                read: src.len(),
+                write,
+                length: src.len() - read,
+                offset: 0,
+            });
+        }
+
+        Ok((read, write))
+    }
+}
+
+// This is not an officially registered name, but it is set for convenience.
+const UCS4_UNUSUAL_3412_NAME: &str = "UCS4-UNUSUAL-3412";
+
+pub struct UCS4Unusual3412Encoder;
+impl Encoder for UCS4Unusual3412Encoder {
+    fn name(&self) -> &'static str {
+        UCS4_UNUSUAL_3412_NAME
+    }
+
+    fn encode(
+        &mut self,
+        src: &str,
+        mut dst: &mut [u8],
+        _finish: bool,
+    ) -> Result<(usize, usize), EncodeError> {
+        if src.is_empty() {
+            return Err(EncodeError::InputIsEmpty);
+        }
+        if dst.len() < 4 {
+            return Err(EncodeError::OutputTooShort);
+        }
+
+        let mut read = 0;
+        let mut write = 0;
+        for c in src.chars() {
+            read += c.len_utf8();
+            let bytes = (c as u32).to_be_bytes();
+            dst[0] = bytes[2];
+            dst[1] = bytes[3];
+            dst[2] = bytes[0];
+            dst[3] = bytes[1];
+            dst = &mut dst[4..];
+            write += 4;
+            if dst.len() < 4 {
+                break;
+            }
+        }
+        Ok((read, write))
+    }
+}
+
+pub struct UCS4Unusual3412Decoder;
+impl Decoder for UCS4Unusual3412Decoder {
+    fn name(&self) -> &'static str {
+        UCS4_UNUSUAL_3412_NAME
+    }
+
+    fn decode(
+        &mut self,
+        src: &[u8],
+        dst: &mut String,
+        finish: bool,
+    ) -> Result<(usize, usize), DecodeError> {
+        if src.is_empty() {
+            return Err(DecodeError::InputIsEmpty);
+        }
+        let cap = dst.capacity() - dst.len();
+        if cap < 4 {
+            return Err(DecodeError::OutputTooShort);
+        }
+
+        let mut read = 0;
+        let mut write = 0;
+        for bytes in src.chunks_exact(4) {
+            read += 4;
+            let codepoint = u32::from_le_bytes([bytes[1], bytes[0], bytes[2], bytes[3]]);
             match char::from_u32(codepoint) {
                 Some(c) => {
                     write += c.len_utf8();
