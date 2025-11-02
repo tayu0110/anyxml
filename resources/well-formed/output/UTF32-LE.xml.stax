@@ -1,0 +1,6 @@
+startDocument()
+declaration(1.0, UTF-32LE, None)
+startElement(None, None, root, root)
+characters(これはUTF-32LEでエンコーディングされたXML文書です)
+endElement(None, None, root, root)
+endDocument()
