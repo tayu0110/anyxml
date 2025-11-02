@@ -1,3 +1,32 @@
+//! Provides SAX parsers and auxiliary data structures.
+//!
+//! To receive events from the parser, the application must configure a SAX handler.  \
+//! The handler must implement [`SAXHandler`][SAXHandler], [`EntityResolver`][EntityResolver],
+//! and [`ErrorHandler`][ErrorHandler].
+//!
+//! The default implementation for each trait does nothing. In particular, the default
+//! implementation for [`EntityResolver`][EntityResolver] simply reports that it cannot
+//! find the resource, so some implementation is required.  \
+//! If the application only handles trusted data, redirecting to the
+//! [`DefaultSAXHandler`][DefaultSAXHandler] implementation should suffice.
+//! However, when handling untrusted resources, it may be advisable to perform some sanitization
+//! in [`EntityResolver::resolve_entity`][resolve_entity] or
+//! [`EntityResolver::get_external_subset`][get_external_subset].
+//!
+//! Parsers can be generated via [`XMLReaderBuilder`][XMLReaderBuilder].  \
+//! If a custom handler is required, execute
+//! [`XMLReaderBuilder::set_handler`](parser::XMLReaderBuilder::set_handler).  \
+//! Since the handler type is statically determined, it is impossible to reassign
+//! a different type of handler to an already generated parser.
+//!
+//! [SAXHandler]: handler::SAXHandler
+//! [EntityResolver]: handler::EntityResolver
+//! [ErrorHandler]: handler::ErrorHandler
+//! [DefaultSAXHandler]: handler::DefaultSAXHandler
+//! [resolve_entity]: handler::EntityResolver::resolve_entity
+//! [get_external_subset]: handler::EntityResolver::get_external_subset
+//! [XMLReaderBuilder]: parser::XMLReaderBuilder
+
 pub mod attributes;
 pub mod contentspec;
 pub mod error;

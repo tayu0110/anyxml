@@ -5,7 +5,6 @@ mod step;
 
 use std::{borrow::Cow, collections::HashMap, io::Read, sync::Arc};
 
-use anyxml_uri::uri::URIStr;
 pub use compile::*;
 
 use crate::{
@@ -16,6 +15,7 @@ use crate::{
         Attribute, CDATASection, Comment, Document, Element, Node, NodeType, ProcessingInstruction,
         Text, TreeBuildHandler, convert::NodeKind, namespace::Namespace, node::NodeSpec,
     },
+    uri::URIStr,
     xpath::{function::FunctionLibrary, step::location_step},
 };
 

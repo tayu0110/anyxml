@@ -171,6 +171,14 @@ pub struct XMLReader<Spec: ParserSpec, H: SAXHandler = DefaultSAXHandler> {
 }
 
 impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
+    /// Get the default base URI for document entities to be used when no base URI
+    /// is specified at parsing start.
+    ///
+    /// If a base URI is already set as the default, it returns that URI;  \
+    /// otherwise, it parses and returns the current directory as the URI.
+    ///
+    /// If the default base URI is not set and the current directory cannot be obtained
+    /// or expressed as an absolute URI, an error is returned.
     pub fn default_base_uri(&self) -> Result<Arc<URIStr>, XMLError> {
         if let Some(base_uri) = self.default_base_uri.clone() {
             return Ok(base_uri);
@@ -183,6 +191,11 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
         Ok(URIString::parse_file_path(pwd)?.into())
     }
 
+    /// Set the default base URI for document entities to be used when no base URI
+    /// is specified at parsing start.
+    ///
+    /// If the specified URI is not an absolute URI (i.e., [`is_absolute`](URIStr::is_absolute)
+    /// returns false), an error is returned.
     pub fn set_default_base_uri(
         &mut self,
         base_uri: impl Into<Arc<URIStr>>,
@@ -247,6 +260,10 @@ impl<Spec: ParserSpec, H: SAXHandler + Default> XMLReader<Spec, H> {
 }
 
 impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
+    /// Retrieves and parses the XML document specified by `uri`.  \
+    /// If retrieval or parsing of the XML document fails, an error is returned.
+    ///
+    /// The preferred encoding can be specified using `encoding`.
     pub fn parse_uri(
         &mut self,
         uri: impl AsRef<URIStr>,
@@ -272,6 +289,13 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         })
     }
 
+    /// The data read from `reader` is parsed as an XML document.  \
+    /// If parsing of the XML document fails, an error is returned.
+    ///
+    /// The preferred encoding can be specified using `encoding`.
+    ///
+    /// `uri` is treated as the document's base URI. It is optional to set,
+    /// but may be required if the document being parsed references external resources.
     pub fn parse_reader(
         &mut self,
         reader: impl Read + 'a,
@@ -293,11 +317,18 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         })
     }
 
-    pub fn parse_str(&mut self, str: &str, uri: Option<&URIStr>) -> Result<(), XMLError> {
+    /// Parses `xml` as an XML document.  \
+    /// If parsing of the XML document fails, an error is returned.
+    ///
+    /// Assumes the document is encoded in UTF-8.
+    ///
+    /// `uri` is treated as the document's base URI. It is optional to set,
+    /// but may be required if the document being parsed references external resources.
+    pub fn parse_str(&mut self, xml: &str, uri: Option<&URIStr>) -> Result<(), XMLError> {
         self.reset_context();
         self.encoding = Some(UTF8_NAME.into());
         self.base_uri = self.default_base_uri()?;
-        self.source = Box::new(InputSource::from_content(str));
+        self.source = Box::new(InputSource::from_content(xml));
         if let Some(uri) = uri {
             let mut base_uri = self.base_uri.resolve(uri);
             base_uri.normalize();
@@ -332,6 +363,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
         }
     }
 
+    /// Reset the parser to its initial state.
     pub fn reset(&mut self) -> Result<(), XMLError> {
         self.source = Box::new(InputSource::default());
         self.source.set_progressive_mode();
@@ -345,6 +377,14 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
         Ok(())
     }
 
+    /// Parses the `chunk` input from the most recent `self.reset()` execution
+    /// (including parser generation) to the present as an XML document fragment.
+    ///
+    /// If there is a preferred encoding or a base URI for the document entity,
+    /// they must be set before the first document fragment is input.
+    ///
+    /// After inputting all document fragments, `finish` must be set to `true`.  \
+    /// The final document fragment can be empty.
     pub fn parse_chunk(&mut self, chunk: impl AsRef<[u8]>, finish: bool) -> Result<(), XMLError> {
         (|| {
             if self.fatal_error_occurred {
@@ -580,6 +620,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
         self
     }
 
+    /// Configure the builder to generate a Progressive Parser.
     pub fn progressive_parser(self) -> XMLProgressiveReaderBuilder<H> {
         let mut source = Box::new(InputSource::default());
         source.set_progressive_mode();

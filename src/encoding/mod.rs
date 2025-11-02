@@ -1,3 +1,17 @@
+//! Provide Provides a unified interface for encoders and decoders,
+//! and a default implementation for some encodings.
+//!
+//! If it is necessary to provide a custom decoder for XML processor, a type implementing
+//! the [`Decoder`] trait can be registered using the [`register_decoder`] function.
+//!
+//! By default, the encoding name provided to the [`register_encoder`] or [`register_decoder`]
+//! function is used to search for encoders and decoders.  \
+//! If it is necessary to assign multiple names to a single encoder or decoder,
+//! it is possible to set aliases for encoding names using [`register_encoding_alias`].
+//!
+//! The default encoding names and aliases are based on
+//! [IANA registrations](https://www.iana.org/assignments/character-sets/character-sets.xhtml).
+
 mod iso_8859;
 mod shift_jis;
 mod ucs4;
