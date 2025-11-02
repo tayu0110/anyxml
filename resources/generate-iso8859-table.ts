@@ -15,41 +15,53 @@ const ENCODINGS: string[] = [
     "iso-8859-16",
 ];
 
-for (const encName of ENCODINGS) {
-    const upperEncName: string = encName.toUpperCase().replaceAll("-", "_");
-
-    console.log(`const ${upperEncName}_TO_UNICODE: [char; 128] = [`);
-    const decoder = new TextDecoder(encName, { fatal: true });
+async function generageISO8859Table(encName: string): Promise<string> {
+    const upperEncName = encName.toUpperCase().replaceAll("-", "_");
+    const encID = encName.split("-")[2];
+    const mappingData = await fetch(
+        `https://www.unicode.org/Public/MAPPINGS/ISO8859/8859-${encID}.TXT`,
+    ).then((resp) => resp.text());
     const fromISO: number[] = Array(256);
-    const buffer = new Uint8Array(1);
-    let maxCodePoint = 0;
-    for (let i = 128; i < 256; i++) {
-        buffer[0] = i;
-        try {
-            const c = decoder.decode(buffer);
-            const codePoint: number = Array.from(c).map((char) =>
-                char.codePointAt(0)
-            )[0] as number;
-            console.log(`'\\u{${codePoint.toString(16)}}',`);
-            fromISO[i] = codePoint;
-            maxCodePoint = Math.max(maxCodePoint, fromISO[i]);
-        } catch {
-            console.log("char::REPLACEMENT_CHARACTER,");
-            fromISO[i] = -1;
-        }
-    }
-    console.log("];");
-
+    fromISO.fill(-1);
     const toISO: number[][] = [];
-    for (let i = 128; i < 256; i++) {
-        toISO.push([fromISO[i], i]);
+    for (const line of mappingData.split("\n").map((line) => line.trim())) {
+        if (line.startsWith("#")) {
+            continue;
+        }
+        const map = line.split(/\s/).filter((data) => data.length != 0);
+        if (map.length < 2) {
+            continue;
+        }
+
+        const iso = parseInt(map[0], 16);
+        const unicode = parseInt(map[1], 16);
+        if (iso >= 128) {
+            fromISO[iso] = unicode;
+            toISO.push([unicode, iso]);
+        }
     }
     toISO.sort((l, r) => l[0] - r[0]);
-    console.log(`const UNICODE_TO_${upperEncName}: &[(u16, u8)] = &[`);
-    for (const [from, to] of toISO) {
-        if (from >= 0) {
-            console.log(`(${from}, ${to}),`);
+
+    let buffer: string = `const ${upperEncName}_TO_UNICODE: [char; 128] = [`;
+    for (let i = 128; i < 256; i++) {
+        if (fromISO[i] < 0) {
+            buffer += `char::REPLACEMENT_CHARACTER,`;
+        } else {
+            buffer += `'\\u{${fromISO[i].toString(16)}}',`;
         }
     }
-    console.log("];");
+    buffer += "];\n\n";
+    buffer += `const UNICODE_TO_${upperEncName}: &[(u16, u8)] = &[`;
+    for (const [from, to] of toISO) {
+        if (from >= 0) {
+            buffer += `(${from}, ${to}),`;
+        }
+    }
+    buffer += "];\n";
+    return buffer;
+}
+
+const result = await Promise.all(ENCODINGS.map(generageISO8859Table));
+for (const buf of result) {
+    console.log(buf);
 }
