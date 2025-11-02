@@ -1,0 +1,8 @@
+Document(Document, '1.0', 'Shift_JIS', None)
+  Element(Element, root, root, None, None)
+    Element(Element, ascii, ascii, None, None)
+      Text(Text, 'This is a Shift_JIS encoded XML document')
+    Element(Element, kana, kana, None, None)
+      Text(Text, 'これはShift_JISでエンコードされたXMLぶんしょです')
+    Element(Element, kanji, kanji, None, None)
+      Text(Text, '此れはShift_JISでエンコードされたXML文書です')

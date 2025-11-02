@@ -1,4 +1,5 @@
 mod iso_8859;
+mod shift_jis;
 mod ucs4;
 mod utf16;
 
@@ -9,7 +10,7 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
-pub use crate::encoding::{iso_8859::*, ucs4::*, utf16::*};
+pub use crate::encoding::{iso_8859::*, shift_jis::*, ucs4::*, utf16::*};
 
 pub trait Encoder {
     fn name(&self) -> &'static str;
@@ -179,6 +180,7 @@ pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {
         ISO_8859_7_NAME,
         ISO_8859_8_NAME,
         ISO_8859_9_NAME,
+        SHIFT_JIS_NAME,
         ISO_8859_11_NAME,
         UTF16_NAME,
         UTF16BE_NAME,
@@ -302,6 +304,8 @@ pub static ENCODING_ALIASES: LazyLock<RwLock<BTreeMap<&'static str, &'static str
             ("UTF32", UTF32_NAME),
             ("UTF32BE", UTF32BE_NAME),
             ("UTF32LE", UTF32LE_NAME),
+            ("MS_KANJI", SHIFT_JIS_NAME),
+            ("SHIFTJIS", SHIFT_JIS_NAME),
         ]))
     });
 /// Register `alias` as an alias for the encoding name `real`.  \
@@ -362,6 +366,7 @@ pub static ENCODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, EncoderFactory>
         map.insert(UTF32_NAME, || Box::new(UTF32Encoder::default()));
         map.insert(UTF32BE_NAME, || Box::new(UTF32BEEncoder));
         map.insert(UTF32LE_NAME, || Box::new(UTF32LEEncoder));
+        map.insert(SHIFT_JIS_NAME, || Box::new(ShiftJISEncoder));
         RwLock::new(map)
     });
 pub fn find_encoder(encoding_name: &str) -> Option<Box<dyn Encoder>> {
@@ -412,6 +417,7 @@ pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>
         map.insert(UTF32_NAME, || Box::new(UTF32Decoder::default()));
         map.insert(UTF32BE_NAME, || Box::new(UTF32BEDecoder));
         map.insert(UTF32LE_NAME, || Box::new(UTF32LEDecoder));
+        map.insert(SHIFT_JIS_NAME, || Box::new(ShiftJISDecoder));
         RwLock::new(map)
     });
 pub fn find_decoder(encoding_name: &str) -> Option<Box<dyn Decoder>> {
