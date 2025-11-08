@@ -11,6 +11,7 @@ use crate::{
         attributes::Attributes,
         error::SAXParseError,
         handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
+        parser::XMLReaderBuilder,
         source::InputSource,
     },
     uri::{URIStr, URIString},
@@ -47,27 +48,46 @@ impl Catalog {
 
 pub struct CatalogEntryFile {
     base_uri: Arc<URIStr>,
+    entries: CatalogEntryMap,
     next_catalog: Vec<Arc<URIStr>>,
 }
 
 impl CatalogEntryFile {
-    pub fn parse_uri(
+    pub fn parse_uri<Resolver: EntityResolver, Reporter: ErrorHandler>(
         uri: impl AsRef<URIStr>,
         encoding: Option<&str>,
+        entity_resolver: Option<Resolver>,
+        error_handler: Option<Reporter>,
     ) -> Result<CatalogEntryFile, XMLError> {
-        todo!()
+        let handler = CatalogParseHandler::with_handler(entity_resolver, error_handler);
+        let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+        reader.parse_uri(uri, encoding)?;
+        Ok(reader.handler.entry_file)
     }
 
-    pub fn parse_reader<'a>(
+    pub fn parse_reader<'a, Resolver: EntityResolver, Reporter: ErrorHandler>(
         reader: impl Read + 'a,
         encoding: Option<&str>,
         uri: impl AsRef<URIStr>,
+        entity_resolver: Option<Resolver>,
+        error_handler: Option<Reporter>,
     ) -> Result<CatalogEntryFile, XMLError> {
-        todo!()
+        let handler = CatalogParseHandler::with_handler(entity_resolver, error_handler);
+        let mut parser = XMLReaderBuilder::new().set_handler(handler).build();
+        parser.parse_reader(reader, encoding, Some(uri.as_ref()))?;
+        Ok(parser.handler.entry_file)
     }
 
-    pub fn parse_str(catalog: &str, uri: impl AsRef<URIStr>) -> Result<CatalogEntryFile, XMLError> {
-        todo!()
+    pub fn parse_str<Resolver: EntityResolver, Reporter: ErrorHandler>(
+        catalog: &str,
+        uri: impl AsRef<URIStr>,
+        entity_resolver: Option<Resolver>,
+        error_handler: Option<Reporter>,
+    ) -> Result<CatalogEntryFile, XMLError> {
+        let handler = CatalogParseHandler::with_handler(entity_resolver, error_handler);
+        let mut parser = XMLReaderBuilder::new().set_handler(handler).build();
+        parser.parse_str(catalog, Some(uri.as_ref()))?;
+        Ok(parser.handler.entry_file)
     }
 }
 
@@ -75,6 +95,7 @@ impl Default for CatalogEntryFile {
     fn default() -> Self {
         CatalogEntryFile {
             base_uri: URIString::parse("").unwrap().into(),
+            entries: CatalogEntryMap::new(),
             next_catalog: vec![],
         }
     }
@@ -132,7 +153,9 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> CatalogParseHandler<Resol
     }
 }
 
-impl SAXHandler for CatalogParseHandler {
+impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
+    for CatalogParseHandler<Resolver, Reporter>
+{
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
         self.entry_file.base_uri = locator.system_id();
         self.base_uri_stack
@@ -233,14 +256,25 @@ impl SAXHandler for CatalogParseHandler {
             }
             Some("delegateSystem") => {
                 check_parent!("catalog", "group");
-                let Some(system_id) = atts.get_value_by_qname("systemIdStartString") else {
+                let Some(system_id) = atts
+                    .get_value_by_qname("systemIdStartString")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
-                let Some(catalog) = atts.get_value_by_qname("catalog") else {
+                let Some(catalog) = atts
+                    .get_value_by_qname("catalog")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                    .map(|uri| uri.into())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
+                let system_id = normalize_uri(&system_id);
+                self.entry_file
+                    .entries
+                    .insert(&system_id, CatalogEntry::DelegateSystem { catalog });
             }
             Some("delegateURI") => {
                 check_parent!("catalog", "group");
@@ -292,14 +326,25 @@ impl SAXHandler for CatalogParseHandler {
             }
             Some("system") => {
                 check_parent!("catalog", "group");
-                let Some(system_id) = atts.get_value_by_qname("systemId") else {
+                let Some(system_id) = atts
+                    .get_value_by_qname("systemId")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
-                let Some(uri) = atts.get_value_by_qname("uri") else {
+                let Some(uri) = atts
+                    .get_value_by_qname("uri")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                    .map(|uri| self.resolve_uri(Some(uri)).into())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
+                let system_id = normalize_uri(&system_id);
+                self.entry_file
+                    .entries
+                    .insert(&system_id, CatalogEntry::System { uri });
             }
             Some("systemSuffix") => {
                 check_parent!("catalog", "group");
@@ -307,21 +352,36 @@ impl SAXHandler for CatalogParseHandler {
                     self.ignored_depth += 1;
                     return;
                 };
-                let Some(uri) = atts.get_value_by_qname("uri") else {
+                let Some(uri) = atts
+                    .get_value_by_qname("uri")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                    .map(|uri| self.resolve_uri(Some(uri)))
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
             }
             Some("uri") => {
                 check_parent!("catalog", "group");
-                let Some(name) = atts.get_value_by_qname("name") else {
+                let Some(name) = atts
+                    .get_value_by_qname("name")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
-                let Some(uri) = atts.get_value_by_qname("uri") else {
+                let Some(uri) = atts
+                    .get_value_by_qname("uri")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                    .map(|uri| self.resolve_uri(Some(uri)).into())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
+                let name = normalize_uri(&name);
+                self.entry_file
+                    .entries
+                    .insert(&name, CatalogEntry::System { uri });
             }
             Some("uriSuffix") => {
                 check_parent!("catalog", "group");
@@ -329,7 +389,11 @@ impl SAXHandler for CatalogParseHandler {
                     self.ignored_depth += 1;
                     return;
                 };
-                let Some(uri) = atts.get_value_by_qname("uri") else {
+                let Some(uri) = atts
+                    .get_value_by_qname("uri")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                    .map(|uri| self.resolve_uri(Some(uri)))
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
@@ -368,7 +432,9 @@ impl SAXHandler for CatalogParseHandler {
     }
 }
 
-impl EntityResolver for CatalogParseHandler {
+impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
+    for CatalogParseHandler<Resolver, Reporter>
+{
     fn resolve_entity(
         &mut self,
         name: &str,
@@ -396,7 +462,9 @@ impl EntityResolver for CatalogParseHandler {
     }
 }
 
-impl ErrorHandler for CatalogParseHandler {
+impl<Resolver: EntityResolver, Reporter: ErrorHandler> ErrorHandler
+    for CatalogParseHandler<Resolver, Reporter>
+{
     fn fatal_error(&mut self, error: SAXParseError) {
         if let Some(handler) = self.error_handler.as_mut() {
             handler.fatal_error(error);
@@ -495,5 +563,178 @@ fn validate_public_id(public_id: &str) -> Result<(), XMLError> {
         Ok(())
     } else {
         Err(XMLError::CatalogInvalidPublicID)
+    }
+}
+
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Debug, PartialEq, Eq)]
+enum CatalogEntry {
+    Public {
+        uri: Arc<URIStr>,
+        prefer: PreferMode,
+    },
+    System {
+        uri: Arc<URIStr>,
+    },
+    RewriteSystem {
+        rewrite_prefix: Arc<str>,
+    },
+    SystemSuffix {
+        uri: Arc<URIStr>,
+    },
+    DelegatePublic {
+        catalog: Arc<URIStr>,
+        prefer: PreferMode,
+    },
+    DelegateSystem {
+        catalog: Arc<URIStr>,
+    },
+    URI {
+        uri: Arc<URIStr>,
+    },
+    RewriteURI {
+        rewrite_prefix: Arc<str>,
+    },
+    URISuffix {
+        uri: Arc<URIStr>,
+    },
+    DelegateURI {
+        catalog: Arc<URIStr>,
+    },
+}
+
+struct TrieNode {
+    fragment: String,
+    next: Vec<(u8, usize)>,
+    entries: Vec<Arc<CatalogEntry>>,
+}
+
+impl TrieNode {
+    fn push_entry(&mut self, entry: CatalogEntry) {
+        match entry {
+            CatalogEntry::Public {
+                uri,
+                prefer: PreferMode::Public,
+            } => {
+                if self.entries.iter().all(|entry| !matches!(entry.as_ref(), CatalogEntry::Public { uri: u, .. } if *u == uri)) {
+                    self
+                        .entries
+                        .push(Arc::new(CatalogEntry::Public {
+                            uri,
+                            prefer: PreferMode::Public,
+                        }));
+                }
+            }
+            CatalogEntry::DelegatePublic {
+                catalog,
+                prefer: PreferMode::Public,
+            } => {
+                if self.entries.iter().all(|entry| !matches!(entry.as_ref(), CatalogEntry::DelegatePublic { catalog: c, .. } if *c == catalog)) {
+                    self
+                        .entries
+                        .push(Arc::new(CatalogEntry::DelegatePublic {
+                            catalog,
+                            prefer: PreferMode::Public,
+                        }));
+                }
+            }
+            entry => {
+                let entry = Arc::new(entry);
+                if !self.entries.contains(&entry) {
+                    self.entries.push(entry);
+                }
+            }
+        }
+    }
+}
+
+struct CatalogEntryMap {
+    trie: Vec<TrieNode>,
+}
+
+impl CatalogEntryMap {
+    fn new() -> Self {
+        Self {
+            trie: vec![TrieNode {
+                fragment: "".into(),
+                next: vec![],
+                entries: vec![],
+            }],
+        }
+    }
+
+    fn insert(&mut self, mut id: &str, entry: CatalogEntry) {
+        let mut node_id = 0;
+        while !id.is_empty() {
+            let node = &self.trie[node_id];
+            let pre = id
+                .bytes()
+                .zip(node.fragment.bytes())
+                .take_while(|(a, b)| a == b)
+                .count();
+
+            if pre == id.len() && pre == node.fragment.len() {
+                self.trie[node_id].push_entry(entry);
+                break;
+            }
+
+            if pre == node.fragment.len() {
+                let b = id.as_bytes()[0];
+                match node.next.binary_search_by_key(&b, |n| n.0) {
+                    Ok(pos) => node_id = node.next[pos].1,
+                    Err(pos) => {
+                        let new = TrieNode {
+                            fragment: id[pre..].to_owned(),
+                            next: vec![],
+                            entries: vec![],
+                        };
+                        let next = self.trie.len();
+                        self.trie[node_id].next.insert(pos, (b, next));
+                        node_id = next;
+                        self.trie.push(new);
+                    }
+                }
+            } else if pre == id.len() {
+                let b = node.fragment.as_bytes()[pre];
+                let mut fragment = self.trie[node_id].fragment.split_off(pre);
+                std::mem::swap(&mut fragment, &mut self.trie[node_id].fragment);
+                let next = self.trie.len();
+                let new = TrieNode {
+                    fragment,
+                    next: vec![(b, next)],
+                    entries: vec![Arc::new(entry)],
+                };
+                self.trie.push(new);
+                self.trie.swap(node_id, next);
+                break;
+            } else {
+                let b = node.fragment.as_bytes()[pre];
+                let c = id.as_bytes()[pre];
+                let mut fragment = self.trie[node_id].fragment.split_off(pre);
+                std::mem::swap(&mut fragment, &mut self.trie[node_id].fragment);
+                let next = self.trie.len();
+                let new = TrieNode {
+                    fragment,
+                    next: if b < c {
+                        vec![(b, next), (c, next + 1)]
+                    } else {
+                        vec![(c, next + 1), (b, next)]
+                    },
+                    entries: vec![],
+                };
+                self.trie.push(new);
+                self.trie.swap(node_id, next);
+
+                let new = TrieNode {
+                    fragment: id[pre..].to_owned(),
+                    next: vec![],
+                    entries: vec![Arc::new(entry)],
+                };
+                self.trie.push(new);
+                break;
+            }
+
+            id = &id[pre..];
+        }
     }
 }
