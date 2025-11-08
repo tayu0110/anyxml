@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 
 pub mod automata;
+pub mod catalog;
 pub mod encoding;
 pub mod error;
 mod parse;

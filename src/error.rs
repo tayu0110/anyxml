@@ -195,6 +195,8 @@ pub enum XMLError {
     URIBaseURINotFound,
     // XPath errors
     XPathError(XPathError),
+    // Catalog errors
+    CatalogInvalidPublicID,
 }
 
 impl std::fmt::Display for XMLError {
