@@ -28,7 +28,7 @@ pub enum PreferMode {
 }
 
 pub struct Catalog {
-    entry_files: Vec<()>,
+    entry_files: Vec<CatalogEntryFile>,
     entry_list: Vec<()>,
 }
 
@@ -142,6 +142,17 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> CatalogParseHandler<Resol
         self.base_uri_stack.push((base.into(), depth));
     }
 
+    fn pop_stack(&mut self) {
+        let depth = self.name_stack.len();
+        if self.prefer_mode_stack.last().is_some_and(|v| v.1 == depth) {
+            self.prefer_mode_stack.pop();
+        }
+        if self.base_uri_stack.last().is_some_and(|v| v.1 == depth) {
+            self.base_uri_stack.pop();
+        }
+        self.name_stack.pop();
+    }
+
     fn resolve_uri(&self, reference: Option<URIString>) -> URIString {
         let reference = reference.unwrap_or_else(|| URIString::parse("").unwrap());
         if reference.is_absolute() {
@@ -244,15 +255,23 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                 }
                 let Some(public_id) = atts
                     .get_value_by_qname("publicIdStartString")
+                    .map(|public_id| normalize_public_id(public_id))
                     .filter(|public_id| validate_public_id(public_id).is_ok())
                 else {
                     self.ignored_depth += 1;
                     return;
                 };
-                let Some(catalog) = atts.get_value_by_qname("catalog") else {
+                let Some(catalog) = atts
+                    .get_value_by_qname("catalog")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                    .map(|uri| uri.into())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
+                self.entry_file
+                    .entries
+                    .insert(&public_id, CatalogEntry::DelegatePublic { catalog, prefer });
             }
             Some("delegateSystem") => {
                 check_parent!("catalog", "group");
@@ -278,14 +297,25 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
             }
             Some("delegateURI") => {
                 check_parent!("catalog", "group");
-                let Some(uri) = atts.get_value_by_qname("uriStartString") else {
+                let Some(uri) = atts
+                    .get_value_by_qname("uriStartString")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
-                let Some(catalog) = atts.get_value_by_qname("catalog") else {
+                let Some(catalog) = atts
+                    .get_value_by_qname("catalog")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                    .map(|uri| uri.into())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
+                let uri = normalize_uri(&uri);
+                self.entry_file
+                    .entries
+                    .insert(&uri, CatalogEntry::DelegateURI { catalog });
             }
             Some("public") => {
                 check_parent!("catalog", "group");
@@ -296,33 +326,81 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                 }
                 let Some(public_id) = atts
                     .get_value_by_qname("publicId")
+                    .map(|public_id| normalize_public_id(public_id))
                     .filter(|public_id| validate_public_id(public_id).is_ok())
                 else {
                     self.ignored_depth += 1;
                     return;
                 };
+                let Some(uri) = atts
+                    .get_value_by_qname("uri")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                    .map(|uri| self.resolve_uri(Some(uri)).into())
+                else {
+                    self.ignored_depth += 1;
+                    return;
+                };
+                self.entry_file
+                    .entries
+                    .insert(&public_id, CatalogEntry::Public { uri, prefer });
             }
             Some("rewriteSystem") => {
                 check_parent!("catalog", "group");
-                let Some(system_id) = atts.get_value_by_qname("systemIdStartString") else {
+                let Some(system_id) = atts
+                    .get_value_by_qname("systemIdStartString")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
-                let Some(rewrite_prefix) = atts.get_value_by_qname("rewritePrefix") else {
+                let Some(rewrite_prefix) = atts
+                    .get_value_by_qname("rewritePrefix")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                    .map(|uri| self.resolve_uri(Some(uri)))
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
+                let system_id = normalize_uri(&system_id);
+                self.entry_file.entries.insert(
+                    &system_id,
+                    CatalogEntry::RewriteSystem {
+                        rewrite_prefix: rewrite_prefix
+                            .as_unescaped_str()
+                            .as_deref()
+                            .unwrap_or(rewrite_prefix.as_escaped_str())
+                            .into(),
+                    },
+                );
             }
             Some("rewriteURI") => {
                 check_parent!("catalog", "group");
-                let Some(uri) = atts.get_value_by_qname("uriStartString") else {
+                let Some(uri) = atts
+                    .get_value_by_qname("uriStartString")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
-                let Some(rewrite_prefix) = atts.get_value_by_qname("rewritePrefix") else {
+                let Some(rewrite_prefix) = atts
+                    .get_value_by_qname("rewritePrefix")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                    .map(|uri| self.resolve_uri(Some(uri)))
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
+                let uri = normalize_uri(&uri);
+                self.entry_file.entries.insert(
+                    &uri,
+                    CatalogEntry::RewriteURI {
+                        rewrite_prefix: rewrite_prefix
+                            .as_unescaped_str()
+                            .as_deref()
+                            .unwrap_or(rewrite_prefix.as_escaped_str())
+                            .into(),
+                    },
+                );
             }
             Some("system") => {
                 check_parent!("catalog", "group");
@@ -348,18 +426,25 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
             }
             Some("systemSuffix") => {
                 check_parent!("catalog", "group");
-                let Some(suffix) = atts.get_value_by_qname("systemIdSuffix") else {
+                let Some(suffix) = atts
+                    .get_value_by_qname("systemIdSuffix")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
                 let Some(uri) = atts
                     .get_value_by_qname("uri")
                     .and_then(|uri| URIString::parse(uri).ok())
-                    .map(|uri| self.resolve_uri(Some(uri)))
+                    .map(|uri| self.resolve_uri(Some(uri)).into())
                 else {
                     self.ignored_depth += 1;
                     return;
                 };
+                let suffix = normalize_uri(&suffix).chars().rev().collect::<Box<str>>();
+                self.entry_file
+                    .entries
+                    .insert(&suffix, CatalogEntry::SystemSuffix { uri });
             }
             Some("uri") => {
                 check_parent!("catalog", "group");
@@ -381,22 +466,29 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                 let name = normalize_uri(&name);
                 self.entry_file
                     .entries
-                    .insert(&name, CatalogEntry::System { uri });
+                    .insert(&name, CatalogEntry::URI { uri });
             }
             Some("uriSuffix") => {
                 check_parent!("catalog", "group");
-                let Some(suffix) = atts.get_value_by_qname("uriSuffix") else {
+                let Some(suffix) = atts
+                    .get_value_by_qname("uriSuffix")
+                    .and_then(|uri| URIString::parse(uri).ok())
+                else {
                     self.ignored_depth += 1;
                     return;
                 };
                 let Some(uri) = atts
                     .get_value_by_qname("uri")
                     .and_then(|uri| URIString::parse(uri).ok())
-                    .map(|uri| self.resolve_uri(Some(uri)))
+                    .map(|uri| self.resolve_uri(Some(uri)).into())
                 else {
                     self.ignored_depth += 1;
                     return;
                 };
+                let suffix = normalize_uri(&suffix).chars().rev().collect::<Box<str>>();
+                self.entry_file
+                    .entries
+                    .insert(&suffix, CatalogEntry::URISuffix { uri });
             }
             Some("nextCatalog") => {
                 check_parent!("catalog", "group");
@@ -428,7 +520,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
         if self.ignored_depth > 0 {
             self.ignored_depth -= 1;
         }
-        self.name_stack.pop();
+        self.pop_stack();
     }
 }
 
@@ -552,6 +644,86 @@ fn normalize_uri(uri: &URIStr) -> Cow<'_, str> {
         Cow::Owned(ret)
     } else {
         Cow::Borrowed(uri.as_escaped_str())
+    }
+}
+
+fn normalize_public_id(public_id: &str) -> Cow<'_, str> {
+    const VERSION: XMLVersion = XMLVersion::XML10;
+
+    let mut public_id = Cow::Borrowed(public_id.trim_matches(|c| VERSION.is_whitespace(c)));
+    if let Some(mut unwrapped) = public_id.strip_prefix("urn:publicid:") {
+        let mut buf = String::new();
+        loop {
+            match unwrapped.as_bytes() {
+                [] => break,
+                [b'+', ..] => {
+                    buf.push('\x20');
+                    unwrapped = &unwrapped[1..];
+                }
+                [b':', ..] => {
+                    buf.push_str("//");
+                    unwrapped = &unwrapped[1..];
+                }
+                [b';', ..] => {
+                    buf.push_str("::");
+                    unwrapped = &unwrapped[1..];
+                }
+                [b'%', b'2', b'B', ..] => {
+                    buf.push('+');
+                    unwrapped = &unwrapped[3..];
+                }
+                [b'%', b'3', b'A', ..] => {
+                    buf.push(':');
+                    unwrapped = &unwrapped[3..];
+                }
+                [b'%', b'2', b'F', ..] => {
+                    buf.push('/');
+                    unwrapped = &unwrapped[3..];
+                }
+                [b'%', b'3', b'B', ..] => {
+                    buf.push(';');
+                    unwrapped = &unwrapped[3..];
+                }
+                [b'%', b'2', b'7', ..] => {
+                    buf.push('\'');
+                    unwrapped = &unwrapped[3..];
+                }
+                [b'%', b'3', b'F', ..] => {
+                    buf.push('?');
+                    unwrapped = &unwrapped[3..];
+                }
+                [b'%', b'2', b'3', ..] => {
+                    buf.push('#');
+                    unwrapped = &unwrapped[3..];
+                }
+                [b'%', b'2', b'5', ..] => {
+                    buf.push('%');
+                    unwrapped = &unwrapped[3..];
+                }
+                [_, ..] => buf.push(unwrapped.chars().next().unwrap()),
+            }
+        }
+
+        public_id = Cow::Owned(buf);
+    }
+    if public_id
+        .bytes()
+        .any(|b| VERSION.is_whitespace(b) && b != 0x20)
+        || public_id.contains("\x20\x20")
+    {
+        let mut buf = String::new();
+        for chunk in public_id
+            .split(|c| VERSION.is_whitespace(c))
+            .filter(|s| !s.is_empty())
+        {
+            if !buf.is_empty() {
+                buf.push('\x20');
+            }
+            buf.push_str(chunk);
+        }
+        Cow::Owned(buf)
+    } else {
+        public_id
     }
 }
 
