@@ -968,7 +968,15 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
         .or_else(|err| {
             if name == "catalog" {
                 const CDATALOG_DTD: &str = include_str!("../resources/catalog-compact.dtd");
-                Ok(InputSource::from_content(CDATALOG_DTD))
+                let mut dtd = InputSource::from_content(CDATALOG_DTD);
+                dtd.set_system_id(
+                    URIString::parse(
+                        "http://www.oasis-open.org/committees/entity/release/1.1/catalog.dtd",
+                    )
+                    .unwrap(),
+                );
+                dtd.set_public_id(XML_CATALOG_PUBLICID);
+                Ok(dtd)
             } else {
                 Err(err)
             }
