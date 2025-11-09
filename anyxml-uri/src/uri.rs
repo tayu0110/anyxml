@@ -282,6 +282,12 @@ impl From<&URIStr> for URIString {
     }
 }
 
+impl AsRef<URIStr> for URIStr {
+    fn as_ref(&self) -> &URIStr {
+        self
+    }
+}
+
 impl Clone for Box<URIStr> {
     fn clone(&self) -> Self {
         self.as_ref().into()
