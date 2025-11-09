@@ -175,15 +175,121 @@ impl Catalog {
         None
     }
 
-    pub fn resolve_uri(
-        &mut self,
-        uri: impl AsRef<URIStr>,
-        prefer_mode: PreferMode,
-    ) -> Option<Arc<URIStr>> {
+    pub fn resolve_uri(&mut self, uri: impl AsRef<URIStr>) -> Option<Arc<URIStr>> {
         if self.entry_files.is_empty() {
             return None;
         }
-        todo!()
+        let mut seen_uris = HashSet::new();
+        let uri = normalize_uri(uri.as_ref());
+        self.do_resolve_uri(&uri, &mut seen_uris)
+    }
+
+    fn do_resolve_uri(
+        &mut self,
+        uri: &str,
+        seen_uris: &mut HashSet<Arc<URIStr>>,
+    ) -> Option<Arc<URIStr>> {
+        let mut now = 0;
+        while now < usize::MAX {
+            let (catalog, next) = self.entry_list[now];
+            if !seen_uris.insert(self.entry_files[catalog].base_uri.clone()) {
+                now = next;
+                continue;
+            }
+
+            let mut parser = None;
+            let catalog = &self.entry_files[catalog];
+            if let Some(entries) = catalog.resolve_uri(uri) {
+                let mut delegate = vec![];
+                for entry in entries {
+                    match entry.as_ref() {
+                        CatalogEntry::URI { uri } | CatalogEntry::URISuffix { uri, .. } => {
+                            return Some(uri.clone());
+                        }
+                        CatalogEntry::RewriteURI { from, to } => {
+                            let stripped = uri.strip_prefix(from.as_ref()).unwrap();
+                            let uri = to.as_ref().to_owned() + stripped;
+                            return Some(URIString::parse(uri).unwrap().into());
+                        }
+                        CatalogEntry::DelegateURI { catalog, .. } => {
+                            if !seen_uris.insert(catalog.clone()) {
+                                continue;
+                            }
+                            let parser = parser.get_or_insert_with(|| {
+                                XMLReaderBuilder::new()
+                                    .set_handler(CatalogParseHandler::new())
+                                    .build()
+                            });
+                            parser.reset().ok();
+                            if parser.parse_uri(catalog, None).is_ok()
+                                && !parser.handler.resource_failure
+                            {
+                                delegate.push(
+                                    replace(&mut parser.handler, CatalogParseHandler::new())
+                                        .entry_file,
+                                );
+                            }
+                        }
+                        CatalogEntry::System { .. }
+                        | CatalogEntry::Public { .. }
+                        | CatalogEntry::SystemSuffix { .. }
+                        | CatalogEntry::RewriteSystem { .. }
+                        | CatalogEntry::DelegateSystem { .. }
+                        | CatalogEntry::DelegatePublic { .. } => {
+                            unreachable!()
+                        }
+                    }
+                }
+
+                if !delegate.is_empty() {
+                    let len = delegate.len();
+                    let mut delegate = Catalog {
+                        entry_files: delegate,
+                        entry_list: (0..len).map(|i| (i, i + 1)).collect::<_>(),
+                        last: len - 1,
+                    };
+                    delegate.entry_list[len - 1].1 = usize::MAX;
+                    return delegate.do_resolve_uri(uri, seen_uris);
+                }
+            }
+
+            let parser = parser.get_or_insert_with(|| {
+                XMLReaderBuilder::new()
+                    .set_handler(CatalogParseHandler::new())
+                    .build()
+            });
+            let mut catalogs = vec![];
+            let mut last = now;
+            for uri in catalog.next_catalogs() {
+                if let Some(pos) = self
+                    .entry_files
+                    .iter()
+                    .chain(catalogs.iter())
+                    .position(|file| file.base_uri.as_ref() == uri)
+                {
+                    self.entry_list.push((pos, self.entry_list[last].1));
+                    self.entry_list[last].1 = self.entry_list.len() - 1;
+                    last = self.entry_list.len() - 1;
+                } else {
+                    parser.reset().ok();
+                    if parser.parse_uri(uri, None).is_ok() && !parser.handler.resource_failure {
+                        let file =
+                            replace(&mut parser.handler, CatalogParseHandler::new()).entry_file;
+                        self.entry_list.push((
+                            self.entry_files.len() + catalogs.len(),
+                            self.entry_list[last].1,
+                        ));
+                        catalogs.push(file);
+                        self.entry_list[last].1 = self.entry_list.len() - 1;
+                        last = self.entry_list.len() - 1;
+                    }
+                }
+            }
+            self.entry_files.extend(catalogs);
+
+            now = next;
+        }
+        None
     }
 
     pub fn add(&mut self, catalog: CatalogEntryFile) {
