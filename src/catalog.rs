@@ -17,6 +17,7 @@ use crate::{
     uri::{URIStr, URIString},
 };
 
+const PUBLICID_URN_NAMESPACE: &str = "urn:publicid:";
 pub const XML_CATALOG_NAMESPACE: &str = "urn:oasis:names:tc:entity:xmlns:xml:catalog";
 pub const XML_CATALOG_PUBLICID: &str = "-//OASIS//DTD XML Catalogs V1.1//EN";
 
@@ -49,14 +50,32 @@ impl Catalog {
             return None;
         }
         let mut seen_uris = HashSet::new();
-        let public_id = public_id.map(normalize_public_id);
+        let public_id = public_id
+            .map(normalize_public_id)
+            .filter(|id| validate_public_id(id).is_ok());
         let system_id = system_id.map(normalize_uri);
-        self.do_resolve_external_id(
-            public_id.as_deref(),
-            system_id.as_deref(),
-            prefer_mode,
-            &mut seen_uris,
-        )
+        if let Some(urn) = system_id
+            .as_deref()
+            .filter(|uri| uri.starts_with(PUBLICID_URN_NAMESPACE))
+        {
+            let normalized = normalize_public_id(urn);
+            if public_id
+                .as_deref()
+                .is_some_and(|public_id| public_id != normalized)
+                || validate_public_id(&normalized).is_err()
+            {
+                self.do_resolve_external_id(public_id.as_deref(), None, prefer_mode, &mut seen_uris)
+            } else {
+                self.do_resolve_external_id(Some(&normalized), None, prefer_mode, &mut seen_uris)
+            }
+        } else {
+            self.do_resolve_external_id(
+                public_id.as_deref(),
+                system_id.as_deref(),
+                prefer_mode,
+                &mut seen_uris,
+            )
+        }
     }
 
     fn do_resolve_external_id(
@@ -177,7 +196,15 @@ impl Catalog {
         }
         let mut seen_uris = HashSet::new();
         let uri = normalize_uri(uri.as_ref());
-        self.do_resolve_uri(&uri, &mut seen_uris)
+        if uri.starts_with(PUBLICID_URN_NAMESPACE) {
+            let normalized = normalize_public_id(&uri);
+            if validate_public_id(&normalized).is_err() {
+                return None;
+            }
+            self.do_resolve_external_id(Some(&normalized), None, PreferMode::Public, &mut seen_uris)
+        } else {
+            self.do_resolve_uri(&uri, &mut seen_uris)
+        }
     }
 
     fn do_resolve_uri(
@@ -1038,7 +1065,7 @@ fn normalize_public_id(public_id: &str) -> Cow<'_, str> {
     const VERSION: XMLVersion = XMLVersion::XML10;
 
     let mut public_id = Cow::Borrowed(public_id.trim_matches(|c| VERSION.is_whitespace(c)));
-    if let Some(mut unwrapped) = public_id.strip_prefix("urn:publicid:") {
+    if let Some(mut unwrapped) = public_id.strip_prefix(PUBLICID_URN_NAMESPACE) {
         let mut buf = String::new();
         loop {
             match unwrapped.as_bytes() {
