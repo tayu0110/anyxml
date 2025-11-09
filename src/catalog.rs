@@ -1,7 +1,7 @@
 //! Provide resource resolution APIs based on the OASIS standard
 //! [XML Catalogs V1.1](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest).
 
-use std::{borrow::Cow, io::Read, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, io::Read, mem::replace, sync::Arc};
 
 use crate::{
     XMLVersion,
@@ -20,7 +20,7 @@ use crate::{
 pub const XML_CATALOG_NAMESPACE: &str = "urn:oasis:names:tc:entity:xmlns:xml:catalog";
 pub const XML_CATALOG_PUBLICID: &str = "-//OASIS//DTD XML Catalogs V1.1//EN";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
 pub enum PreferMode {
     #[default]
     Public,
@@ -29,7 +29,10 @@ pub enum PreferMode {
 
 pub struct Catalog {
     entry_files: Vec<CatalogEntryFile>,
-    entry_list: Vec<()>,
+    // 1: catalog index for entry_files
+    // 2: next index for entry_list or usize::MAX if the following file does not exist
+    entry_list: Vec<(usize, usize)>,
+    last: usize,
 }
 
 impl Catalog {
@@ -37,12 +40,165 @@ impl Catalog {
         &mut self,
         public_id: Option<&str>,
         system_id: Option<&URIStr>,
+        prefer_mode: PreferMode,
     ) -> Option<Arc<URIStr>> {
+        if self.entry_files.is_empty() {
+            return None;
+        }
+        if public_id.is_none() && system_id.is_none() {
+            return None;
+        }
+        let mut seen_uris = HashSet::new();
+        let public_id = public_id.map(normalize_public_id);
+        let system_id = system_id.map(normalize_uri);
+        self.do_resolve_external_id(
+            public_id.as_deref(),
+            system_id.as_deref(),
+            prefer_mode,
+            &mut seen_uris,
+        )
+    }
+
+    fn do_resolve_external_id(
+        &mut self,
+        public_id: Option<&str>,
+        system_id: Option<&str>,
+        prefer_mode: PreferMode,
+        seen_uris: &mut HashSet<Arc<URIStr>>,
+    ) -> Option<Arc<URIStr>> {
+        let mut now = 0;
+        while now < usize::MAX {
+            let (catalog, next) = self.entry_list[now];
+            if !seen_uris.insert(self.entry_files[catalog].base_uri.clone()) {
+                now = next;
+                continue;
+            }
+
+            let mut parser = None;
+            let catalog = &self.entry_files[catalog];
+            if let Some(entries) = catalog.resolve_external_id(public_id, system_id, prefer_mode) {
+                let mut delegate = vec![];
+                let mut delegate_system = false;
+                for entry in entries {
+                    match entry.as_ref() {
+                        CatalogEntry::System { uri }
+                        | CatalogEntry::Public { uri, .. }
+                        | CatalogEntry::SystemSuffix { uri, .. } => {
+                            return Some(uri.clone());
+                        }
+                        CatalogEntry::RewriteSystem { from, to } => {
+                            let system_id = system_id.unwrap();
+                            let stripped = system_id.strip_prefix(from.as_ref()).unwrap();
+                            let uri = to.as_ref().to_owned() + stripped;
+                            return Some(URIString::parse(uri).unwrap().into());
+                        }
+                        entry @ (CatalogEntry::DelegateSystem { catalog, .. }
+                        | CatalogEntry::DelegatePublic { catalog, .. }) => {
+                            delegate_system = matches!(entry, CatalogEntry::DelegateSystem { .. });
+                            if !seen_uris.insert(catalog.clone()) {
+                                continue;
+                            }
+                            let parser = parser.get_or_insert_with(|| {
+                                XMLReaderBuilder::new()
+                                    .set_handler(CatalogParseHandler::new())
+                                    .build()
+                            });
+                            parser.reset().ok();
+                            if parser.parse_uri(catalog, None).is_ok()
+                                && !parser.handler.resource_failure
+                            {
+                                delegate.push(
+                                    replace(&mut parser.handler, CatalogParseHandler::new())
+                                        .entry_file,
+                                );
+                            }
+                        }
+                        CatalogEntry::URI { .. }
+                        | CatalogEntry::RewriteURI { .. }
+                        | CatalogEntry::URISuffix { .. }
+                        | CatalogEntry::DelegateURI { .. } => unreachable!(),
+                    }
+                }
+
+                if !delegate.is_empty() {
+                    let len = delegate.len();
+                    let mut delegate = Catalog {
+                        entry_files: delegate,
+                        entry_list: (0..len).map(|i| (i, i + 1)).collect::<_>(),
+                        last: len - 1,
+                    };
+                    delegate.entry_list[len - 1].1 = usize::MAX;
+                    return if delegate_system {
+                        delegate.do_resolve_external_id(None, system_id, prefer_mode, seen_uris)
+                    } else {
+                        delegate.do_resolve_external_id(public_id, None, prefer_mode, seen_uris)
+                    };
+                }
+            }
+
+            let parser = parser.get_or_insert_with(|| {
+                XMLReaderBuilder::new()
+                    .set_handler(CatalogParseHandler::new())
+                    .build()
+            });
+            let mut catalogs = vec![];
+            let mut last = now;
+            for uri in catalog.next_catalogs() {
+                if let Some(pos) = self
+                    .entry_files
+                    .iter()
+                    .chain(catalogs.iter())
+                    .position(|file| file.base_uri.as_ref() == uri)
+                {
+                    self.entry_list.push((pos, self.entry_list[last].1));
+                    self.entry_list[last].1 = self.entry_list.len() - 1;
+                    last = self.entry_list.len() - 1;
+                } else {
+                    parser.reset().ok();
+                    if parser.parse_uri(uri, None).is_ok() && !parser.handler.resource_failure {
+                        let file =
+                            replace(&mut parser.handler, CatalogParseHandler::new()).entry_file;
+                        self.entry_list.push((
+                            self.entry_files.len() + catalogs.len(),
+                            self.entry_list[last].1,
+                        ));
+                        catalogs.push(file);
+                        self.entry_list[last].1 = self.entry_list.len() - 1;
+                        last = self.entry_list.len() - 1;
+                    }
+                }
+            }
+            self.entry_files.extend(catalogs);
+
+            now = next;
+        }
+        None
+    }
+
+    pub fn resolve_uri(
+        &mut self,
+        uri: impl AsRef<URIStr>,
+        prefer_mode: PreferMode,
+    ) -> Option<Arc<URIStr>> {
+        if self.entry_files.is_empty() {
+            return None;
+        }
         todo!()
     }
 
-    pub fn resolve_uri(&mut self, uri: impl AsRef<URIStr>) -> Option<Arc<URIStr>> {
-        todo!()
+    pub fn add(&mut self, catalog: CatalogEntryFile) {
+        if let Some(pos) = self
+            .entry_files
+            .iter()
+            .position(|file| file.base_uri == catalog.base_uri)
+        {
+            self.entry_list.push((pos, usize::MAX));
+        } else {
+            self.entry_list.push((self.entry_files.len(), usize::MAX));
+            self.entry_files.push(catalog);
+        }
+        self.entry_list[self.last].1 = self.entry_list.len() - 1;
+        self.last = self.entry_list.len() - 1;
     }
 }
 
@@ -53,6 +209,14 @@ pub struct CatalogEntryFile {
 }
 
 impl CatalogEntryFile {
+    fn new() -> Self {
+        CatalogEntryFile {
+            base_uri: URIString::parse("").unwrap().into(),
+            entries: CatalogEntryMap::new(),
+            next_catalog: vec![],
+        }
+    }
+
     pub fn parse_uri<Resolver: EntityResolver, Reporter: ErrorHandler>(
         uri: impl AsRef<URIStr>,
         encoding: Option<&str>,
@@ -62,6 +226,9 @@ impl CatalogEntryFile {
         let handler = CatalogParseHandler::with_handler(entity_resolver, error_handler);
         let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
         reader.parse_uri(uri, encoding)?;
+        if reader.handler.resource_failure {
+            return Err(XMLError::CatalogResourceFailure);
+        }
         Ok(reader.handler.entry_file)
     }
 
@@ -75,6 +242,9 @@ impl CatalogEntryFile {
         let handler = CatalogParseHandler::with_handler(entity_resolver, error_handler);
         let mut parser = XMLReaderBuilder::new().set_handler(handler).build();
         parser.parse_reader(reader, encoding, Some(uri.as_ref()))?;
+        if parser.handler.resource_failure {
+            return Err(XMLError::CatalogResourceFailure);
+        }
         Ok(parser.handler.entry_file)
     }
 
@@ -87,17 +257,102 @@ impl CatalogEntryFile {
         let handler = CatalogParseHandler::with_handler(entity_resolver, error_handler);
         let mut parser = XMLReaderBuilder::new().set_handler(handler).build();
         parser.parse_str(catalog, Some(uri.as_ref()))?;
+        if parser.handler.resource_failure {
+            return Err(XMLError::CatalogResourceFailure);
+        }
         Ok(parser.handler.entry_file)
     }
-}
 
-impl Default for CatalogEntryFile {
-    fn default() -> Self {
-        CatalogEntryFile {
-            base_uri: URIString::parse("").unwrap().into(),
-            entries: CatalogEntryMap::new(),
-            next_catalog: vec![],
+    pub fn next_catalogs(&self) -> impl Iterator<Item = &URIStr> + '_ {
+        self.next_catalog.iter().map(|uri| uri.as_ref())
+    }
+
+    fn resolve_system_id(&self, system_id: &str) -> Option<Vec<Arc<CatalogEntry>>> {
+        let mut ret = self.entries.search_system_id(system_id).collect::<Vec<_>>();
+        ret.sort_unstable();
+        if ret.first().is_some_and(|entry| {
+            matches!(
+                entry.entry_type(),
+                CatalogEntryType::System | CatalogEntryType::RewriteSystem
+            )
+        }) {
+            ret.truncate(1);
+            return Some(ret);
         }
+
+        let reversed = system_id.chars().rev().collect::<String>();
+        let mut rev = self
+            .entries
+            .search_system_suffix(&reversed)
+            .collect::<Vec<_>>();
+        rev.sort_unstable();
+        if !rev.is_empty() {
+            rev.truncate(1);
+            return Some(rev);
+        }
+        (!ret.is_empty()).then_some(ret)
+    }
+
+    fn resolve_public_id(
+        &self,
+        public_id: &str,
+        prefer_mode: PreferMode,
+    ) -> Option<Vec<Arc<CatalogEntry>>> {
+        let mut ret = self
+            .entries
+            .search_public_id(public_id, prefer_mode)
+            .collect::<Vec<_>>();
+        ret.sort_unstable();
+        if ret
+            .first()
+            .is_some_and(|entry| matches!(entry.entry_type(), CatalogEntryType::Public))
+        {
+            ret.truncate(1);
+            return Some(ret);
+        }
+        (!ret.is_empty()).then_some(ret)
+    }
+
+    fn resolve_external_id(
+        &self,
+        public_id: Option<&str>,
+        system_id: Option<&str>,
+        prefer_mode: PreferMode,
+    ) -> Option<Vec<Arc<CatalogEntry>>> {
+        match (public_id, system_id) {
+            (Some(public_id), Some(system_id)) => self
+                .resolve_system_id(system_id)
+                .or_else(|| self.resolve_public_id(public_id, prefer_mode)),
+            (Some(public_id), None) => self.resolve_public_id(public_id, prefer_mode),
+            (None, Some(system_id)) => self.resolve_system_id(system_id),
+            (None, None) => None,
+        }
+    }
+
+    fn resolve_uri(&self, uri: &str) -> Option<Vec<Arc<CatalogEntry>>> {
+        let mut ret = self.entries.search_uri(uri).collect::<Vec<_>>();
+        ret.sort_unstable();
+        if ret.first().is_some_and(|entry| {
+            matches!(
+                entry.entry_type(),
+                CatalogEntryType::URI | CatalogEntryType::RewriteURI
+            )
+        }) {
+            ret.truncate(1);
+            return Some(ret);
+        }
+
+        let reversed = uri.chars().rev().collect::<String>();
+        let mut rev = self
+            .entries
+            .search_uri_suffix(&reversed)
+            .collect::<Vec<_>>();
+        rev.sort_unstable();
+        if !rev.is_empty() {
+            rev.truncate(1);
+            return Some(rev);
+        }
+        (!ret.is_empty()).then_some(ret)
     }
 }
 
@@ -116,13 +371,19 @@ struct CatalogParseHandler<
     error_handler: Option<Reporter>,
 }
 
+impl CatalogParseHandler {
+    fn new() -> Self {
+        Self::with_handler(None, None)
+    }
+}
+
 impl<Resolver: EntityResolver, Reporter: ErrorHandler> CatalogParseHandler<Resolver, Reporter> {
     fn with_handler(entity_resolver: Option<Resolver>, error_handler: Option<Reporter>) -> Self {
         Self {
-            entry_file: CatalogEntryFile::default(),
+            entry_file: CatalogEntryFile::new(),
             name_stack: vec![],
             base_uri_stack: vec![],
-            prefer_mode_stack: vec![(PreferMode::Public, 0)],
+            prefer_mode_stack: vec![],
             ignored_depth: 0,
             resource_failure: false,
             entity_resolver,
@@ -130,11 +391,8 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> CatalogParseHandler<Resol
         }
     }
 
-    fn prefer(&self) -> PreferMode {
-        self.prefer_mode_stack
-            .last()
-            .map(|ret| ret.0)
-            .unwrap_or_default()
+    fn prefer(&self) -> Option<PreferMode> {
+        self.prefer_mode_stack.last().map(|ret| ret.0)
     }
 
     fn push_base_uri(&mut self, reference: &URIStr, depth: usize) {
@@ -249,7 +507,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
             Some("delegatePublic") => {
                 check_parent!("catalog", "group");
                 let prefer = self.prefer();
-                if prefer == PreferMode::System {
+                if prefer == Some(PreferMode::System) {
                     self.ignored_depth += 1;
                     return;
                 }
@@ -269,9 +527,14 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                     self.ignored_depth += 1;
                     return;
                 };
-                self.entry_file
-                    .entries
-                    .insert(&public_id, CatalogEntry::DelegatePublic { catalog, prefer });
+                self.entry_file.entries.insert(
+                    &public_id,
+                    CatalogEntry::DelegatePublic {
+                        prefix: public_id.as_ref().into(),
+                        catalog,
+                        prefer,
+                    },
+                );
             }
             Some("delegateSystem") => {
                 check_parent!("catalog", "group");
@@ -291,9 +554,13 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                     return;
                 };
                 let system_id = normalize_uri(&system_id);
-                self.entry_file
-                    .entries
-                    .insert(&system_id, CatalogEntry::DelegateSystem { catalog });
+                self.entry_file.entries.insert(
+                    &system_id,
+                    CatalogEntry::DelegateSystem {
+                        prefix: system_id.as_ref().into(),
+                        catalog,
+                    },
+                );
             }
             Some("delegateURI") => {
                 check_parent!("catalog", "group");
@@ -313,14 +580,18 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                     return;
                 };
                 let uri = normalize_uri(&uri);
-                self.entry_file
-                    .entries
-                    .insert(&uri, CatalogEntry::DelegateURI { catalog });
+                self.entry_file.entries.insert(
+                    &uri,
+                    CatalogEntry::DelegateURI {
+                        prefix: uri.as_ref().into(),
+                        catalog,
+                    },
+                );
             }
             Some("public") => {
                 check_parent!("catalog", "group");
                 let prefer = self.prefer();
-                if prefer == PreferMode::System {
+                if prefer == Some(PreferMode::System) {
                     self.ignored_depth += 1;
                     return;
                 }
@@ -365,7 +636,8 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                 self.entry_file.entries.insert(
                     &system_id,
                     CatalogEntry::RewriteSystem {
-                        rewrite_prefix: rewrite_prefix
+                        from: system_id.as_ref().into(),
+                        to: rewrite_prefix
                             .as_unescaped_str()
                             .as_deref()
                             .unwrap_or(rewrite_prefix.as_escaped_str())
@@ -394,7 +666,8 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                 self.entry_file.entries.insert(
                     &uri,
                     CatalogEntry::RewriteURI {
-                        rewrite_prefix: rewrite_prefix
+                        from: uri.as_ref().into(),
+                        to: rewrite_prefix
                             .as_unescaped_str()
                             .as_deref()
                             .unwrap_or(rewrite_prefix.as_escaped_str())
@@ -441,10 +714,15 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                     self.ignored_depth += 1;
                     return;
                 };
-                let suffix = normalize_uri(&suffix).chars().rev().collect::<Box<str>>();
-                self.entry_file
-                    .entries
-                    .insert(&suffix, CatalogEntry::SystemSuffix { uri });
+                let suffix = normalize_uri(&suffix);
+                let rev_suffix = suffix.chars().rev().collect::<String>();
+                self.entry_file.entries.insert(
+                    &rev_suffix,
+                    CatalogEntry::SystemSuffix {
+                        suffix: suffix.into(),
+                        uri,
+                    },
+                );
             }
             Some("uri") => {
                 check_parent!("catalog", "group");
@@ -485,10 +763,15 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                     self.ignored_depth += 1;
                     return;
                 };
-                let suffix = normalize_uri(&suffix).chars().rev().collect::<Box<str>>();
-                self.entry_file
-                    .entries
-                    .insert(&suffix, CatalogEntry::URISuffix { uri });
+                let suffix = normalize_uri(&suffix);
+                let rev_suffix = suffix.chars().rev().collect::<String>();
+                self.entry_file.entries.insert(
+                    &rev_suffix,
+                    CatalogEntry::URISuffix {
+                        suffix: suffix.into(),
+                        uri,
+                    },
+                );
             }
             Some("nextCatalog") => {
                 check_parent!("catalog", "group");
@@ -739,40 +1022,123 @@ fn validate_public_id(public_id: &str) -> Result<(), XMLError> {
 }
 
 #[allow(clippy::upper_case_acronyms)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum CatalogEntryType {
+    System,
+    RewriteSystem,
+    SystemSuffix,
+    DelegateSystem,
+    Public,
+    DelegatePublic,
+    URI,
+    RewriteURI,
+    URISuffix,
+    DelegateURI,
+}
+
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, Eq)]
 enum CatalogEntry {
-    Public {
-        uri: Arc<URIStr>,
-        prefer: PreferMode,
-    },
     System {
         uri: Arc<URIStr>,
     },
     RewriteSystem {
-        rewrite_prefix: Arc<str>,
+        from: Box<str>,
+        to: Arc<str>,
     },
     SystemSuffix {
+        suffix: Box<str>,
         uri: Arc<URIStr>,
     },
-    DelegatePublic {
-        catalog: Arc<URIStr>,
-        prefer: PreferMode,
-    },
     DelegateSystem {
+        prefix: Box<str>,
         catalog: Arc<URIStr>,
+    },
+    Public {
+        uri: Arc<URIStr>,
+        prefer: Option<PreferMode>,
+    },
+    DelegatePublic {
+        prefix: Box<str>,
+        catalog: Arc<URIStr>,
+        prefer: Option<PreferMode>,
     },
     URI {
         uri: Arc<URIStr>,
     },
     RewriteURI {
-        rewrite_prefix: Arc<str>,
+        from: Box<str>,
+        to: Arc<str>,
     },
     URISuffix {
+        suffix: Box<str>,
         uri: Arc<URIStr>,
     },
     DelegateURI {
+        prefix: Box<str>,
         catalog: Arc<URIStr>,
     },
+}
+
+impl CatalogEntry {
+    const fn entry_type(&self) -> CatalogEntryType {
+        match self {
+            CatalogEntry::System { .. } => CatalogEntryType::System,
+            CatalogEntry::RewriteSystem { .. } => CatalogEntryType::RewriteSystem,
+            CatalogEntry::SystemSuffix { .. } => CatalogEntryType::SystemSuffix,
+            CatalogEntry::DelegateSystem { .. } => CatalogEntryType::DelegateSystem,
+            CatalogEntry::Public { .. } => CatalogEntryType::Public,
+            CatalogEntry::DelegatePublic { .. } => CatalogEntryType::DelegatePublic,
+            CatalogEntry::URI { .. } => CatalogEntryType::URI,
+            CatalogEntry::RewriteURI { .. } => CatalogEntryType::RewriteURI,
+            CatalogEntry::URISuffix { .. } => CatalogEntryType::URISuffix,
+            CatalogEntry::DelegateURI { .. } => CatalogEntryType::DelegateURI,
+        }
+    }
+}
+
+impl PartialOrd for CatalogEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CatalogEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use CatalogEntry::*;
+
+        match (self, other) {
+            (System { uri: l }, System { uri: r }) => l.as_escaped_str().cmp(r.as_escaped_str()),
+            (RewriteSystem { from: l, .. }, RewriteSystem { from: r, .. }) => r.cmp(l),
+            (SystemSuffix { suffix: l, .. }, SystemSuffix { suffix: r, .. }) => {
+                r.chars().rev().cmp(l.chars().rev())
+            }
+            (DelegateSystem { prefix: l, .. }, DelegateSystem { prefix: r, .. }) => r.cmp(l),
+            (Public { prefer: lp, .. }, Public { prefer: rp, .. }) => lp.cmp(rp),
+            (
+                DelegatePublic {
+                    prefix: lpre,
+                    prefer: lp,
+                    ..
+                },
+                DelegatePublic {
+                    prefix: rpre,
+                    prefer: rp,
+                    ..
+                },
+            ) => match rpre.cmp(lpre) {
+                std::cmp::Ordering::Equal => lp.cmp(rp),
+                other => other,
+            },
+            (URI { uri: l }, URI { uri: r }) => l.as_escaped_str().cmp(r.as_escaped_str()),
+            (RewriteURI { from: l, .. }, RewriteURI { from: r, .. }) => r.cmp(l),
+            (URISuffix { suffix: l, .. }, URISuffix { suffix: r, .. }) => {
+                r.chars().rev().cmp(l.chars().rev())
+            }
+            (DelegateURI { prefix: l, .. }, DelegateURI { prefix: r, .. }) => r.cmp(l),
+            _ => self.entry_type().cmp(&other.entry_type()),
+        }
+    }
 }
 
 struct TrieNode {
@@ -786,27 +1152,29 @@ impl TrieNode {
         match entry {
             CatalogEntry::Public {
                 uri,
-                prefer: PreferMode::Public,
+                prefer: None,
             } => {
-                if self.entries.iter().all(|entry| !matches!(entry.as_ref(), CatalogEntry::Public { uri: u, .. } if *u == uri)) {
+                if self.entries.iter().all(|entry| !matches!(entry.as_ref(), CatalogEntry::Public { .. })) {
                     self
                         .entries
                         .push(Arc::new(CatalogEntry::Public {
                             uri,
-                            prefer: PreferMode::Public,
+                            prefer: None,
                         }));
                 }
             }
             CatalogEntry::DelegatePublic {
+                prefix,
                 catalog,
-                prefer: PreferMode::Public,
+                prefer: None,
             } => {
-                if self.entries.iter().all(|entry| !matches!(entry.as_ref(), CatalogEntry::DelegatePublic { catalog: c, .. } if *c == catalog)) {
+                if self.entries.iter().all(|entry| !matches!(entry.as_ref(), CatalogEntry::DelegatePublic { prefix: pre, .. } if *pre == prefix)) {
                     self
                         .entries
                         .push(Arc::new(CatalogEntry::DelegatePublic {
+                            prefix,
                             catalog,
-                            prefer: PreferMode::Public,
+                            prefer: None,
                         }));
                 }
             }
@@ -908,5 +1276,111 @@ impl CatalogEntryMap {
 
             id = &id[pre..];
         }
+    }
+
+    fn search_system_id<'a>(
+        &'a self,
+        system_id: &'a str,
+    ) -> impl Iterator<Item = Arc<CatalogEntry>> + 'a {
+        self.collect_entry(system_id, |id, entry| match entry {
+            CatalogEntry::System { .. } if id.is_empty() => true,
+            CatalogEntry::RewriteSystem { .. } | CatalogEntry::DelegateSystem { .. } => true,
+            _ => false,
+        })
+    }
+
+    fn search_system_suffix<'a>(
+        &'a self,
+        reversed_system_id: &'a str,
+    ) -> impl Iterator<Item = Arc<CatalogEntry>> + 'a {
+        self.collect_entry(reversed_system_id, |_, entry| {
+            matches!(entry, CatalogEntry::SystemSuffix { .. })
+        })
+    }
+
+    fn search_public_id<'a>(
+        &'a self,
+        public_id: &'a str,
+        prefer_mode: PreferMode,
+    ) -> impl Iterator<Item = Arc<CatalogEntry>> + 'a {
+        self.collect_entry(public_id, move |id, entry| match entry {
+            CatalogEntry::Public { prefer, .. }
+                if id.is_empty() && prefer.unwrap_or(prefer_mode) == PreferMode::Public =>
+            {
+                true
+            }
+            CatalogEntry::DelegatePublic { prefer, .. }
+                if prefer.unwrap_or(prefer_mode) == PreferMode::Public =>
+            {
+                true
+            }
+            _ => false,
+        })
+    }
+
+    fn search_uri<'a>(&'a self, uri: &'a str) -> impl Iterator<Item = Arc<CatalogEntry>> + 'a {
+        self.collect_entry(uri, |id, entry| match entry {
+            CatalogEntry::URI { .. } if id.is_empty() => true,
+            CatalogEntry::RewriteURI { .. } | CatalogEntry::DelegateURI { .. } => true,
+            _ => false,
+        })
+    }
+
+    fn search_uri_suffix<'a>(
+        &'a self,
+        reversed_system_id: &'a str,
+    ) -> impl Iterator<Item = Arc<CatalogEntry>> + 'a {
+        self.collect_entry(reversed_system_id, |_, entry| {
+            matches!(entry, CatalogEntry::URISuffix { .. })
+        })
+    }
+
+    fn collect_entry<'a>(
+        &'a self,
+        mut id: &'a str,
+        mut predicate: impl FnMut(&str, &CatalogEntry) -> bool + 'a,
+    ) -> impl Iterator<Item = Arc<CatalogEntry>> + 'a {
+        let mut now = 0;
+        let mut entry_index = usize::MAX;
+        let mut end = false;
+        std::iter::from_fn(move || {
+            if end {
+                return None;
+            }
+            loop {
+                let node = &self.trie[now];
+                if entry_index == usize::MAX {
+                    let Some(suffix) = id.strip_prefix(&node.fragment) else {
+                        end = true;
+                        return None;
+                    };
+                    entry_index = 0;
+                    id = suffix;
+                }
+
+                while entry_index < node.entries.len() {
+                    let entry = node.entries[entry_index].clone();
+                    entry_index += 1;
+
+                    if predicate(id, &entry) {
+                        return Some(entry);
+                    }
+                }
+
+                entry_index = usize::MAX;
+                if id.is_empty() {
+                    end = true;
+                    return None;
+                }
+
+                let next = id.as_bytes()[0];
+                if let Ok(next) = node.next.binary_search_by_key(&next, |k| k.0) {
+                    now = next;
+                } else {
+                    end = true;
+                    return None;
+                }
+            }
+        })
     }
 }

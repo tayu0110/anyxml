@@ -197,6 +197,7 @@ pub enum XMLError {
     XPathError(XPathError),
     // Catalog errors
     CatalogInvalidPublicID,
+    CatalogResourceFailure,
 }
 
 impl std::fmt::Display for XMLError {

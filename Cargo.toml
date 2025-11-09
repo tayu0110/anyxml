@@ -18,7 +18,7 @@ keywords = ["xml", "dtd", "xpath"]
 rust-version.workspace = true
 
 [dependencies]
-anyxml-uri = { path = "./anyxml-uri", version = "0.1.3" }
+anyxml-uri = { path = "./anyxml-uri", version = "0.1.4" }
 anyxml-automata = { path = "./anyxml-automata", version = "0.1.1" }
 clap = { version = "4.5.47", features = ["derive"] }
 
