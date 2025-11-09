@@ -1,7 +1,7 @@
 //! Provide resource resolution APIs based on the OASIS standard
 //! [XML Catalogs V1.1](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest).
 
-use std::{borrow::Cow, collections::HashSet, io::Read, mem::replace, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, io::Read, sync::Arc};
 
 use crate::{
     XMLVersion,
@@ -107,10 +107,7 @@ impl Catalog {
                             if parser.parse_uri(catalog, None).is_ok()
                                 && !parser.handler.resource_failure
                             {
-                                delegate.push(
-                                    replace(&mut parser.handler, CatalogParseHandler::new())
-                                        .entry_file,
-                                );
+                                delegate.push(std::mem::take(&mut parser.handler).entry_file);
                             }
                         }
                         CatalogEntry::URI { .. }
@@ -156,8 +153,7 @@ impl Catalog {
                 } else {
                     parser.reset().ok();
                     if parser.parse_uri(uri, None).is_ok() && !parser.handler.resource_failure {
-                        let file =
-                            replace(&mut parser.handler, CatalogParseHandler::new()).entry_file;
+                        let file = std::mem::take(&mut parser.handler).entry_file;
                         self.entry_list.push((
                             self.entry_files.len() + catalogs.len(),
                             self.entry_list[last].1,
@@ -224,10 +220,7 @@ impl Catalog {
                             if parser.parse_uri(catalog, None).is_ok()
                                 && !parser.handler.resource_failure
                             {
-                                delegate.push(
-                                    replace(&mut parser.handler, CatalogParseHandler::new())
-                                        .entry_file,
-                                );
+                                delegate.push(std::mem::take(&mut parser.handler).entry_file);
                             }
                         }
                         CatalogEntry::System { .. }
@@ -273,8 +266,7 @@ impl Catalog {
                 } else {
                     parser.reset().ok();
                     if parser.parse_uri(uri, None).is_ok() && !parser.handler.resource_failure {
-                        let file =
-                            replace(&mut parser.handler, CatalogParseHandler::new()).entry_file;
+                        let file = std::mem::take(&mut parser.handler).entry_file;
                         self.entry_list.push((
                             self.entry_files.len() + catalogs.len(),
                             self.entry_list[last].1,
@@ -525,6 +517,12 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> CatalogParseHandler<Resol
         } else {
             self.base_uri_stack.last().unwrap().0.resolve(&reference)
         }
+    }
+}
+
+impl Default for CatalogParseHandler {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
