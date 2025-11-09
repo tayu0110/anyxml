@@ -960,11 +960,19 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
         name: &str,
         base_uri: Option<&URIStr>,
     ) -> Result<InputSource<'static>, XMLError> {
-        if let Some(resolver) = self.entity_resolver.as_mut() {
+        (if let Some(resolver) = self.entity_resolver.as_mut() {
             resolver.get_external_subset(name, base_uri)
         } else {
             DefaultSAXHandler.get_external_subset(name, base_uri)
-        }
+        })
+        .or_else(|err| {
+            if name == "catalog" {
+                const CDATALOG_DTD: &str = include_str!("../resources/catalog-compact.dtd");
+                Ok(InputSource::from_content(CDATALOG_DTD))
+            } else {
+                Err(err)
+            }
+        })
     }
 }
 
