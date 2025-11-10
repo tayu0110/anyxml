@@ -25,8 +25,7 @@ pub enum ParserOption {
     ExternalGeneralEntities = 0,
     ExternalParameterEntities = 1,
     Namespaces = 2,
-    ResolveDTDURIs = 3,
-    Validation = 4,
+    Validation = 3,
 }
 
 impl std::ops::BitOr<Self> for ParserOption {
@@ -69,7 +68,7 @@ impl ParserConfig {
 
 impl Default for ParserConfig {
     fn default() -> Self {
-        ParserOption::Namespaces | ParserOption::ResolveDTDURIs
+        ParserConfig { flags: 0 } | ParserOption::Namespaces
     }
 }
 
