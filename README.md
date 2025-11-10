@@ -15,7 +15,7 @@ The current implementation supports the following features:
 - build, modify and serialize XML document trees
 - execute XPath and lookup specific node in the document tree
     - only XPath 1.0 is supported in the current implementation
-- resolve alternative URI or external identifiers or URI using XML Catalogs
+- resolve an alternative URI of external identifiers or URI using XML Catalogs
 
 ## Parser
 You can use a SAX-like API designed with reference to Java SAX API.
