@@ -101,7 +101,7 @@ impl Catalog {
                 let mut delegate_system = false;
                 for entry in entries {
                     match entry.as_ref() {
-                        CatalogEntry::System { uri }
+                        CatalogEntry::System { uri, .. }
                         | CatalogEntry::Public { uri, .. }
                         | CatalogEntry::SystemSuffix { uri, .. } => {
                             return Some(uri.clone());
@@ -115,7 +115,7 @@ impl Catalog {
                         entry @ (CatalogEntry::DelegateSystem { catalog, .. }
                         | CatalogEntry::DelegatePublic { catalog, .. }) => {
                             delegate_system = matches!(entry, CatalogEntry::DelegateSystem { .. });
-                            if !seen_uris.insert(catalog.clone()) {
+                            if seen_uris.contains(catalog.as_ref()) {
                                 continue;
                             }
                             let parser = parser.get_or_insert_with(|| {
@@ -185,6 +185,9 @@ impl Catalog {
                 }
             }
             self.entry_files.extend(catalogs);
+            if self.entry_list[last].1 == usize::MAX {
+                self.last = last;
+            }
 
             now = next;
         }
@@ -227,7 +230,7 @@ impl Catalog {
                 let mut delegate = vec![];
                 for entry in entries {
                     match entry.as_ref() {
-                        CatalogEntry::URI { uri } | CatalogEntry::URISuffix { uri, .. } => {
+                        CatalogEntry::URI { uri, .. } | CatalogEntry::URISuffix { uri, .. } => {
                             return Some(uri.clone());
                         }
                         CatalogEntry::RewriteURI { from, to } => {
@@ -236,7 +239,7 @@ impl Catalog {
                             return Some(URIString::parse(uri).unwrap().into());
                         }
                         CatalogEntry::DelegateURI { catalog, .. } => {
-                            if !seen_uris.insert(catalog.clone()) {
+                            if seen_uris.contains(catalog.as_ref()) {
                                 continue;
                             }
                             let parser = parser.get_or_insert_with(|| {
@@ -306,6 +309,9 @@ impl Catalog {
                 }
             }
             self.entry_files.extend(catalogs);
+            if self.entry_list[last].1 == usize::MAX {
+                self.last = last;
+            }
 
             now = next;
         }
@@ -313,6 +319,11 @@ impl Catalog {
     }
 
     pub fn add(&mut self, catalog: CatalogEntryFile) {
+        if self.entry_files.is_empty() {
+            self.entry_files.push(catalog);
+            self.entry_list.push((0, usize::MAX));
+            return;
+        }
         if let Some(pos) = self
             .entry_files
             .iter()
@@ -654,7 +665,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                 let Some(catalog) = atts
                     .get_value_by_qname("catalog")
                     .and_then(|uri| URIString::parse(uri).ok())
-                    .map(|uri| uri.into())
+                    .map(|uri| self.resolve_uri(Some(uri)).into())
                 else {
                     self.ignored_depth += 1;
                     return;
@@ -680,7 +691,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                 let Some(catalog) = atts
                     .get_value_by_qname("catalog")
                     .and_then(|uri| URIString::parse(uri).ok())
-                    .map(|uri| uri.into())
+                    .map(|uri| self.resolve_uri(Some(uri)).into())
                 else {
                     self.ignored_depth += 1;
                     return;
@@ -706,7 +717,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                 let Some(catalog) = atts
                     .get_value_by_qname("catalog")
                     .and_then(|uri| URIString::parse(uri).ok())
-                    .map(|uri| uri.into())
+                    .map(|uri| self.resolve_uri(Some(uri)).into())
                 else {
                     self.ignored_depth += 1;
                     return;
@@ -825,9 +836,13 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                     return;
                 };
                 let system_id = normalize_uri(&system_id);
-                self.entry_file
-                    .entries
-                    .insert(&system_id, CatalogEntry::System { uri });
+                self.entry_file.entries.insert(
+                    &system_id,
+                    CatalogEntry::System {
+                        system_id: system_id.as_ref().into(),
+                        uri,
+                    },
+                );
             }
             Some("systemSuffix") => {
                 check_parent!("catalog", "group");
@@ -874,9 +889,13 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
                     return;
                 };
                 let name = normalize_uri(&name);
-                self.entry_file
-                    .entries
-                    .insert(&name, CatalogEntry::URI { uri });
+                self.entry_file.entries.insert(
+                    &name,
+                    CatalogEntry::URI {
+                        name: name.as_ref().into(),
+                        uri,
+                    },
+                );
             }
             Some("uriSuffix") => {
                 check_parent!("catalog", "group");
@@ -1188,6 +1207,7 @@ enum CatalogEntryType {
 #[derive(Debug, PartialEq, Eq)]
 enum CatalogEntry {
     System {
+        system_id: Box<str>,
         uri: Arc<URIStr>,
     },
     RewriteSystem {
@@ -1212,6 +1232,7 @@ enum CatalogEntry {
         prefer: Option<PreferMode>,
     },
     URI {
+        name: Box<str>,
         uri: Arc<URIStr>,
     },
     RewriteURI {
@@ -1256,7 +1277,7 @@ impl Ord for CatalogEntry {
         use CatalogEntry::*;
 
         match (self, other) {
-            (System { uri: l }, System { uri: r }) => l.as_escaped_str().cmp(r.as_escaped_str()),
+            (System { system_id: l, .. }, System { system_id: r, .. }) => l.cmp(r),
             (RewriteSystem { from: l, .. }, RewriteSystem { from: r, .. }) => r.cmp(l),
             (SystemSuffix { suffix: l, .. }, SystemSuffix { suffix: r, .. }) => {
                 r.chars().rev().cmp(l.chars().rev())
@@ -1278,7 +1299,7 @@ impl Ord for CatalogEntry {
                 std::cmp::Ordering::Equal => lp.cmp(rp),
                 other => other,
             },
-            (URI { uri: l }, URI { uri: r }) => l.as_escaped_str().cmp(r.as_escaped_str()),
+            (URI { name: l, .. }, URI { name: r, .. }) => l.cmp(r),
             (RewriteURI { from: l, .. }, RewriteURI { from: r, .. }) => r.cmp(l),
             (URISuffix { suffix: l, .. }, URISuffix { suffix: r, .. }) => {
                 r.chars().rev().cmp(l.chars().rev())
@@ -1367,19 +1388,19 @@ impl CatalogEntryMap {
             }
 
             if pre == node.fragment.len() {
-                let b = id.as_bytes()[0];
+                let b = id.as_bytes()[pre];
                 match node.next.binary_search_by_key(&b, |n| n.0) {
                     Ok(pos) => node_id = node.next[pos].1,
                     Err(pos) => {
                         let new = TrieNode {
                             fragment: id[pre..].to_owned(),
                             next: vec![],
-                            entries: vec![],
+                            entries: vec![Arc::new(entry)],
                         };
                         let next = self.trie.len();
                         self.trie[node_id].next.insert(pos, (b, next));
-                        node_id = next;
                         self.trie.push(new);
+                        break;
                     }
                 }
             } else if pre == id.len() {
@@ -1523,7 +1544,7 @@ impl CatalogEntryMap {
 
                 let next = id.as_bytes()[0];
                 if let Ok(next) = node.next.binary_search_by_key(&next, |k| k.0) {
-                    now = next;
+                    now = node.next[next].1;
                 } else {
                     end = true;
                     return None;

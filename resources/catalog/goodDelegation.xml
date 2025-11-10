@@ -5,5 +5,5 @@
 <catalog xmlns="urn:oasis:names:tc:entity:xmlns:xml:catalog">
     <system systemId="http://example.com/delegateSystem.xml" uri="./ok/delegateSystem.xml" />
     <uri name="http://example.com/delegateURI.xml" uri="./ok/delegateURI.xml" />
-    <public publicId="-//example.com//TEXT delegatePublic.xml" uri="./ok/delegatePublic.xml" />
+    <public publicId="-//example.com//TEXT delegatePublic.xml//EN" uri="./ok/delegatePublic.xml" />
 </catalog>

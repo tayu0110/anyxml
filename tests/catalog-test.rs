@@ -101,7 +101,15 @@ fn catalog_resolution_tests() {
                 if unresolvable {
                     assert!(resolved.is_none());
                 } else {
-                    let resolved = resolved.unwrap();
+                    let resolved = resolved.unwrap_or_else(|| {
+                        panic!("Failed to resolve correct URI: catalog: {}\nsystem_id: {:?}, public_id: {:?}, prefer: {:?}, type: {}\nexpected: {}",
+                            catalog_uri.as_unescaped_str().unwrap(),
+                            system_id,
+                            public_id,
+                            prefer_mode,
+                            if uri { "uri" } else { "external-id" },
+                            expected
+                    )});
                     let output = evaluate_uri("/root/text()", resolved.as_ref(), None)
                         .unwrap()
                         .as_string()
