@@ -256,14 +256,17 @@ impl Attribute {
         self.core.borrow_mut().parent_node = weak;
     }
 
+    /// QName of this attribute.
     pub fn name(&self) -> Rc<str> {
         self.core.borrow().spec.name.clone()
     }
 
+    /// LocalPart of the name of this attribute.
     pub fn local_name(&self) -> Rc<str> {
         self.core.borrow().spec.local_name.clone()
     }
 
+    /// The namespace to which this attribute belongs if exists.
     pub fn namespace(&self) -> Option<Namespace> {
         self.core
             .borrow()
@@ -276,10 +279,12 @@ impl Attribute {
             })
     }
 
+    /// Prefix of the name of this attribute if exists.
     pub fn prefix(&self) -> Option<Rc<str>> {
         self.namespace().and_then(|namespace| namespace.prefix())
     }
 
+    /// The namespace name of the namespace to which this attribute belongs if exists.
     pub fn namespace_name(&self) -> Option<Rc<str>> {
         self.namespace().map(|namespace| namespace.namespace_name())
     }

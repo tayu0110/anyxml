@@ -53,18 +53,22 @@ impl AttlistDecl {
         )
     }
 
+    /// The target element name of this declaration.
     pub fn elem_name(&self) -> Rc<str> {
         self.core.borrow().spec.elem_name.clone()
     }
 
+    /// The target attribute name of this declaration.
     pub fn attr_name(&self) -> Rc<str> {
         self.core.borrow().spec.attr_name.clone()
     }
 
+    /// Attribute type. (i.e. CDATA, ID, ENTITY, ...)
     pub fn attr_type(&self) -> Ref<'_, AttributeType> {
         Ref::map(self.core.borrow(), |core| &core.spec.attr_type)
     }
 
+    /// Default declaration. (#REQUIRED, #IMPLIED, #FIXED default value or unqualified default value)
     pub fn default_decl(&self) -> Ref<'_, DefaultDecl> {
         Ref::map(self.core.borrow(), |core| &core.spec.default_decl)
     }

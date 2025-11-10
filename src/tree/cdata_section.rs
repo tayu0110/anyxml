@@ -33,14 +33,19 @@ impl CDATASection {
         Node::create_node(CDATASectionSpec { data }, owner_document)
     }
 
+    /// The content of this CDATA section.
+    ///
+    /// "<![CDATA[" and "]]>" are not contained.
     pub fn data(&self) -> Ref<'_, str> {
         Ref::map(self.core.borrow(), |core| core.spec.data.as_str())
     }
 
+    /// Add a character `ch` to this CDATA section.
     pub fn push(&mut self, ch: char) {
         self.core.borrow_mut().spec.data.push(ch);
     }
 
+    /// Add a string `string` to this CDATA section.
     pub fn push_str(&mut self, string: &str) {
         self.core.borrow_mut().spec.data.push_str(string);
     }

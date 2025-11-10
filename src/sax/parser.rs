@@ -22,9 +22,20 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ParserOption {
+    /// Enable loading of external general entities.
     ExternalGeneralEntities = 0,
+    /// Enable loading of external parameter entities.
     ExternalParameterEntities = 1,
+    /// Enable namespace support. This option is enabled by default.
+    ///
+    /// If disabled, the SAX callback that informs about namespace information will no longer
+    /// be called, and some parameters of the callback will always have invalid values.
     Namespaces = 2,
+    /// Enable validation using DTD.
+    ///
+    /// When enabled, both [`ExternalGeneralEntities`](ParserOption::ExternalGeneralEntities)
+    /// and [`ExternalParameterEntities`](ParserOption::ExternalParameterEntities) options
+    /// are forced to be enabled.
     Validation = 3,
 }
 
@@ -48,6 +59,20 @@ impl std::ops::BitOr<ParserConfig> for ParserOption {
     }
 }
 
+/// Configuration provided to the parser.
+///
+/// ```rust
+/// use anyxml::sax::parser::{ParserConfig, ParserOption::*};
+///
+/// assert!(ParserConfig::default().is_enable(Namespaces));
+///
+/// // It is possible to combine options using `|`.
+/// let mut config = Namespaces | ExternalGeneralEntities;
+/// assert!(config.is_enable(ExternalGeneralEntities));
+///
+/// config |= Validation;
+/// assert!(config.is_enable(Validation));
+/// ```
 pub struct ParserConfig {
     flags: u64,
 }
