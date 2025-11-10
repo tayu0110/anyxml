@@ -15,6 +15,7 @@ The current implementation supports the following features:
 - build, modify and serialize XML document trees
 - execute XPath and lookup specific node in the document tree
     - only XPath 1.0 is supported in the current implementation
+- resolve alternative URI or external identifiers or URI using XML Catalogs
 
 ## Parser
 You can use a SAX-like API designed with reference to Java SAX API.
@@ -227,6 +228,7 @@ This crate conforms to the following specifications:
 - [XML Base (Second Edition)](https://www.w3.org/TR/2009/REC-xmlbase-20090128/)
 - [xml:id Version 1.0](https://www.w3.org/TR/2005/REC-xml-id-20050909/)
 - [XML Path Language (XPath) Version 1.0](https://www.w3.org/TR/1999/REC-xpath-19991116/)
+- [XML Catalogs (OASIS Standard V1.1, 7 October 2005)](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
 
 # Tests
 This crate passes the following tests:
