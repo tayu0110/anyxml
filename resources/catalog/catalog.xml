@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE catalog
+    PUBLIC "-//OASIS//DTD XML Catalogs V1.1//EN"
+           "http://www.oasis-open.org/committees/entity/release/1.1/catalog.dtd">
+<catalog xmlns="urn:oasis:names:tc:entity:xmlns:xml:catalog">
+    <system systemId="http://example.com/system.xml" uri="./ok/system.xml" />
+    <system systemId="http://example.com/system.xml" uri="./bad/system.xml" />
+    <rewriteSystem systemIdStartString="http://example.com/rewriteS" rewritePrefix="./bad/rewriteS" />
+    <rewriteSystem systemIdStartString="http://example.com/rewriteSys" rewritePrefix="./ok/rewriteSys" />
+    <rewriteSystem systemIdStartString="http://example.com/rewriteSys" rewritePrefix="./bad/rewriteSys" />
+    <rewriteSystem systemIdStartString="http://example.com/rewriteSystemmmm" rewritePrefix="./bad/rewriteSystem" />
+    <systemSuffix systemIdSuffix="systemSuffix.xml" uri="./bad/systemSuffix.xml" />
+    <systemSuffix systemIdSuffix="example.com/systemSuffix.xml" uri="./ok/systemSuffix.xml" />
+    <systemSuffix systemIdSuffix="example.com/systemSuffix.xml" uri="./bad/systemSuffix.xml" />
+    <systemSuffix systemIdSuffix="www.example.com/systemSuffix.xml" uri="./bad/systemSuffix.xml" />
+    <delegateSystem systemIdStartString="http://example.com/delegate" catalog="./goodDelegation.xml" />
+    <delegateSystem systemIdStartString="http://example.com/delegate" catalog="./badDelegation.xml" />
+    <delegateSystem systemIdStartString="http://example.com/dele" catalog="./badDelegation.xml" />
+    <public publicId="-//example.com//TEXT public.xml//EN" uri="./ok/public.xml" />
+    <public publicId="-//example.com//TEXT public.xml//EN" uri="./bad/public.xml" />
+    <delegatePublic publicIdStartString="-//example.com//TEXT delegate" catalog="./goodDelegation.xml" />
+    <delegatePublic publicIdStartString="-//example.com//TEXT delegate" catalog="./badDelegation.xml" />
+    <delegatePublic publicIdStartString="-//example.com//TEXT dele" catalog="./badDelegation.xml" />
+    <uri name="http://example.com/uri.xml" uri="./ok/uri.xml" />
+    <uri name="http://example.com/uri.xml" uri="./bad/uri.xml" />
+    <rewriteURI uriStartString="http://example.com/rewriteU" rewritePrefix="./bad/rewriteU" />
+    <rewriteURI uriStartString="http://example.com/rewriteUR" rewritePrefix="./ok/rewriteUR" />
+    <rewriteURI uriStartString="http://example.com/rewriteUR" rewritePrefix="./bad/rewriteUR" />
+    <rewriteURI uriStartString="http://example.com/rewriteURIIII" rewritePrefix="./bad/rewriteURI" />
+    <uriSuffix uriSuffix="uriSuffix.xml" uri="./bad/uriSuffix.xml" />
+    <uriSuffix uriSuffix="example.com/uriSuffix.xml" uri="./ok/uriSuffix.xml" />
+    <uriSuffix uriSuffix="example.com/uriSuffix.xml" uri="./bad/uriSuffix.xml" />
+    <uriSuffix uriSuffix="www.example.com/uriSuffix.xml" uri="./bad/uriSuffix.xml" />
+    <delegateURI uriStartString="http://example.com/delegate" catalog="./goodDelegation.xml" />
+    <delegateURI uriStartString="http://example.com/delegate" catalog="./badDelegation.xml" />
+    <delegateURI uriStartString="http://example.com/dele" catalog="./badDelegation.xml" />
+
+    <nextCatalog catalog="nextCatalog.xml" />
+</catalog>

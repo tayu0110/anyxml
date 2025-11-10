@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE test-suite [
+    <!ELEMENT test-suite    (test-cases+)>
+    <!ELEMENT test-cases    (test-case+)>
+    <!ELEMENT test-case     (system-id?,public-id?,output)>
+    <!ELEMENT system-id     (#PCDATA)>
+    <!ELEMENT public-id     (#PCDATA)>
+    <!ELEMENT output        (#PCDATA)>
+    <!ATTLIST test-cases    catalog CDATA #REQUIRED>
+    <!ATTLIST test-case     prefer (public|system) "public"
+                            type (external-id|uri) "external-id">
+    <!ATTLIST output        unresolvable (yes|no) "no">
+]>
+<test-suite>
+    <test-cases catalog="resources/catalog/catalog.xml">
+        <test-case>
+            <system-id>http://example.com/system.xml</system-id>
+            <output>system OK</output>
+        </test-case>
+        <test-case>
+            <system-id>http://example.com/system.xml</system-id>
+            <public-id>-//example.com//TEXT public.xml//EN</public-id>
+            <output>system OK</output>
+        </test-case>
+        <test-case>
+            <system-id>http://example.com/rewriteSystem.xml</system-id>
+            <output>rewriteSystem OK</output>
+        </test-case>
+        <test-case>
+            <system-id>http://example.com/rewriteSystem.xml</system-id>
+            <public-id>-//example.com//TEXT public.xml//EN</public-id>
+            <output>rewriteSystem OK</output>
+        </test-case>
+        <test-case>
+            <system-id>http://example.com/systemSuffix.xml</system-id>
+            <output>systemSuffix OK</output>
+        </test-case>
+        <test-case>
+            <system-id>http://example.com/systemSuffix.xml</system-id>
+            <public-id>-//example.com//TEXT public.xml//EN</public-id>
+            <output>systemSuffix OK</output>
+        </test-case>
+        <test-case>
+            <system-id>http://example.com/delegateSystem.xml</system-id>
+            <output>delegateSystem OK</output>
+        </test-case>
+        <test-case>
+            <system-id>http://example.com/delegateSystem.xml</system-id>
+            <public-id>-//example.com//TEXT public.xml//EN</public-id>
+            <output>delegateSystem OK</output>
+        </test-case>
+        <test-case>
+            <public-id>-//example.com//TEXT public.xml//EN</public-id>
+            <output>public OK</output>
+        </test-case>
+        <test-case>
+            <system-id>http://example.com/noMatch</system-id>
+            <public-id>-//example.com//TEXT public.xml//EN</public-id>
+            <output>public OK</output>
+        </test-case>
+        <test-case prefer="system">
+            <system-id>http://example.com/noMatch</system-id>
+            <public-id>-//example.com//TEXT public.xml//EN</public-id>
+            <output unresolvable="yes"></output>
+        </test-case>
+        <test-case>
+            <system-id>http://example.com/noMatch</system-id>
+            <public-id>-//example.com//TEXT delegatePublic.xml//EN</public-id>
+            <output>delegatePublic OK</output>
+        </test-case>
+        <test-case prefer="system">
+            <system-id>http://example.com/noMatch</system-id>
+            <public-id>-//example.com//TEXT delegatePublic.xml//EN</public-id>
+            <output unresolvable="yes"></output>
+        </test-case>
+        <test-case type="uri">
+            <system-id>http://example.com/uri.xml</system-id>
+            <output>uri OK</output>
+        </test-case>
+        <test-case type="uri">
+            <system-id>http://example.com/rewriteURI.xml</system-id>
+            <output>rewriteURI OK</output>
+        </test-case>
+        <test-case type="uri">
+            <system-id>http://example.com/uriSuffix.xml</system-id>
+            <output>uriSuffix OK</output>
+        </test-case>
+        <test-case type="uri">
+            <system-id>http://example.com/delegateURI.xml</system-id>
+            <output>delegateURI OK</output>
+        </test-case>
+    </test-cases>
+</test-suite>

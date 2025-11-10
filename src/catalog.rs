@@ -28,6 +28,7 @@ pub enum PreferMode {
     System,
 }
 
+#[derive(Default)]
 pub struct Catalog {
     entry_files: Vec<CatalogEntryFile>,
     // 1: catalog index for entry_files
