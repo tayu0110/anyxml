@@ -21,13 +21,18 @@ const PUBLICID_URN_NAMESPACE: &str = "urn:publicid:";
 pub const XML_CATALOG_NAMESPACE: &str = "urn:oasis:names:tc:entity:xmlns:xml:catalog";
 pub const XML_CATALOG_PUBLICID: &str = "-//OASIS//DTD XML Catalogs V1.1//EN";
 
+/// # Reference
+/// [4.1.1 The `prefer` attribute](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
 pub enum PreferMode {
+    /// Represent that `prefer="public"` is specified on `catalog` or `group`
     #[default]
     Public,
+    /// Represent that `prefer="system"` is specified on `catalog` or `group`
     System,
 }
 
+/// List of catalog entry files to walk through.
 #[derive(Default)]
 pub struct Catalog {
     entry_files: Vec<CatalogEntryFile>,
@@ -38,6 +43,13 @@ pub struct Catalog {
 }
 
 impl Catalog {
+    /// Try to retrieve the URI of the resource indicated by the external identifier,
+    /// which is a pair consisting of `public_id` and `system_id`.
+    ///
+    /// `prefer_mode` specifies the root-level prefer mode.  \
+    /// In most cases, we recommend using [`PreferMode::Public`] or [`PreferMode::default()`].
+    ///
+    /// If no matching entry is found, return [`None`].
     pub fn resolve_external_id(
         &mut self,
         public_id: Option<&str>,
@@ -194,6 +206,9 @@ impl Catalog {
         None
     }
 
+    /// Try to retrieve the alternative URI of `uri`.
+    ///
+    /// If no matching entry is found, return [`None`].
     pub fn resolve_uri(&mut self, uri: impl AsRef<URIStr>) -> Option<Arc<URIStr>> {
         if self.entry_files.is_empty() {
             return None;
@@ -318,6 +333,11 @@ impl Catalog {
         None
     }
 
+    /// Add the catalog entry file to the end of the list.
+    ///
+    /// If a catalog entry file with the same base URI as `catalog` has already been inserted,
+    /// `catalog` is discarded, and the inserted file behaves as if it were newly inserted to
+    /// the end of the list.
     pub fn add(&mut self, catalog: CatalogEntryFile) {
         if self.entry_files.is_empty() {
             self.entry_files.push(catalog);
@@ -339,6 +359,11 @@ impl Catalog {
     }
 }
 
+/// A single catalog entry file.
+///
+/// This type itself does not have methods for resolving external identifiers or alternative URIs.
+/// To do that, it is necessary to generate a list using [`Catalog::default`] and add files
+/// to the list.
 pub struct CatalogEntryFile {
     base_uri: Arc<URIStr>,
     entries: CatalogEntryMap,
@@ -354,6 +379,16 @@ impl CatalogEntryFile {
         }
     }
 
+    /// Parse the catalog entry file using `uri` and `encoding`.
+    ///
+    /// If a custom [`EntityResolver`] or [`ErrorHandler`] is required,
+    /// it can be specified using `entity_resolver` and `error_handler`.
+    ///
+    /// If the catalog document cannot be parsed for any reason,
+    /// or if "Resource Failures" defined in the specification are detected, [`Err`] is returned.
+    ///
+    /// # Reference
+    /// [8. Resource Failures](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
     pub fn parse_uri<Resolver: EntityResolver, Reporter: ErrorHandler>(
         uri: impl AsRef<URIStr>,
         encoding: Option<&str>,
@@ -369,6 +404,16 @@ impl CatalogEntryFile {
         Ok(reader.handler.entry_file)
     }
 
+    /// Parse the catalog entry file using `reader`, `encoding` and `uri`.
+    ///
+    /// If a custom [`EntityResolver`] or [`ErrorHandler`] is required,
+    /// it can be specified using `entity_resolver` and `error_handler`.
+    ///
+    /// If the catalog document cannot be parsed for any reason,
+    /// or if "Resource Failures" defined in the specification are detected, [`Err`] is returned.
+    ///
+    /// # Reference
+    /// [8. Resource Failures](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
     pub fn parse_reader<'a, Resolver: EntityResolver, Reporter: ErrorHandler>(
         reader: impl Read + 'a,
         encoding: Option<&str>,
@@ -385,6 +430,16 @@ impl CatalogEntryFile {
         Ok(parser.handler.entry_file)
     }
 
+    /// Parse the catalog entry file using `catalog` and `uri`.
+    ///
+    /// If a custom [`EntityResolver`] or [`ErrorHandler`] is required,
+    /// it can be specified using `entity_resolver` and `error_handler`.
+    ///
+    /// If the catalog document cannot be parsed for any reason,
+    /// or if "Resource Failures" defined in the specification are detected, [`Err`] is returned.
+    ///
+    /// # Reference
+    /// [8. Resource Failures](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
     pub fn parse_str<Resolver: EntityResolver, Reporter: ErrorHandler>(
         catalog: &str,
         uri: impl AsRef<URIStr>,
@@ -400,6 +455,7 @@ impl CatalogEntryFile {
         Ok(parser.handler.entry_file)
     }
 
+    /// Return an iterator of URIs for catalog files pointed to by `nextCatalog` entries.
     pub fn next_catalogs(&self) -> impl Iterator<Item = &URIStr> + '_ {
         self.next_catalog.iter().map(|uri| uri.as_ref())
     }
