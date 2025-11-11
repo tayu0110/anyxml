@@ -37,6 +37,17 @@ pub enum ParserOption {
     /// and [`ExternalParameterEntities`](ParserOption::ExternalParameterEntities) options
     /// are forced to be enabled.
     Validation = 3,
+    /// Enable catalog resolution using catalog entry files registered with the parser.  \
+    /// If no catalogs are registered with the parser, this option has no effect.
+    ///
+    /// Catalog resolution is performed only once, and if successful, the original
+    /// external identifier or URI is discarded. The URI that the SAX callback receives
+    /// is the URI after catalog resolution (or the original URI if it failed).
+    ///
+    /// If disabled, the registered catalogs are simply ignored.
+    Catalogs = 4,
+    /// Enable processing of the `oasis-xml-catalog` instruction as defined by the OASIS standard.
+    CatalogPIAware = 5,
 }
 
 impl std::ops::BitOr<Self> for ParserOption {
@@ -209,6 +220,7 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
         }
 
         let mut pwd = std::env::current_dir()?;
+        pwd.push("document.xml");
         if !pwd.is_absolute() {
             pwd = pwd.canonicalize()?;
         }
