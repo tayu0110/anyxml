@@ -1,13 +1,18 @@
+use anyxml_uri::uri::URIString;
+
 use crate::{
     ParserSpec,
+    catalog::CatalogEntryFile,
     error::XMLError,
     sax::{
-        error::fatal_error,
-        handler::SAXHandler,
-        parser::{ParserOption, XMLReader},
+        error::{error, fatal_error},
+        handler::{DefaultSAXHandler, SAXHandler},
+        parser::{ParserOption, ParserState, XMLReader},
         source::InputSource,
     },
 };
+
+pub(crate) const CATALOG_PI_TARGET_NAME: &str = "oasis-xml-catalog";
 
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
     /// ```text
@@ -53,6 +58,17 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         let s = self.skip_whitespaces()?;
         self.grow()?;
         if self.source.content_bytes().starts_with(b"?>") {
+            if self.config.is_enable(ParserOption::CatalogPIAware)
+                && target == CATALOG_PI_TARGET_NAME
+            {
+                error!(
+                    self,
+                    ParserInvalidCatalogPIAttribute,
+                    "The PI '{}' must have a single pseudo-attribute 'catalog'.",
+                    CATALOG_PI_TARGET_NAME
+                );
+            }
+
             // skip '?>'
             self.source.advance(2)?;
             self.locator.update_column(|c| c + 2);
@@ -109,6 +125,19 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             }
         }
 
+        if self.config.is_enable(ParserOption::CatalogPIAware) && target == CATALOG_PI_TARGET_NAME {
+            if self.state != ParserState::InMiscAfterXMLDeclaration {
+                error!(
+                    self,
+                    ParserUnacceptableCatalogPIPosition,
+                    "The PI '{}' must only appear between XML declaration and Documnet Type declaration.",
+                    CATALOG_PI_TARGET_NAME
+                );
+            } else {
+                self.parse_and_add_catalog_pi_attribute(&data);
+            }
+        }
+
         if !self.source.content_bytes().starts_with(b"?>") {
             fatal_error!(
                 self,
@@ -126,5 +155,51 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         }
 
         Ok(())
+    }
+
+    fn parse_and_add_catalog_pi_attribute(&mut self, data: &str) {
+        if let Some(literal) = data
+            .trim_matches(|c| self.is_whitespace(c))
+            .strip_prefix("catalog")
+            .map(|data| data.trim_start_matches(|c| self.is_whitespace(c)))
+            .and_then(|data| data.strip_prefix('='))
+            .map(|data| data.trim_start_matches(|c| self.is_whitespace(c)))
+            .filter(|data| !data.is_empty())
+        {
+            let quote = data.chars().next().unwrap();
+            if matches!(quote, '"' | '\'')
+                && let Some(catalog) = data[1..]
+                    .strip_suffix(quote)
+                    .and_then(|value| URIString::parse(value).ok())
+                    .map(|catalog| self.base_uri.resolve(&catalog))
+                    .and_then(|catalog| {
+                        CatalogEntryFile::parse_uri(
+                            catalog,
+                            None,
+                            None::<DefaultSAXHandler>,
+                            None::<DefaultSAXHandler>,
+                        )
+                        .ok()
+                    })
+            {
+                self.pi_catalog.add(catalog);
+            } else {
+                error!(
+                    self,
+                    ParserInvalidCatalogPIAttribute,
+                    "The value '{}' of 'catalog' pseudo-attribute for the PI '{}' cannot be parsed.",
+                    literal,
+                    CATALOG_PI_TARGET_NAME
+                );
+            }
+        } else {
+            error!(
+                self,
+                ParserInvalidCatalogPIAttribute,
+                "The PI '{}' must have a single pseudo-attribute 'catalog', but '{}' is specified.",
+                CATALOG_PI_TARGET_NAME,
+                data
+            );
+        }
     }
 }

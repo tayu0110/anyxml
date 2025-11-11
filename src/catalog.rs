@@ -357,6 +357,13 @@ impl Catalog {
         self.entry_list[self.last].1 = self.entry_list.len() - 1;
         self.last = self.entry_list.len() - 1;
     }
+
+    /// Remove all catalog entry files from this list.
+    pub fn clear(&mut self) {
+        self.entry_files.clear();
+        self.entry_list.clear();
+        self.last = usize::MAX;
+    }
 }
 
 /// A single catalog entry file.

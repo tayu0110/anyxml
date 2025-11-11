@@ -289,6 +289,7 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
         self.idattr_decls.clear();
         self.specified_ids.clear();
         self.unresolved_ids.clear();
+        self.pi_catalog.clear();
     }
 
     pub(crate) fn catalog_resolve_uri(

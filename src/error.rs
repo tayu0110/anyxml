@@ -78,6 +78,8 @@ pub enum XMLError {
     ParserInvalidCDSect,
     ParserInvalidStandaloneDocument,
     ParserInvalidProcessingInstruction,
+    ParserUnacceptableCatalogPIPosition,
+    ParserInvalidCatalogPIAttribute,
     ParserUnacceptablePITarget,
     ParserUnacceptablePatternInCharData,
     ParserInvalidDoctypeDecl,
