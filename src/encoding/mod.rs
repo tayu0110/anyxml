@@ -1,4 +1,4 @@
-//! Provide Provides a unified interface for encoders and decoders,
+//! Provide a unified interface for encoders and decoders,
 //! and a default implementation for some encodings.
 //!
 //! If it is necessary to provide a custom decoder for XML processor, a type implementing
