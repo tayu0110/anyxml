@@ -8,7 +8,7 @@ use std::{
 use crate::{
     DefaultParserSpec, ParserSpec, ProgressiveParserSpec, ProgressiveParserSpecificContext,
     XMLVersion,
-    catalog::{Catalog, PreferMode},
+    catalog::{Catalog, CatalogEntryFile, PreferMode},
     encoding::UTF8_NAME,
     error::XMLError,
     sax::{
@@ -348,6 +348,20 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
                 });
         }
         None
+    }
+
+    /// Add `catalog` to the parser's catalog entry file list.
+    ///
+    /// Catalogs added using this method are not removed by [`reset`](XMLReader::reset)
+    /// or [`reset_context`](XMLReader::reset_context).  \
+    /// The catalog entry file list can be cleared using [`clear_catalog`](XMLReader::clear_catalog).
+    pub fn add_catalog_entry_file(&mut self, catalog: CatalogEntryFile) {
+        self.catalog.add(catalog);
+    }
+
+    /// Clear the parser's catalog entry file list.
+    pub fn clear_catalog(&mut self) {
+        self.catalog.clear();
     }
 }
 
