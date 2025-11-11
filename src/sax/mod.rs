@@ -4,9 +4,9 @@
 //! The handler must implement [`SAXHandler`][SAXHandler], [`EntityResolver`][EntityResolver],
 //! and [`ErrorHandler`][ErrorHandler].
 //!
-//! The default implementation for each trait does nothing. In particular, the default
-//! implementation for [`EntityResolver`][EntityResolver] simply reports that it cannot
-//! find the resource, so some implementation is required.  \
+//! The default implementation for each trait except for [`EntityResolver::resolve_entity`][resolve_entity]
+//! does nothing. The default implementation for [`EntityResolver::resolve_entity`][resolve_entity]
+//! simply searches local files.  \
 //! If the application only handles trusted data, redirecting to the
 //! [`DefaultSAXHandler`][DefaultSAXHandler] implementation should suffice.
 //! However, when handling untrusted resources, it may be advisable to perform some sanitization

@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use anyxml::{
     catalog::{Catalog, CatalogEntryFile, PreferMode},
     sax::handler::DefaultSAXHandler,
@@ -11,12 +9,7 @@ use anyxml::{
 fn catalog_resolution_tests() {
     for test_cases in evaluate_uri(
         "/test-suite/test-cases",
-        URIString::parse_file_path(
-            Path::new("resources/catalog/testsuite.xml")
-                .canonicalize()
-                .unwrap(),
-        )
-        .unwrap(),
+        URIString::parse("resources/catalog/testsuite.xml").unwrap(),
         None,
     )
     .unwrap()
@@ -25,16 +18,12 @@ fn catalog_resolution_tests() {
     .iter()
     {
         let mut catalog = Catalog::default();
-        let catalog_uri = URIString::parse_file_path(
-            Path::new(
-                &test_cases
-                    .as_element()
-                    .unwrap()
-                    .get_attribute("catalog", None)
-                    .unwrap(),
-            )
-            .canonicalize()
-            .unwrap(),
+        let catalog_uri = URIString::parse(
+            test_cases
+                .as_element()
+                .unwrap()
+                .get_attribute("catalog", None)
+                .unwrap(),
         )
         .unwrap();
         let catalog_entry_file = CatalogEntryFile::parse_uri(
