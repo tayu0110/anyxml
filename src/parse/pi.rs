@@ -166,9 +166,9 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             .map(|data| data.trim_start_matches(|c| self.is_whitespace(c)))
             .filter(|data| !data.is_empty())
         {
-            let quote = data.chars().next().unwrap();
+            let quote = literal.chars().next().unwrap();
             if matches!(quote, '"' | '\'')
-                && let Some(catalog) = data[1..]
+                && let Some(catalog) = literal[1..]
                     .strip_suffix(quote)
                     .and_then(|value| URIString::parse(value).ok())
                     .map(|catalog| self.base_uri.resolve(&catalog))
