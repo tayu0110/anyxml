@@ -261,12 +261,26 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             if self.config.is_enable(ParserOption::ExternalGeneralEntities)
                 || self.config.is_enable(ParserOption::Validation)
             {
-                external_subset = Some(self.handler.resolve_entity(
-                    "[dtd]",
-                    public_id.as_deref(),
-                    &self.base_uri,
-                    system_id.as_deref().unwrap(),
-                )?);
+                if self.config.is_enable(ParserOption::Catalogs)
+                    && let Some(uri) = self.catalog_resolve_external_id(
+                        public_id.as_deref(),
+                        Some(&self.base_uri.clone()),
+                        system_id.as_deref(),
+                    )
+                {
+                    external_subset =
+                        Some(
+                            self.handler
+                                .resolve_entity("[dtd]", None, &self.base_uri, &uri)?,
+                        );
+                } else {
+                    external_subset = Some(self.handler.resolve_entity(
+                        "[dtd]",
+                        public_id.as_deref(),
+                        &self.base_uri,
+                        system_id.as_deref().unwrap(),
+                    )?);
+                }
             }
         } else if (self.config.is_enable(ParserOption::ExternalGeneralEntities)
             || self.config.is_enable(ParserOption::Validation))

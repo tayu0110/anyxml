@@ -8,6 +8,7 @@ use std::{
 use crate::{
     DefaultParserSpec, ParserSpec, ProgressiveParserSpec, ProgressiveParserSpecificContext,
     XMLVersion,
+    catalog::{Catalog, PreferMode},
     encoding::UTF8_NAME,
     error::XMLError,
     sax::{
@@ -172,6 +173,7 @@ pub struct XMLReader<Spec: ParserSpec, H: SAXHandler = DefaultSAXHandler> {
     default_base_uri: Option<Arc<URIStr>>,
     pub(crate) base_uri: Arc<URIStr>,
     pub(crate) entity_name: Option<Arc<str>>,
+    pub(crate) catalog: Catalog,
 
     // Parser Specific Context
     pub(crate) specific_context: Spec::SpecificContext,
@@ -203,6 +205,7 @@ pub struct XMLReader<Spec: ParserSpec, H: SAXHandler = DefaultSAXHandler> {
     pub(crate) idattr_decls: HashMap<Box<str>, Box<str>>,
     pub(crate) specified_ids: HashSet<Box<str>>,
     pub(crate) unresolved_ids: HashSet<Box<str>>,
+    pub(crate) pi_catalog: Catalog,
 }
 
 impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
@@ -287,6 +290,64 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
         self.specified_ids.clear();
         self.unresolved_ids.clear();
     }
+
+    pub(crate) fn catalog_resolve_uri(
+        &mut self,
+        base_uri: Option<&URIStr>,
+        uri: &URIStr,
+    ) -> Option<Arc<URIStr>> {
+        if let Some(uri) = self
+            .catalog
+            .resolve_uri(uri)
+            .or_else(|| self.pi_catalog.resolve_uri(uri))
+        {
+            return Some(uri);
+        }
+        if !uri.is_absolute()
+            && let Some(base_uri) = base_uri.filter(|base_uri| base_uri.is_absolute())
+        {
+            let absolute = base_uri.resolve(uri);
+            return self
+                .catalog
+                .resolve_uri(&absolute)
+                .or_else(|| self.pi_catalog.resolve_uri(&absolute));
+        }
+        None
+    }
+
+    pub(crate) fn catalog_resolve_external_id(
+        &mut self,
+        public_id: Option<&str>,
+        base_uri: Option<&URIStr>,
+        system_id: Option<&URIStr>,
+    ) -> Option<Arc<URIStr>> {
+        if let Some(uri) = self
+            .catalog
+            .resolve_external_id(public_id, system_id, PreferMode::default())
+            .or_else(|| {
+                self.pi_catalog
+                    .resolve_external_id(public_id, system_id, PreferMode::default())
+            })
+        {
+            return Some(uri);
+        }
+        if let Some(system_id) = system_id.filter(|system_id| !system_id.is_absolute())
+            && let Some(base_uri) = base_uri.filter(|base_uri| base_uri.is_absolute())
+        {
+            let absolute = base_uri.resolve(system_id);
+            return self
+                .catalog
+                .resolve_external_id(public_id, Some(&absolute), PreferMode::default())
+                .or_else(|| {
+                    self.pi_catalog.resolve_external_id(
+                        public_id,
+                        Some(&absolute),
+                        PreferMode::default(),
+                    )
+                });
+        }
+        None
+    }
 }
 
 impl<Spec: ParserSpec, H: SAXHandler + Default> XMLReader<Spec, H> {
@@ -308,12 +369,23 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         self.reset_context();
         self.encoding = encoding.map(|enc| enc.to_owned());
         self.base_uri = self.default_base_uri()?;
-        self.source = Box::new(self.handler.resolve_entity(
-            "[document]",
-            None,
-            &self.base_uri,
-            uri.as_ref(),
-        )?);
+        self.source = if self.config.is_enable(ParserOption::Catalogs)
+            && let Some(uri) = self.catalog_resolve_uri(Some(&self.base_uri.clone()), uri.as_ref())
+        {
+            Box::new(self.handler.resolve_entity(
+                "[document]",
+                None,
+                &self.base_uri,
+                uri.as_ref(),
+            )?)
+        } else {
+            Box::new(self.handler.resolve_entity(
+                "[document]",
+                None,
+                &self.base_uri,
+                uri.as_ref(),
+            )?)
+        };
         if let Some(system_id) = self.source.system_id() {
             let mut base_uri = self.base_uri.resolve(system_id);
             base_uri.normalize();
@@ -553,6 +625,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             default_base_uri: None,
             base_uri,
             entity_name: None,
+            catalog: Catalog::default(),
             specific_context: (),
             source_stack: vec![],
             locator_stack: vec![],
@@ -576,6 +649,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             idattr_decls: HashMap::new(),
             specified_ids: HashSet::new(),
             unresolved_ids: HashSet::new(),
+            pi_catalog: Catalog::default(),
         };
         let base_uri = res.default_base_uri().unwrap();
         res.base_uri = base_uri;
@@ -616,6 +690,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
                 default_base_uri: self.reader.default_base_uri,
                 base_uri: self.reader.base_uri,
                 entity_name: self.reader.entity_name,
+                catalog: self.reader.catalog,
                 specific_context: self.reader.specific_context,
                 source_stack: self.reader.source_stack,
                 locator_stack: self.reader.locator_stack,
@@ -639,6 +714,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
                 idattr_decls: self.reader.idattr_decls,
                 specified_ids: self.reader.specified_ids,
                 unresolved_ids: self.reader.unresolved_ids,
+                pi_catalog: self.reader.pi_catalog,
             },
         }
     }
@@ -669,6 +745,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
                 default_base_uri: self.reader.default_base_uri,
                 base_uri: self.reader.base_uri,
                 entity_name: self.reader.entity_name,
+                catalog: self.reader.catalog,
                 specific_context: ProgressiveParserSpecificContext::default(),
                 source_stack: vec![],
                 locator_stack: self.reader.locator_stack,
@@ -692,6 +769,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
                 idattr_decls: self.reader.idattr_decls,
                 specified_ids: self.reader.specified_ids,
                 unresolved_ids: self.reader.unresolved_ids,
+                pi_catalog: self.reader.pi_catalog,
             },
         }
     }
@@ -731,6 +809,7 @@ impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
                 default_base_uri: self.reader.default_base_uri,
                 base_uri: self.reader.base_uri,
                 entity_name: self.reader.entity_name,
+                catalog: self.reader.catalog,
                 specific_context: self.reader.specific_context,
                 source_stack: self.reader.source_stack,
                 locator_stack: self.reader.locator_stack,
@@ -754,6 +833,7 @@ impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
                 idattr_decls: self.reader.idattr_decls,
                 specified_ids: self.reader.specified_ids,
                 unresolved_ids: self.reader.unresolved_ids,
+                pi_catalog: self.reader.pi_catalog,
             },
         }
     }

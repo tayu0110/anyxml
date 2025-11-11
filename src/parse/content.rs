@@ -167,12 +167,30 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     } else if self.config.is_enable(ParserOption::ExternalGeneralEntities)
                         || self.config.is_enable(ParserOption::Validation)
                     {
-                        match self.handler.resolve_entity(
-                            &name,
-                            public_id.as_deref(),
-                            base_uri.as_ref(),
-                            system_id.as_ref(),
-                        ) {
+                        let base_uri = base_uri.clone();
+                        let system_id = system_id.clone();
+                        let public_id = public_id.clone();
+                        let source = if self.config.is_enable(ParserOption::Catalogs)
+                            && let Some(uri) = self.catalog_resolve_external_id(
+                                public_id.as_deref(),
+                                Some(&base_uri),
+                                Some(&system_id),
+                            ) {
+                            self.handler.resolve_entity(
+                                &name,
+                                None,
+                                base_uri.as_ref(),
+                                uri.as_ref(),
+                            )
+                        } else {
+                            self.handler.resolve_entity(
+                                &name,
+                                public_id.as_deref(),
+                                base_uri.as_ref(),
+                                system_id.as_ref(),
+                            )
+                        };
+                        match source {
                             Ok(source) => {
                                 let source = source;
                                 let name: Arc<str> = name.into();
