@@ -14,12 +14,22 @@ use crate::{
     uri::URIString,
 };
 
+/// Common traits for node types.
+///
+/// This trait is not intended to be implemented by library users and should not be implemented.
 pub trait NodeSpec: std::any::Any {
+    /// Return the node type.
+    ///
+    /// For abstract node types, this method guarantees that conversion
+    /// to the specified node type will always succeed.
     fn node_type(&self) -> NodeType;
     fn first_child(&self) -> Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>;
     fn last_child(&self) -> Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>;
 }
 
+/// Common traits of internal nodes (i.e., nodes that are not leaf nodes).
+///
+/// This trait is not intended to be implemented by library users and should not be implemented.
 pub trait InternalNodeSpec: NodeSpec {
     fn set_first_child(&mut self, new: Rc<RefCell<NodeCore<dyn NodeSpec>>>);
     fn unset_first_child(&mut self);
@@ -65,22 +75,46 @@ pub struct NodeCore<Spec: ?Sized> {
     pub(super) spec: Spec,
 }
 
+/// Pointer to a node.
+///
+/// Internally, it is a pair consisting of a reference counter for the node's data
+/// and a reference counter for the document node that owns it.
+///
+/// `Node<dyn NodeSpec>` and `Node<dyn InternalNodeSpec>` are abstract node types.  \
+/// They enable common operations on concrete node types that implement their respective traits,
+/// as well as conversion to a specific concrete node type.
 pub struct Node<Spec: ?Sized> {
     pub(super) core: Rc<RefCell<NodeCore<Spec>>>,
     pub(super) owner_document: Rc<RefCell<NodeCore<DocumentSpec>>>,
 }
 
 impl<Spec: NodeSpec + ?Sized> Node<Spec> {
+    /// Return the node type.
+    ///
+    /// For abstract node types, this method guarantees that conversion
+    /// to the specified node type will always succeed.
     pub fn node_type(&self) -> NodeType {
         self.core.borrow().spec.node_type()
     }
 
+    /// Get the parent node of `self` if exsits.
+    ///
+    /// # Note
+    /// [`Attribute`](crate::tree::Attribute) and [`Namespace`](crate::tree::Namespace) each return
+    /// the same result as [`Attribute::owner_element`](crate::tree::Attribute::owner_element)
+    /// and [`Namespace::owner_element`](crate::tree::Namespace::owner_element),
+    /// but neither is a child of [`Element`](crate::tree::Element).
     pub fn parent_node(&self) -> Option<Node<dyn InternalNodeSpec>> {
         self.core.borrow().parent_node.upgrade().map(|core| Node {
             core,
             owner_document: self.owner_document.clone(),
         })
     }
+    /// Get the previous sibling node of `self` if exsits.
+    ///
+    /// # Note
+    /// [`Attribute`](crate::tree::Attribute) and [`Namespace`](crate::tree::Namespace)
+    /// always return [`None`].
     pub fn previous_sibling(&self) -> Option<Node<dyn NodeSpec>> {
         self.core
             .borrow()
@@ -91,18 +125,25 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
                 owner_document: self.owner_document.clone(),
             })
     }
+    /// Get the next sibling node of `self` if exsits.
+    ///
+    /// # Note
+    /// [`Attribute`](crate::tree::Attribute) and [`Namespace`](crate::tree::Namespace)
+    /// always return [`None`].
     pub fn next_sibling(&self) -> Option<Node<dyn NodeSpec>> {
         self.core.borrow().next_sibling.clone().map(|core| Node {
             core: core as _,
             owner_document: self.owner_document.clone(),
         })
     }
+    /// Get the first child node of `self` if exsits.
     pub fn first_child(&self) -> Option<Node<dyn NodeSpec>> {
         self.core.borrow().spec.first_child().map(|core| Node {
             core,
             owner_document: self.owner_document.clone(),
         })
     }
+    /// Get the last child node of `self` if exsits.
     pub fn last_child(&self) -> Option<Node<dyn NodeSpec>> {
         self.core.borrow().spec.last_child().map(|core| Node {
             core,
@@ -110,6 +151,7 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
         })
     }
 
+    /// Get the [`Document`] node that represents the owner document of `self`.
     pub fn owner_document(&self) -> Document {
         Document {
             core: self.owner_document.clone(),

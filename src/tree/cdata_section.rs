@@ -35,7 +35,7 @@ impl CDATASection {
 
     /// The content of this CDATA section.
     ///
-    /// "<![CDATA[" and "]]>" are not contained.
+    /// "&lt;![CDATA[" and "]]&gt;" are not contained.
     pub fn data(&self) -> Ref<'_, str> {
         Ref::map(self.core.borrow(), |core| core.spec.data.as_str())
     }

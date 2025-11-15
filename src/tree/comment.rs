@@ -42,7 +42,7 @@ impl Comment {
 
     /// The content of this comment.
     ///
-    /// "<!--" and "-->" are not contained.
+    /// "&lt;!--" and "--&gt;" are not contained.
     pub fn data(&self) -> Ref<'_, str> {
         Ref::map(self.core.borrow(), |core| core.spec.data.as_str())
     }

@@ -29,6 +29,7 @@ pub use element::Element;
 pub use element_decl::ElementDecl;
 pub use entity_decl::EntityDecl;
 pub use entity_reference::EntityReference;
+pub use namespace::Namespace;
 pub use node::Node;
 pub use notation_decl::NotationDecl;
 pub use processing_instruction::ProcessingInstruction;
@@ -51,6 +52,10 @@ use crate::{
     uri::URIStr,
 };
 
+/// Node types.
+///
+/// For abstract node types, it indicates that conversion to the node type specified by
+/// [`Node::node_type`] will always succeed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NodeType {
     Element = 1,
@@ -92,10 +97,26 @@ pub enum XMLTreeError {
     Unsupported,
 }
 
+/// SAX handler that helps build the tree.
+///
+/// Due to API limitations, when using this handler, it is necessary to enable
+/// [`ParserOption::Namespaces`](crate::sax::parser::ParserOption::Namespaces) option of the parser.
 pub struct TreeBuildHandler<H: SAXHandler = DefaultSAXHandler> {
     node: Node<dyn InternalNodeSpec>,
+    /// The root node of the parsed document tree.  
+    /// Before parsing begins or when `fatal_error` is true, it does not indicate meaningful data.
+    ///
+    /// This field is automatically initialized by the SAX callbacks after parsing begins,
+    /// so the application does not need to explicitly initialize this field.
     pub document: Document,
+    /// The child SAX handler.
+    ///
+    /// All events received by the handler are also reported to the corresponding callback
+    /// of the `handler`.  \
+    /// If nothing is specified, [`DefaultSAXHandler`] is used.
     pub handler: H,
+    /// A flag indicating that a fatal error has occurred.  \
+    /// When this flag is true, `document` is considered to contain no meaningful data.
     pub fatal_error: bool,
     in_cdata: bool,
 }
@@ -285,6 +306,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
 
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
         self.document = Document::new();
+        self.fatal_error = false;
         self.node = self.document.clone().into();
         self.document
             .set_document_base_uri(locator.system_id().as_ref())
