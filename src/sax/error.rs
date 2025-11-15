@@ -19,36 +19,19 @@ pub struct SAXParseError {
 
 impl std::fmt::Display for SAXParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(unescaped) = self.system_id.as_unescaped_str() {
-            if let Some((_, last)) = unescaped.rsplit_once('/') {
-                write!(
-                    f,
-                    "{}[line:{},column:{}][{}] {}",
-                    last, self.line, self.column, self.level, self.message,
-                )
-            } else {
-                write!(
-                    f,
-                    "{}[line:{},column:{}][{}] {}",
-                    unescaped, self.line, self.column, self.level, self.message,
-                )
-            }
-        } else {
-            let escaped = self.system_id.as_escaped_str();
-            if let Some((_, last)) = escaped.rsplit_once('/') {
-                write!(
-                    f,
-                    "{}[line:{},column:{}]:{}:{}",
-                    last, self.line, self.column, self.level, self.message,
-                )
-            } else {
-                write!(
-                    f,
-                    "{}[line:{},column:{}]:{}:{}",
-                    escaped, self.line, self.column, self.level, self.message,
-                )
-            }
-        }
+        let system_id = self
+            .system_id
+            .as_unescaped_str()
+            .unwrap_or(self.system_id.as_escaped_str().into());
+        let last = system_id
+            .rsplit_once('/')
+            .map(|ret| ret.1)
+            .unwrap_or(system_id.as_ref());
+        write!(
+            f,
+            "{}[line:{},column:{}][{}] {}",
+            last, self.line, self.column, self.level, self.message,
+        )
     }
 }
 
