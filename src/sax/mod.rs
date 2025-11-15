@@ -1,4 +1,4 @@
-//! Provides SAX parsers and auxiliary data structures.
+//! Provide SAX parsers and auxiliary data structures.
 //!
 //! To receive events from the parser, the application must configure a SAX handler.  \
 //! The handler must implement [`SAXHandler`][SAXHandler], [`EntityResolver`][EntityResolver],

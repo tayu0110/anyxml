@@ -193,7 +193,7 @@ assert_eq!(
 );
 ```
 
-## XPath execution
+## XPath Execution
 This crate supports XPath, enabling the search for specific nodes within the document tree.
 
 In the current implementation, only XPath 1.0 is available; features not explicitly defined in the XPath 1.0 specification (such as functions defined in the XSLT or XPointer specifications) cannot be used.
