@@ -41,7 +41,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                     // 6 = "<?xml".len() + <the length of a whitespace character>
                     if content.len() < 6 {
                         // If all text has already been read, the XML declaration does not follow,
-                        // so we can proceed to the next state.
+                        // so it is possible to proceed to the next state.
                         if finish {
                             self.state = ParserState::InMiscAfterXMLDeclaration;
                             continue;
@@ -664,7 +664,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                                             // pushed to the validator later based on its content, so no
                                             // action is needed here.
                                             // If the entity reference is empty, nothing is pushed,
-                                            // so we need to push Misc here.
+                                            // so it is necessary to push Misc here.
                                             validator.push_misc();
                                         }
                                         break Ok(ret);

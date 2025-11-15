@@ -23,9 +23,19 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ParserOption {
-    /// Enable loading of external general entities.
+    /// Enable loading of external general entities. This option is disabled by default.
+    ///
+    /// When parsing untrusted documents, there is a risk of unintentionally fetching local files
+    /// or initiating external communications.
+    /// Therefore, it is recommended to either disable this feature or implement sanitization
+    /// using a custom `EntityResolver`.
     ExternalGeneralEntities = 0,
-    /// Enable loading of external parameter entities.
+    /// Enable loading of external parameter entities. This option is disabled by default.
+    ///
+    /// When parsing untrusted documents, there is a risk of unintentionally fetching local files
+    /// or initiating external communications.
+    /// Therefore, it is recommended to either disable this feature or implement sanitization
+    /// using a custom `EntityResolver`.
     ExternalParameterEntities = 1,
     /// Enable namespace support. This option is enabled by default.
     ///

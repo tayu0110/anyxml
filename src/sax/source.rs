@@ -318,7 +318,7 @@ impl<'a> InputSource<'a> {
             // which code page is in use)
             [0x4C, 0x6F, 0xA7, 0x94] => return Err(XMLError::ParserUnsupportedEncoding),
             // cannot detect the specific encoding from the head of the content.
-            // In this case, we assume that it is a UTF-8 document without an XML declaration.
+            // In this case, it is assumed that it is a UTF-8 document without an XML declaration.
             _ => {
                 // Since it is either UTF-8 or an unknown encoding, the encoding is considered
                 // to be fixed,  and the buffer control mode is also fixed.

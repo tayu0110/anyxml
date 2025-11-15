@@ -47,7 +47,7 @@ impl Catalog {
     /// which is a pair consisting of `public_id` and `system_id`.
     ///
     /// `prefer_mode` specifies the root-level prefer mode.  \
-    /// In most cases, we recommend using [`PreferMode::Public`] or [`PreferMode::default()`].
+    /// In most cases, it is recommended to use [`PreferMode::Public`] or [`PreferMode::default()`].
     ///
     /// If no matching entry is found, return [`None`].
     pub fn resolve_external_id(
