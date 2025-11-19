@@ -1,5 +1,5 @@
 [workspace]
-members = ["anyxml-automata", "anyxml-uri"]
+members = ["anyxml-automata", "anyxml-cli", "anyxml-uri"]
 package.edition = "2024"
 package.authors = ["tayu0110"]
 package.license = "MIT"
@@ -20,12 +20,7 @@ rust-version.workspace = true
 [dependencies]
 anyxml-uri = { path = "./anyxml-uri", version = "0.1.4" }
 anyxml-automata = { path = "./anyxml-automata", version = "0.1.1" }
-clap = { version = "4.5.47", features = ["derive"] }
 
-
-[[bin]]
-name = "xmlprocess"
-path = "src/bin/xmlprocess.rs"
 
 [[test]]
 name = "sax-test"
