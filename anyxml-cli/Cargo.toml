@@ -1,0 +1,18 @@
+[package]
+name = "anyxml-cli"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "a simple utility for XML processing"
+keywords = ["cli", "xml", "xpath", "validation"]
+rust-version.workspace = true
+
+[dependencies]
+anyxml = { version = "0.6.1", path = "../" }
+clap = { version = "4.5.52", features = ["derive"] }
+
+[[bin]]
+name = "xmlprocess"
+path = "src/bin/xmlprocess.rs"
