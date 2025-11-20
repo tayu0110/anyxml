@@ -238,3 +238,6 @@ This crate passes the following tests:
 - [OASIS XSLT Test Suites](https://www.oasis-open.org/committees/document.php?document_id=12171&wg_abbrev=xslt) (for XPath)
     - This link is already broken and requires the Wayback Machine to access it.
 - some self-made tests
+
+# Command Line Utility
+As a related project, a simple command line utility [`anyxml-cli`](https://crates.io/crates/anyxml-cli) is also provided.

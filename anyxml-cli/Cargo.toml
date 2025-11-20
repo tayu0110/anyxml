@@ -10,7 +10,7 @@ keywords = ["cli", "xml", "xpath", "validation"]
 rust-version.workspace = true
 
 [dependencies]
-anyxml = { version = "0.6.1", path = "../" }
+anyxml = { version = "0.6.2", path = "../" }
 clap = { version = "4.5.52", features = ["derive"] }
 
 [[bin]]
