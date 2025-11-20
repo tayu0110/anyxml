@@ -19,20 +19,17 @@ if (path.basename(cwd) !== "anyxml" || !await exists(manifest)) {
     Deno.exit(1);
 }
 
-if (await exists(XSLTTS_FILE_FULLNAME)) {
-    console.log(`remove ${XSLTTS_FILE_FULLNAME}`);
-    await Deno.remove(XSLTTS_FILE_FULLNAME);
+if (!await exists(XSLTTS_FILE_FULLNAME)) {
+    const resp = await fetch(XSLTTS_URL);
+    console.log(`successfully downloaded ${XSLTTS_URL}`);
+    const xmlts_zip = await resp.bytes();
+    await Deno.writeFile(XSLTTS_FILE_FULLNAME, xmlts_zip);
+    console.log(`successfully made ${XSLTTS_FILE_FULLNAME}`);
 }
 if (await exists(XSLTTS_DIR_FULLNAME)) {
     console.log(`remove ${XSLTTS_DIR_FULLNAME}`);
     await Deno.remove(XSLTTS_DIR_FULLNAME, { recursive: true });
 }
-
-const resp = await fetch(XSLTTS_URL);
-console.log(`successfully downloaded ${XSLTTS_URL}`);
-const xmlts_zip = await resp.bytes();
-await Deno.writeFile(XSLTTS_FILE_FULLNAME, xmlts_zip);
-console.log(`successfully made ${XSLTTS_FILE_FULLNAME}`);
 
 const dir = await unzipper.Open.file(XSLTTS_FILE_FULLNAME);
 await dir.extract({ path: tempdir });
