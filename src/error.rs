@@ -1,5 +1,6 @@
 use crate::{
     encoding::{DecodeError, EncodeError},
+    tree::XMLTreeError,
     uri::ParseRIError,
     xpath::{XPathCompileError, XPathError},
 };
@@ -26,6 +27,7 @@ pub enum XMLErrorDomain {
     Parser,
     Namespace,
     DTDValid,
+    RngParser,
 }
 
 impl std::fmt::Display for XMLErrorDomain {
@@ -34,6 +36,7 @@ impl std::fmt::Display for XMLErrorDomain {
             Self::Parser => write!(f, "parser"),
             Self::Namespace => write!(f, "namespace"),
             Self::DTDValid => write!(f, "dtd-valid"),
+            Self::RngParser => write!(f, "relaxng-parser"),
         }
     }
 }
@@ -195,11 +198,39 @@ pub enum XMLError {
     URIParseFailure,
     URIBaseURINotAbsolute,
     URIBaseURINotFound,
+    // Tree errors
+    TreeError(XMLTreeError),
     // XPath errors
     XPathError(XPathError),
     // Catalog errors
     CatalogInvalidPublicID,
     CatalogResourceFailure,
+    // RELAX NG errors
+    RngParseUnacceptablePattern,
+    RngParseUnacceptableCombine,
+    RngParseUnacceptableAttribute,
+    RngParseUnacceptableString,
+    RngParseInvalidNCName,
+    RngParseInvalidQName,
+    RngParseInvalidAnyURI,
+    RngParseUnresolvableNamespacePrefix,
+    RngParseUnresolvableDatatype,
+    RngParseUnresolvableDatatypeLibrary,
+    RngParseUnresolvableRefName,
+    RngParseUnresolvableParentRefName,
+    RngParseDatatypeLibraryURINotAbsolute,
+    RngParseInsufficientAttribute,
+    RngParseInsufficientDefineInInclude,
+    RngParseExternalRefParseFailure,
+    RngParseExternalRefLoop,
+    RngParseIncludeParseFailure,
+    RngParseIncludeLoop,
+    RngParseHRefIncludeFragment,
+    RngParseMultipleStartWithoutCombine,
+    RngParseMultipleDefineWithoutCombine,
+    RngParseStartNotFoundInGrammar,
+    RngParseRefLoop,
+    RngParseUnknownError,
 }
 
 impl std::fmt::Display for XMLError {
@@ -295,6 +326,12 @@ impl From<DecodeError> for XMLError {
 impl From<ParseRIError> for XMLError {
     fn from(_: ParseRIError) -> Self {
         Self::URIParseFailure
+    }
+}
+
+impl From<XMLTreeError> for XMLError {
+    fn from(value: XMLTreeError) -> Self {
+        Self::TreeError(value)
     }
 }
 

@@ -5,6 +5,7 @@ pub mod catalog;
 pub mod encoding;
 pub mod error;
 mod parse;
+pub mod relaxng;
 mod save;
 pub mod sax;
 pub mod stax;
@@ -12,7 +13,7 @@ pub mod tree;
 pub mod uri;
 pub mod xpath;
 
-use std::marker::PhantomData;
+use std::{convert::Infallible, marker::PhantomData, str::FromStr};
 
 use crate::sax::{parser::ParserSubState, source::InputSource};
 
@@ -68,6 +69,10 @@ pub enum XMLVersion {
 }
 
 impl XMLVersion {
+    /// ```text
+    /// // XML 1.0
+    /// [2] Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF] /* any Unicode character, excluding the surrogate blocks, FFFE, and FFFF. */
+    /// ```
     pub fn is_char(&self, c: impl Into<u32>) -> bool {
         fn _is_char(_version: XMLVersion, c: u32) -> bool {
             matches!(
@@ -83,6 +88,10 @@ impl XMLVersion {
         _is_char(*self, c.into())
     }
 
+    /// ```text
+    /// // XML 1.0
+    /// [4] NameStartChar ::= ":" | [A-Z] | "_" | [a-z] | [#xC0-#xD6] | [#xD8-#xF6] | [#xF8-#x2FF] | [#x370-#x37D] | [#x37F-#x1FFF] | [#x200C-#x200D] | [#x2070-#x218F] | [#x2C00-#x2FEF] | [#x3001-#xD7FF] | [#xF900-#xFDCF] | [#xFDF0-#xFFFD] | [#x10000-#xEFFFF]
+    /// ```
     pub fn is_name_start_char(&self, c: impl Into<u32>) -> bool {
         fn _is_name_start_char(_version: XMLVersion, c: u32) -> bool {
             matches!(c,
@@ -107,6 +116,10 @@ impl XMLVersion {
         _is_name_start_char(*self, c.into())
     }
 
+    /// ```text
+    /// // XML 1.0
+    /// [4a] NameChar ::= NameStartChar | "-" | "." | [0-9] | #xB7 | [#x0300-#x036F] | [#x203F-#x2040]
+    /// ```
     pub fn is_name_char(&self, c: impl Into<u32>) -> bool {
         fn _is_name_char(_version: XMLVersion, c: u32) -> bool {
             matches!(c,
@@ -134,6 +147,7 @@ impl XMLVersion {
     }
 
     /// ```text
+    /// // XML 1.0
     /// [13] PubidChar ::= #x20 | #xD | #xA | [a-zA-Z0-9] | [-'()+,./:=?;!*#@$_%]
     /// ```
     pub fn is_pubid_char(&self, c: impl Into<u32>) -> bool {
@@ -153,9 +167,63 @@ impl XMLVersion {
         _is_pubid_char(*self, c.into())
     }
 
+    /// ```text
+    /// // XML 1.0
+    /// [3] S ::= (#x20 | #x9 | #xD | #xA)+
+    /// ```
     pub fn is_whitespace(&self, c: impl Into<u32>) -> bool {
         let c: u32 = c.into();
         matches!(c, 0x20 | 0x9 | 0xD | 0xA)
+    }
+
+    /// ```text
+    /// // XML 1.0
+    /// [5] Name ::= NameStartChar (NameChar)*
+    /// ```
+    pub fn validate_name(&self, s: &str) -> bool {
+        let mut chars = s.chars();
+        chars.next().is_some_and(|c| self.is_name_start_char(c))
+            && chars.all(|c| self.is_name_char(c))
+    }
+
+    /// ```text
+    /// // Namespaces in XML 1.0
+    /// [4] NCName ::= Name - (Char* ':' Char*) /* An XML Name, minus the ":" */
+    /// ```
+    pub fn validate_ncname(&self, s: &str) -> bool {
+        let mut chars = s.chars();
+        chars
+            .next()
+            .is_some_and(|c| c != ':' && self.is_name_start_char(c))
+            && chars.all(|c| c != ':' && self.is_name_char(c))
+    }
+
+    /// ```text
+    /// // Namespaces in XML 1.0
+    /// [7]  QName          ::= PrefixedName | UnprefixedName
+    /// [8]  PrefixedName   ::= Prefix ':' LocalPart
+    /// [9]  UnprefixedName ::= LocalPart
+    /// [10] Prefix         ::= NCName
+    /// [11] LocalPart      ::= NCName
+    /// ```
+    pub fn validate_qname(&self, s: &str) -> bool {
+        let mut chars = s.chars();
+        if chars
+            .next()
+            .is_none_or(|c| c == ':' || !self.is_name_start_char(c))
+        {
+            return false;
+        }
+        while let Some(c) = chars.next() {
+            if c == ':' {
+                return self.validate_ncname(chars.as_str());
+            }
+
+            if !self.is_name_char(c) {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -164,6 +232,16 @@ impl std::fmt::Display for XMLVersion {
         match *self {
             XMLVersion::XML10 => write!(f, "1.0"),
             XMLVersion::Unknown => write!(f, "1.0"),
+        }
+    }
+}
+
+impl FromStr for XMLVersion {
+    type Err = Infallible;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "1.0" => Ok(XMLVersion::XML10),
+            _ => Ok(XMLVersion::Unknown),
         }
     }
 }

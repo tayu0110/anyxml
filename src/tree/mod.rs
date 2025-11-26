@@ -76,7 +76,7 @@ pub enum NodeType {
     Namespace = 130,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XMLTreeError {
     EmptyPrefix,
     UnacceptablePrefix,

@@ -283,6 +283,16 @@ impl Element {
         Ok(())
     }
 
+    pub fn remove_attribute(
+        &mut self,
+        local_name: &str,
+        namespace_name: Option<&str>,
+    ) -> Option<String> {
+        let attribute = self.get_attribute_node(local_name, namespace_name)?;
+        self.remove_attribute_node(attribute.clone()).ok()?;
+        Some(attribute.value())
+    }
+
     pub fn remove_attribute_node(&mut self, attribute: Attribute) -> Result<(), XMLTreeError> {
         if attribute
             .owner_element()

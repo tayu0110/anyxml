@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use crate::{
+    error::XMLError,
     sax::{
         Locator,
         attributes::Attributes,
         error::SAXParseError,
         handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
+        source::InputSource,
     },
     stax::events::XMLEventType,
     uri::{URIStr, URIString},
@@ -71,7 +73,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
         &mut self,
         name: &str,
         base_uri: Option<&URIStr>,
-    ) -> Result<crate::sax::source::InputSource<'static>, crate::error::XMLError> {
+    ) -> Result<InputSource<'static>, XMLError> {
         if let Some(entity_resolver) = self.entity_resolver.as_mut() {
             entity_resolver.get_external_subset(name, base_uri)
         } else {
@@ -85,7 +87,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
         public_id: Option<&str>,
         base_uri: &URIStr,
         system_id: &URIStr,
-    ) -> Result<crate::sax::source::InputSource<'static>, crate::error::XMLError> {
+    ) -> Result<InputSource<'static>, XMLError> {
         if let Some(entity_resolver) = self.entity_resolver.as_mut() {
             entity_resolver.resolve_entity(name, public_id, base_uri, system_id)
         } else {
@@ -97,7 +99,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
 impl<Resolver: EntityResolver, Reporter: ErrorHandler> ErrorHandler
     for XMLStreamReaderHandler<Resolver, Reporter>
 {
-    fn error(&mut self, error: crate::sax::error::SAXParseError) {
+    fn error(&mut self, error: SAXParseError) {
         if let Some(error_handler) = self.error_handler.as_mut() {
             error_handler.error(error);
         } else {
@@ -105,7 +107,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> ErrorHandler
         }
     }
 
-    fn fatal_error(&mut self, error: crate::sax::error::SAXParseError) {
+    fn fatal_error(&mut self, error: SAXParseError) {
         if let Some(error_handler) = self.error_handler.as_mut() {
             error_handler.fatal_error(error);
         } else {
@@ -114,7 +116,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> ErrorHandler
         self.event = XMLEventType::FatalError;
     }
 
-    fn warning(&mut self, error: crate::sax::error::SAXParseError) {
+    fn warning(&mut self, error: SAXParseError) {
         if let Some(error_handler) = self.error_handler.as_mut() {
             error_handler.warning(error);
         } else {

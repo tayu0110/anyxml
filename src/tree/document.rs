@@ -457,6 +457,21 @@ impl Document {
         }
         ret.into_iter()
     }
+
+    /// Imports a node owned by another document into itself.
+    ///
+    /// This has no effect on nodes it already owns.
+    ///
+    /// # Note
+    /// If there are other nodes instantiated as `Node` within the subtree to which `node` belongs,
+    /// this may cause inconsistent behavior.  \
+    /// However, identifying such nodes is impossible under the Tree API specification.
+    /// Therefore, using this method safely is the user's responsibility,
+    /// and this method must not be exposed.
+    pub(crate) fn import_node<Spec: NodeSpec + ?Sized>(&self, mut node: Node<Spec>) -> Node<Spec> {
+        node.owner_document = self.core.clone();
+        node
+    }
 }
 
 impl Default for Document {
