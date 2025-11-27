@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     io::Read,
 };
 
@@ -381,7 +381,10 @@ impl RelaxNGSchemaParseContext {
         }
     }
 
-    fn parse_relaxng<Handler: SAXHandler>(&mut self, mut handler: Handler) -> Result<(), XMLError> {
+    fn parse_relaxng<Handler: SAXHandler>(
+        &mut self,
+        mut handler: Handler,
+    ) -> Result<RelaxNGGrammar, XMLError> {
         let Some(mut document_element) = self.document.document_element() else {
             return Err(XMLError::RngParseUnknownError);
         };
@@ -408,6 +411,7 @@ impl RelaxNGSchemaParseContext {
             &mut HashMap::new(),
             &mut num_define,
         )?;
+        self.last_error?;
         // ISO/IEC 19757-2:2008 7.20 `define` and `ref` elements
         self.normalize_define_and_ref(
             &mut grammar.clone(),
@@ -417,6 +421,7 @@ impl RelaxNGSchemaParseContext {
             false,
             false,
         )?;
+        self.last_error?;
         for (_, mut define) in self.defines.extract_if(|_, define| {
             define
                 .first_child()
@@ -428,6 +433,7 @@ impl RelaxNGSchemaParseContext {
         // ISO/IEC 19757-2:2008 7.21 `notAllowed` element
         let mut removable_except = vec![];
         normalize_not_allowed(&mut grammar, &mut removable_except)?;
+        self.last_error?;
         for mut except in removable_except {
             except.detach()?;
         }
@@ -480,7 +486,8 @@ impl RelaxNGSchemaParseContext {
         }
         // ISO/IEC 19757-2:2008 7.22 `empty` element
         normalize_empty(&mut grammar)?;
-        Ok(())
+        self.last_error?;
+        RelaxNGGrammar::try_from(grammar)
     }
 
     /// `ns_context` is used to propagate `ns` attribute value to included external content
@@ -3371,5 +3378,613 @@ fn validate_combine(s: &str) -> Result<(), XMLError> {
         Ok(())
     } else {
         Err(XMLError::RngParseUnacceptableCombine)
+    }
+}
+
+struct RelaxNGGrammar {
+    /// If the child of 'start' is 'notAllowed', this field is `None`, otherwise `Some`.
+    start: Option<RelaxNGPattern>,
+    define: BTreeMap<String, RelaxNGDefine>,
+}
+
+impl TryFrom<Element> for RelaxNGGrammar {
+    type Error = XMLError;
+
+    fn try_from(grammar: Element) -> Result<Self, Self::Error> {
+        if grammar.local_name().as_ref() != "grammar" {
+            return Err(XMLError::RngParseUnknownError);
+        }
+
+        let mut start = None;
+        let mut define = BTreeMap::new();
+        let mut children = grammar.first_child();
+        while let Some(child) = children {
+            children = child.next_sibling();
+
+            let element = child.as_element().ok_or(XMLError::RngParseUnknownError)?;
+            match element.local_name().as_ref() {
+                "start" => {
+                    let top = element
+                        .first_child()
+                        .and_then(|ch| ch.as_element())
+                        .ok_or(XMLError::RngParseUnknownError)?;
+                    if top.local_name().as_ref() != "notAllowed" {
+                        start = Some(RelaxNGPattern::try_from(top)?);
+                    }
+                }
+                "define" => {
+                    let name = element
+                        .get_attribute("name", None)
+                        .ok_or(XMLError::RngParseUnknownError)?;
+                    define.insert(name, RelaxNGDefine::try_from(element)?);
+                }
+                _ => return Err(XMLError::RngParseUnknownError),
+            }
+        }
+
+        Ok(Self { start, define })
+    }
+}
+
+impl std::fmt::Display for RelaxNGGrammar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<grammar><start>")?;
+        if let Some(top) = self.start.as_ref() {
+            write!(f, "{top}")?;
+        } else {
+            write!(f, "<notAllowed/>")?;
+        }
+        write!(f, "</start>")?;
+        for define in self.define.values() {
+            write!(f, "{define}")?;
+        }
+        write!(f, "</grammar>")
+    }
+}
+
+struct RelaxNGDefine {
+    name: Box<str>,
+    name_class: RelaxNGNameClass,
+    /// If the second child of 'element' is 'notAllowed', this field is `None`, otherwise `Some`.
+    top: Option<RelaxNGPattern>,
+}
+
+impl TryFrom<Element> for RelaxNGDefine {
+    type Error = XMLError;
+
+    fn try_from(define: Element) -> Result<Self, Self::Error> {
+        let element = define
+            .first_child()
+            .and_then(|ch| ch.as_element())
+            .filter(|elem| elem.local_name().as_ref() == "element")
+            .ok_or(XMLError::RngParseUnknownError)?;
+
+        let name = element
+            .get_attribute("name", None)
+            .ok_or(XMLError::RngParseUnknownError)?
+            .into();
+        let name_class = element
+            .first_child()
+            .and_then(|ch| ch.as_element())
+            .ok_or(XMLError::RngParseUnknownError)?;
+        let top = element
+            .last_child()
+            .and_then(|ch| ch.as_element())
+            .ok_or(XMLError::RngParseUnknownError)?;
+
+        if name_class
+            .next_sibling()
+            .is_none_or(|next| !top.is_same_node(next))
+        {
+            return Err(XMLError::RngParseUnknownError);
+        }
+
+        if top.local_name().as_ref() == "notAllowed" {
+            Ok(Self {
+                name,
+                name_class: name_class.try_into()?,
+                top: None,
+            })
+        } else {
+            Ok(Self {
+                name,
+                name_class: name_class.try_into()?,
+                top: Some(top.try_into()?),
+            })
+        }
+    }
+}
+
+impl std::fmt::Display for RelaxNGDefine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<define name=\"{}\"><element>{}",
+            self.name, self.name_class
+        )?;
+        if let Some(top) = self.top.as_ref() {
+            write!(f, "{top}")?
+        } else {
+            write!(f, "<notAllowed/>")?
+        }
+        write!(f, "</element></define>")
+    }
+}
+
+struct RelaxNGPattern {
+    /// If 'pattern' is 'empty', this field is `None`, otherwise `Some`.
+    pattern: Option<RelaxNGNonEmptyPattern>,
+}
+
+impl TryFrom<Element> for RelaxNGPattern {
+    type Error = XMLError;
+
+    fn try_from(value: Element) -> Result<Self, Self::Error> {
+        match value.local_name().as_ref() {
+            "empty" => Ok(Self { pattern: None }),
+            _ => Ok(Self {
+                pattern: Some(value.try_into()?),
+            }),
+        }
+    }
+}
+
+impl std::fmt::Display for RelaxNGPattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(pattern) = self.pattern.as_ref() {
+            write!(f, "{pattern}")
+        } else {
+            write!(f, "<empty/>")
+        }
+    }
+}
+
+enum RelaxNGNonEmptyPattern {
+    Text,
+    Data {
+        type_name: Box<str>,
+        datatype_library: Box<URIStr>,
+        param: Vec<RelaxNGParam>,
+        except_pattern: Option<Box<RelaxNGExceptPattern>>,
+    },
+    Value {
+        type_name: Box<str>,
+        datatype_library: Box<URIStr>,
+        ns: Box<str>,
+        value: Box<str>,
+    },
+    List {
+        pattern: Box<RelaxNGPattern>,
+    },
+    Attribute {
+        name_class: RelaxNGNameClass,
+        pattern: Box<RelaxNGPattern>,
+    },
+    Ref {
+        name: Box<str>,
+    },
+    OneOrMore {
+        pattern: Box<RelaxNGNonEmptyPattern>,
+    },
+    Choice {
+        left: Box<RelaxNGPattern>,
+        right: Box<RelaxNGNonEmptyPattern>,
+    },
+    Group {
+        pattern: [Box<RelaxNGNonEmptyPattern>; 2],
+    },
+    Interleave {
+        pattern: [Box<RelaxNGNonEmptyPattern>; 2],
+    },
+}
+
+impl TryFrom<Element> for RelaxNGNonEmptyPattern {
+    type Error = XMLError;
+
+    fn try_from(value: Element) -> Result<Self, Self::Error> {
+        match value.local_name().as_ref() {
+            "text" => Ok(Self::Text),
+            "data" => {
+                let mut param = vec![];
+                let mut children = value.first_child();
+                while let Some(child) = children {
+                    children = child.next_sibling();
+
+                    param.push(
+                        child
+                            .as_element()
+                            .ok_or(XMLError::RngParseUnknownError)?
+                            .try_into()?,
+                    );
+                }
+
+                if children
+                    .as_ref()
+                    .is_some_and(|ch| !value.last_child().unwrap().is_same_node(ch))
+                {
+                    return Err(XMLError::RngParseUnknownError);
+                }
+
+                Ok(Self::Data {
+                    type_name: value
+                        .get_attribute("type", None)
+                        .ok_or(XMLError::RngParseUnknownError)?
+                        .into(),
+                    datatype_library: URIString::parse(
+                        value
+                            .get_attribute("datatypeLibrary", None)
+                            .ok_or(XMLError::RngParseUnknownError)?,
+                    )?
+                    .into(),
+                    param,
+                    except_pattern: children
+                        .and_then(|ch| ch.as_element())
+                        .map(RelaxNGExceptPattern::try_from)
+                        .transpose()?
+                        .map(|ch| ch.into()),
+                })
+            }
+            "value" => Ok(Self::Value {
+                type_name: value
+                    .get_attribute("type", None)
+                    .ok_or(XMLError::RngParseUnknownError)?
+                    .into(),
+                datatype_library: URIString::parse(
+                    value
+                        .get_attribute("datatypeLibrary", None)
+                        .ok_or(XMLError::RngParseUnknownError)?,
+                )?
+                .into(),
+                ns: value
+                    .get_attribute("ns", None)
+                    .ok_or(XMLError::RngParseUnknownError)?
+                    .into(),
+                value: value
+                    .first_child()
+                    .map(|ch| ch.text_content())
+                    .ok_or(XMLError::RngParseUnknownError)?
+                    .into(),
+            }),
+            "list" => Ok(Self::List {
+                pattern: Box::new(
+                    value
+                        .first_child()
+                        .and_then(|ch| ch.as_element())
+                        .ok_or(XMLError::RngParseUnknownError)?
+                        .try_into()?,
+                ),
+            }),
+            "attribute" => Ok(Self::Attribute {
+                name_class: value
+                    .first_child()
+                    .and_then(|ch| ch.as_element())
+                    .ok_or(XMLError::RngParseUnknownError)?
+                    .try_into()?,
+                pattern: Box::new(
+                    value
+                        .last_child()
+                        .and_then(|ch| ch.as_element())
+                        .ok_or(XMLError::RngParseUnknownError)?
+                        .try_into()?,
+                ),
+            }),
+            "ref" => Ok(Self::Ref {
+                name: value
+                    .get_attribute("name", None)
+                    .ok_or(XMLError::RngParseUnknownError)?
+                    .into(),
+            }),
+            "oneOrMore" => Ok(Self::OneOrMore {
+                pattern: Box::new(
+                    value
+                        .first_child()
+                        .and_then(|ch| ch.as_element())
+                        .ok_or(XMLError::RngParseUnknownError)?
+                        .try_into()?,
+                ),
+            }),
+            "choice" => Ok(Self::Choice {
+                left: Box::new(
+                    value
+                        .first_child()
+                        .and_then(|ch| ch.as_element())
+                        .ok_or(XMLError::RngParseUnknownError)?
+                        .try_into()?,
+                ),
+                right: Box::new(
+                    value
+                        .last_child()
+                        .and_then(|ch| ch.as_element())
+                        .ok_or(XMLError::RngParseUnknownError)?
+                        .try_into()?,
+                ),
+            }),
+            "group" => Ok(Self::Group {
+                pattern: [
+                    Box::new(
+                        value
+                            .first_child()
+                            .and_then(|ch| ch.as_element())
+                            .ok_or(XMLError::RngParseUnknownError)?
+                            .try_into()?,
+                    ),
+                    Box::new(
+                        value
+                            .last_child()
+                            .and_then(|ch| ch.as_element())
+                            .ok_or(XMLError::RngParseUnknownError)?
+                            .try_into()?,
+                    ),
+                ],
+            }),
+            "interleave" => Ok(Self::Interleave {
+                pattern: [
+                    Box::new(
+                        value
+                            .first_child()
+                            .and_then(|ch| ch.as_element())
+                            .ok_or(XMLError::RngParseUnknownError)?
+                            .try_into()?,
+                    ),
+                    Box::new(
+                        value
+                            .last_child()
+                            .and_then(|ch| ch.as_element())
+                            .ok_or(XMLError::RngParseUnknownError)?
+                            .try_into()?,
+                    ),
+                ],
+            }),
+            _ => Err(XMLError::RngParseUnknownError),
+        }
+    }
+}
+
+impl std::fmt::Display for RelaxNGNonEmptyPattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Text => write!(f, "<text/>"),
+            Self::Data {
+                type_name,
+                datatype_library,
+                param,
+                except_pattern,
+            } => {
+                write!(
+                    f,
+                    "<data type=\"{type_name}\" datatypeLibrary=\"{}\">",
+                    datatype_library
+                        .as_unescaped_str()
+                        .as_deref()
+                        .unwrap_or(datatype_library.as_escaped_str())
+                )?;
+                for param in param {
+                    write!(f, "{param}")?;
+                }
+                if let Some(except) = except_pattern {
+                    write!(f, "{except}")?;
+                }
+                write!(f, "</data>")
+            }
+            Self::Value {
+                type_name,
+                datatype_library,
+                ns,
+                value,
+            } => {
+                write!(
+                    f,
+                    "<value datatypeLibrary=\"{}\" type=\"{type_name}\" ns=\"{ns}\">{value}</value>",
+                    datatype_library
+                        .as_unescaped_str()
+                        .as_deref()
+                        .unwrap_or(datatype_library.as_escaped_str())
+                )
+            }
+            Self::List { pattern } => {
+                write!(f, "<list>{pattern}</list>")
+            }
+            Self::Attribute {
+                name_class,
+                pattern,
+            } => write!(f, "<attribute>{name_class}{pattern}</attribute>"),
+            Self::Ref { name } => write!(f, "<ref name=\"{name}\"/>"),
+            Self::OneOrMore { pattern } => write!(f, "<oneOrMore>{pattern}</oneOrMore>"),
+            Self::Choice { left, right } => write!(f, "<choice>{left}{right}</choice>"),
+            Self::Group { pattern } => write!(f, "<group>{}{}</group>", pattern[0], pattern[1]),
+            Self::Interleave { pattern } => {
+                write!(f, "<interleave>{}{}</interleave>", pattern[0], pattern[1])
+            }
+        }
+    }
+}
+
+struct RelaxNGParam {
+    name: Box<str>,
+    value: Box<str>,
+}
+
+impl TryFrom<Element> for RelaxNGParam {
+    type Error = XMLError;
+
+    fn try_from(value: Element) -> Result<Self, Self::Error> {
+        if value.local_name().as_ref() != "param" {
+            return Err(XMLError::RngParseUnknownError);
+        }
+
+        Ok(Self {
+            name: value
+                .get_attribute("name", None)
+                .ok_or(XMLError::RngParseUnknownError)?
+                .into(),
+            value: value
+                .first_child()
+                .map(|ch| ch.text_content())
+                .ok_or(XMLError::RngParseUnknownError)?
+                .into(),
+        })
+    }
+}
+
+impl std::fmt::Display for RelaxNGParam {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<param name=\"{}\">{}</param>", self.name, self.value)
+    }
+}
+
+struct RelaxNGExceptPattern {
+    pattern: RelaxNGPattern,
+}
+
+impl TryFrom<Element> for RelaxNGExceptPattern {
+    type Error = XMLError;
+
+    fn try_from(value: Element) -> Result<Self, Self::Error> {
+        if value.local_name().as_ref() != "except" {
+            return Err(XMLError::RngParseUnknownError);
+        }
+
+        Ok(Self {
+            pattern: value
+                .first_child()
+                .and_then(|ch| ch.as_element())
+                .ok_or(XMLError::RngParseUnknownError)?
+                .try_into()?,
+        })
+    }
+}
+
+impl std::fmt::Display for RelaxNGExceptPattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<except>{}</except>", self.pattern)
+    }
+}
+
+enum RelaxNGNameClass {
+    AnyName {
+        except: Option<RelaxNGExceptNameClass>,
+    },
+    NsName {
+        ns: Box<str>,
+        except: Option<RelaxNGExceptNameClass>,
+    },
+    Name {
+        ns: Box<str>,
+        value: Box<str>,
+    },
+    Choice {
+        name_class: [Box<RelaxNGNameClass>; 2],
+    },
+}
+
+impl TryFrom<Element> for RelaxNGNameClass {
+    type Error = XMLError;
+
+    fn try_from(value: Element) -> Result<Self, Self::Error> {
+        match value.local_name().as_ref() {
+            "anyName" => Ok(Self::AnyName {
+                except: value
+                    .first_child()
+                    .and_then(|ch| ch.as_element())
+                    .map(RelaxNGExceptNameClass::try_from)
+                    .transpose()?,
+            }),
+            "nsName" => Ok(Self::NsName {
+                ns: value
+                    .get_attribute("ns", None)
+                    .ok_or(XMLError::RngParseUnknownError)?
+                    .into(),
+                except: value
+                    .first_child()
+                    .and_then(|ch| ch.as_element())
+                    .map(RelaxNGExceptNameClass::try_from)
+                    .transpose()?,
+            }),
+            "name" => Ok(Self::Name {
+                ns: value
+                    .get_attribute("ns", None)
+                    .ok_or(XMLError::RngParseUnknownError)?
+                    .into(),
+                value: value
+                    .first_child()
+                    .map(|ch| ch.text_content())
+                    .ok_or(XMLError::RngParseUnknownError)?
+                    .into(),
+            }),
+            "choice" => Ok(Self::Choice {
+                name_class: [
+                    Box::new(
+                        value
+                            .first_child()
+                            .and_then(|ch| ch.as_element())
+                            .ok_or(XMLError::RngParseUnknownError)?
+                            .try_into()?,
+                    ),
+                    Box::new(
+                        value
+                            .last_child()
+                            .and_then(|ch| ch.as_element())
+                            .ok_or(XMLError::RngParseUnknownError)?
+                            .try_into()?,
+                    ),
+                ],
+            }),
+            _ => Err(XMLError::RngParseUnknownError),
+        }
+    }
+}
+
+impl std::fmt::Display for RelaxNGNameClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AnyName { except } => {
+                write!(f, "<anyName>")?;
+                if let Some(except) = except {
+                    write!(f, "{except}")?;
+                }
+                write!(f, "</anyName>")
+            }
+            Self::NsName { ns, except } => {
+                write!(f, "<nsName ns=\"{ns}\">")?;
+                if let Some(except) = except {
+                    write!(f, "{except}")?;
+                }
+                write!(f, "</nsName>")
+            }
+            Self::Name { ns, value } => write!(f, "<name ns=\"{ns}\">{value}</name>"),
+            Self::Choice { name_class } => {
+                write!(f, "<choice>{}{}</choice>", name_class[0], name_class[1])
+            }
+        }
+    }
+}
+
+struct RelaxNGExceptNameClass {
+    name_class: Box<RelaxNGNameClass>,
+}
+
+impl TryFrom<Element> for RelaxNGExceptNameClass {
+    type Error = XMLError;
+
+    fn try_from(value: Element) -> Result<Self, Self::Error> {
+        if value.local_name().as_ref() != "except" {
+            return Err(XMLError::RngParseUnknownError);
+        }
+
+        Ok(Self {
+            name_class: Box::new(
+                value
+                    .first_child()
+                    .and_then(|ch| ch.as_element())
+                    .ok_or(XMLError::RngParseUnknownError)?
+                    .try_into()?,
+            ),
+        })
+    }
+}
+
+impl std::fmt::Display for RelaxNGExceptNameClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<except>{}</except>", self.name_class)
     }
 }
