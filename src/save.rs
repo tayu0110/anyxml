@@ -68,12 +68,12 @@ pub(crate) fn write_escaped_att_value<'a>(
     quote: &mut Option<char>,
 ) -> std::fmt::Result {
     let q = quote.unwrap_or_else(|| {
-        if !value.contains('\'') {
-            // does not contain `'`
-            '\''
-        } else {
-            // contains `'`, may be contain `"` or not
+        if !value.contains('"') {
+            // does not contain `"`
             '"'
+        } else {
+            // contains `"`, may be contain `'` or not
+            '\''
         }
     });
 

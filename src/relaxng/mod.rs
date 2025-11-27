@@ -12,7 +12,7 @@ use crate::{
         parser::XMLReaderBuilder,
     },
     tree::{
-        Document, Element, Namespace, Node, TreeBuildHandler,
+        Document, Element, Namespace, Node, NodeType, TreeBuildHandler,
         convert::NodeKind,
         node::{InternalNodeSpec, NodeSpec},
     },
@@ -124,7 +124,9 @@ macro_rules! error {
     };
 }
 
-pub struct RelaxNGSchema {}
+pub struct RelaxNGSchema {
+    grammar: RelaxNGGrammar,
+}
 
 impl RelaxNGSchema {
     /// Parse RELAX NG schema using `uri` and `encoding`.
@@ -144,23 +146,13 @@ impl RelaxNGSchema {
                 .set_handler(TreeBuildHandler::with_handler(handler))
                 .build();
             reader.parse_uri(uri, encoding)?;
-            let TreeBuildHandler {
-                document, handler, ..
-            } = reader.handler;
-            let mut context = RelaxNGSchemaParseContext::new(document);
-            context.parse_relaxng(handler)?;
-            Ok(Self {})
+            Self::do_parse_relaxng(reader.handler)
         } else {
             let mut reader = XMLReaderBuilder::new()
                 .set_handler(TreeBuildHandler::default())
                 .build();
             reader.parse_uri(uri, encoding)?;
-            let TreeBuildHandler {
-                document, handler, ..
-            } = reader.handler;
-            let mut context = RelaxNGSchemaParseContext::new(document);
-            context.parse_relaxng(handler)?;
-            Ok(Self {})
+            Self::do_parse_relaxng(reader.handler)
         }
     }
 
@@ -182,23 +174,13 @@ impl RelaxNGSchema {
                 .set_handler(TreeBuildHandler::with_handler(handler))
                 .build();
             parser.parse_reader(reader, encoding, Some(uri.as_ref()))?;
-            let TreeBuildHandler {
-                document, handler, ..
-            } = parser.handler;
-            let mut context = RelaxNGSchemaParseContext::new(document);
-            context.parse_relaxng(handler)?;
-            Ok(Self {})
+            Self::do_parse_relaxng(parser.handler)
         } else {
             let mut parser = XMLReaderBuilder::new()
                 .set_handler(TreeBuildHandler::default())
                 .build();
             parser.parse_reader(reader, encoding, Some(uri.as_ref()))?;
-            let TreeBuildHandler {
-                document, handler, ..
-            } = parser.handler;
-            let mut context = RelaxNGSchemaParseContext::new(document);
-            context.parse_relaxng(handler)?;
-            Ok(Self {})
+            Self::do_parse_relaxng(parser.handler)
         }
     }
 
@@ -219,24 +201,27 @@ impl RelaxNGSchema {
                 .set_handler(TreeBuildHandler::with_handler(handler))
                 .build();
             parser.parse_str(schema, Some(uri.as_ref()))?;
-            let TreeBuildHandler {
-                document, handler, ..
-            } = parser.handler;
-            let mut context = RelaxNGSchemaParseContext::new(document);
-            context.parse_relaxng(handler)?;
-            Ok(Self {})
+            Self::do_parse_relaxng(parser.handler)
         } else {
             let mut parser = XMLReaderBuilder::new()
                 .set_handler(TreeBuildHandler::default())
                 .build();
             parser.parse_str(schema, Some(uri.as_ref()))?;
-            let TreeBuildHandler {
-                document, handler, ..
-            } = parser.handler;
-            let mut context = RelaxNGSchemaParseContext::new(document);
-            context.parse_relaxng(handler)?;
-            Ok(Self {})
+            Self::do_parse_relaxng(parser.handler)
         }
+    }
+
+    fn do_parse_relaxng<Handler: SAXHandler>(
+        handler: TreeBuildHandler<Handler>,
+    ) -> Result<Self, XMLError> {
+        let TreeBuildHandler {
+            document, handler, ..
+        } = handler;
+        let mut context = RelaxNGSchemaParseContext::new(document);
+
+        Ok(Self {
+            grammar: context.parse_relaxng(handler)?,
+        })
     }
 }
 
@@ -520,6 +505,7 @@ impl RelaxNGSchemaParseContext {
                 // ISO/IEC 19757-2:2008 7.5 `type` attribute of `value` element
                 if !element.has_attribute("type", None) {
                     element.set_attribute("type", None, Some("token"))?;
+                    element.remove_attribute("datatypeLibrary", None);
                     element.set_attribute("datatypeLibrary", None, Some(""))?;
                 }
 
@@ -1530,6 +1516,7 @@ impl RelaxNGSchemaParseContext {
                     let local = document.create_text(local);
                     if let Some(namespace) = self.resolve_namespace_prefix(prefix, Some(element)) {
                         let namespace_name = namespace.namespace_name();
+                        element.remove_attribute("ns", None);
                         element.set_attribute("ns", None, Some(&namespace_name))?;
                     } else {
                         fatal_error!(
@@ -2134,6 +2121,7 @@ impl RelaxNGSchemaParseContext {
                             "ref" => {
                                 if let Some(name) = element.get_attribute("name", None) {
                                     if let Some(define) = in_scope_define.get_mut(&name) {
+                                        element.remove_attribute("name", None);
                                         element.set_attribute("name", None, Some(&define.0))?;
                                         define.1 += 1;
                                     } else {
@@ -2155,6 +2143,7 @@ impl RelaxNGSchemaParseContext {
                                             "ref",
                                             Some(XML_RELAX_NG_NAMESPACE.into()),
                                         )?;
+                                        r#ref.remove_attribute("name", None);
                                         r#ref.set_attribute("name", None, Some(&define.0))?;
                                         element.insert_previous_sibling(&r#ref)?;
                                         element.detach()?;
@@ -2222,13 +2211,15 @@ impl RelaxNGSchemaParseContext {
             }
         }
 
-        let mut children = start.first_child();
-        while let Some(mut child) = children {
-            children = child.next_sibling();
-            child.detach()?;
-            grammar.insert_previous_sibling(child)?;
+        if !grammar.is_same_node(master_grammar) {
+            let mut children = start.first_child();
+            while let Some(mut child) = children {
+                children = child.next_sibling();
+                child.detach()?;
+                grammar.insert_previous_sibling(child)?;
+            }
+            grammar.detach()?;
         }
-        grammar.detach()?;
         Ok(())
     }
 
@@ -2244,6 +2235,7 @@ impl RelaxNGSchemaParseContext {
         mut element: bool,
     ) -> Result<(), XMLError> {
         let mut expand = false;
+        let mut children = context_node.first_child();
         match context_node.local_name().as_ref() {
             "start" => start = true,
             "element" => {
@@ -2253,6 +2245,7 @@ impl RelaxNGSchemaParseContext {
                     .is_none_or(|elem| elem.local_name().as_ref() != "define")
                 {
                     let alias = format!("define_alias{}", num_define);
+                    *num_define += 1;
                     let mut define = self
                         .document
                         .create_element("define", Some(XML_RELAX_NG_NAMESPACE.into()))?;
@@ -2274,7 +2267,6 @@ impl RelaxNGSchemaParseContext {
             _ => {}
         }
 
-        let mut children = context_node.first_child();
         while let Some(child) = children {
             children = child.next_sibling();
             if let Some(mut context_node) = child.as_element() {
@@ -2487,7 +2479,7 @@ fn normalize_empty(context_node: &mut Element) -> Result<(), XMLError> {
                 .and_then(|ch| ch.as_element())
                 .ok_or(XMLError::RngParseUnknownError)?;
             let mut second = context_node
-                .first_child()
+                .last_child()
                 .and_then(|ch| ch.as_element())
                 .ok_or(XMLError::RngParseUnknownError)?;
 
@@ -2517,7 +2509,7 @@ fn normalize_empty(context_node: &mut Element) -> Result<(), XMLError> {
                 .and_then(|ch| ch.as_element())
                 .ok_or(XMLError::RngParseUnknownError)?;
             let mut second = context_node
-                .first_child()
+                .last_child()
                 .and_then(|ch| ch.as_element())
                 .ok_or(XMLError::RngParseUnknownError)?;
 
@@ -2930,6 +2922,9 @@ fn check_attribute_constraint<Handler: ErrorHandler, const M: usize, const O: us
     let mut remove = vec![];
 
     for att in element.attributes() {
+        if att.name().as_ref() == "xml:base" {
+            continue;
+        }
         if att.namespace().is_some() {
             error!(
                 element.owner_document(),
@@ -3194,6 +3189,7 @@ fn remove_foreign_attribute(element: &mut Element) -> Result<(), XMLError> {
         let base_uri = base_uri
             .as_unescaped_str()
             .unwrap_or(Cow::Borrowed(base_uri.as_escaped_str()));
+        element.remove_attribute("xml:base", None);
         element.set_attribute("xml:base", Some(XML_XML_NAMESPACE), Some(&base_uri))?;
     }
 
@@ -3428,7 +3424,10 @@ impl TryFrom<Element> for RelaxNGGrammar {
 
 impl std::fmt::Display for RelaxNGGrammar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<grammar><start>")?;
+        write!(
+            f,
+            "<grammar xmlns=\"http://relaxng.org/ns/structure/1.0\"><start>"
+        )?;
         if let Some(top) = self.start.as_ref() {
             write!(f, "{top}")?;
         } else {
@@ -3459,7 +3458,7 @@ impl TryFrom<Element> for RelaxNGDefine {
             .filter(|elem| elem.local_name().as_ref() == "element")
             .ok_or(XMLError::RngParseUnknownError)?;
 
-        let name = element
+        let name = define
             .get_attribute("name", None)
             .ok_or(XMLError::RngParseUnknownError)?
             .into();
@@ -3986,5 +3985,28 @@ impl TryFrom<Element> for RelaxNGExceptNameClass {
 impl std::fmt::Display for RelaxNGExceptNameClass {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<except>{}</except>", self.name_class)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::sax::handler::DefaultSAXHandler;
+
+    use super::*;
+
+    #[test]
+    fn simplification_tests() {
+        let base_uri = URIString::parse_file_path(env!("CARGO_MANIFEST_DIR")).unwrap();
+
+        let path =
+            base_uri.resolve(&URIString::parse("resources/relaxng/spec-example.rng").unwrap());
+        eprintln!("{}", path.as_unescaped_str().unwrap());
+        let schema = RelaxNGSchema::parse_uri(path, None, None::<DefaultSAXHandler>).unwrap();
+
+        let schema = format!("{}", schema.grammar);
+        assert_eq!(
+            schema,
+            r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="define_alias0"/></start><define name="define_alias0"><element><name ns="">foo</name><group><ref name="define_alias1"/><ref name="define_alias2"/></group></element></define><define name="define_alias1"><element><name ns="http://www.example.com/n1">bar1</name><empty/></element></define><define name="define_alias2"><element><name ns="http://www.example.com/n2">bar2</name><empty/></element></define></grammar>"#
+        );
     }
 }
