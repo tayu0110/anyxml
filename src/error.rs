@@ -231,6 +231,7 @@ pub enum XMLError {
     RngParseStartNotFoundInGrammar,
     RngParseRefLoop,
     RngParseProhibitedPath,
+    RngParseUngroupablePattern,
     RngParseUnknownError,
 }
 
