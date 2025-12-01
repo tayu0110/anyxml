@@ -230,6 +230,7 @@ pub enum XMLError {
     RngParseMultipleDefineWithoutCombine,
     RngParseStartNotFoundInGrammar,
     RngParseRefLoop,
+    RngParseProhibitedPath,
     RngParseUnknownError,
 }
 

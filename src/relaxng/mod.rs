@@ -12,7 +12,7 @@ use crate::{
         parser::XMLReaderBuilder,
     },
     tree::{
-        Document, Element, Namespace, Node, NodeType, TreeBuildHandler,
+        Document, Element, Namespace, Node, TreeBuildHandler,
         convert::NodeKind,
         node::{InternalNodeSpec, NodeSpec},
     },
@@ -471,6 +471,7 @@ impl RelaxNGSchemaParseContext {
         }
         // ISO/IEC 19757-2:2008 7.22 `empty` element
         normalize_empty(&mut grammar)?;
+        verify_prohibited_paths(&grammar, &mut HashSet::new(), &mut handler)?;
         self.last_error?;
         RelaxNGGrammar::try_from(grammar)
     }
@@ -3165,6 +3166,99 @@ fn check_attribute_name_constraint<Handler: ErrorHandler>(
     }
 
     Ok(())
+}
+
+fn verify_prohibited_paths<Handler: ErrorHandler>(
+    element: &Element,
+    memo: &mut HashSet<String>,
+    handler: &mut Handler,
+) -> Result<(), XMLError> {
+    let mut ret = Ok(());
+    let mut children = element.first_child();
+    let mut buf = HashSet::new();
+    while let Some(child) = children {
+        children = child.next_sibling();
+
+        if let Some(elem) = child.as_element() {
+            ret = ret.and(verify_prohibited_paths(&elem, &mut buf, handler));
+        }
+    }
+
+    macro_rules! report_prohibited_path {
+        ($ancestor:literal, $cwd:literal) => {
+            if buf.contains($cwd) {
+                fatal_error!(
+                    element.owner_document(),
+                    handler,
+                    RngParseProhibitedPath,
+                    "'{}//{}' path is not allowed.",
+                    $ancestor,
+                    $cwd
+                );
+                ret = Err(XMLError::RngParseProhibitedPath);
+            }
+        };
+    }
+
+    match element.local_name().as_ref() {
+        "attribute" => {
+            // ISO/IEC 19757-2:2008 10.2.2 `attribute` pattern
+            report_prohibited_path!("attribute", "ref");
+            report_prohibited_path!("attribute", "attribute");
+        }
+        "oneOrMore" => {
+            // ISO/IEC 19757-2:2008 10.2.3 `oneOrMore` pattern
+            report_prohibited_path!("oneOrMore", "group//attribute");
+            report_prohibited_path!("oneOrMore", "interleave//attribute");
+        }
+        "list" => {
+            // ISO/IEC 19757-2:2008 10.2.4 `list` pattern
+            report_prohibited_path!("list", "list");
+            report_prohibited_path!("list", "ref");
+            report_prohibited_path!("list", "attribute");
+            report_prohibited_path!("list", "text");
+            report_prohibited_path!("list", "interleave");
+        }
+        "except"
+            if element
+                .parent_node()
+                .and_then(|par| par.as_element())
+                .is_some_and(|par| par.local_name().as_ref() == "data") =>
+        {
+            // ISO/IEC 19757-2:2008 10.2.5 `except` element in `data` pattern
+            report_prohibited_path!("data/except", "attribute");
+            report_prohibited_path!("data/except", "ref");
+            report_prohibited_path!("data/except", "text");
+            report_prohibited_path!("data/except", "list");
+            report_prohibited_path!("data/except", "group");
+            report_prohibited_path!("data/except", "interleave");
+            report_prohibited_path!("data/except", "oneOrMore");
+            report_prohibited_path!("data/except", "empty");
+        }
+        "start" => {
+            // ISO/IEC 19757-2:2008 10.2.6 `start` element
+            report_prohibited_path!("start", "attribute");
+            report_prohibited_path!("start", "data");
+            report_prohibited_path!("start", "value");
+            report_prohibited_path!("start", "text");
+            report_prohibited_path!("start", "list");
+            report_prohibited_path!("start", "group");
+            report_prohibited_path!("start", "interleave");
+            report_prohibited_path!("start", "oneOrMore");
+            report_prohibited_path!("start", "empty");
+        }
+        "group" if buf.contains("attribute") => {
+            buf.insert("group//attribute".into());
+        }
+        "interleave" if buf.contains("attribute") => {
+            buf.insert("interleave//attribute".into());
+        }
+        _ => {}
+    }
+    memo.insert(element.local_name().as_ref().into());
+    memo.extend(buf);
+
+    ret
 }
 
 fn remove_foreign_element_child(element: &Element) -> Result<(), XMLError> {
