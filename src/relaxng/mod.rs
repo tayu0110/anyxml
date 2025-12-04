@@ -475,6 +475,7 @@ impl RelaxNGSchemaParseContext {
         self.last_error?;
         let grammar = RelaxNGGrammar::try_from(grammar)?;
         grammar.verify_content_type()?;
+        grammar.verify_attribute_uniqueness()?;
         Ok(grammar)
     }
 
@@ -3511,6 +3512,18 @@ impl RelaxNGGrammar {
         }
         Ok(())
     }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
+    fn verify_attribute_uniqueness(&self) -> Result<(), XMLError> {
+        if let Some(start) = self.start.as_ref() {
+            start.verify_attribute_uniqueness(&mut vec![])?;
+        }
+        for define in self.define.values() {
+            define.verify_attribute_uniqueness()?;
+        }
+        Ok(())
+    }
 }
 
 impl TryFrom<Element> for RelaxNGGrammar {
@@ -3593,6 +3606,16 @@ impl RelaxNGDefine {
             Err(XMLError::RngParseUngroupablePattern)
         }
     }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
+    fn verify_attribute_uniqueness(&self) -> Result<(), XMLError> {
+        if let Some(top) = self.top.as_ref() {
+            top.verify_attribute_uniqueness(&mut vec![])
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl TryFrom<Element> for RelaxNGDefine {
@@ -3670,6 +3693,19 @@ impl RelaxNGPattern {
             pattern.verify_content_type()
         } else {
             Some(ContentType::Empty)
+        }
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
+    fn verify_attribute_uniqueness<'a>(
+        &'a self,
+        name_classes: &mut Vec<&'a RelaxNGNameClass>,
+    ) -> Result<(), XMLError> {
+        if let Some(pattern) = self.pattern.as_ref() {
+            pattern.verify_attribute_uniqueness(name_classes)
+        } else {
+            Ok(())
         }
     }
 }
@@ -3770,6 +3806,56 @@ impl RelaxNGNonEmptyPattern {
                 let ct1 = pattern[0].verify_content_type()?;
                 let ct2 = pattern[1].verify_content_type()?;
                 ct1.groupable(ct2).then(|| ct1.max(ct2))
+            }
+        }
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
+    fn verify_attribute_uniqueness<'a>(
+        &'a self,
+        name_classes: &mut Vec<&'a RelaxNGNameClass>,
+    ) -> Result<(), XMLError> {
+        match self {
+            Self::Text | Self::Data { .. } | Self::Value { .. } | Self::Ref { .. } => Ok(()),
+            Self::List { pattern } => {
+                // It is necessary to inspect the attributes of list descendants,
+                // but since they must not be inherited by ancestors, `name_classes`
+                // must not be passed.
+                //
+                // ```
+                // A pattern p1 is defined to occur in a pattern p2 if
+                // - p1 is p2, or
+                // - p2 is a choice, interleave, group or oneOrMore element
+                //   and p1 occurs in one or more children of p2.
+                // ```
+                pattern.verify_attribute_uniqueness(&mut vec![])
+            }
+            Self::Attribute { name_class, .. } => {
+                name_classes.push(name_class);
+                Ok(())
+            }
+            Self::OneOrMore { pattern } => pattern.verify_attribute_uniqueness(name_classes),
+            Self::Choice { left, right } => {
+                left.verify_attribute_uniqueness(name_classes)?;
+                right.verify_attribute_uniqueness(name_classes)?;
+                Ok(())
+            }
+            Self::Group { pattern } | Self::Interleave { pattern } => {
+                let mut buf = vec![];
+                pattern[0].verify_attribute_uniqueness(&mut buf)?;
+                pattern[1].verify_attribute_uniqueness(&mut buf)?;
+
+                for (i, &l) in buf.iter().enumerate() {
+                    for &r in buf.iter().skip(i + 1) {
+                        if l.has_non_empty_intersection(r) {
+                            return Err(XMLError::RngParseConflictAttributeNameClass);
+                        }
+                    }
+                }
+
+                name_classes.extend(buf);
+                Ok(())
             }
         }
     }
@@ -4072,6 +4158,78 @@ enum RelaxNGNameClass {
     Choice {
         name_class: [Box<RelaxNGNameClass>; 2],
     },
+}
+
+impl RelaxNGNameClass {
+    /// Try to match the pair of `local_name` and `namespace_name` to nameClass.
+    ///
+    /// This method does not verify if `local_name` is a valid NCName and not verify
+    /// `namespace_name` is a valid namespace name.
+    ///
+    /// If successfully match, return `true`, otherwise return `false`.
+    fn try_match(&self, local_name: &str, namespace_name: &str) -> bool {
+        match self {
+            RelaxNGNameClass::AnyName { except } => except
+                .as_ref()
+                .map(|name_class| !name_class.name_class.try_match(local_name, namespace_name))
+                .unwrap_or(true),
+            RelaxNGNameClass::NsName { ns, except } => {
+                namespace_name == &**ns
+                    && except
+                        .as_ref()
+                        .map(|name_class| {
+                            !name_class.name_class.try_match(local_name, namespace_name)
+                        })
+                        .unwrap_or(true)
+            }
+            RelaxNGNameClass::Name { ns, value } => {
+                namespace_name == &**ns && local_name == &**value
+            }
+            RelaxNGNameClass::Choice { name_class } => {
+                name_class[0].try_match(local_name, namespace_name)
+                    || name_class[1].try_match(local_name, namespace_name)
+            }
+        }
+    }
+
+    /// Check if two nameClasses have non-empty intersection of acceptable name set.
+    ///
+    /// If have, return `true`, otherwise return `false`.
+    fn has_non_empty_intersection(&self, other: &Self) -> bool {
+        fn _has_non_empty_intersection(lhs: &RelaxNGNameClass, rhs: &RelaxNGNameClass) -> bool {
+            match lhs {
+                RelaxNGNameClass::AnyName { except } => {
+                    // Both `local_name` and `namesace_name` are invalid names,
+                    // but if `rhs` contains anyName, it should match.
+                    if !rhs.try_match("*", "*") {
+                        return false;
+                    }
+                    if let Some(except) = except.as_ref() {
+                        return !_has_non_empty_intersection(&except.name_class, rhs);
+                    }
+                    true
+                }
+                RelaxNGNameClass::NsName { ns, except } => {
+                    // `local_name` is a invalid name, but if `rhs` contains anyName or nsName
+                    // with the namespace name as same as `ns`, it should match.
+                    if !rhs.try_match("*", ns) {
+                        return false;
+                    }
+                    if let Some(except) = except.as_ref() {
+                        return !_has_non_empty_intersection(&except.name_class, rhs);
+                    }
+                    true
+                }
+                RelaxNGNameClass::Name { ns, value } => rhs.try_match(value, ns),
+                RelaxNGNameClass::Choice { name_class } => {
+                    _has_non_empty_intersection(&name_class[0], rhs)
+                        || _has_non_empty_intersection(&name_class[1], rhs)
+                }
+            }
+        }
+
+        _has_non_empty_intersection(self, other) || _has_non_empty_intersection(other, self)
+    }
 }
 
 impl TryFrom<Element> for RelaxNGNameClass {
