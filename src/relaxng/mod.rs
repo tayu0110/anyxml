@@ -477,6 +477,7 @@ impl RelaxNGSchemaParseContext {
         grammar.verify_content_type()?;
         grammar.verify_attribute_uniqueness()?;
         grammar.verify_attribute_repeat()?;
+        grammar.verify_element_name_uniqueness()?;
         Ok(grammar)
     }
 
@@ -3537,6 +3538,18 @@ impl RelaxNGGrammar {
         }
         Ok(())
     }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.5 Restrictions on `interleave`
+    fn verify_element_name_uniqueness(&self) -> Result<(), XMLError> {
+        if let Some(start) = self.start.as_ref() {
+            start.verify_element_name_uniqueness(self, &mut vec![])?;
+        }
+        for define in self.define.values() {
+            define.verify_element_name_uniqueness(self)?;
+        }
+        Ok(())
+    }
 }
 
 impl TryFrom<Element> for RelaxNGGrammar {
@@ -3639,6 +3652,16 @@ impl RelaxNGDefine {
             Ok(())
         }
     }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.5 Restrictions on `interleave`
+    fn verify_element_name_uniqueness(&self, grammar: &RelaxNGGrammar) -> Result<(), XMLError> {
+        if let Some(top) = self.top.as_ref() {
+            top.verify_element_name_uniqueness(grammar, &mut vec![])
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl TryFrom<Element> for RelaxNGDefine {
@@ -3737,6 +3760,20 @@ impl RelaxNGPattern {
     fn verify_attribute_with_infinite_name_class(&self, repeat: bool) -> Result<(), XMLError> {
         if let Some(pattern) = self.pattern.as_ref() {
             pattern.verify_attribute_with_infinite_name_class(repeat)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.5 Restrictions on `interleave`
+    fn verify_element_name_uniqueness<'a>(
+        &'a self,
+        grammar: &'a RelaxNGGrammar,
+        name_classes: &mut Vec<&'a RelaxNGNameClass>,
+    ) -> Result<(), XMLError> {
+        if let Some(pattern) = self.pattern.as_ref() {
+            pattern.verify_element_name_uniqueness(grammar, name_classes)
         } else {
             Ok(())
         }
@@ -3923,6 +3960,68 @@ impl RelaxNGNonEmptyPattern {
             Self::Group { pattern } | Self::Interleave { pattern } => {
                 pattern[0].verify_attribute_with_infinite_name_class(repeat)?;
                 pattern[1].verify_attribute_with_infinite_name_class(repeat)?;
+                Ok(())
+            }
+        }
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.5 Restrictions on `interleave`
+    fn verify_element_name_uniqueness<'a>(
+        &'a self,
+        grammar: &'a RelaxNGGrammar,
+        name_classes: &mut Vec<&'a RelaxNGNameClass>,
+    ) -> Result<(), XMLError> {
+        match self {
+            Self::Text | Self::Data { .. } | Self::Value { .. } | Self::Attribute { .. } => Ok(()),
+            Self::List { pattern } => {
+                // It is necessary to inspect the attributes of list descendants,
+                // but since they must not be inherited by ancestors, `name_classes`
+                // must not be passed.
+                //
+                // ```
+                // A pattern p1 is defined to occur in a pattern p2 if
+                // - p1 is p2, or
+                // - p2 is a choice, interleave, group or oneOrMore element
+                //   and p1 occurs in one or more children of p2.
+                // ```
+                pattern.verify_element_name_uniqueness(grammar, &mut vec![])
+            }
+            Self::Ref { name } => {
+                let define = grammar
+                    .define
+                    .get(name.as_ref())
+                    .ok_or(XMLError::RngParseUnknownError)?;
+                name_classes.push(&define.name_class);
+                Ok(())
+            }
+            Self::OneOrMore { pattern } => {
+                pattern.verify_element_name_uniqueness(grammar, name_classes)
+            }
+            Self::Choice { left, right } => {
+                left.verify_element_name_uniqueness(grammar, name_classes)?;
+                right.verify_element_name_uniqueness(grammar, name_classes)?;
+                Ok(())
+            }
+            Self::Group { pattern } => {
+                pattern[0].verify_element_name_uniqueness(grammar, name_classes)?;
+                pattern[1].verify_element_name_uniqueness(grammar, name_classes)?;
+                Ok(())
+            }
+            Self::Interleave { pattern } => {
+                let mut buf = vec![];
+                pattern[0].verify_element_name_uniqueness(grammar, &mut buf)?;
+                pattern[1].verify_element_name_uniqueness(grammar, &mut buf)?;
+
+                for (i, &l) in buf.iter().enumerate() {
+                    for &r in buf.iter().skip(i + 1) {
+                        if l.has_non_empty_intersection(r) {
+                            return Err(XMLError::RngParseConflictAttributeNameClass);
+                        }
+                    }
+                }
+
+                name_classes.extend(buf);
                 Ok(())
             }
         }
