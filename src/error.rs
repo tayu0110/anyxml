@@ -233,6 +233,7 @@ pub enum XMLError {
     RngParseProhibitedPath,
     RngParseUngroupablePattern,
     RngParseConflictAttributeNameClass,
+    RngParseUnrepeatedAttributeWithInfiniteNameClass,
     RngParseUnknownError,
 }
 

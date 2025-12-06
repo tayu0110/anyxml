@@ -476,6 +476,7 @@ impl RelaxNGSchemaParseContext {
         let grammar = RelaxNGGrammar::try_from(grammar)?;
         grammar.verify_content_type()?;
         grammar.verify_attribute_uniqueness()?;
+        grammar.verify_attribute_repeat()?;
         Ok(grammar)
     }
 
@@ -3524,6 +3525,18 @@ impl RelaxNGGrammar {
         }
         Ok(())
     }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
+    fn verify_attribute_repeat(&self) -> Result<(), XMLError> {
+        if let Some(start) = self.start.as_ref() {
+            start.verify_attribute_repeat(false)?;
+        }
+        for define in self.define.values() {
+            define.verify_attribute_repeat()?;
+        }
+        Ok(())
+    }
 }
 
 impl TryFrom<Element> for RelaxNGGrammar {
@@ -3616,6 +3629,16 @@ impl RelaxNGDefine {
             Ok(())
         }
     }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
+    fn verify_attribute_repeat(&self) -> Result<(), XMLError> {
+        if let Some(top) = self.top.as_ref() {
+            top.verify_attribute_repeat(false)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl TryFrom<Element> for RelaxNGDefine {
@@ -3704,6 +3727,16 @@ impl RelaxNGPattern {
     ) -> Result<(), XMLError> {
         if let Some(pattern) = self.pattern.as_ref() {
             pattern.verify_attribute_uniqueness(name_classes)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
+    fn verify_attribute_repeat(&self, repeat: bool) -> Result<(), XMLError> {
+        if let Some(pattern) = self.pattern.as_ref() {
+            pattern.verify_attribute_repeat(repeat)
         } else {
             Ok(())
         }
@@ -3855,6 +3888,33 @@ impl RelaxNGNonEmptyPattern {
                 }
 
                 name_classes.extend(buf);
+                Ok(())
+            }
+        }
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
+    fn verify_attribute_repeat(&self, repeat: bool) -> Result<(), XMLError> {
+        match self {
+            Self::Text | Self::Data { .. } | Self::Value { .. } | Self::Ref { .. } => Ok(()),
+            Self::List { pattern } => pattern.verify_attribute_repeat(repeat),
+            Self::Attribute { name_class, .. } => {
+                if name_class.has_infinite_name_class() && !repeat {
+                    Err(XMLError::RngParseUnrepeatedAttributeWithInfiniteNameClass)
+                } else {
+                    Ok(())
+                }
+            }
+            Self::OneOrMore { pattern } => pattern.verify_attribute_repeat(true),
+            Self::Choice { left, right } => {
+                left.verify_attribute_repeat(repeat)?;
+                right.verify_attribute_repeat(repeat)?;
+                Ok(())
+            }
+            Self::Group { pattern } | Self::Interleave { pattern } => {
+                pattern[0].verify_attribute_repeat(repeat)?;
+                pattern[1].verify_attribute_repeat(repeat)?;
                 Ok(())
             }
         }
@@ -4229,6 +4289,17 @@ impl RelaxNGNameClass {
         }
 
         _has_non_empty_intersection(self, other) || _has_non_empty_intersection(other, self)
+    }
+
+    /// Check if `self` or its descendant nameClass is `anyName` or `nsName`.
+    fn has_infinite_name_class(&self) -> bool {
+        match self {
+            Self::AnyName { .. } | Self::NsName { .. } => true,
+            Self::Name { .. } => false,
+            Self::Choice { name_class } => {
+                name_class[0].has_infinite_name_class() || name_class[1].has_infinite_name_class()
+            }
+        }
     }
 }
 
