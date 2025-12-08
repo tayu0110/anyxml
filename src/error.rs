@@ -234,6 +234,18 @@ pub enum XMLError {
     RngParseUngroupablePattern,
     RngParseConflictAttributeNameClass,
     RngParseUnrepeatedAttributeWithInfiniteNameClass,
+    RngValidNotAllowed,
+    RngValidEmpty,
+    RngValidText,
+    RngValidData,
+    RngValidValue,
+    RngValidList,
+    RngValidAttribute,
+    RngValidGroup,
+    RngValidInterleave,
+    RngValidRef,
+    RngValidElement,
+    RngValidOneOrMore,
     RngParseUnknownError,
 }
 

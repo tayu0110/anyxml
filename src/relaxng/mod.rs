@@ -12,7 +12,7 @@ use crate::{
         parser::XMLReaderBuilder,
     },
     tree::{
-        Document, Element, Namespace, Node, TreeBuildHandler,
+        Attribute, Document, Element, Namespace, Node, NodeType, TreeBuildHandler,
         convert::NodeKind,
         node::{InternalNodeSpec, NodeSpec},
     },
@@ -222,6 +222,10 @@ impl RelaxNGSchema {
         Ok(Self {
             grammar: context.parse_relaxng(handler)?,
         })
+    }
+
+    pub fn validate(&self, element: &Element) -> Result<(), XMLError> {
+        self.grammar.validate(element)
     }
 }
 
@@ -3543,12 +3547,21 @@ impl RelaxNGGrammar {
     /// ISO/IEC 19757-2:2008 10.5 Restrictions on `interleave`
     fn verify_element_name_uniqueness(&self) -> Result<(), XMLError> {
         if let Some(start) = self.start.as_ref() {
-            start.verify_element_name_uniqueness(self, &mut vec![])?;
+            start.verify_element_name_uniqueness(self, &mut vec![], &mut 0)?;
         }
         for define in self.define.values() {
             define.verify_element_name_uniqueness(self)?;
         }
         Ok(())
+    }
+
+    /// Start to validate `element` using this grammar.
+    ///
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 9.4 Validity
+    fn validate(&self, element: &Element) -> Result<(), XMLError> {
+        let start = self.start.as_ref().ok_or(XMLError::RngValidNotAllowed)?;
+        start.validate_element(element, self)
     }
 }
 
@@ -3657,9 +3670,48 @@ impl RelaxNGDefine {
     /// ISO/IEC 19757-2:2008 10.5 Restrictions on `interleave`
     fn verify_element_name_uniqueness(&self, grammar: &RelaxNGGrammar) -> Result<(), XMLError> {
         if let Some(top) = self.top.as_ref() {
-            top.verify_element_name_uniqueness(grammar, &mut vec![])
+            top.verify_element_name_uniqueness(grammar, &mut vec![], &mut 0)
         } else {
             Ok(())
+        }
+    }
+
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 9.3.7 `element` and `attribute` pattern
+    /// - ISO/IEC 19757-2:2008 9.4 Validity
+    fn validate_element(
+        &self,
+        element: &Element,
+        grammar: &RelaxNGGrammar,
+    ) -> Result<(), XMLError> {
+        let namespace_name = element.namespace_name();
+        let local_name = element.local_name();
+        if !self
+            .name_class
+            .try_match(&local_name, namespace_name.as_deref().unwrap_or_default())
+        {
+            return Err(XMLError::RngValidElement);
+        }
+
+        let attributes = element.attributes().collect::<Vec<_>>();
+        let sequence = collect_child_sequence(element);
+
+        let top = self.top.as_ref().ok_or(XMLError::RngValidNotAllowed)?;
+        let mut attr_matches = vec![false; attributes.len()];
+        let mut seq_matches = vec![false; sequence.len()];
+        top.validate(
+            &attributes,
+            &mut attr_matches,
+            &sequence,
+            &mut seq_matches,
+            grammar,
+            true,
+        )?;
+
+        if attr_matches.into_iter().all(|b| b) && seq_matches.into_iter().all(|b| b) {
+            Ok(())
+        } else {
+            Err(XMLError::RngValidElement)
         }
     }
 }
@@ -3771,11 +3823,77 @@ impl RelaxNGPattern {
         &'a self,
         grammar: &'a RelaxNGGrammar,
         name_classes: &mut Vec<&'a RelaxNGNameClass>,
+        text_count: &mut i32,
     ) -> Result<(), XMLError> {
         if let Some(pattern) = self.pattern.as_ref() {
-            pattern.verify_element_name_uniqueness(grammar, name_classes)
+            pattern.verify_element_name_uniqueness(grammar, name_classes, text_count)
         } else {
             Ok(())
+        }
+    }
+
+    /// If `weak` is `true`, this method tries weak-matching.
+    ///
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 9.3.7 `element` and `attribute` pattern
+    /// - ISO/IEC 19757-2:2008 9.4 Validity
+    fn validate(
+        &self,
+        attributes: &[Attribute],
+        attr_matches: &mut [bool],
+        sequence: &[Node<dyn NodeSpec>],
+        seq_matches: &mut [bool],
+        grammar: &RelaxNGGrammar,
+        weak: bool,
+    ) -> Result<(), XMLError> {
+        if let Some(pattern) = self.pattern.as_ref() {
+            pattern.validate(
+                attributes,
+                attr_matches,
+                sequence,
+                seq_matches,
+                grammar,
+                weak,
+            )
+        } else {
+            // ISO/IEC 19757-2:2008 9.3.3 `empty` pattern
+            if attributes.is_empty() {
+                if sequence.is_empty()
+                    || (weak
+                        && sequence.iter().all(|node| {
+                            let ver = XMLVersion::default();
+                            node.as_text()
+                                .map(|text| text.data().chars().all(|c| ver.is_whitespace(c)))
+                                .or_else(|| {
+                                    node.as_cdata_section().map(|text| {
+                                        text.data().chars().all(|c| ver.is_whitespace(c))
+                                    })
+                                })
+                                .unwrap_or_default()
+                        }))
+                {
+                    Ok(())
+                } else {
+                    Err(XMLError::RngValidEmpty)
+                }
+            } else {
+                Err(XMLError::RngValidEmpty)
+            }
+        }
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 9.4 Validity
+    fn validate_element(
+        &self,
+        element: &Element,
+        grammar: &RelaxNGGrammar,
+    ) -> Result<(), XMLError> {
+        if let Some(pattern) = self.pattern.as_ref() {
+            pattern.validate_element(element, grammar)
+        } else {
+            // ISO/IEC 19757-2:2008 9.3.3 `empty` pattern
+            Err(XMLError::RngValidEmpty)
         }
     }
 }
@@ -3971,9 +4089,14 @@ impl RelaxNGNonEmptyPattern {
         &'a self,
         grammar: &'a RelaxNGGrammar,
         name_classes: &mut Vec<&'a RelaxNGNameClass>,
+        text_count: &mut i32,
     ) -> Result<(), XMLError> {
         match self {
-            Self::Text | Self::Data { .. } | Self::Value { .. } | Self::Attribute { .. } => Ok(()),
+            Self::Text => {
+                *text_count += 1;
+                Ok(())
+            }
+            Self::Data { .. } | Self::Value { .. } | Self::Attribute { .. } => Ok(()),
             Self::List { pattern } => {
                 // It is necessary to inspect the attributes of list descendants,
                 // but since they must not be inherited by ancestors, `name_classes`
@@ -3985,7 +4108,7 @@ impl RelaxNGNonEmptyPattern {
                 // - p2 is a choice, interleave, group or oneOrMore element
                 //   and p1 occurs in one or more children of p2.
                 // ```
-                pattern.verify_element_name_uniqueness(grammar, &mut vec![])
+                pattern.verify_element_name_uniqueness(grammar, &mut vec![], &mut 0)
             }
             Self::Ref { name } => {
                 let define = grammar
@@ -3996,23 +4119,27 @@ impl RelaxNGNonEmptyPattern {
                 Ok(())
             }
             Self::OneOrMore { pattern } => {
-                pattern.verify_element_name_uniqueness(grammar, name_classes)
+                pattern.verify_element_name_uniqueness(grammar, name_classes, text_count)
             }
             Self::Choice { left, right } => {
-                left.verify_element_name_uniqueness(grammar, name_classes)?;
-                right.verify_element_name_uniqueness(grammar, name_classes)?;
+                left.verify_element_name_uniqueness(grammar, name_classes, text_count)?;
+                right.verify_element_name_uniqueness(grammar, name_classes, text_count)?;
                 Ok(())
             }
             Self::Group { pattern } => {
-                pattern[0].verify_element_name_uniqueness(grammar, name_classes)?;
-                pattern[1].verify_element_name_uniqueness(grammar, name_classes)?;
+                pattern[0].verify_element_name_uniqueness(grammar, name_classes, text_count)?;
+                pattern[1].verify_element_name_uniqueness(grammar, name_classes, text_count)?;
                 Ok(())
             }
             Self::Interleave { pattern } => {
                 let mut buf = vec![];
-                pattern[0].verify_element_name_uniqueness(grammar, &mut buf)?;
-                pattern[1].verify_element_name_uniqueness(grammar, &mut buf)?;
+                let mut count = 0;
+                pattern[0].verify_element_name_uniqueness(grammar, &mut buf, &mut count)?;
+                pattern[1].verify_element_name_uniqueness(grammar, &mut buf, &mut count)?;
 
+                if count > 1 {
+                    return Err(XMLError::RngParseConflictAttributeNameClass);
+                }
                 for (i, &l) in buf.iter().enumerate() {
                     for &r in buf.iter().skip(i + 1) {
                         if l.has_non_empty_intersection(r) {
@@ -4022,8 +4149,346 @@ impl RelaxNGNonEmptyPattern {
                 }
 
                 name_classes.extend(buf);
+                *text_count += count;
                 Ok(())
             }
+        }
+    }
+
+    /// If `weak` is `true`, this method tries weak-matching.
+    ///
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 9.3.7 `element` and `attribute` pattern
+    /// - ISO/IEC 19757-2:2008 9.4 Validity
+    fn validate(
+        &self,
+        attributes: &[Attribute],
+        attr_matches: &mut [bool],
+        sequence: &[Node<dyn NodeSpec>],
+        seq_matches: &mut [bool],
+        grammar: &RelaxNGGrammar,
+        weak: bool,
+    ) -> Result<(), XMLError> {
+        match self {
+            Self::Text => {
+                if attributes.is_empty()
+                    && sequence.iter().all(|node| {
+                        matches!(node.node_type(), NodeType::CDATASection | NodeType::Text)
+                    })
+                {
+                    Ok(())
+                } else {
+                    Err(XMLError::RngValidText)
+                }
+            }
+            Self::Data {
+                type_name,
+                datatype_library,
+                param,
+                except_pattern,
+            } => todo!(),
+            Self::Value {
+                type_name,
+                datatype_library,
+                ns,
+                value,
+            } => todo!(),
+            Self::List { pattern } => {
+                if !attributes.is_empty() {
+                    return Err(XMLError::RngValidList);
+                }
+
+                if sequence.is_empty() {
+                    return pattern.validate(
+                        attributes,
+                        attr_matches,
+                        sequence,
+                        seq_matches,
+                        grammar,
+                        weak,
+                    );
+                }
+
+                let document = sequence[0].owner_document();
+                let mut strings = String::new();
+                for node in sequence {
+                    match node.downcast() {
+                        NodeKind::Text(text) => strings.push_str(&text.data()),
+                        NodeKind::CDATASection(cdata) => strings.push_str(&cdata.data()),
+                        _ => return Err(XMLError::RngValidList),
+                    }
+                }
+
+                let mut sequence = vec![];
+                for token in strings
+                    .split(|c| XMLVersion::default().is_whitespace(c))
+                    .filter(|s| !s.is_empty())
+                {
+                    sequence.push(document.create_text(token).into());
+                }
+                pattern.validate(&[], attr_matches, &sequence, seq_matches, grammar, weak)
+            }
+            Self::Attribute {
+                name_class,
+                pattern,
+            } => {
+                for (i, attr) in attributes.iter().enumerate() {
+                    let namespace_name = attr.namespace_name();
+                    let local_name = attr.local_name();
+                    let value = collect_child_sequence(attr);
+                    if name_class
+                        .try_match(&local_name, namespace_name.as_deref().unwrap_or_default())
+                        && pattern
+                            .validate(
+                                &[],
+                                &mut [],
+                                &value,
+                                &mut vec![false; value.len()],
+                                grammar,
+                                true,
+                            )
+                            .is_ok()
+                    {
+                        attr_matches[i] = true;
+                        return Ok(());
+                    }
+                }
+                Err(XMLError::RngValidAttribute)
+            }
+            Self::Ref { .. } => {
+                if !attributes.is_empty() || sequence.len() != 1 {
+                    return Err(XMLError::RngValidRef);
+                }
+                let element = sequence[0].as_element().ok_or(XMLError::RngValidRef)?;
+                self.validate_element(&element, grammar)
+            }
+            Self::OneOrMore { pattern } => {
+                pattern.handle_one_or_more(attributes, sequence, grammar, weak)?;
+                attr_matches.iter_mut().for_each(|b| *b = true);
+                seq_matches.iter_mut().for_each(|b| *b = true);
+                Ok(())
+            }
+            Self::Choice { left, right } => {
+                let mut am = attr_matches.to_owned();
+                let mut sm = seq_matches.to_owned();
+                let left = left.validate(attributes, &mut am, sequence, &mut sm, grammar, weak);
+                if left.is_ok() {
+                    attr_matches
+                        .iter_mut()
+                        .zip(am)
+                        .filter(|v| v.1)
+                        .for_each(|v| *v.0 = true);
+                    seq_matches
+                        .iter_mut()
+                        .zip(sm)
+                        .filter(|v| v.1)
+                        .for_each(|v| *v.0 = true);
+                    return Ok(());
+                }
+                right.validate(
+                    attributes,
+                    attr_matches,
+                    sequence,
+                    seq_matches,
+                    grammar,
+                    weak,
+                )
+            }
+            Self::Group { pattern } => {
+                pattern[0].handle_group(&pattern[1], attributes, sequence, grammar, weak)?;
+                attr_matches.iter_mut().for_each(|b| *b = true);
+                seq_matches.iter_mut().for_each(|b| *b = true);
+                Ok(())
+            }
+            Self::Interleave { pattern } => {
+                let mut left = vec![];
+                let mut right = vec![];
+                for node in sequence {
+                    match node.downcast() {
+                        NodeKind::Element(element) => {
+                            if pattern[0].contains_element_name(
+                                element.namespace_name().as_deref().unwrap(),
+                                &element.local_name(),
+                                grammar,
+                            ) {
+                                left.push(node.clone());
+                            } else {
+                                right.push(node.clone());
+                            }
+                        }
+                        _ => {
+                            if pattern[0].contains_element_name("", "#text", grammar) {
+                                left.push(node.clone());
+                            } else {
+                                right.push(node.clone());
+                            }
+                        }
+                    }
+                }
+
+                let mut lm = vec![false; left.len()];
+                pattern[0].validate(attributes, attr_matches, &left, &mut lm, grammar, weak)?;
+                let mut rm = vec![false; right.len()];
+                pattern[1].validate(attributes, attr_matches, &right, &mut rm, grammar, weak)?;
+
+                if lm.into_iter().any(|m| !m) || rm.into_iter().any(|m| !m) {
+                    return Err(XMLError::RngValidInterleave);
+                }
+
+                seq_matches.iter_mut().for_each(|m| *m = true);
+                Ok(())
+            }
+        }
+    }
+
+    fn handle_one_or_more(
+        &self,
+        attributes: &[Attribute],
+        sequence: &[Node<dyn NodeSpec>],
+        grammar: &RelaxNGGrammar,
+        weak: bool,
+    ) -> Result<(), XMLError> {
+        for mid in (1.min(sequence.len())..=sequence.len()).rev() {
+            let (front, back) = sequence.split_at(mid);
+            let mut attr_matches = vec![false; attributes.len()];
+            let mut seq_matches = vec![false; front.len()];
+            if self
+                .validate(
+                    attributes,
+                    &mut attr_matches,
+                    front,
+                    &mut seq_matches,
+                    grammar,
+                    weak,
+                )
+                .is_ok()
+            {
+                if seq_matches.into_iter().any(|m| !m) {
+                    continue;
+                }
+                if mid == sequence.len() && attr_matches.iter().all(|&a| a) {
+                    return Ok(());
+                }
+                let attributes = attributes
+                    .iter()
+                    .zip(attr_matches)
+                    .filter_map(|v| (!v.1).then_some(v.0.clone()))
+                    .collect::<Vec<_>>();
+                if self
+                    .handle_one_or_more(&attributes, back, grammar, weak)
+                    .is_ok()
+                {
+                    return Ok(());
+                }
+            }
+        }
+
+        Err(XMLError::RngValidOneOrMore)
+    }
+
+    fn handle_group(
+        &self,
+        other: &Self,
+        attributes: &[Attribute],
+        sequence: &[Node<dyn NodeSpec>],
+        grammar: &RelaxNGGrammar,
+        weak: bool,
+    ) -> Result<(), XMLError> {
+        for mid in (1.min(sequence.len())..=sequence.len()).rev() {
+            let (front, back) = sequence.split_at(mid);
+            let mut attr_matches = vec![false; attributes.len()];
+            let mut seq_matches = vec![false; sequence.len()];
+            if self
+                .validate(
+                    attributes,
+                    &mut attr_matches,
+                    front,
+                    &mut seq_matches[..front.len()],
+                    grammar,
+                    weak,
+                )
+                .is_ok()
+            {
+                if seq_matches.iter().take(front.len()).any(|&m| !m) {
+                    continue;
+                }
+                if other
+                    .validate(
+                        attributes,
+                        &mut attr_matches,
+                        back,
+                        &mut seq_matches[front.len()..],
+                        grammar,
+                        weak,
+                    )
+                    .is_ok()
+                {
+                    return Ok(());
+                }
+            }
+        }
+
+        Err(XMLError::RngValidOneOrMore)
+    }
+
+    fn contains_element_name(
+        &self,
+        namespace_name: &str,
+        local_name: &str,
+        grammar: &RelaxNGGrammar,
+    ) -> bool {
+        match self {
+            Self::Text => namespace_name.is_empty() && local_name == "#text",
+            Self::Data { .. } | Self::Value { .. } | Self::Attribute { .. } | Self::List { .. } => {
+                false
+            }
+            Self::Ref { name } => {
+                local_name != "#text"
+                    && grammar.define.get(name.as_ref()).is_some_and(|define| {
+                        define.name_class.try_match(local_name, namespace_name)
+                    })
+            }
+            Self::OneOrMore { pattern } => {
+                pattern.contains_element_name(namespace_name, local_name, grammar)
+            }
+            Self::Choice { left, right } => {
+                left.pattern.as_ref().is_some_and(|left| {
+                    left.contains_element_name(namespace_name, local_name, grammar)
+                }) || right.contains_element_name(namespace_name, local_name, grammar)
+            }
+            Self::Group { pattern } | Self::Interleave { pattern } => {
+                pattern[0].contains_element_name(namespace_name, local_name, grammar)
+                    || pattern[1].contains_element_name(namespace_name, local_name, grammar)
+            }
+        }
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 9.4 Validity
+    fn validate_element(
+        &self,
+        element: &Element,
+        grammar: &RelaxNGGrammar,
+    ) -> Result<(), XMLError> {
+        match self {
+            Self::Text => Err(XMLError::RngValidText),
+            Self::Data { .. } => Err(XMLError::RngValidData),
+            Self::Value { .. } => Err(XMLError::RngValidValue),
+            Self::List { .. } => Err(XMLError::RngValidList),
+            Self::Attribute { .. } => Err(XMLError::RngValidAttribute),
+            Self::Ref { name } => {
+                let define = grammar
+                    .define
+                    .get(name.as_ref())
+                    .ok_or(XMLError::RngValidRef)?;
+                define.validate_element(element, grammar)
+            }
+            Self::OneOrMore { pattern } => pattern.validate_element(element, grammar),
+            Self::Choice { left, right } => left
+                .validate_element(element, grammar)
+                .or_else(|_| right.validate_element(element, grammar)),
+            Self::Group { .. } => Err(XMLError::RngValidGroup),
+            Self::Interleave { .. } => Err(XMLError::RngValidInterleave),
         }
     }
 }
@@ -4520,6 +4985,42 @@ impl std::fmt::Display for RelaxNGExceptNameClass {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<except>{}</except>", self.name_class)
     }
+}
+
+fn collect_child_sequence(node: &Node<impl NodeSpec>) -> Vec<Node<dyn NodeSpec>> {
+    let mut sequence = vec![];
+    let mut children = node.first_child();
+    let mut depth = 0;
+    while let Some(child) = children {
+        if matches!(
+            child.node_type(),
+            NodeType::Element | NodeType::Text | NodeType::CDATASection
+        ) {
+            sequence.push(child.clone());
+        }
+        if matches!(child.node_type(), NodeType::EntityReference)
+            && let Some(first) = child.first_child()
+        {
+            depth += 1;
+            children = Some(first);
+        } else {
+            children = child.next_sibling();
+            if children.is_none() && depth > 0 {
+                let mut now = child;
+                while depth > 0
+                    && let Some(parent) = now.parent_node()
+                {
+                    depth -= 1;
+                    if let Some(next) = parent.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    now = parent.into();
+                }
+            }
+        }
+    }
+    sequence
 }
 
 #[cfg(test)]
