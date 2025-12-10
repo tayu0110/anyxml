@@ -6,7 +6,7 @@ use std::{
 use crate::{
     XML_XML_NAMESPACE,
     tree::{
-        NodeType, XMLTreeError, compare_document_order,
+        Element, NodeType, XMLTreeError, compare_document_order,
         convert::NodeKind,
         document::{Document, DocumentSpec},
         document_fragment::DocumentFragmentSpec,
@@ -125,6 +125,18 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
                 owner_document: self.owner_document.clone(),
             })
     }
+    /// Get the previous sibling whose node type is [`Element`](NodeType::Element).
+    pub fn previous_element_sibling(&self) -> Option<Element> {
+        let mut previous = self.previous_sibling();
+        while let Some(now) = previous {
+            previous = self.previous_sibling();
+
+            if let Some(element) = now.as_element() {
+                return Some(element);
+            }
+        }
+        None
+    }
     /// Get the next sibling node of `self` if exsits.
     ///
     /// # Note
@@ -136,6 +148,18 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
             owner_document: self.owner_document.clone(),
         })
     }
+    /// Get the next sibling whose node type is [`Element`](NodeType::Element).
+    pub fn next_element_sibling(&self) -> Option<Element> {
+        let mut next = self.next_sibling();
+        while let Some(now) = next {
+            next = self.next_sibling();
+
+            if let Some(element) = now.as_element() {
+                return Some(element);
+            }
+        }
+        None
+    }
     /// Get the first child node of `self` if exsits.
     pub fn first_child(&self) -> Option<Node<dyn NodeSpec>> {
         self.core.borrow().spec.first_child().map(|core| Node {
@@ -143,12 +167,36 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
             owner_document: self.owner_document.clone(),
         })
     }
+    /// Get the first child whose node type is [`Element`](NodeType::Element).
+    pub fn first_element_child(&self) -> Option<Element> {
+        let mut children = self.first_child();
+        while let Some(child) = children {
+            children = child.next_sibling();
+
+            if let Some(element) = child.as_element() {
+                return Some(element);
+            }
+        }
+        None
+    }
     /// Get the last child node of `self` if exsits.
     pub fn last_child(&self) -> Option<Node<dyn NodeSpec>> {
         self.core.borrow().spec.last_child().map(|core| Node {
             core,
             owner_document: self.owner_document.clone(),
         })
+    }
+    /// Get the first child whose node type is [`Element`](NodeType::Element).
+    pub fn last_element_child(&self) -> Option<Element> {
+        let mut children = self.last_child();
+        while let Some(child) = children {
+            children = child.previous_sibling();
+
+            if let Some(element) = child.as_element() {
+                return Some(element);
+            }
+        }
+        None
     }
 
     /// Get the [`Document`] node that represents the owner document of `self`.
