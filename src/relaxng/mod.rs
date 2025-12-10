@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
     io::Read,
+    sync::Arc,
 };
 
 use crate::{
@@ -229,7 +230,7 @@ impl RelaxNGSchema {
     }
 }
 
-pub trait RelaxNGDatatypeLibrary {
+pub trait RelaxNGDatatypeLibrary: Send + Sync {
     /// If a type named `type_name` exists in the library, return `true`,
     /// otherwise return `false`.
     fn contains(&self, type_name: &str) -> bool;
@@ -310,8 +311,9 @@ impl RelaxNGDatatypeLibrary for RelaxNGBuiltinDatatypeLibrary {
     }
 }
 
+#[derive(Clone)]
 pub struct RelaxNGDatatypeLibraries {
-    map: HashMap<URIString, Box<dyn RelaxNGDatatypeLibrary>>,
+    map: HashMap<URIString, Arc<dyn RelaxNGDatatypeLibrary>>,
 }
 
 impl RelaxNGDatatypeLibraries {
@@ -322,8 +324,8 @@ impl RelaxNGDatatypeLibraries {
     fn insert(
         &mut self,
         namespace_name: URIString,
-        library: Box<dyn RelaxNGDatatypeLibrary>,
-    ) -> Option<Box<dyn RelaxNGDatatypeLibrary>> {
+        library: Arc<dyn RelaxNGDatatypeLibrary>,
+    ) -> Option<Arc<dyn RelaxNGDatatypeLibrary>> {
         self.map.insert(namespace_name, library)
     }
 }
@@ -335,7 +337,7 @@ impl Default for RelaxNGDatatypeLibraries {
         };
         libraries.insert(
             URIString::parse("").unwrap(),
-            Box::new(RelaxNGBuiltinDatatypeLibrary),
+            Arc::new(RelaxNGBuiltinDatatypeLibrary),
         );
         libraries
     }
@@ -477,7 +479,8 @@ impl RelaxNGSchemaParseContext {
         normalize_empty(&mut grammar)?;
         verify_prohibited_paths(&grammar, &mut HashSet::new(), &mut handler)?;
         self.last_error?;
-        let grammar = RelaxNGGrammar::try_from(grammar)?;
+        let mut grammar = RelaxNGGrammar::try_from(grammar)?;
+        grammar.libraries = self.datatype_libraries.clone();
         grammar.verify_content_type()?;
         grammar.verify_attribute_uniqueness()?;
         grammar.verify_attribute_repeat()?;
@@ -3507,6 +3510,7 @@ struct RelaxNGGrammar {
     /// If the child of 'start' is 'notAllowed', this field is `None`, otherwise `Some`.
     start: Option<RelaxNGPattern>,
     define: BTreeMap<String, RelaxNGDefine>,
+    libraries: RelaxNGDatatypeLibraries,
 }
 
 impl RelaxNGGrammar {
@@ -3600,7 +3604,11 @@ impl TryFrom<Element> for RelaxNGGrammar {
             }
         }
 
-        Ok(Self { start, define })
+        Ok(Self {
+            start,
+            define,
+            libraries: RelaxNGDatatypeLibraries::default(),
+        })
     }
 }
 
@@ -4171,10 +4179,9 @@ impl RelaxNGNonEmptyPattern {
     ) -> Result<(), XMLError> {
         match self {
             Self::Text => {
-                if attributes.is_empty()
-                    && sequence.iter().all(|node| {
-                        matches!(node.node_type(), NodeType::CDATASection | NodeType::Text)
-                    })
+                if sequence
+                    .iter()
+                    .all(|node| matches!(node.node_type(), NodeType::CDATASection | NodeType::Text))
                 {
                     Ok(())
                 } else {
@@ -4186,13 +4193,71 @@ impl RelaxNGNonEmptyPattern {
                 datatype_library,
                 param,
                 except_pattern,
-            } => todo!(),
+            } => {
+                if seq_matches.len() != 1 {
+                    return Err(XMLError::RngValidData);
+                }
+                let value = &sequence[0].text_content();
+
+                let params = param
+                    .iter()
+                    .map(|param| (param.name.to_string(), param.value.to_string()))
+                    .collect::<HashMap<_, _>>();
+
+                if let Some(library) = grammar.libraries.get(datatype_library)
+                    && library
+                        .validate(type_name, &params, value)
+                        .unwrap_or_default()
+                {
+                    if let Some(except) = except_pattern.as_ref() {
+                        if except
+                            .pattern
+                            .validate(
+                                attributes,
+                                attr_matches,
+                                sequence,
+                                seq_matches,
+                                grammar,
+                                weak,
+                            )
+                            .is_err()
+                        {
+                            seq_matches[0] = true;
+                            Ok(())
+                        } else {
+                            seq_matches[0] = false;
+                            Err(XMLError::RngValidData)
+                        }
+                    } else {
+                        seq_matches[0] = true;
+                        Ok(())
+                    }
+                } else {
+                    seq_matches[0] = false;
+                    Err(XMLError::RngValidData)
+                }
+            }
             Self::Value {
                 type_name,
                 datatype_library,
-                ns,
                 value,
-            } => todo!(),
+                ..
+            } => {
+                if seq_matches.len() != 1 {
+                    return Err(XMLError::RngValidValue);
+                }
+                let lhs = &sequence[0].text_content();
+
+                if let Some(library) = grammar.libraries.get(datatype_library)
+                    && library.eq(type_name, lhs, value).unwrap_or_default()
+                {
+                    seq_matches[0] = true;
+                    Ok(())
+                } else {
+                    seq_matches[0] = false;
+                    Err(XMLError::RngValidValue)
+                }
+            }
             Self::List { pattern } => {
                 if !attributes.is_empty() {
                     return Err(XMLError::RngValidList);
