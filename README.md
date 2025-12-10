@@ -237,6 +237,7 @@ This crate passes the following tests:
 - [xml:id Conformance Test Suites](https://www.w3.org/XML/Test/xml-id/)
 - [OASIS XSLT Test Suites](https://www.oasis-open.org/committees/document.php?document_id=12171&wg_abbrev=xslt) (for XPath)
     - This link is already broken and requires the Wayback Machine to access it.
+- [RELAX NG Test Suite by James Clark](https://gnosis.cx/download/gnosis/xml/relax/spectest.xml)
 - some self-made tests
 
 # Command Line Utility

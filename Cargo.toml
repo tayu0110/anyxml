@@ -42,6 +42,9 @@ path = "tests/xpath-test.rs"
 name = "catalog-test"
 path = "tests/catalog-test.rs"
 
+[[test]]
+name = "relaxng-test"
+path = "tests/relaxng-test.rs"
 
 [lints.clippy]
 type_complexity = "allow"
