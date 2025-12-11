@@ -68,11 +68,11 @@ macro_rules! generic_error {
 }
 
 macro_rules! fatal_error {
-    ($doc:expr, $handler:expr, $code:ident, $message:literal, $( $args:expr ),*) => {
+    ($context:expr, $handler:expr, $code:ident, $message:literal, $( $args:expr ),*) => {
         #[allow(unused)]
         use $crate::error::XMLError::*;
         generic_error!(
-            $doc,
+            $context.document,
             fatal_error,
             $handler,
             $code,
@@ -80,28 +80,30 @@ macro_rules! fatal_error {
             $message,
             $( $args ),*
         );
+        $context.last_error = Err($code);
     };
-    ($doc:expr, $handler:expr, $code:ident, $message:literal) => {
-        fatal_error!($doc, $handler, $code, $message, );
+    ($context:expr, $handler:expr, $code:ident, $message:literal) => {
+        fatal_error!($context, $handler, $code, $message, );
     };
-    ($doc:expr, $handler:expr, $code:ident, $message:expr) => {
+    ($context:expr, $handler:expr, $code:ident, $message:expr) => {
         generic_error!(
-            $doc,
+            $context.document,
             fatal_error,
             $handler,
             $code,
             $crate::error::XMLErrorLevel::FatalError,
             $message
         );
+        $context.last_error = Err($code);
     };
 }
 
 macro_rules! error {
-    ($doc:expr, $handler:expr, $code:ident, $message:literal, $( $args:expr ),*) => {
+    ($context:expr, $handler:expr, $code:ident, $message:literal, $( $args:expr ),*) => {
         #[allow(unused)]
         use $crate::error::XMLError::*;
         generic_error!(
-            $doc,
+            $context.document,
             error,
             $handler,
             $code,
@@ -109,19 +111,21 @@ macro_rules! error {
             $message,
             $( $args ),*
         );
+        $context.last_error = Err($code);
     };
-    ($doc:expr, $handler:expr, $code:ident, $message:literal) => {
-        error!($doc, $handler, $code, $message, );
+    ($context:expr, $handler:expr, $code:ident, $message:literal) => {
+        error!($context, $handler, $code, $message, );
     };
-    ($doc:expr, $handler:expr, $code:ident, $message:expr) => {
+    ($context:expr, $handler:expr, $code:ident, $message:expr) => {
         generic_error!(
-            $doc,
+            $context.document,
             error,
             $handler,
             $code,
             $crate::error::XMLErrorLevel::Error,
             $message
         );
+        $context.last_error = Err($code);
     };
 }
 
@@ -477,7 +481,7 @@ impl RelaxNGSchemaParseContext {
         }
         // ISO/IEC 19757-2:2008 7.22 `empty` element
         normalize_empty(&mut grammar)?;
-        verify_prohibited_paths(&grammar, &mut HashSet::new(), &mut handler)?;
+        self.verify_prohibited_paths(&grammar, &mut HashSet::new(), &mut handler)?;
         self.last_error?;
         let mut grammar = RelaxNGGrammar::try_from(grammar)?;
         grammar.libraries = self.datatype_libraries.clone();
@@ -513,7 +517,7 @@ impl RelaxNGSchemaParseContext {
                 // The child string of `value` must not be removed, even if it contains only whitespaces.
                 // (ISO/IEC 19757-2:2008 7.3 Whitespace)
 
-                check_attribute_constraint(element, handler, [], [("type", validate_ncname)])?;
+                self.check_attribute_constraint(element, handler, [], [("type", validate_ncname)])?;
 
                 // ISO/IEC 19757-2:2008 7.5 `type` attribute of `value` element
                 if !element.has_attribute("type", None) {
@@ -538,7 +542,7 @@ impl RelaxNGSchemaParseContext {
                 if let Some(library) = self.datatype_libraries.get(&datatype_library) {
                     if !library.contains(&type_name) {
                         fatal_error!(
-                            element.owner_document(),
+                            self,
                             handler,
                             RngParseUnresolvableDatatypeLibrary,
                             "The type '{}' of the datatype library '{}' is unresolvabale.",
@@ -551,7 +555,7 @@ impl RelaxNGSchemaParseContext {
                     }
                 } else {
                     fatal_error!(
-                        element.owner_document(),
+                        self,
                         handler,
                         RngParseUnresolvableDatatypeLibrary,
                         "The datatype library '{}' is unresolvabale.",
@@ -568,7 +572,7 @@ impl RelaxNGSchemaParseContext {
                 remove_whitespace_child(element)?;
                 match local_name {
                     "element" => {
-                        check_attribute_constraint(
+                        self.check_attribute_constraint(
                             element,
                             handler,
                             [],
@@ -608,7 +612,7 @@ impl RelaxNGSchemaParseContext {
                             )?;
                         } else {
                             fatal_error!(
-                                element.owner_document(),
+                                self,
                                 handler,
                                 RngParseUnacceptablePattern,
                                 "'element' without an attribute 'name' must have a nameClass as child, but not found."
@@ -617,7 +621,7 @@ impl RelaxNGSchemaParseContext {
 
                         if children.is_none() {
                             fatal_error!(
-                                element.owner_document(),
+                                self,
                                 handler,
                                 RngParseUnacceptablePattern,
                                 "'element' must have a pattern as child, but not found."
@@ -635,7 +639,7 @@ impl RelaxNGSchemaParseContext {
                                 )?;
                             } else {
                                 fatal_error!(
-                                    element.owner_document(),
+                                    self,
                                     handler,
                                     RngParseUnacceptablePattern,
                                     "A {:?} must not be present at this position as a child of 'element'.",
@@ -649,7 +653,7 @@ impl RelaxNGSchemaParseContext {
                         group_children(element)?;
                     }
                     "attribute" => {
-                        check_attribute_constraint(
+                        self.check_attribute_constraint(
                             element,
                             handler,
                             [],
@@ -694,7 +698,7 @@ impl RelaxNGSchemaParseContext {
                             )?;
                         } else {
                             fatal_error!(
-                                element.owner_document(),
+                                self,
                                 handler,
                                 RngParseUnacceptablePattern,
                                 "'attribute' without an attribute 'name' must have a nameClass as child, but not found."
@@ -712,7 +716,7 @@ impl RelaxNGSchemaParseContext {
                                 )?;
                             } else {
                                 fatal_error!(
-                                    element.owner_document(),
+                                    self,
                                     handler,
                                     RngParseUnacceptablePattern,
                                     "A {:?} must not be present at this position as a child of 'attribute'.",
@@ -725,16 +729,16 @@ impl RelaxNGSchemaParseContext {
                         // ISO/IEC 19757-2:2008 7.13 Number of child elements
                         group_children(element)?;
                         // ISO/IEC 19757-2:2008 7.17 Constraints
-                        check_attribute_name_constraint(element, handler)?;
+                        self.check_attribute_name_constraint(element, handler)?;
                     }
                     "group" | "interleave" | "choice" | "optional" | "zeroOrMore" | "oneOrMore"
                     | "list" | "mixed" => {
-                        check_attribute_constraint(element, handler, [], [])?;
+                        self.check_attribute_constraint(element, handler, [], [])?;
 
                         let mut children = element.first_child();
                         if children.is_none() {
                             fatal_error!(
-                                element.owner_document(),
+                                self,
                                 handler,
                                 RngParseUnacceptablePattern,
                                 "'{}' must have a pattern as child, but not found.",
@@ -753,7 +757,7 @@ impl RelaxNGSchemaParseContext {
                                 )?;
                             } else {
                                 fatal_error!(
-                                    element.owner_document(),
+                                    self,
                                     handler,
                                     RngParseUnacceptablePattern,
                                     "A {:?} must not be present at this position as a child of '{}'.",
@@ -777,7 +781,7 @@ impl RelaxNGSchemaParseContext {
                         }
                     }
                     "ref" | "parentRef" => {
-                        check_attribute_constraint(
+                        self.check_attribute_constraint(
                             element,
                             handler,
                             [("name", validate_ncname)],
@@ -787,7 +791,7 @@ impl RelaxNGSchemaParseContext {
                         let mut children = element.first_child();
                         if children.is_some() {
                             error!(
-                                element.owner_document(),
+                                self,
                                 handler,
                                 RngParseUnacceptablePattern,
                                 "'{}' must not have a pattern as child.",
@@ -801,12 +805,12 @@ impl RelaxNGSchemaParseContext {
                         }
                     }
                     "empty" | "text" | "notAllowed" => {
-                        check_attribute_constraint(element, handler, [], [])?;
+                        self.check_attribute_constraint(element, handler, [], [])?;
 
                         let mut children = element.first_child();
                         if children.is_some() {
                             error!(
-                                element.owner_document(),
+                                self,
                                 handler,
                                 RngParseUnacceptablePattern,
                                 "'{}' must not have a pattern as child.",
@@ -820,7 +824,7 @@ impl RelaxNGSchemaParseContext {
                         }
                     }
                     "data" => {
-                        check_attribute_constraint(
+                        self.check_attribute_constraint(
                             element,
                             handler,
                             [("type", validate_ncname)],
@@ -848,7 +852,7 @@ impl RelaxNGSchemaParseContext {
                                 }
                             } else {
                                 fatal_error!(
-                                    element.owner_document(),
+                                    self,
                                     handler,
                                     RngParseUnacceptablePattern,
                                     "A {:?} must not be present at this position as a child of '{}'.",
@@ -874,7 +878,7 @@ impl RelaxNGSchemaParseContext {
                                     break;
                                 } else {
                                     fatal_error!(
-                                        element.owner_document(),
+                                        self,
                                         handler,
                                         RngParseUnacceptablePattern,
                                         "'{}' must not be present at this position as a child of '{}'.",
@@ -885,7 +889,7 @@ impl RelaxNGSchemaParseContext {
                                 }
                             } else {
                                 fatal_error!(
-                                    element.owner_document(),
+                                    self,
                                     handler,
                                     RngParseUnacceptablePattern,
                                     "A {:?} must not be present at this position as a child of '{}'.",
@@ -903,7 +907,7 @@ impl RelaxNGSchemaParseContext {
                             children = child.next_sibling();
                             if let Some(element) = child.as_element() {
                                 fatal_error!(
-                                    element.owner_document(),
+                                    self,
                                     handler,
                                     RngParseUnacceptablePattern,
                                     "'{}' must not be present at this position as a child of '{}'.",
@@ -912,7 +916,7 @@ impl RelaxNGSchemaParseContext {
                                 );
                             } else {
                                 fatal_error!(
-                                    element.owner_document(),
+                                    self,
                                     handler,
                                     RngParseUnacceptablePattern,
                                     "A {:?} must not be present at this position as a child of '{}'.",
@@ -934,7 +938,7 @@ impl RelaxNGSchemaParseContext {
                         if let Some(library) = self.datatype_libraries.get(&datatype_library) {
                             if !library.contains(&type_name) {
                                 fatal_error!(
-                                    element.owner_document(),
+                                    self,
                                     handler,
                                     RngParseUnresolvableDatatypeLibrary,
                                     "The type '{}' of the datatype library '{}' is unresolvabale.",
@@ -949,7 +953,7 @@ impl RelaxNGSchemaParseContext {
                                 .is_none_or(|b| !b)
                             {
                                 fatal_error!(
-                                    element.owner_document(),
+                                    self,
                                     handler,
                                     RngParseUnresolvableDatatypeLibrary,
                                     "The params for the type '{}' of the datatype library '{}' is invalid.",
@@ -962,7 +966,7 @@ impl RelaxNGSchemaParseContext {
                             }
                         } else {
                             fatal_error!(
-                                element.owner_document(),
+                                self,
                                 handler,
                                 RngParseUnresolvableDatatypeLibrary,
                                 "The datatype library '{}' is unresolvabale.",
@@ -974,12 +978,17 @@ impl RelaxNGSchemaParseContext {
                         }
                     }
                     "externalRef" => {
-                        check_attribute_constraint(element, handler, [("href", validate_uri)], [])?;
+                        self.check_attribute_constraint(
+                            element,
+                            handler,
+                            [("href", validate_uri)],
+                            [],
+                        )?;
 
                         let mut children = element.first_child();
                         if children.is_some() {
                             error!(
-                                element.owner_document(),
+                                self,
                                 handler,
                                 RngParseUnacceptablePattern,
                                 "'{}' must not have a pattern as child.",
@@ -999,7 +1008,7 @@ impl RelaxNGSchemaParseContext {
                             self.load_external_ref(element, handler, ns_context.as_ref().into())?;
                     }
                     "grammar" => {
-                        check_attribute_constraint(element, handler, [], [])?;
+                        self.check_attribute_constraint(element, handler, [], [])?;
 
                         let mut children = element.first_child();
                         while let Some(mut child) = children {
@@ -1013,7 +1022,7 @@ impl RelaxNGSchemaParseContext {
                                 )?;
                             } else {
                                 error!(
-                                    element.owner_document(),
+                                    self,
                                     handler,
                                     RngParseUnacceptablePattern,
                                     "A {:?} must not be present at this position as a child of '{}'.",
@@ -1025,11 +1034,11 @@ impl RelaxNGSchemaParseContext {
                         }
 
                         // ISO/IEC 19757-2:2008 7.18 `combine` attribute
-                        bundle_start_and_define(element, handler)?;
+                        self.bundle_start_and_define(element, handler)?;
                     }
                     _ => {
                         fatal_error!(
-                            element.owner_document(),
+                            self,
                             handler,
                             RngParseUnacceptablePattern,
                             "The element '{}' does not match to a pattern element.",
@@ -1061,7 +1070,7 @@ impl RelaxNGSchemaParseContext {
 
         if element.local_name().as_ref() != "param" {
             fatal_error!(
-                element.owner_document(),
+                self,
                 handler,
                 RngParseUnacceptablePattern,
                 "'param' is expected, but '{}' is found.",
@@ -1076,9 +1085,9 @@ impl RelaxNGSchemaParseContext {
         // The child string of `param` must not be removed, even if it contains only whitespaces.
         // (ISO/IEC 19757-2:2008 7.3 Whitespace)
 
-        check_attribute_constraint(element, handler, [("name", validate_ncname)], [])?;
+        self.check_attribute_constraint(element, handler, [("name", validate_ncname)], [])?;
 
-        normalize_string_child(element, handler, false)?;
+        self.normalize_string_child(element, handler, false)?;
 
         // ISO/IEC 19757-2:2008 7.4 `datatypeLibrary` attribute
         element.remove_attribute("datatypeLibrary", None);
@@ -1100,7 +1109,7 @@ impl RelaxNGSchemaParseContext {
 
         if element.local_name().as_ref() != "except" {
             fatal_error!(
-                element.owner_document(),
+                self,
                 handler,
                 RngParseUnacceptablePattern,
                 "'except' is expected, but '{}' is found.",
@@ -1117,12 +1126,12 @@ impl RelaxNGSchemaParseContext {
         remove_foreign_attribute(element)?;
         remove_whitespace_child(element)?;
 
-        check_attribute_constraint(element, handler, [], [])?;
+        self.check_attribute_constraint(element, handler, [], [])?;
 
         let mut children = element.first_child();
         if children.is_none() {
             fatal_error!(
-                element.owner_document(),
+                self,
                 handler,
                 RngParseUnacceptablePattern,
                 "'except' must have at least one pattern as child, but not found."
@@ -1136,7 +1145,7 @@ impl RelaxNGSchemaParseContext {
                 self.handle_pattern(&mut element, handler, ns_context.as_ref().into())?;
             } else {
                 fatal_error!(
-                    element.owner_document(),
+                    self,
                     handler,
                     RngParseUnacceptablePattern,
                     "A {:?} must not be present at this position as a child of 'except'.",
@@ -1178,7 +1187,7 @@ impl RelaxNGSchemaParseContext {
                 remove_foreign_attribute(element)?;
                 remove_whitespace_child(element)?;
 
-                check_attribute_constraint(element, handler, [], [])?;
+                self.check_attribute_constraint(element, handler, [], [])?;
 
                 let mut children = element.first_child();
                 while let Some(mut child) = children {
@@ -1192,7 +1201,7 @@ impl RelaxNGSchemaParseContext {
                         )?;
                     } else {
                         fatal_error!(
-                            element.owner_document(),
+                            self,
                             handler,
                             RngParseUnacceptablePattern,
                             "A {:?} must not be present at this position as a child of 'div'.",
@@ -1220,7 +1229,7 @@ impl RelaxNGSchemaParseContext {
                 remove_foreign_attribute(element)?;
                 remove_whitespace_child(element)?;
 
-                check_attribute_constraint(element, handler, [("href", validate_uri)], [])?;
+                self.check_attribute_constraint(element, handler, [("href", validate_uri)], [])?;
 
                 let mut children = element.first_child();
                 while let Some(mut child) = children {
@@ -1234,7 +1243,7 @@ impl RelaxNGSchemaParseContext {
                         )?;
                     } else {
                         fatal_error!(
-                            element.owner_document(),
+                            self,
                             handler,
                             RngParseUnacceptablePattern,
                             "A {:?} must not be present at this position as a child of 'include'.",
@@ -1260,7 +1269,7 @@ impl RelaxNGSchemaParseContext {
             }
             _ => {
                 fatal_error!(
-                    element.owner_document(),
+                    self,
                     handler,
                     RngParseUnacceptablePattern,
                     "The element '{}' does not match to a grammarContent element.",
@@ -1293,7 +1302,7 @@ impl RelaxNGSchemaParseContext {
                 remove_foreign_attribute(element)?;
                 remove_whitespace_child(element)?;
 
-                check_attribute_constraint(element, handler, [], [])?;
+                self.check_attribute_constraint(element, handler, [], [])?;
 
                 let mut children = element.first_child();
                 while let Some(mut child) = children {
@@ -1307,7 +1316,7 @@ impl RelaxNGSchemaParseContext {
                         )?;
                     } else {
                         fatal_error!(
-                            element.owner_document(),
+                            self,
                             handler,
                             RngParseUnacceptablePattern,
                             "A {:?} must not be present at this position as a child of 'div'.",
@@ -1328,7 +1337,7 @@ impl RelaxNGSchemaParseContext {
             }
             _ => {
                 fatal_error!(
-                    element.owner_document(),
+                    self,
                     handler,
                     RngParseUnacceptablePattern,
                     "The element '{}' does not match to a includeContent element.",
@@ -1351,7 +1360,7 @@ impl RelaxNGSchemaParseContext {
 
         if element.local_name().as_ref() != "start" {
             fatal_error!(
-                element.owner_document(),
+                self,
                 handler,
                 RngParseUnacceptablePattern,
                 "'start' is expected, but '{}' is found.",
@@ -1368,12 +1377,12 @@ impl RelaxNGSchemaParseContext {
         remove_foreign_attribute(element)?;
         remove_whitespace_child(element)?;
 
-        check_attribute_constraint(element, handler, [], [("combine", validate_combine)])?;
+        self.check_attribute_constraint(element, handler, [], [("combine", validate_combine)])?;
 
         let mut children = element.first_child();
         if children.is_none() {
             fatal_error!(
-                element.owner_document(),
+                self,
                 handler,
                 RngParseUnacceptablePattern,
                 "'start' must have at least one pattern as child, but not found."
@@ -1388,7 +1397,7 @@ impl RelaxNGSchemaParseContext {
                 break;
             } else {
                 fatal_error!(
-                    element.owner_document(),
+                    self,
                     handler,
                     RngParseUnacceptablePattern,
                     "A {:?} must not be present at this position as a child of 'start'.",
@@ -1400,7 +1409,7 @@ impl RelaxNGSchemaParseContext {
 
         if children.is_some() {
             fatal_error!(
-                element.owner_document(),
+                self,
                 handler,
                 RngParseUnacceptablePattern,
                 "Just only one child is allowed on 'start', but more than two children are found."
@@ -1431,7 +1440,7 @@ impl RelaxNGSchemaParseContext {
 
         if element.local_name().as_ref() != "define" {
             fatal_error!(
-                element.owner_document(),
+                self,
                 handler,
                 RngParseUnacceptablePattern,
                 "'define' is expected, but '{}' is found.",
@@ -1448,7 +1457,7 @@ impl RelaxNGSchemaParseContext {
         remove_foreign_attribute(element)?;
         remove_whitespace_child(element)?;
 
-        check_attribute_constraint(
+        self.check_attribute_constraint(
             element,
             handler,
             [("name", validate_ncname)],
@@ -1458,7 +1467,7 @@ impl RelaxNGSchemaParseContext {
         let mut children = element.first_child();
         if children.is_none() {
             fatal_error!(
-                element.owner_document(),
+                self,
                 handler,
                 RngParseUnacceptablePattern,
                 "'define' must have at least one pattern as child, but not found."
@@ -1472,7 +1481,7 @@ impl RelaxNGSchemaParseContext {
                 self.handle_pattern(&mut element, handler, ns_context.as_ref().into())?;
             } else {
                 fatal_error!(
-                    element.owner_document(),
+                    self,
                     handler,
                     RngParseUnacceptablePattern,
                     "A {:?} must not be present at this position as a child of 'define'.",
@@ -1508,9 +1517,9 @@ impl RelaxNGSchemaParseContext {
                 // `name` cannot have foreign elements as children.
                 remove_foreign_attribute(element)?;
 
-                check_attribute_constraint(element, handler, [], [])?;
+                self.check_attribute_constraint(element, handler, [], [])?;
 
-                normalize_string_child(element, handler, true)?;
+                self.normalize_string_child(element, handler, true)?;
 
                 // ISO/IEC 19757-2:2008 7.4 `datatypeLibrary` attribute
                 element.remove_attribute("datatypeLibrary", None);
@@ -1533,7 +1542,7 @@ impl RelaxNGSchemaParseContext {
                         element.set_attribute("ns", None, Some(&namespace_name))?;
                     } else {
                         fatal_error!(
-                            element.owner_document(),
+                            self,
                             handler,
                             RngParseUnresolvableNamespacePrefix,
                             "The namespace prefix '{}' is unresolvable.",
@@ -1556,7 +1565,7 @@ impl RelaxNGSchemaParseContext {
                 remove_foreign_attribute(element)?;
                 remove_whitespace_child(element)?;
 
-                check_attribute_constraint(element, handler, [], [])?;
+                self.check_attribute_constraint(element, handler, [], [])?;
 
                 let mut children = element.first_child();
                 while let Some(mut child) = children {
@@ -1571,7 +1580,7 @@ impl RelaxNGSchemaParseContext {
                         break;
                     } else {
                         fatal_error!(
-                            element.owner_document(),
+                            self,
                             handler,
                             RngParseUnacceptablePattern,
                             "A {:?} must not be present at this position as a child of 'define'.",
@@ -1583,7 +1592,7 @@ impl RelaxNGSchemaParseContext {
 
                 if children.is_some() {
                     fatal_error!(
-                        element.owner_document(),
+                        self,
                         handler,
                         RngParseUnacceptablePattern,
                         "At most one child is allowed on '{}', but more than two children are found.",
@@ -1609,7 +1618,7 @@ impl RelaxNGSchemaParseContext {
                 }
 
                 // ISO/IEC 19757-2:2008 7.17 Constraints
-                check_name_class_constraint(element, handler)?;
+                self.check_name_class_constraint(element, handler)?;
                 Ok(())
             }
             "choice" => {
@@ -1621,7 +1630,7 @@ impl RelaxNGSchemaParseContext {
                 remove_foreign_attribute(element)?;
                 remove_whitespace_child(element)?;
 
-                check_attribute_constraint(element, handler, [], [])?;
+                self.check_attribute_constraint(element, handler, [], [])?;
 
                 let mut children = element.first_child();
                 while let Some(mut child) = children {
@@ -1631,7 +1640,7 @@ impl RelaxNGSchemaParseContext {
                         self.handle_name_class(&mut child, handler, ns_context.as_ref().into())?;
                     } else {
                         fatal_error!(
-                            element.owner_document(),
+                            self,
                             handler,
                             RngParseUnacceptablePattern,
                             "A {:?} must not be present at this position as a child of 'choice'.",
@@ -1650,7 +1659,7 @@ impl RelaxNGSchemaParseContext {
             }
             _ => {
                 fatal_error!(
-                    element.owner_document(),
+                    self,
                     handler,
                     RngParseUnacceptablePattern,
                     "The element '{}' does not match to a nameClass element.",
@@ -1673,7 +1682,7 @@ impl RelaxNGSchemaParseContext {
 
         if element.local_name().as_ref() != "except" {
             fatal_error!(
-                element.owner_document(),
+                self,
                 handler,
                 RngParseUnacceptablePattern,
                 "'except' is expected, but '{}' is found.",
@@ -1690,12 +1699,12 @@ impl RelaxNGSchemaParseContext {
         remove_foreign_attribute(element)?;
         remove_whitespace_child(element)?;
 
-        check_attribute_constraint(element, handler, [], [])?;
+        self.check_attribute_constraint(element, handler, [], [])?;
 
         let mut children = element.first_child();
         if children.is_none() {
             fatal_error!(
-                element.owner_document(),
+                self,
                 handler,
                 RngParseUnacceptablePattern,
                 "'except' must have at least one pattern as child, but not found."
@@ -1709,7 +1718,7 @@ impl RelaxNGSchemaParseContext {
                 self.handle_name_class(&mut element, handler, ns_context.as_ref().into())?;
             } else {
                 fatal_error!(
-                    element.owner_document(),
+                    self,
                     handler,
                     RngParseUnacceptablePattern,
                     "A {:?} must not be present at this position as a child of 'except'.",
@@ -1761,7 +1770,7 @@ impl RelaxNGSchemaParseContext {
         // ISO/IEC 19757-2:2008 7.6 href attribute
         if href.fragment().is_some() {
             error!(
-                external_ref.owner_document(),
+                self,
                 handler,
                 RngParseHRefIncludeFragment,
                 "The URI that refers to an XML external resource must not contain a fragment identifier."
@@ -1772,7 +1781,7 @@ impl RelaxNGSchemaParseContext {
 
         if !self.external_ref_loop_guard.insert(href.clone()) {
             fatal_error!(
-                external_ref.owner_document(),
+                self,
                 handler,
                 RngParseExternalRefLoop,
                 "'externalRef' causes reference loop for '{}'.",
@@ -1847,7 +1856,7 @@ impl RelaxNGSchemaParseContext {
         // ISO/IEC 19757-2:2008 7.6 href attribute
         if href.fragment().is_some() {
             error!(
-                include.owner_document(),
+                self,
                 handler,
                 RngParseHRefIncludeFragment,
                 "The URI that refers to an XML external resource must not contain a fragment identifier."
@@ -1858,7 +1867,7 @@ impl RelaxNGSchemaParseContext {
 
         if !self.include_loop_guard.insert(href.clone()) {
             fatal_error!(
-                include.owner_document(),
+                self,
                 handler,
                 RngParseIncludeLoop,
                 "'include' causes reference loop for '{}'.",
@@ -1884,7 +1893,7 @@ impl RelaxNGSchemaParseContext {
             || grammar.local_name().as_ref() != "grammar"
         {
             fatal_error!(
-                include.owner_document(),
+                self,
                 handler,
                 RngParseIncludeParseFailure,
                 "An included element must be 'grammar' pattern, but '{}' is found.",
@@ -1989,7 +1998,7 @@ impl RelaxNGSchemaParseContext {
         for i in 0..define.len() {
             if !used_define[i] {
                 fatal_error!(
-                    include.owner_document(),
+                    self,
                     handler,
                     RngParseInsufficientDefineInInclude,
                     "'include' contains 'define' whose 'name' is '{}', but included grammar does not contain.",
@@ -2089,7 +2098,7 @@ impl RelaxNGSchemaParseContext {
 
         let Some(start) = start else {
             fatal_error!(
-                grammar.owner_document(),
+                self,
                 handler,
                 RngParseStartNotFoundInGrammar,
                 "'grammar' has at least one 'start' element as child, but not found."
@@ -2139,7 +2148,7 @@ impl RelaxNGSchemaParseContext {
                                         define.1 += 1;
                                     } else {
                                         fatal_error!(
-                                            grammar.owner_document(),
+                                            self,
                                             handler,
                                             RngParseUnresolvableRefName,
                                             "The 'name' attribute of 'ref' has a value '{}', but it is unresolvable.",
@@ -2164,7 +2173,7 @@ impl RelaxNGSchemaParseContext {
                                         define.1 += 1;
                                     } else {
                                         fatal_error!(
-                                            grammar.owner_document(),
+                                            self,
                                             handler,
                                             RngParseUnresolvableRefName,
                                             "The 'name' attribute of 'parentRef' has a value '{}', but it is unresolvable.",
@@ -2314,7 +2323,7 @@ impl RelaxNGSchemaParseContext {
         {
             if !used_names.insert(name.clone()) {
                 fatal_error!(
-                    self.document,
+                    self,
                     handler,
                     RngParseRefLoop,
                     "A reference loop is detected at 'ref' whose 'name' value is '{}'.",
@@ -2392,6 +2401,617 @@ impl RelaxNGSchemaParseContext {
                     self.expand_ref(&mut element, handler, used_names)?;
                 }
             }
+        }
+        Ok(())
+    }
+
+    fn check_attribute_constraint<Handler: ErrorHandler, const M: usize, const O: usize>(
+        &mut self,
+        element: &mut Element,
+        handler: &mut Handler,
+        mandatory: [(&'static str, fn(&str) -> Result<(), XMLError>); M],
+        optional: [(&'static str, fn(&str) -> Result<(), XMLError>); O],
+    ) -> Result<(), XMLError> {
+        let mut use_mandatory = [false; M];
+        let mut use_optional = [false; O];
+
+        let mut remove = vec![];
+
+        for att in element.attributes() {
+            if att.name().as_ref() == "xml:base" {
+                continue;
+            }
+            if att.namespace().is_some() {
+                error!(
+                    self,
+                    handler,
+                    RngParseUnacceptableAttribute,
+                    "The attribute '{}' is not allowed on '{}'.",
+                    att.name(),
+                    element.name()
+                );
+                remove.push(att);
+                continue;
+            }
+
+            if let Some(pos) = mandatory.iter().position(|&m| m.0 == att.name().as_ref()) {
+                use_mandatory[pos] = true;
+                mandatory[pos].1(&att.value())?;
+            } else if let Some(pos) = optional.iter().position(|&m| m.0 == att.name().as_ref()) {
+                use_optional[pos] = true;
+                optional[pos].1(&att.value())?;
+            } else if att.name().as_ref() == "ns" {
+                // this is always allowed
+
+                // no op.
+            } else if att.name().as_ref() == "datatypeLibrary" {
+                // this is always allowed
+
+                let value = att.value();
+                if !value.is_empty() {
+                    if let Ok(uri) = URIString::parse(value.as_str()) {
+                        if !uri.is_absolute() {
+                            error!(
+                                self,
+                                handler,
+                                RngParseDatatypeLibraryURINotAbsolute,
+                                "The attribute 'datatypeLibrary' must have an absolute URI value, but '{}' is not.",
+                                value
+                            );
+                            remove.push(att);
+                        } else if uri.authority().is_none() && uri.path().is_empty() {
+                            // RFC 3986 allows hier-part to be empty (called 'path-empty'),
+                            // but RFC 2396 does not allow hier-part to be empty.
+                            // Follow the URI standards referenced in the specification.
+                            error!(
+                                self,
+                                handler,
+                                RngParseDatatypeLibraryURINotAbsolute,
+                                "The attribute 'datatypeLibrary' must conform to RFC 2396."
+                            );
+                            remove.push(att);
+                        }
+                    } else {
+                        error!(
+                            self,
+                            handler,
+                            RngParseInvalidAnyURI,
+                            "The attribute 'datatypeLibrary' must be anyURI or empty string, but '{}' is not.",
+                            value
+                        );
+                        remove.push(att);
+                    }
+                }
+            } else {
+                error!(
+                    self,
+                    handler,
+                    RngParseUnacceptableAttribute,
+                    "The attribute '{}' is not allowed on '{}'.",
+                    att.name(),
+                    element.name()
+                );
+                remove.push(att);
+            }
+        }
+
+        for att in remove {
+            element.remove_attribute_node(att)?;
+        }
+
+        let mut bad = false;
+        for i in 0..M {
+            if !use_mandatory[i] {
+                fatal_error!(
+                    self,
+                    handler,
+                    RngParseInsufficientAttribute,
+                    "'{}' must have an attribute '{}', but not found.",
+                    element.name(),
+                    mandatory[i].0
+                );
+                bad = true;
+            }
+        }
+
+        if bad {
+            return Err(XMLError::RngParseInsufficientAttribute);
+        }
+
+        // ISO/IEC 19757-2:2008 7.4 `datatypeLibrary` attribute
+        if !element.has_attribute("datatypeLibrary", None) {
+            element.set_attribute(
+                "datatypeLibrary",
+                None,
+                Some(
+                    &element
+                        .parent_node()
+                        .and_then(|parent| parent.as_element())
+                        .and_then(|parent| parent.get_attribute("datatypeLibrary", None))
+                        .unwrap_or_default(),
+                ),
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 7.17 Constraints
+    fn check_name_class_constraint<Handler: ErrorHandler>(
+        &mut self,
+        name_class: &Element,
+        handler: &mut Handler,
+    ) -> Result<(), XMLError> {
+        match name_class.local_name().as_ref() {
+            "anyName" => {
+                let mut children = name_class.first_child();
+                while let Some(child) = children {
+                    children = child.next_sibling();
+
+                    if let Some(except) = child
+                        .as_element()
+                        .filter(|elem| elem.local_name().as_ref() == "except")
+                        && except
+                            .get_elements_by_expanded_name("anyName", Some(XML_RELAX_NG_NAMESPACE))
+                            .next()
+                            .is_some()
+                    {
+                        fatal_error!(
+                            self,
+                            handler,
+                            RngParseUnacceptablePattern,
+                            "An 'except' element that is a child of an 'anyName' element shall not have any 'anyName' descendant elements."
+                        );
+                    }
+                }
+            }
+            "nsName" => {
+                let mut children = name_class.first_child();
+                while let Some(child) = children {
+                    children = child.next_sibling();
+
+                    if let Some(except) = child
+                        .as_element()
+                        .filter(|elem| elem.local_name().as_ref() == "except")
+                        && (except
+                            .get_elements_by_expanded_name("anyName", Some(XML_RELAX_NG_NAMESPACE))
+                            .next()
+                            .is_some()
+                            || except
+                                .get_elements_by_expanded_name(
+                                    "nsName",
+                                    Some(XML_RELAX_NG_NAMESPACE),
+                                )
+                                .next()
+                                .is_some())
+                    {
+                        fatal_error!(
+                            self,
+                            handler,
+                            RngParseUnacceptablePattern,
+                            "An 'except' element that is a child of an 'nsName' element shall not have any 'nsName' or 'anyName' descendant elements."
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 7.17 Constraints
+    fn check_attribute_name_constraint<Handler: ErrorHandler>(
+        &mut self,
+        attribute: &Element,
+        handler: &mut Handler,
+    ) -> Result<(), XMLError> {
+        let mut children = attribute.first_child();
+        while let Some(child) = children {
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if !child.is_same_node(attribute.first_child().unwrap())
+                && let Some(next) = child.next_sibling()
+            {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut now = child.clone();
+                while let Some(parent) = now.parent_node() {
+                    if parent.is_same_node(attribute)
+                        || parent.is_same_node(attribute.first_child().unwrap())
+                    {
+                        break;
+                    }
+                    if let Some(next) = parent.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    now = parent.into();
+                }
+            }
+
+            if let Some(element) = child.as_element() {
+                match element.local_name().as_ref() {
+                    "name" => {
+                        if let Some(ns) = element.get_attribute("ns", None) {
+                            if ns.is_empty()
+                                && let Some(text) =
+                                    element.first_child().and_then(|ch| ch.as_text())
+                                && &*text.data() == "xmlns"
+                            {
+                                fatal_error!(
+                                    self,
+                                    handler,
+                                    RngParseUnacceptableAttribute,
+                                    "A 'name' element at the descendant of the first child of an 'attribute' element and that has an 'ns' attribute with empty value shall not have 'xmlns' as its content."
+                                );
+                            } else if ns == XML_NS_NAMESPACE {
+                                fatal_error!(
+                                    self,
+                                    handler,
+                                    RngParseUnacceptableAttribute,
+                                    "A 'name' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
+                                    XML_NS_NAMESPACE
+                                );
+                            }
+                        }
+                    }
+                    "nsName" => {
+                        if let Some(ns) = element.get_attribute("ns", None)
+                            && ns == XML_NS_NAMESPACE
+                        {
+                            fatal_error!(
+                                self,
+                                handler,
+                                RngParseUnacceptableAttribute,
+                                "A 'nsName' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
+                                XML_NS_NAMESPACE
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 7.18 `combine` attribute
+    fn bundle_start_and_define<Handler: ErrorHandler>(
+        &mut self,
+        grammar: &mut Element,
+        handler: &mut Handler,
+    ) -> Result<(), XMLError> {
+        assert_eq!(grammar.local_name().as_ref(), "grammar");
+        assert_eq!(
+            grammar.namespace_name().as_deref(),
+            Some(XML_RELAX_NG_NAMESPACE)
+        );
+
+        let document = grammar.owner_document();
+
+        // for 'start'
+        let mut combine_start = None;
+        let mut frag_start = document.create_document_fragment();
+        let mut num_start_without_combine = 0;
+
+        // for 'define'
+        // key  : 'name' of 'define'
+        // value: (num_define_without_combine, fragment, combine)
+        let mut define_mapping = HashMap::new();
+
+        let mut children = grammar.first_child();
+        while let Some(mut child) = children {
+            if let Some(mut element) = child.as_element() {
+                match element.local_name().as_ref() {
+                    "start" => {
+                        if let Some(combine) = element.remove_attribute("combine", None) {
+                            if let Some(other) = combine_start.as_deref()
+                                && other != combine
+                            {
+                                fatal_error!(
+                                    self,
+                                    handler,
+                                    RngParseUnacceptableCombine,
+                                    "The 'combine' attribute values of multiple 'start' elements within the 'grammar' element are inconsistent."
+                                );
+                            } else {
+                                combine_start = Some(combine);
+                            }
+                        } else {
+                            num_start_without_combine += 1;
+                            if num_start_without_combine == 2 {
+                                fatal_error!(
+                                    self,
+                                    handler,
+                                    RngParseMultipleStartWithoutCombine,
+                                    "Multiple 'start' element without 'combine' attribute appear."
+                                );
+                            }
+                        }
+                        let mut children = element.first_child();
+                        while let Some(child) = children {
+                            children = child.next_sibling();
+                            frag_start.append_child(child)?;
+                        }
+                    }
+                    "define" => {
+                        if let Some(name) = element.remove_attribute("name", None) {
+                            let (num_define_without_combine, frag_define, combine_define) =
+                                define_mapping.entry(name).or_insert_with(|| {
+                                    (0, document.create_document_fragment(), None)
+                                });
+                            if let Some(combine) = element.remove_attribute("combine", None) {
+                                if let Some(other) = combine_define.as_deref()
+                                    && other != combine
+                                {
+                                    fatal_error!(
+                                        self,
+                                        handler,
+                                        RngParseUnacceptableCombine,
+                                        "The 'combine' attribute values of multiple 'define' elements within the 'grammar' element are inconsistent."
+                                    );
+                                } else {
+                                    *combine_define = Some(combine);
+                                }
+                            } else {
+                                *num_define_without_combine += 1;
+                                if *num_define_without_combine == 2 {
+                                    fatal_error!(
+                                        self,
+                                        handler,
+                                        RngParseMultipleStartWithoutCombine,
+                                        "Multiple 'define' element without 'combine' attribute appear."
+                                    );
+                                }
+                            }
+                            let mut children = element.first_child();
+                            while let Some(child) = children {
+                                children = child.next_sibling();
+                                frag_define.append_child(child)?;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            children = child.next_sibling();
+            child.detach()?;
+        }
+
+        assert!(grammar.first_child().is_none());
+
+        // reconstruct 'start'
+        if let Some(combine) = combine_start {
+            let mut start =
+                document.create_element("start", Some(XML_RELAX_NG_NAMESPACE.into()))?;
+            let mut combine =
+                document.create_element(combine, Some(XML_RELAX_NG_NAMESPACE.into()))?;
+            combine.append_child(frag_start)?;
+            group_children(&mut combine)?;
+            start.append_child(combine)?;
+            grammar.append_child(start)?;
+        }
+
+        // reconstruct 'define'
+        for (name, (_, frag, combine)) in define_mapping {
+            if let Some(combine) = combine {
+                let mut define =
+                    document.create_element("define", Some(XML_RELAX_NG_NAMESPACE.into()))?;
+                let mut combine =
+                    document.create_element(combine, Some(XML_RELAX_NG_NAMESPACE.into()))?;
+                combine.append_child(frag)?;
+                group_children(&mut combine)?;
+                define.append_child(combine)?;
+                define.set_attribute("name", None, Some(&name))?;
+                grammar.append_child(define)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.2 Prohibited paths
+    fn verify_prohibited_paths<Handler: ErrorHandler>(
+        &mut self,
+        element: &Element,
+        memo: &mut HashSet<String>,
+        handler: &mut Handler,
+    ) -> Result<(), XMLError> {
+        let mut ret = Ok(());
+        let mut children = element.first_child();
+        let mut buf = HashSet::new();
+        while let Some(child) = children {
+            children = child.next_sibling();
+
+            if let Some(elem) = child.as_element() {
+                ret = ret.and(self.verify_prohibited_paths(&elem, &mut buf, handler));
+            }
+        }
+
+        macro_rules! report_prohibited_path {
+            ($ancestor:literal, $cwd:literal) => {
+                if buf.contains($cwd) {
+                    fatal_error!(
+                        self,
+                        handler,
+                        RngParseProhibitedPath,
+                        "'{}//{}' path is not allowed.",
+                        $ancestor,
+                        $cwd
+                    );
+                    ret = Err(XMLError::RngParseProhibitedPath);
+                }
+            };
+        }
+
+        match element.local_name().as_ref() {
+            "attribute" => {
+                // ISO/IEC 19757-2:2008 10.2.2 `attribute` pattern
+                report_prohibited_path!("attribute", "ref");
+                report_prohibited_path!("attribute", "attribute");
+            }
+            "oneOrMore" => {
+                // ISO/IEC 19757-2:2008 10.2.3 `oneOrMore` pattern
+                report_prohibited_path!("oneOrMore", "group//attribute");
+                report_prohibited_path!("oneOrMore", "interleave//attribute");
+            }
+            "list" => {
+                // ISO/IEC 19757-2:2008 10.2.4 `list` pattern
+                report_prohibited_path!("list", "list");
+                report_prohibited_path!("list", "ref");
+                report_prohibited_path!("list", "attribute");
+                report_prohibited_path!("list", "text");
+                report_prohibited_path!("list", "interleave");
+            }
+            "except"
+                if element
+                    .parent_node()
+                    .and_then(|par| par.as_element())
+                    .is_some_and(|par| par.local_name().as_ref() == "data") =>
+            {
+                // ISO/IEC 19757-2:2008 10.2.5 `except` element in `data` pattern
+                report_prohibited_path!("data/except", "attribute");
+                report_prohibited_path!("data/except", "ref");
+                report_prohibited_path!("data/except", "text");
+                report_prohibited_path!("data/except", "list");
+                report_prohibited_path!("data/except", "group");
+                report_prohibited_path!("data/except", "interleave");
+                report_prohibited_path!("data/except", "oneOrMore");
+                report_prohibited_path!("data/except", "empty");
+            }
+            "start" => {
+                // ISO/IEC 19757-2:2008 10.2.6 `start` element
+                report_prohibited_path!("start", "attribute");
+                report_prohibited_path!("start", "data");
+                report_prohibited_path!("start", "value");
+                report_prohibited_path!("start", "text");
+                report_prohibited_path!("start", "list");
+                report_prohibited_path!("start", "group");
+                report_prohibited_path!("start", "interleave");
+                report_prohibited_path!("start", "oneOrMore");
+                report_prohibited_path!("start", "empty");
+            }
+            "group" if buf.contains("attribute") => {
+                buf.insert("group//attribute".into());
+            }
+            "interleave" if buf.contains("attribute") => {
+                buf.insert("interleave//attribute".into());
+            }
+            _ => {}
+        }
+        memo.insert(element.local_name().as_ref().into());
+        memo.extend(buf);
+
+        ret
+    }
+
+    fn normalize_string_child<Handler: ErrorHandler>(
+        &mut self,
+        element: &mut Element,
+        handler: &mut Handler,
+        trim: bool,
+    ) -> Result<(), XMLError> {
+        let mut children = element.first_child();
+        while let Some(mut child) = children {
+            if let Some(mut text) = child.as_text() {
+                let mut siblings = child.next_sibling();
+                while let Some(mut sibling) = siblings {
+                    siblings = sibling.next_sibling();
+                    match sibling.downcast() {
+                        NodeKind::Text(mut now) => {
+                            now.detach()?;
+                            text.push_str(&now.data());
+                        }
+                        NodeKind::CDATASection(mut now) => {
+                            now.detach()?;
+                            text.push_str(&now.data());
+                        }
+                        _ => {
+                            fatal_error!(
+                                self,
+                                handler,
+                                RngParseUnacceptablePattern,
+                                "Only a string is allowed as a child of 'param', but {:?} is found.",
+                                sibling.node_type()
+                            );
+                            sibling.detach()?;
+                        }
+                    }
+                }
+
+                if trim {
+                    let d = text.data();
+                    let data = d.trim_matches(|c| XMLVersion::default().is_whitespace(c));
+                    if text.data().len() != data.len() {
+                        let new = element.owner_document().create_text(data);
+                        drop(d);
+                        text.detach()?;
+                        element.append_child(new)?;
+                    }
+                }
+                break;
+            } else if let Some(mut cdata) = child.as_cdata_section() {
+                let mut siblings = child.next_sibling();
+                while let Some(mut sibling) = siblings {
+                    siblings = sibling.next_sibling();
+                    match sibling.downcast() {
+                        NodeKind::Text(mut now) => {
+                            now.detach()?;
+                            cdata.push_str(&now.data());
+                        }
+                        NodeKind::CDATASection(mut now) => {
+                            now.detach()?;
+                            cdata.push_str(&now.data());
+                        }
+                        _ => {
+                            fatal_error!(
+                                self,
+                                handler,
+                                RngParseUnacceptablePattern,
+                                "Only a string is allowed as a child of 'param', but {:?} is found.",
+                                sibling.node_type()
+                            );
+                            sibling.detach()?;
+                        }
+                    }
+                }
+
+                let text = if trim {
+                    element.owner_document().create_text(
+                        cdata
+                            .data()
+                            .trim_matches(|c| XMLVersion::default().is_whitespace(c)),
+                    )
+                } else {
+                    element.owner_document().create_text(&*cdata.data())
+                };
+
+                cdata.detach()?;
+                element.append_child(text)?;
+                break;
+            } else {
+                children = child.next_sibling();
+                fatal_error!(
+                    self,
+                    handler,
+                    RngParseUnacceptablePattern,
+                    "Only a string is allowed as a child of 'param', but {:?} is found.",
+                    child.node_type()
+                );
+                child.detach()?;
+            }
+        }
+
+        if element.first_child().is_none() {
+            let text = element.owner_document().create_text("");
+            element.append_child(text)?;
         }
         Ok(())
     }
@@ -2790,491 +3410,6 @@ fn decompose_zero_or_more(zero_or_more: &mut Element) -> Result<(), XMLError> {
     Ok(())
 }
 
-/// # Reference
-/// ISO/IEC 19757-2:2008 7.18 `combine` attribute
-fn bundle_start_and_define<Handler: ErrorHandler>(
-    grammar: &mut Element,
-    handler: &mut Handler,
-) -> Result<(), XMLError> {
-    assert_eq!(grammar.local_name().as_ref(), "grammar");
-    assert_eq!(
-        grammar.namespace_name().as_deref(),
-        Some(XML_RELAX_NG_NAMESPACE)
-    );
-
-    let document = grammar.owner_document();
-
-    // for 'start'
-    let mut combine_start = None;
-    let mut frag_start = document.create_document_fragment();
-    let mut num_start_without_combine = 0;
-
-    // for 'define'
-    // key  : 'name' of 'define'
-    // value: (num_define_without_combine, fragment, combine)
-    let mut define_mapping = HashMap::new();
-
-    let mut children = grammar.first_child();
-    while let Some(mut child) = children {
-        if let Some(mut element) = child.as_element() {
-            match element.local_name().as_ref() {
-                "start" => {
-                    if let Some(combine) = element.remove_attribute("combine", None) {
-                        if let Some(other) = combine_start.as_deref()
-                            && other != combine
-                        {
-                            fatal_error!(
-                                grammar.owner_document(),
-                                handler,
-                                RngParseUnacceptableCombine,
-                                "The 'combine' attribute values of multiple 'start' elements within the 'grammar' element are inconsistent."
-                            );
-                        } else {
-                            combine_start = Some(combine);
-                        }
-                    } else {
-                        num_start_without_combine += 1;
-                        if num_start_without_combine == 2 {
-                            fatal_error!(
-                                grammar.owner_document(),
-                                handler,
-                                RngParseMultipleStartWithoutCombine,
-                                "Multiple 'start' element without 'combine' attribute appear."
-                            );
-                        }
-                    }
-                    let mut children = element.first_child();
-                    while let Some(child) = children {
-                        children = child.next_sibling();
-                        frag_start.append_child(child)?;
-                    }
-                }
-                "define" => {
-                    if let Some(name) = element.remove_attribute("name", None) {
-                        let (num_define_without_combine, frag_define, combine_define) =
-                            define_mapping
-                                .entry(name)
-                                .or_insert_with(|| (0, document.create_document_fragment(), None));
-                        if let Some(combine) = element.remove_attribute("combine", None) {
-                            if let Some(other) = combine_define.as_deref()
-                                && other != combine
-                            {
-                                fatal_error!(
-                                    grammar.owner_document(),
-                                    handler,
-                                    RngParseUnacceptableCombine,
-                                    "The 'combine' attribute values of multiple 'define' elements within the 'grammar' element are inconsistent."
-                                );
-                            } else {
-                                *combine_define = Some(combine);
-                            }
-                        } else {
-                            *num_define_without_combine += 1;
-                            if *num_define_without_combine == 2 {
-                                fatal_error!(
-                                    grammar.owner_document(),
-                                    handler,
-                                    RngParseMultipleStartWithoutCombine,
-                                    "Multiple 'define' element without 'combine' attribute appear."
-                                );
-                            }
-                        }
-                        let mut children = element.first_child();
-                        while let Some(child) = children {
-                            children = child.next_sibling();
-                            frag_define.append_child(child)?;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        children = child.next_sibling();
-        child.detach()?;
-    }
-
-    assert!(grammar.first_child().is_none());
-
-    // reconstruct 'start'
-    if let Some(combine) = combine_start {
-        let mut start = document.create_element("start", Some(XML_RELAX_NG_NAMESPACE.into()))?;
-        let mut combine = document.create_element(combine, Some(XML_RELAX_NG_NAMESPACE.into()))?;
-        combine.append_child(frag_start)?;
-        group_children(&mut combine)?;
-        start.append_child(combine)?;
-        grammar.append_child(start)?;
-    }
-
-    // reconstruct 'define'
-    for (name, (_, frag, combine)) in define_mapping {
-        if let Some(combine) = combine {
-            let mut define =
-                document.create_element("define", Some(XML_RELAX_NG_NAMESPACE.into()))?;
-            let mut combine =
-                document.create_element(combine, Some(XML_RELAX_NG_NAMESPACE.into()))?;
-            combine.append_child(frag)?;
-            group_children(&mut combine)?;
-            define.append_child(combine)?;
-            define.set_attribute("name", None, Some(&name))?;
-            grammar.append_child(define)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn check_attribute_constraint<Handler: ErrorHandler, const M: usize, const O: usize>(
-    element: &mut Element,
-    handler: &mut Handler,
-    mandatory: [(&'static str, fn(&str) -> Result<(), XMLError>); M],
-    optional: [(&'static str, fn(&str) -> Result<(), XMLError>); O],
-) -> Result<(), XMLError> {
-    let mut use_mandatory = [false; M];
-    let mut use_optional = [false; O];
-
-    let mut remove = vec![];
-
-    for att in element.attributes() {
-        if att.name().as_ref() == "xml:base" {
-            continue;
-        }
-        if att.namespace().is_some() {
-            error!(
-                element.owner_document(),
-                handler,
-                RngParseUnacceptableAttribute,
-                "The attribute '{}' is not allowed on '{}'.",
-                att.name(),
-                element.name()
-            );
-            remove.push(att);
-            continue;
-        }
-
-        if let Some(pos) = mandatory.iter().position(|&m| m.0 == att.name().as_ref()) {
-            use_mandatory[pos] = true;
-            mandatory[pos].1(&att.value())?;
-        } else if let Some(pos) = optional.iter().position(|&m| m.0 == att.name().as_ref()) {
-            use_optional[pos] = true;
-            optional[pos].1(&att.value())?;
-        } else if att.name().as_ref() == "ns" {
-            // this is always allowed
-
-            // no op.
-        } else if att.name().as_ref() == "datatypeLibrary" {
-            // this is always allowed
-
-            let value = att.value();
-            if !value.is_empty() {
-                if let Ok(uri) = URIString::parse(value.as_str()) {
-                    if !uri.is_absolute() {
-                        error!(
-                            element.owner_document(),
-                            handler,
-                            RngParseDatatypeLibraryURINotAbsolute,
-                            "The attribute 'datatypeLibrary' must have an absolute URI value, but '{}' is not.",
-                            value
-                        );
-                        remove.push(att);
-                    }
-                } else {
-                    error!(
-                        element.owner_document(),
-                        handler,
-                        RngParseInvalidAnyURI,
-                        "The attribute 'datatypeLibrary' must be anyURI or empty string, but '{}' is not.",
-                        value
-                    );
-                    remove.push(att);
-                }
-            }
-        } else {
-            error!(
-                element.owner_document(),
-                handler,
-                RngParseUnacceptableAttribute,
-                "The attribute '{}' is not allowed on '{}'.",
-                att.name(),
-                element.name()
-            );
-            remove.push(att);
-        }
-    }
-
-    for att in remove {
-        element.remove_attribute_node(att)?;
-    }
-
-    let mut bad = false;
-    for i in 0..M {
-        if !use_mandatory[i] {
-            fatal_error!(
-                element.owner_document(),
-                handler,
-                RngParseInsufficientAttribute,
-                "'{}' must have an attribute '{}', but not found.",
-                element.name(),
-                mandatory[i].0
-            );
-            bad = true;
-        }
-    }
-
-    if bad {
-        return Err(XMLError::RngParseInsufficientAttribute);
-    }
-
-    // ISO/IEC 19757-2:2008 7.4 `datatypeLibrary` attribute
-    if !element.has_attribute("datatypeLibrary", None) {
-        element.set_attribute(
-            "datatypeLibrary",
-            None,
-            Some(
-                &element
-                    .parent_node()
-                    .and_then(|parent| parent.as_element())
-                    .and_then(|parent| parent.get_attribute("datatypeLibrary", None))
-                    .unwrap_or_default(),
-            ),
-        )?;
-    }
-
-    Ok(())
-}
-
-/// # Reference
-/// ISO/IEC 19757-2:2008 7.17 Constraints
-fn check_name_class_constraint<Handler: ErrorHandler>(
-    name_class: &Element,
-    handler: &mut Handler,
-) -> Result<(), XMLError> {
-    match name_class.local_name().as_ref() {
-        "anyName" => {
-            let mut children = name_class.first_child();
-            while let Some(child) = children {
-                children = child.next_sibling();
-
-                if let Some(except) = child
-                    .as_element()
-                    .filter(|elem| elem.local_name().as_ref() == "except")
-                    && except
-                        .get_elements_by_expanded_name("anyName", Some(XML_RELAX_NG_NAMESPACE))
-                        .next()
-                        .is_some()
-                {
-                    fatal_error!(
-                        name_class.owner_document(),
-                        handler,
-                        RngParseUnacceptablePattern,
-                        "An 'except' element that is a child of an 'anyName' element shall not have any 'anyName' descendant elements."
-                    );
-                }
-            }
-        }
-        "nsName" => {
-            let mut children = name_class.first_child();
-            while let Some(child) = children {
-                children = child.next_sibling();
-
-                if let Some(except) = child
-                    .as_element()
-                    .filter(|elem| elem.local_name().as_ref() == "except")
-                    && (except
-                        .get_elements_by_expanded_name("anyName", Some(XML_RELAX_NG_NAMESPACE))
-                        .next()
-                        .is_some()
-                        || except
-                            .get_elements_by_expanded_name("nsName", Some(XML_RELAX_NG_NAMESPACE))
-                            .next()
-                            .is_some())
-                {
-                    fatal_error!(
-                        name_class.owner_document(),
-                        handler,
-                        RngParseUnacceptablePattern,
-                        "An 'except' element that is a child of an 'nsName' element shall not have any 'nsName' or 'anyName' descendant elements."
-                    );
-                }
-            }
-        }
-        _ => {}
-    }
-
-    Ok(())
-}
-
-/// # Reference
-/// ISO/IEC 19757-2:2008 7.17 Constraints
-fn check_attribute_name_constraint<Handler: ErrorHandler>(
-    attribute: &Element,
-    handler: &mut Handler,
-) -> Result<(), XMLError> {
-    let mut children = attribute.first_child();
-    while let Some(child) = children {
-        if let Some(first) = child.first_child() {
-            children = Some(first);
-        } else if !child.is_same_node(attribute.first_child().unwrap())
-            && let Some(next) = child.next_sibling()
-        {
-            children = Some(next);
-        } else {
-            children = None;
-            let mut now = child.clone();
-            while let Some(parent) = now.parent_node() {
-                if parent.is_same_node(attribute)
-                    || parent.is_same_node(attribute.first_child().unwrap())
-                {
-                    break;
-                }
-                if let Some(next) = parent.next_sibling() {
-                    children = Some(next);
-                    break;
-                }
-                now = parent.into();
-            }
-        }
-
-        if let Some(element) = child.as_element() {
-            match element.local_name().as_ref() {
-                "name" => {
-                    if let Some(ns) = element.get_attribute("ns", None) {
-                        if ns.is_empty()
-                            && let Some(text) = element.first_child().and_then(|ch| ch.as_text())
-                            && &*text.data() == "xmlns"
-                        {
-                            fatal_error!(
-                                element.owner_document(),
-                                handler,
-                                RngParseUnacceptableAttribute,
-                                "A 'name' element at the descendant of the first child of an 'attribute' element and that has an 'ns' attribute with empty value shall not have 'xmlns' as its content."
-                            );
-                        } else if ns == XML_NS_NAMESPACE {
-                            fatal_error!(
-                                element.owner_document(),
-                                handler,
-                                RngParseUnacceptableAttribute,
-                                "A 'name' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
-                                XML_NS_NAMESPACE
-                            );
-                        }
-                    }
-                }
-                "nsName" => {
-                    if let Some(ns) = element.get_attribute("ns", None)
-                        && ns == XML_NS_NAMESPACE
-                    {
-                        fatal_error!(
-                            element.owner_document(),
-                            handler,
-                            RngParseUnacceptableAttribute,
-                            "A 'nsName' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
-                            XML_NS_NAMESPACE
-                        );
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// # Reference
-/// ISO/IEC 19757-2:2008 10.2 Prohibited paths
-fn verify_prohibited_paths<Handler: ErrorHandler>(
-    element: &Element,
-    memo: &mut HashSet<String>,
-    handler: &mut Handler,
-) -> Result<(), XMLError> {
-    let mut ret = Ok(());
-    let mut children = element.first_child();
-    let mut buf = HashSet::new();
-    while let Some(child) = children {
-        children = child.next_sibling();
-
-        if let Some(elem) = child.as_element() {
-            ret = ret.and(verify_prohibited_paths(&elem, &mut buf, handler));
-        }
-    }
-
-    macro_rules! report_prohibited_path {
-        ($ancestor:literal, $cwd:literal) => {
-            if buf.contains($cwd) {
-                fatal_error!(
-                    element.owner_document(),
-                    handler,
-                    RngParseProhibitedPath,
-                    "'{}//{}' path is not allowed.",
-                    $ancestor,
-                    $cwd
-                );
-                ret = Err(XMLError::RngParseProhibitedPath);
-            }
-        };
-    }
-
-    match element.local_name().as_ref() {
-        "attribute" => {
-            // ISO/IEC 19757-2:2008 10.2.2 `attribute` pattern
-            report_prohibited_path!("attribute", "ref");
-            report_prohibited_path!("attribute", "attribute");
-        }
-        "oneOrMore" => {
-            // ISO/IEC 19757-2:2008 10.2.3 `oneOrMore` pattern
-            report_prohibited_path!("oneOrMore", "group//attribute");
-            report_prohibited_path!("oneOrMore", "interleave//attribute");
-        }
-        "list" => {
-            // ISO/IEC 19757-2:2008 10.2.4 `list` pattern
-            report_prohibited_path!("list", "list");
-            report_prohibited_path!("list", "ref");
-            report_prohibited_path!("list", "attribute");
-            report_prohibited_path!("list", "text");
-            report_prohibited_path!("list", "interleave");
-        }
-        "except"
-            if element
-                .parent_node()
-                .and_then(|par| par.as_element())
-                .is_some_and(|par| par.local_name().as_ref() == "data") =>
-        {
-            // ISO/IEC 19757-2:2008 10.2.5 `except` element in `data` pattern
-            report_prohibited_path!("data/except", "attribute");
-            report_prohibited_path!("data/except", "ref");
-            report_prohibited_path!("data/except", "text");
-            report_prohibited_path!("data/except", "list");
-            report_prohibited_path!("data/except", "group");
-            report_prohibited_path!("data/except", "interleave");
-            report_prohibited_path!("data/except", "oneOrMore");
-            report_prohibited_path!("data/except", "empty");
-        }
-        "start" => {
-            // ISO/IEC 19757-2:2008 10.2.6 `start` element
-            report_prohibited_path!("start", "attribute");
-            report_prohibited_path!("start", "data");
-            report_prohibited_path!("start", "value");
-            report_prohibited_path!("start", "text");
-            report_prohibited_path!("start", "list");
-            report_prohibited_path!("start", "group");
-            report_prohibited_path!("start", "interleave");
-            report_prohibited_path!("start", "oneOrMore");
-            report_prohibited_path!("start", "empty");
-        }
-        "group" if buf.contains("attribute") => {
-            buf.insert("group//attribute".into());
-        }
-        "interleave" if buf.contains("attribute") => {
-            buf.insert("interleave//attribute".into());
-        }
-        _ => {}
-    }
-    memo.insert(element.local_name().as_ref().into());
-    memo.extend(buf);
-
-    ret
-}
-
 fn remove_foreign_element_child(element: &Element) -> Result<(), XMLError> {
     let mut children = element.first_child();
     while let Some(mut child) = children {
@@ -3346,109 +3481,6 @@ fn remove_whitespace_child(element: &Element) -> Result<(), XMLError> {
         {
             text.detach()?;
         }
-    }
-    Ok(())
-}
-
-fn normalize_string_child<Handler: ErrorHandler>(
-    element: &mut Element,
-    handler: &mut Handler,
-    trim: bool,
-) -> Result<(), XMLError> {
-    let mut children = element.first_child();
-    while let Some(mut child) = children {
-        if let Some(mut text) = child.as_text() {
-            let mut siblings = child.next_sibling();
-            while let Some(mut sibling) = siblings {
-                siblings = sibling.next_sibling();
-                match sibling.downcast() {
-                    NodeKind::Text(mut now) => {
-                        now.detach()?;
-                        text.push_str(&now.data());
-                    }
-                    NodeKind::CDATASection(mut now) => {
-                        now.detach()?;
-                        text.push_str(&now.data());
-                    }
-                    _ => {
-                        fatal_error!(
-                            element.owner_document(),
-                            handler,
-                            RngParseUnacceptablePattern,
-                            "Only a string is allowed as a child of 'param', but {:?} is found.",
-                            sibling.node_type()
-                        );
-                        sibling.detach()?;
-                    }
-                }
-            }
-
-            if trim {
-                let d = text.data();
-                let data = d.trim_matches(|c| XMLVersion::default().is_whitespace(c));
-                if text.data().len() != data.len() {
-                    let new = element.owner_document().create_text(data);
-                    drop(d);
-                    text.detach()?;
-                    element.append_child(new)?;
-                }
-            }
-            break;
-        } else if let Some(mut cdata) = child.as_cdata_section() {
-            let mut siblings = child.next_sibling();
-            while let Some(mut sibling) = siblings {
-                siblings = sibling.next_sibling();
-                match sibling.downcast() {
-                    NodeKind::Text(mut now) => {
-                        now.detach()?;
-                        cdata.push_str(&now.data());
-                    }
-                    NodeKind::CDATASection(mut now) => {
-                        now.detach()?;
-                        cdata.push_str(&now.data());
-                    }
-                    _ => {
-                        fatal_error!(
-                            element.owner_document(),
-                            handler,
-                            RngParseUnacceptablePattern,
-                            "Only a string is allowed as a child of 'param', but {:?} is found.",
-                            sibling.node_type()
-                        );
-                        sibling.detach()?;
-                    }
-                }
-            }
-
-            let text = if trim {
-                element.owner_document().create_text(
-                    cdata
-                        .data()
-                        .trim_matches(|c| XMLVersion::default().is_whitespace(c)),
-                )
-            } else {
-                element.owner_document().create_text(&*cdata.data())
-            };
-
-            cdata.detach()?;
-            element.append_child(text)?;
-            break;
-        } else {
-            children = child.next_sibling();
-            fatal_error!(
-                element.owner_document(),
-                handler,
-                RngParseUnacceptablePattern,
-                "Only a string is allowed as a child of 'param', but {:?} is found.",
-                child.node_type()
-            );
-            child.detach()?;
-        }
-    }
-
-    if element.first_child().is_none() {
-        let text = element.owner_document().create_text("");
-        element.append_child(text)?;
     }
     Ok(())
 }

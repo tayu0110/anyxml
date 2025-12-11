@@ -59,17 +59,19 @@ fn handle_correct_case(testcase: Element, schema: Element) {
     .unwrap();
 
     for valid in testcase.get_elements_by_qname("valid") {
+        let valid = valid.first_element_child().unwrap();
         eprintln!("----- begin valid test case -----");
         eprintln!("{valid}");
         eprintln!("----- end valid test case -----");
-        assert!(schema.validate(&valid).is_ok());
+        schema.validate(&valid).unwrap();
     }
 
     for invalid in testcase.get_elements_by_qname("invalid") {
+        let invalid = invalid.first_element_child().unwrap();
         eprintln!("----- begin invalid test case -----");
         eprintln!("{invalid}");
         eprintln!("----- end invalid test case -----");
-        assert!(schema.validate(&invalid).is_ok());
+        assert!(schema.validate(&invalid).is_err());
     }
 }
 
