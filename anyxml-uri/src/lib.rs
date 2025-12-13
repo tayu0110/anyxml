@@ -1,9 +1,11 @@
+pub mod rfc2396;
 pub mod uri;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ParseRIError {
     InvalidAuthority,
     InvalidPathAbsolute,
+    InvalidSegment,
     InvalidSegmentNzNc,
     InvalidPChar,
     InvalidScheme,
