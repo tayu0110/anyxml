@@ -710,38 +710,45 @@ impl RelaxNGSchemaParseContext {
                             );
                         }
 
-                        while let Some(mut child) = children {
-                            children = child.next_sibling();
+                        if children.is_none() {
+                            element.append_child(
+                                self.document
+                                    .create_element("text", Some(XML_RELAX_NG_NAMESPACE.into()))?,
+                            )?;
+                        } else {
+                            while let Some(mut child) = children {
+                                children = child.next_sibling();
 
-                            if let Some(mut pattern) = child.as_element() {
-                                self.handle_pattern(
-                                    &mut pattern,
-                                    handler,
-                                    ns_context.as_ref().into(),
-                                )?;
-                                break;
-                            } else {
+                                if let Some(mut pattern) = child.as_element() {
+                                    self.handle_pattern(
+                                        &mut pattern,
+                                        handler,
+                                        ns_context.as_ref().into(),
+                                    )?;
+                                    break;
+                                } else {
+                                    fatal_error!(
+                                        self,
+                                        handler,
+                                        RngParseUnacceptablePattern,
+                                        "A {:?} must not be present at this position as a child of 'attribute'.",
+                                        child.node_type()
+                                    );
+                                    child.detach()?;
+                                }
+                            }
+
+                            if children.is_some() {
                                 fatal_error!(
                                     self,
                                     handler,
                                     RngParseUnacceptablePattern,
-                                    "A {:?} must not be present at this position as a child of 'attribute'.",
-                                    child.node_type()
+                                    "'attribute' pattern cannot have more then only one pattern children."
                                 );
-                                child.detach()?;
-                            }
-                        }
-
-                        if children.is_some() {
-                            fatal_error!(
-                                self,
-                                handler,
-                                RngParseUnacceptablePattern,
-                                "'attribute' pattern cannot have more then only one pattern children."
-                            );
-                            while let Some(mut child) = children {
-                                children = child.next_sibling();
-                                child.detach()?;
+                                while let Some(mut child) = children {
+                                    children = child.next_sibling();
+                                    child.detach()?;
+                                }
                             }
                         }
 

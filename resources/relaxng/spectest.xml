@@ -780,7 +780,8 @@
 </element>
 </incorrect>
 </testCase> -->
-<testCase>
+<!-- U+E35 is a valid NameStartChar in XML 1.0 (fifth edition), so this test cannot work. -->
+<!-- <testCase>
 <section>3</section>
 <incorrect>
 <element name="foo" xmlns="http://relaxng.org/ns/structure/1.0">
@@ -788,7 +789,7 @@
   <empty/>
 </element>
 </incorrect>
-</testCase>
+</testCase> -->
 <!-- U+E35 is a valid NameStartChar in XML 1.0 (fifth edition), so this test cannot work. -->
 <!-- <testCase>
 <section>3</section>
