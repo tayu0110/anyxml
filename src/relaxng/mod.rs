@@ -5,6 +5,8 @@ use std::{
     sync::Arc,
 };
 
+use anyxml_uri::rfc2396::validate_rfc2396_absolute_uri;
+
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
@@ -2448,39 +2450,15 @@ impl RelaxNGSchemaParseContext {
                 // this is always allowed
 
                 let value = att.value();
-                if !value.is_empty() {
-                    if let Ok(uri) = URIString::parse(value.as_str()) {
-                        if !uri.is_absolute() {
-                            error!(
-                                self,
-                                handler,
-                                RngParseDatatypeLibraryURINotAbsolute,
-                                "The attribute 'datatypeLibrary' must have an absolute URI value, but '{}' is not.",
-                                value
-                            );
-                            remove.push(att);
-                        } else if uri.authority().is_none() && uri.path().is_empty() {
-                            // RFC 3986 allows hier-part to be empty (called 'path-empty'),
-                            // but RFC 2396 does not allow hier-part to be empty.
-                            // Follow the URI standards referenced in the specification.
-                            error!(
-                                self,
-                                handler,
-                                RngParseDatatypeLibraryURINotAbsolute,
-                                "The attribute 'datatypeLibrary' must conform to RFC 2396."
-                            );
-                            remove.push(att);
-                        }
-                    } else {
-                        error!(
-                            self,
-                            handler,
-                            RngParseInvalidAnyURI,
-                            "The attribute 'datatypeLibrary' must be anyURI or empty string, but '{}' is not.",
-                            value
-                        );
-                        remove.push(att);
-                    }
+                if !value.is_empty() && validate_rfc2396_absolute_uri(&value).is_err() {
+                    error!(
+                        self,
+                        handler,
+                        RngParseDatatypeLibraryURINotAbsolute,
+                        "The attribute 'datatypeLibrary' must have an absolute URI value, but '{}' is not.",
+                        value
+                    );
+                    remove.push(att);
                 }
             } else {
                 error!(
