@@ -2448,6 +2448,7 @@ impl RelaxNGSchemaParseContext {
                             children = child.next_sibling();
                             deep_copy(document, &mut copied, &child)?;
                         }
+                        context_node.append_child(copied)?;
                     }
                     NodeKind::Text(text) => {
                         context_node.append_child(document.create_text(&*text.data()))?;
