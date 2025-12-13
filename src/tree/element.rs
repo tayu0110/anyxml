@@ -322,15 +322,9 @@ impl Element {
             && self
                 .namespace()
                 .is_some_and(|namespace| namespace.namespace_name() != namespace_name)
-            && !self
-                .core
-                .borrow()
-                .spec
-                .attributes
-                .check_using_namespace(&namespace_name)
-            && let Some(namespace) = self
-                .core
-                .borrow()
+            && let core = self.core.borrow()
+            && !core.spec.attributes.check_using_namespace(&namespace_name)
+            && let Some(namespace) = core
                 .spec
                 .namespace_decl
                 .get_by_prefix(prefix.as_deref())
@@ -340,6 +334,8 @@ impl Element {
                 })
             && namespace.is_implicit()
         {
+            // prevent re-borrowing
+            drop(core);
             self.core
                 .borrow_mut()
                 .spec
