@@ -1898,9 +1898,8 @@ impl RelaxNGSchemaParseContext {
         {
             document_element.set_attribute("ns", None, Some(&ns))?;
         }
-        let pattern = external_ref.owner_document().import_node(document_element);
-        external_ref.insert_previous_sibling(&pattern)?;
-        external_ref.detach()?;
+        let mut pattern = external_ref.owner_document().import_node(document_element);
+        external_ref.replace_subtree(&mut pattern)?;
         Ok(pattern)
     }
 

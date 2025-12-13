@@ -499,6 +499,49 @@ impl Node<dyn NodeSpec> {
         self.do_insert_next_sibling(new_sibling.into())
     }
 
+    /// Replace the subtree rooted at `self` with the subtree rooted at `src`.
+    ///
+    /// If `self` has no parent, nothing happens.  \
+    /// If `self` has a parent, the following occurs:
+    /// - [`src.detach()`](Node::detach) is executed,
+    /// - `src` is inserted as an adjacent sibling to `self`,
+    /// - and finally [`self.detach()`](Node::detach) is executed.
+    ///
+    /// # Note
+    /// `self` is never inserted into the position where `src` was.  \
+    /// `self` simply becomes a subtree without a parent.
+    pub fn replace_subtree<N: NodeSpec>(&mut self, src: &mut Node<N>) -> Result<(), XMLTreeError> {
+        let Some(parent) = self.parent_node() else {
+            return Ok(());
+        };
+
+        if let Some(mut document) = parent.as_document() {
+            if let Some(mut prev) = self.previous_sibling() {
+                self.detach()?;
+                if let Err(err) = prev.insert_next_sibling(src) {
+                    prev.insert_next_sibling(self)?;
+                    return Err(err);
+                }
+            } else if let Some(mut next) = self.next_sibling() {
+                self.detach()?;
+                if let Err(err) = next.insert_previous_sibling(src) {
+                    next.insert_previous_sibling(self)?;
+                    return Err(err);
+                }
+            } else {
+                self.detach()?;
+                if let Err(err) = document.append_child(src) {
+                    document.append_child(self)?;
+                    return Err(err);
+                }
+            }
+        } else {
+            self.insert_previous_sibling(src)?;
+            self.detach()?;
+        }
+        Ok(())
+    }
+
     /// Check whether `self` and `other` are the same node.
     ///
     /// # Note
@@ -675,6 +718,11 @@ impl Node<dyn InternalNodeSpec> {
         Node::<dyn NodeSpec>::from(self.clone()).insert_next_sibling(new_sibling)
     }
 
+    /// See [Node::replace_subtree].
+    pub fn replace_subtree<N: NodeSpec>(&mut self, src: &mut Node<N>) -> Result<(), XMLTreeError> {
+        Node::<dyn NodeSpec>::from(self).replace_subtree(src)
+    }
+
     fn do_append_child(&mut self, mut new_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
         if let Some(mut last_child) = self.last_child() {
             last_child.insert_next_sibling(new_child)?;
@@ -810,6 +858,11 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
         new_sibling: impl Into<Node<dyn NodeSpec>>,
     ) -> Result<(), XMLTreeError> {
         Node::<dyn NodeSpec>::from(self).insert_next_sibling(new_sibling)
+    }
+
+    /// See [Node::replace_subtree].
+    pub fn replace_subtree<N: NodeSpec>(&mut self, src: &mut Node<N>) -> Result<(), XMLTreeError> {
+        Node::<dyn NodeSpec>::from(self).replace_subtree(src)
     }
 
     /// Check whether `self` and `other` are the same node.

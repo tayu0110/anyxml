@@ -90,23 +90,27 @@ fn build_resources(testcase: &Element) -> HashMap<String, String> {
                     && let Some(first) = now.first_element_child()
                 {
                     children = Some(first);
-                } else if let Some(next) = now.next_element_sibling() {
+                } else if !child.is_same_node(&now)
+                    && let Some(next) = now.next_element_sibling()
+                {
                     children = Some(next);
                 } else {
                     children = None;
-                    let mut now = Node::<dyn InternalNodeSpec>::from(now);
-                    while let Some(par) = now.parent_node() {
-                        if child.is_same_node(&par) {
-                            break;
+                    if !child.is_same_node(&now) {
+                        let mut now = Node::<dyn InternalNodeSpec>::from(now);
+                        while let Some(par) = now.parent_node() {
+                            if child.is_same_node(&par) {
+                                break;
+                            }
+                            if par.as_element().unwrap().local_name().as_ref() == "dir" {
+                                dirs.pop();
+                            }
+                            if let Some(next) = par.next_element_sibling() {
+                                children = Some(next);
+                                break;
+                            }
+                            now = par
                         }
-                        if par.as_element().unwrap().local_name().as_ref() == "dir" {
-                            dirs.pop();
-                        }
-                        if let Some(next) = par.next_element_sibling() {
-                            children = Some(next);
-                            break;
-                        }
-                        now = par
                     }
                 }
             }
