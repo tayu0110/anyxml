@@ -1926,7 +1926,7 @@ impl RelaxNGSchemaParseContext {
             .get_attribute("href", None)
             .ok_or(XMLError::RngParseUnknownError)
             .and_then(|href| Ok(URIString::parse(href)?))?;
-        // Since `external_ref` is a descendant of `Document`, `base_uri` will never fail.
+        // Since `include` is a descendant of `Document`, `base_uri` will never fail.
         let mut href = include
             .base_uri()
             .map(|base_uri| base_uri.resolve(&href))
@@ -2093,7 +2093,11 @@ impl RelaxNGSchemaParseContext {
         let mut div = document.create_element("div", Some(XML_RELAX_NG_NAMESPACE.into()))?;
         for att in include.attributes() {
             if att.local_name().as_ref() != "href" {
-                div.set_attribute(&att.name(), None, Some(&att.value()))?;
+                div.set_attribute(
+                    &att.name(),
+                    att.namespace_name().as_deref(),
+                    Some(&att.value()),
+                )?;
             }
         }
         // According to the specification, `grammar` is replaced with `div`,
@@ -2112,8 +2116,7 @@ impl RelaxNGSchemaParseContext {
             child.detach()?;
             div.append_child(child)?;
         }
-        include.insert_previous_sibling(&div)?;
-        include.detach()?;
+        include.replace_subtree(&div)?;
 
         // Flattening for `div` elements substituted with `include` is performed by the caller.
         // If the `div` has no children, performing flattening here would result in no elements
@@ -3349,8 +3352,7 @@ fn group_children(element: &mut Element) -> Result<(), XMLError> {
             // There is exactly one child
             if element.last_child().unwrap().is_same_node(&first) {
                 first.detach()?;
-                element.insert_previous_sibling(&first)?;
-                element.detach()?;
+                element.replace_subtree(&mut first)?;
                 *element = first.as_element().ok_or(XMLError::RngParseUnknownError)?;
                 return Ok(());
             }

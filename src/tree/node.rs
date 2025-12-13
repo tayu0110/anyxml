@@ -510,7 +510,10 @@ impl Node<dyn NodeSpec> {
     /// # Note
     /// `self` is never inserted into the position where `src` was.  \
     /// `self` simply becomes a subtree without a parent.
-    pub fn replace_subtree<N: NodeSpec>(&mut self, src: &mut Node<N>) -> Result<(), XMLTreeError> {
+    pub fn replace_subtree(
+        &mut self,
+        src: impl Into<Node<dyn NodeSpec>>,
+    ) -> Result<(), XMLTreeError> {
         let Some(parent) = self.parent_node() else {
             return Ok(());
         };
@@ -719,7 +722,10 @@ impl Node<dyn InternalNodeSpec> {
     }
 
     /// See [Node::replace_subtree].
-    pub fn replace_subtree<N: NodeSpec>(&mut self, src: &mut Node<N>) -> Result<(), XMLTreeError> {
+    pub fn replace_subtree(
+        &mut self,
+        src: impl Into<Node<dyn NodeSpec>>,
+    ) -> Result<(), XMLTreeError> {
         Node::<dyn NodeSpec>::from(self).replace_subtree(src)
     }
 
@@ -861,7 +867,10 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
     }
 
     /// See [Node::replace_subtree].
-    pub fn replace_subtree<N: NodeSpec>(&mut self, src: &mut Node<N>) -> Result<(), XMLTreeError> {
+    pub fn replace_subtree(
+        &mut self,
+        src: impl Into<Node<dyn NodeSpec>>,
+    ) -> Result<(), XMLTreeError> {
         Node::<dyn NodeSpec>::from(self).replace_subtree(src)
     }
 
