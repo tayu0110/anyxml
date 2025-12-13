@@ -322,6 +322,17 @@ impl Attribute {
         buf
     }
 
+    /// Remove current attribute value and set `data` as the value of `self`.
+    pub fn set_value(&mut self, data: &str) -> Result<(), XMLTreeError> {
+        let mut children = self.first_child();
+        while let Some(mut child) = children {
+            children = child.next_sibling();
+            child.detach()?;
+        }
+        let text = self.owner_document().create_text(data);
+        self.append_child(text)
+    }
+
     /// If this attribute is explicitly specified, it returns `true`.  \
     /// If it is implicitly specified, such as through a default value
     /// in an attribute list declaration, it returns `false`.

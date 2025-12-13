@@ -534,14 +534,20 @@ impl RelaxNGSchemaParseContext {
                 // The child string of `value` must not be removed, even if it contains only whitespaces.
                 // (ISO/IEC 19757-2:2008 7.3 Whitespace)
 
-                self.check_attribute_constraint(element, handler, [], [("type", validate_ncname)])?;
-
-                // ISO/IEC 19757-2:2008 7.5 `type` attribute of `value` element
-                if !element.has_attribute("type", None) {
+                if let Some(ty) = element.remove_attribute("type", None) {
+                    element.set_attribute(
+                        "type",
+                        None,
+                        Some(ty.trim_matches(|c| XMLVersion::default().is_whitespace(c))),
+                    )?;
+                } else {
+                    // ISO/IEC 19757-2:2008 7.5 `type` attribute of `value` element
                     element.set_attribute("type", None, Some("token"))?;
                     element.remove_attribute("datatypeLibrary", None);
                     element.set_attribute("datatypeLibrary", None, Some(""))?;
                 }
+
+                self.check_attribute_constraint(element, handler, [], [("type", validate_ncname)])?;
 
                 // ISO/IEC 19757-2:2008 7.10 `ns` attribute
                 if !element.has_attribute("ns", None) {
@@ -850,6 +856,14 @@ impl RelaxNGSchemaParseContext {
                         }
                     }
                     "data" => {
+                        if let Some(ty) = element.remove_attribute("type", None) {
+                            element.set_attribute(
+                                "type",
+                                None,
+                                Some(ty.trim_matches(|c| XMLVersion::default().is_whitespace(c))),
+                            )?;
+                        }
+
                         self.check_attribute_constraint(
                             element,
                             handler,
@@ -2484,10 +2498,14 @@ impl RelaxNGSchemaParseContext {
 
         let mut remove = vec![];
 
-        for att in element.attributes() {
+        for mut att in element.attributes() {
+            let value = att.value();
+            att.set_value(value.trim_matches(|c| XMLVersion::default().is_whitespace(c)))?;
+
             if att.name().as_ref() == "xml:base" {
                 continue;
             }
+
             if att.namespace().is_some() {
                 error!(
                     self,
