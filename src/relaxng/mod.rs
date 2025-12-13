@@ -408,14 +408,8 @@ impl RelaxNGSchemaParseContext {
         )?;
         self.last_error?;
         // ISO/IEC 19757-2:2008 7.20 `define` and `ref` elements
-        self.normalize_define_and_ref(
-            &mut grammar.clone(),
-            &mut grammar,
-            &mut handler,
-            &mut num_define,
-            false,
-            false,
-        )?;
+        self.normalize_define(&mut grammar.clone(), &mut grammar, &mut num_define)?;
+        self.normalize_ref(&mut grammar, &mut handler, false, false)?;
         self.last_error?;
         for (_, mut define) in self.defines.extract_if(|_, define| {
             define
@@ -2342,60 +2336,67 @@ impl RelaxNGSchemaParseContext {
 
     /// # Reference
     /// ISO/IEC 19757-2:2008 7.20 define and ref elements
-    fn normalize_define_and_ref<Handler: ErrorHandler>(
+    fn normalize_define(
         &mut self,
         grammar: &mut Element,
         context_node: &mut Element,
-        handler: &mut Handler,
         num_define: &mut usize,
+    ) -> Result<(), XMLError> {
+        let mut children = context_node.first_element_child();
+        if context_node.local_name().as_ref() == "element"
+            && context_node
+                .parent_node()
+                .and_then(|par| par.as_element())
+                .is_none_or(|elem| elem.local_name().as_ref() != "define")
+        {
+            let alias = format!("define_alias{}", num_define);
+            *num_define += 1;
+            let mut define = self
+                .document
+                .create_element("define", Some(XML_RELAX_NG_NAMESPACE.into()))?;
+            define.set_attribute("name", None, Some(&alias))?;
+            let mut r#ref = self
+                .document
+                .create_element("ref", Some(XML_RELAX_NG_NAMESPACE.into()))?;
+            r#ref.set_attribute("name", None, Some(&alias))?;
+            context_node.insert_previous_sibling(&r#ref)?;
+            define.append_child(context_node.clone())?;
+            grammar.append_child(&define)?;
+            self.defines.insert(alias, define);
+            *context_node = r#ref;
+        }
+
+        while let Some(mut context_node) = children {
+            children = context_node.next_element_sibling();
+            self.normalize_define(grammar, &mut context_node, num_define)?;
+        }
+
+        Ok(())
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 7.20 define and ref elements
+    fn normalize_ref<Handler: ErrorHandler>(
+        &mut self,
+        context_node: &mut Element,
+        handler: &mut Handler,
         mut start: bool,
         mut element: bool,
     ) -> Result<(), XMLError> {
         let mut expand = false;
-        let mut children = context_node.first_child();
+        let mut children = context_node.first_element_child();
         match context_node.local_name().as_ref() {
             "start" => start = true,
-            "element" => {
-                if context_node
-                    .parent_node()
-                    .and_then(|par| par.as_element())
-                    .is_none_or(|elem| elem.local_name().as_ref() != "define")
-                {
-                    let alias = format!("define_alias{}", num_define);
-                    *num_define += 1;
-                    let mut define = self
-                        .document
-                        .create_element("define", Some(XML_RELAX_NG_NAMESPACE.into()))?;
-                    define.set_attribute("name", None, Some(&alias))?;
-                    let mut r#ref = self
-                        .document
-                        .create_element("ref", Some(XML_RELAX_NG_NAMESPACE.into()))?;
-                    r#ref.set_attribute("name", None, Some(&alias))?;
-                    context_node.insert_previous_sibling(&r#ref)?;
-                    define.append_child(context_node.clone())?;
-                    grammar.append_child(define)?;
-                    *context_node = r#ref;
-                }
-                element = true;
-            }
+            "element" => element = true,
             "ref" => {
                 expand = start || element;
             }
             _ => {}
         }
 
-        while let Some(child) = children {
-            children = child.next_sibling();
-            if let Some(mut context_node) = child.as_element() {
-                self.normalize_define_and_ref(
-                    grammar,
-                    &mut context_node,
-                    handler,
-                    num_define,
-                    start,
-                    element,
-                )?;
-            }
+        while let Some(mut context_node) = children {
+            children = context_node.next_element_sibling();
+            self.normalize_ref(&mut context_node, handler, start, element)?;
         }
 
         if expand {
@@ -3365,26 +3366,20 @@ fn group_children(element: &mut Element) -> Result<(), XMLError> {
             }
         }
         "choice" | "group" | "interleave" => {
-            // There is exactly one child
-            if element.last_child().unwrap().is_same_node(&first) {
-                first.detach()?;
-                element.replace_subtree(&mut first)?;
-                *element = first.as_element().ok_or(XMLError::RngParseUnknownError)?;
-                return Ok(());
-            }
-
             let name = element.local_name().clone();
             let document = element.owner_document();
             while let Some(second) = first.next_sibling() {
                 let mut group =
                     document.create_element(name.as_ref(), Some(XML_RELAX_NG_NAMESPACE.into()))?;
-                first.insert_previous_sibling(&group)?;
+                first.replace_subtree(&mut group)?;
                 group.append_child(first)?;
                 group.append_child(second)?;
                 first = group.into();
             }
+            element.replace_subtree(&first)?;
+            *element = first.as_element().unwrap();
         }
-        _ => unreachable!(),
+        _ => unreachable!("name: {}", element.local_name()),
     }
 
     Ok(())
