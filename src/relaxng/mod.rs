@@ -2765,30 +2765,26 @@ impl RelaxNGSchemaParseContext {
         assert!(grammar.first_child().is_none());
 
         // reconstruct 'start'
-        if let Some(combine) = combine_start {
-            let mut start =
-                document.create_element("start", Some(XML_RELAX_NG_NAMESPACE.into()))?;
-            let mut combine =
-                document.create_element(combine, Some(XML_RELAX_NG_NAMESPACE.into()))?;
-            combine.append_child(frag_start)?;
-            group_children(&mut combine)?;
-            start.append_child(combine)?;
-            grammar.append_child(start)?;
-        }
+        let combine = combine_start.unwrap_or_else(|| "choice".to_owned());
+        let mut start = document.create_element("start", Some(XML_RELAX_NG_NAMESPACE.into()))?;
+        let mut combine = document.create_element(combine, Some(XML_RELAX_NG_NAMESPACE.into()))?;
+        grammar.append_child(&start)?;
+        start.append_child(&combine)?;
+        combine.append_child(frag_start)?;
+        group_children(&mut combine)?;
 
         // reconstruct 'define'
         for (name, (_, frag, combine)) in define_mapping {
-            if let Some(combine) = combine {
-                let mut define =
-                    document.create_element("define", Some(XML_RELAX_NG_NAMESPACE.into()))?;
-                let mut combine =
-                    document.create_element(combine, Some(XML_RELAX_NG_NAMESPACE.into()))?;
-                combine.append_child(frag)?;
-                group_children(&mut combine)?;
-                define.append_child(combine)?;
-                define.set_attribute("name", None, Some(&name))?;
-                grammar.append_child(define)?;
-            }
+            let combine = combine.unwrap_or_else(|| "choice".to_owned());
+            let mut define =
+                document.create_element("define", Some(XML_RELAX_NG_NAMESPACE.into()))?;
+            let mut combine =
+                document.create_element(combine, Some(XML_RELAX_NG_NAMESPACE.into()))?;
+            grammar.append_child(&define)?;
+            define.append_child(&combine)?;
+            combine.append_child(frag)?;
+            group_children(&mut combine)?;
+            define.set_attribute("name", None, Some(&name))?;
         }
 
         Ok(())
