@@ -2029,11 +2029,14 @@ impl RelaxNGSchemaParseContext {
         // following ISO/IEC 19757-2:2008 7.8 include element
         let mut used_define = vec![false; define.len()];
         let mut children = grammar.first_child();
+        let mut remove_start = false;
         while let Some(mut child) = children {
             let mut remove = false;
             if let Some(element) = child.as_element() {
                 if start && element.local_name().as_ref() == "start" {
                     remove = true;
+                    // Used to check that the imported `grammar` contains at least one `start`.
+                    remove_start = true;
                 } else if element.local_name().as_ref() == "define" {
                     let name = element.get_attribute("name", None);
                     if let Ok(pos) =
@@ -2071,7 +2074,16 @@ impl RelaxNGSchemaParseContext {
             }
         }
 
-        // "f the include element has a define component,
+        if start && !remove_start {
+            fatal_error!(
+                self,
+                handler,
+                RngParseInsufficientStartInInclude,
+                "'include' contains 'start', but included grammar does not contain."
+            );
+        }
+
+        // "if the include element has a define component,
         // then the grammar element shall have at least one define component with the same name"
         // (ISO/IEC 19757-2:2008 7.8 include element)
         for i in 0..define.len() {
@@ -2851,13 +2863,17 @@ impl RelaxNGSchemaParseContext {
         assert!(grammar.first_child().is_none());
 
         // reconstruct 'start'
-        let combine = combine_start.unwrap_or_else(|| "choice".to_owned());
-        let mut start = document.create_element("start", Some(XML_RELAX_NG_NAMESPACE.into()))?;
-        let mut combine = document.create_element(combine, Some(XML_RELAX_NG_NAMESPACE.into()))?;
-        grammar.append_child(&start)?;
-        start.append_child(&combine)?;
-        combine.append_child(frag_start)?;
-        group_children(&mut combine)?;
+        if combine_start.is_some() || num_start_without_combine > 0 {
+            let combine = combine_start.unwrap_or_else(|| "choice".to_owned());
+            let mut start =
+                document.create_element("start", Some(XML_RELAX_NG_NAMESPACE.into()))?;
+            let mut combine =
+                document.create_element(combine, Some(XML_RELAX_NG_NAMESPACE.into()))?;
+            grammar.append_child(&start)?;
+            start.append_child(&combine)?;
+            combine.append_child(frag_start)?;
+            group_children(&mut combine)?;
+        }
 
         // reconstruct 'define'
         for (name, (_, frag, combine)) in define_mapping {

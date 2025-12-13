@@ -220,6 +220,7 @@ pub enum XMLError {
     RngParseUnresolvableParentRefName,
     RngParseDatatypeLibraryURINotAbsolute,
     RngParseInsufficientAttribute,
+    RngParseInsufficientStartInInclude,
     RngParseInsufficientDefineInInclude,
     RngParseExternalRefParseFailure,
     RngParseExternalRefLoop,
