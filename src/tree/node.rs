@@ -129,7 +129,7 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
     pub fn previous_element_sibling(&self) -> Option<Element> {
         let mut previous = self.previous_sibling();
         while let Some(now) = previous {
-            previous = self.previous_sibling();
+            previous = now.previous_sibling();
 
             if let Some(element) = now.as_element() {
                 return Some(element);
@@ -152,7 +152,7 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
     pub fn next_element_sibling(&self) -> Option<Element> {
         let mut next = self.next_sibling();
         while let Some(now) = next {
-            next = self.next_sibling();
+            next = now.next_sibling();
 
             if let Some(element) = now.as_element() {
                 return Some(element);

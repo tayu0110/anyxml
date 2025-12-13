@@ -1,5 +1,15 @@
+use std::collections::HashMap;
+
 use anyxml::{
-    relaxng::RelaxNGSchema, sax::handler::DefaultSAXHandler, tree::Element, uri::URIString,
+    error::XMLError,
+    relaxng::RelaxNGSchema,
+    sax::{
+        error::SAXParseError,
+        handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
+        source::InputSource,
+    },
+    tree::{Element, Node, node::InternalNodeSpec},
+    uri::{URIStr, URIString},
     xpath::evaluate_uri,
 };
 
@@ -35,26 +45,131 @@ fn handle_testsuite(testsuite: Element) {
             eprintln!("=== test case: (no documentation) ===");
         }
 
+        let resource_map = build_resources(&testcase);
+
         if let Some(correct) = testcase.get_elements_by_qname("correct").next() {
-            handle_correct_case(testcase.clone(), correct.first_element_child().unwrap());
+            handle_correct_case(
+                testcase.clone(),
+                correct.first_element_child().unwrap(),
+                resource_map,
+            );
         } else {
             let incorrect = testcase.get_elements_by_qname("incorrect").next().unwrap();
-            handle_incorrect_case(testcase.clone(), incorrect.first_element_child().unwrap());
+            handle_incorrect_case(
+                testcase.clone(),
+                incorrect.first_element_child().unwrap(),
+                resource_map,
+            );
         }
     }
 }
 
-fn handle_correct_case(testcase: Element, schema: Element) {
+fn build_resources(testcase: &Element) -> HashMap<String, String> {
+    let mut children = testcase.first_element_child();
+    let mut ret = HashMap::new();
+    while let Some(child) = children {
+        children = child.next_element_sibling();
+
+        if matches!(child.local_name().as_ref(), "resource" | "dir") {
+            let mut children = Some(child.clone());
+            let mut dirs: Vec<String> = vec![];
+            while let Some(now) = children {
+                if now.local_name().as_ref() == "resource" {
+                    let name = now.get_attribute("name", None).unwrap();
+                    let content = now
+                        .first_element_child()
+                        .map(|ch| format!("{ch}"))
+                        .unwrap_or_default();
+                    let name = dirs.iter().fold(String::new(), |s, v| s + v) + name.as_str();
+                    ret.insert(name, content);
+                } else if now.local_name().as_ref() == "dir" {
+                    let name = now.get_attribute("name", None).unwrap();
+                    dirs.push(format!("{name}/"));
+                }
+                if now.local_name().as_ref() == "dir"
+                    && let Some(first) = now.first_element_child()
+                {
+                    children = Some(first);
+                } else if let Some(next) = now.next_element_sibling() {
+                    children = Some(next);
+                } else {
+                    children = None;
+                    let mut now = Node::<dyn InternalNodeSpec>::from(now);
+                    while let Some(par) = now.parent_node() {
+                        if child.is_same_node(&par) {
+                            break;
+                        }
+                        if par.as_element().unwrap().local_name().as_ref() == "dir" {
+                            dirs.pop();
+                        }
+                        if let Some(next) = par.next_element_sibling() {
+                            children = Some(next);
+                            break;
+                        }
+                        now = par
+                    }
+                }
+            }
+        }
+    }
+    ret
+}
+
+struct CustomResourseHandler {
+    resource_map: HashMap<URIString, String>,
+}
+
+impl EntityResolver for CustomResourseHandler {
+    fn resolve_entity(
+        &mut self,
+        name: &str,
+        public_id: Option<&str>,
+        base_uri: &URIStr,
+        system_id: &URIStr,
+    ) -> Result<InputSource<'static>, XMLError> {
+        let uri = base_uri.resolve(system_id);
+        if let Some(contents) = self.resource_map.get(&uri) {
+            let mut source = InputSource::from_content(contents);
+            source.set_system_id(uri);
+            return Ok(source);
+        }
+
+        DefaultSAXHandler.resolve_entity(name, public_id, base_uri, system_id)
+    }
+}
+impl ErrorHandler for CustomResourseHandler {
+    fn error(&mut self, error: SAXParseError) {
+        DefaultSAXHandler.error(error);
+    }
+    fn fatal_error(&mut self, error: SAXParseError) {
+        DefaultSAXHandler.fatal_error(error);
+    }
+    fn warning(&mut self, error: SAXParseError) {
+        DefaultSAXHandler.warning(error);
+    }
+}
+impl SAXHandler for CustomResourseHandler {}
+
+fn handle_correct_case(testcase: Element, schema: Element, resource_map: HashMap<String, String>) {
     let document = schema.owner_document();
     let schema = format!("{schema}");
     eprintln!("--- begin correct schema ---");
     eprintln!("{schema}");
     eprintln!("--- end correct schema ---");
 
+    let base_uri = document.base_uri().unwrap();
+    let resource_map = resource_map
+        .into_iter()
+        .map(|(uri, content)| {
+            let uri = base_uri.resolve(&URIString::parse(uri).unwrap());
+            (uri, content)
+        })
+        .collect::<HashMap<_, _>>();
+
     let schema = RelaxNGSchema::parse_str(
         &schema,
-        document.base_uri().unwrap(),
-        None::<DefaultSAXHandler>,
+        base_uri,
+        Some(CustomResourseHandler { resource_map }),
     )
     .unwrap();
 
@@ -75,17 +190,30 @@ fn handle_correct_case(testcase: Element, schema: Element) {
     }
 }
 
-fn handle_incorrect_case(_testcase: Element, schema: Element) {
+fn handle_incorrect_case(
+    _testcase: Element,
+    schema: Element,
+    resource_map: HashMap<String, String>,
+) {
     let document = schema.owner_document();
     let schema = format!("{schema}");
     eprintln!("--- begin incorrect schema ---");
     eprintln!("{schema}");
     eprintln!("--- end incorrect schema ---");
 
+    let base_uri = document.base_uri().unwrap();
+    let resource_map = resource_map
+        .into_iter()
+        .map(|(uri, content)| {
+            let uri = base_uri.resolve(&URIString::parse(uri).unwrap());
+            (uri, content)
+        })
+        .collect::<HashMap<_, _>>();
+
     let schema = RelaxNGSchema::parse_str(
         &schema,
-        document.base_uri().unwrap(),
-        None::<DefaultSAXHandler>,
+        base_uri,
+        Some(CustomResourseHandler { resource_map }),
     );
 
     assert!(schema.is_err());
