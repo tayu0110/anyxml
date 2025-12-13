@@ -3490,7 +3490,7 @@ fn remove_foreign_attribute(element: &mut Element) -> Result<(), XMLError> {
         let base_uri = base_uri
             .as_unescaped_str()
             .unwrap_or(Cow::Borrowed(base_uri.as_escaped_str()));
-        element.remove_attribute("xml:base", None);
+        element.remove_attribute("base", Some(XML_XML_NAMESPACE));
         element.set_attribute("xml:base", Some(XML_XML_NAMESPACE), Some(&base_uri))?;
     }
 
