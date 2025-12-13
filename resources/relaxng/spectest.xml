@@ -753,14 +753,15 @@
 <foo>&dii;</foo>
 </valid>
 </testCase>
-<testCase>
+<!-- U+E35 is a valid NameStartChar in XML 1.0 (fifth edition), so this test cannot work. -->
+<!-- <testCase>
 <section>3</section>
 <incorrect>
 <element name="&#xE35;" xmlns="http://relaxng.org/ns/structure/1.0">
   <empty/>
 </element>
 </incorrect>
-</testCase>
+</testCase> -->
 <testCase>
 <section>3</section>
 <incorrect>
@@ -769,7 +770,8 @@
 </element>
 </incorrect>
 </testCase>
-<testCase>
+<!-- U+E35 is a valid NameStartChar in XML 1.0 (fifth edition), so this test cannot work. -->
+<!-- <testCase>
 <section>3</section>
 <incorrect>
 <element xmlns="http://relaxng.org/ns/structure/1.0">
@@ -777,7 +779,7 @@
   <empty/>
 </element>
 </incorrect>
-</testCase>
+</testCase> -->
 <testCase>
 <section>3</section>
 <incorrect>

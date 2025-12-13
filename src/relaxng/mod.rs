@@ -4335,7 +4335,9 @@ impl RelaxNGNonEmptyPattern {
                     return Err(XMLError::RngValidRef);
                 }
                 let element = sequence[0].as_element().ok_or(XMLError::RngValidRef)?;
-                self.validate_element(&element, grammar)
+                self.validate_element(&element, grammar)?;
+                seq_matches[0] = true;
+                Ok(())
             }
             Self::OneOrMore { pattern } => {
                 pattern.handle_one_or_more(attributes, sequence, grammar, weak)?;
