@@ -5,8 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use anyxml_uri::rfc2396::validate_rfc2396_absolute_uri;
-
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
@@ -19,7 +17,7 @@ use crate::{
         convert::NodeKind,
         node::{InternalNodeSpec, NodeSpec},
     },
-    uri::{URIStr, URIString},
+    uri::{URIStr, URIString, rfc2396::validate_rfc2396_absolute_uri},
 };
 
 pub const XML_RELAX_NG_NAMESPACE: &str = "http://relaxng.org/ns/structure/1.0";
@@ -475,10 +473,7 @@ impl RelaxNGSchemaParseContext {
             }
         }
         self.defines.shrink_to_fit();
-        for (_, mut define) in self
-            .defines
-            .extract_if(|_, v| !memo.contains(v.local_name().as_ref()))
-        {
+        for (_, mut define) in self.defines.extract_if(|key, _| !memo.contains(key)) {
             define.detach()?;
         }
         // ISO/IEC 19757-2:2008 7.22 `empty` element
@@ -2085,11 +2080,12 @@ impl RelaxNGSchemaParseContext {
         while let Some(child) = children {
             children = child.next_sibling();
 
-            if let Some(element) = child.as_element() {
+            if let Some(mut element) = child.as_element() {
                 if element.local_name().as_ref() == "define" {
-                    if let Some(name) = element.get_attribute("name", None) {
+                    if let Some(name) = element.remove_attribute("name", None) {
                         let alias = format!("define_alias{}", num_define);
                         *num_define += 1;
+                        element.set_attribute("name", None, Some(&alias))?;
                         in_scope_define.insert(name, (alias, 0, element));
                     }
                 } else if element.local_name().as_ref() == "start" {
@@ -2227,11 +2223,11 @@ impl RelaxNGSchemaParseContext {
             master_grammar.namespace_name().as_deref(),
             Some(XML_RELAX_NG_NAMESPACE)
         );
-        for (name, (_, count, mut define)) in in_scope_define {
+        for (_, (alias, count, mut define)) in in_scope_define {
             define.detach()?;
             if count > 0 {
                 master_grammar.append_child(&define)?;
-                self.defines.insert(name, define);
+                self.defines.insert(alias, define);
             }
         }
 
