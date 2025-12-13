@@ -711,6 +711,7 @@ impl RelaxNGSchemaParseContext {
                                     handler,
                                     ns_context.as_ref().into(),
                                 )?;
+                                break;
                             } else {
                                 fatal_error!(
                                     self,
@@ -719,6 +720,19 @@ impl RelaxNGSchemaParseContext {
                                     "A {:?} must not be present at this position as a child of 'attribute'.",
                                     child.node_type()
                                 );
+                                child.detach()?;
+                            }
+                        }
+
+                        if children.is_some() {
+                            fatal_error!(
+                                self,
+                                handler,
+                                RngParseUnacceptablePattern,
+                                "'attribute' pattern cannot have more then only one pattern children."
+                            );
+                            while let Some(mut child) = children {
+                                children = child.next_sibling();
                                 child.detach()?;
                             }
                         }
