@@ -589,33 +589,27 @@ impl RelaxNGSchemaParseContext {
                 remove_whitespace_child(element)?;
                 match local_name {
                     "element" => {
-                        self.check_attribute_constraint(
-                            element,
-                            handler,
-                            [],
-                            [("name", validate_qname)],
-                        )?;
                         let mut children = element.first_child();
 
                         // ISO/IEC 19757-2:2008 7.9 `name` attribute of `element` and `attribute` elements
-                        if let Some(name) = element.get_attribute_node("name", None) {
+                        if let Some(name) = element.remove_attribute("name", None) {
+                            let name =
+                                name.trim_matches(|c| XMLVersion::default().is_whitespace(c));
+                            validate_qname(name)?;
                             let document = element.owner_document();
                             let mut name_element = document
                                 .create_element("name", Some(XML_RELAX_NG_NAMESPACE.into()))?;
-                            name_element.append_child(
-                                document.create_text(
-                                    name.value()
-                                        .trim_matches(|c| XMLVersion::default().is_whitespace(c)),
-                                ),
-                            )?;
+                            name_element.append_child(document.create_text(name))?;
                             if let Some(first) = children.as_mut() {
                                 first.insert_previous_sibling(&name_element)?;
                             } else {
                                 element.append_child(&name_element)?;
                             }
                             children = Some(name_element.into());
-                            element.remove_attribute_node(name)?;
                         }
+
+                        // 'name' has already been removed and therefore does not exist.
+                        self.check_attribute_constraint(element, handler, [], [])?;
 
                         if let Some(mut child) =
                             children.as_ref().and_then(|child| child.as_element())
@@ -670,25 +664,17 @@ impl RelaxNGSchemaParseContext {
                         group_children(element)?;
                     }
                     "attribute" => {
-                        self.check_attribute_constraint(
-                            element,
-                            handler,
-                            [],
-                            [("name", validate_qname)],
-                        )?;
                         let mut children = element.first_child();
 
                         // ISO/IEC 19757-2:2008 7.9 `name` attribute of `element` and `attribute` elements
-                        if let Some(name) = element.get_attribute_node("name", None) {
+                        if let Some(name) = element.remove_attribute("name", None) {
+                            let name =
+                                name.trim_matches(|c| XMLVersion::default().is_whitespace(c));
+                            validate_qname(name)?;
                             let document = element.owner_document();
                             let mut name_element = document
                                 .create_element("name", Some(XML_RELAX_NG_NAMESPACE.into()))?;
-                            name_element.append_child(
-                                document.create_text(
-                                    name.value()
-                                        .trim_matches(|c| XMLVersion::default().is_whitespace(c)),
-                                ),
-                            )?;
+                            name_element.append_child(document.create_text(name))?;
 
                             if !element.has_attribute("ns", None) {
                                 name_element.set_attribute("ns", None, Some(""))?;
@@ -700,8 +686,10 @@ impl RelaxNGSchemaParseContext {
                                 element.append_child(&name_element)?;
                             }
                             children = Some(name_element.into());
-                            element.remove_attribute_node(name)?;
                         }
+
+                        // 'name' has already been removed and therefore does not exist.
+                        self.check_attribute_constraint(element, handler, [], [])?;
 
                         if let Some(mut child) =
                             children.as_ref().and_then(|child| child.as_element())
