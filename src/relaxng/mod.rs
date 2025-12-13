@@ -510,6 +510,26 @@ impl RelaxNGSchemaParseContext {
             "value" => {
                 // Only elements that do not have string children can have foreign elements as children.
                 // `value` cannot have foreign elements as children.
+                let mut children = element.first_child();
+                while let Some(mut child) = children {
+                    children = child.next_sibling();
+
+                    match child.node_type() {
+                        NodeType::CDATASection | NodeType::Text => {}
+                        NodeType::Comment | NodeType::ProcessingInstruction => {
+                            child.detach()?;
+                        }
+                        _ => {
+                            fatal_error!(
+                                self,
+                                handler,
+                                RngParseUnacceptablePattern,
+                                "'value' pattern must not have any data other than text, comment or pi.",
+                            );
+                            child.detach()?;
+                        }
+                    }
+                }
                 remove_foreign_attribute(element)?;
                 // The child string of `value` must not be removed, even if it contains only whitespaces.
                 // (ISO/IEC 19757-2:2008 7.3 Whitespace)
@@ -1092,6 +1112,26 @@ impl RelaxNGSchemaParseContext {
 
         // Only elements that do not have string children can have foreign elements as children.
         // `param` cannot have foreign elements as children.
+        let mut children = element.first_child();
+        while let Some(mut child) = children {
+            children = child.next_sibling();
+
+            match child.node_type() {
+                NodeType::CDATASection | NodeType::Text => {}
+                NodeType::Comment | NodeType::ProcessingInstruction => {
+                    child.detach()?;
+                }
+                _ => {
+                    fatal_error!(
+                        self,
+                        handler,
+                        RngParseUnacceptablePattern,
+                        "'value' pattern must not have any data other than text, comment or pi.",
+                    );
+                    child.detach()?;
+                }
+            }
+        }
         remove_foreign_attribute(element)?;
         // The child string of `param` must not be removed, even if it contains only whitespaces.
         // (ISO/IEC 19757-2:2008 7.3 Whitespace)
@@ -1526,6 +1566,26 @@ impl RelaxNGSchemaParseContext {
             "name" => {
                 // Only elements that do not have string children can have foreign elements as children.
                 // `name` cannot have foreign elements as children.
+                let mut children = element.first_child();
+                while let Some(mut child) = children {
+                    children = child.next_sibling();
+
+                    match child.node_type() {
+                        NodeType::CDATASection | NodeType::Text => {}
+                        NodeType::Comment | NodeType::ProcessingInstruction => {
+                            child.detach()?;
+                        }
+                        _ => {
+                            fatal_error!(
+                                self,
+                                handler,
+                                RngParseUnacceptablePattern,
+                                "'value' pattern must not have any data other than text, comment or pi.",
+                            );
+                            child.detach()?;
+                        }
+                    }
+                }
                 remove_foreign_attribute(element)?;
 
                 self.check_attribute_constraint(element, handler, [], [])?;
@@ -3431,7 +3491,8 @@ fn remove_foreign_attribute(element: &mut Element) -> Result<(), XMLError> {
             .as_deref()
             .is_some_and(|ns| ns != XML_RELAX_NG_NAMESPACE)
             && att.name().as_ref() != "xml:base"
-            && (att.prefix().as_deref() == Some("xmlns") || att.name().as_ref() == "xmlns")
+            && att.prefix().as_deref() != Some("xmlns")
+            && att.name().as_ref() != "xmlns"
         {
             atts.push(att);
         }
