@@ -4304,10 +4304,13 @@ impl RelaxNGNonEmptyPattern {
                 param,
                 except_pattern,
             } => {
-                if seq_matches.len() != 1 {
+                let value = if sequence.len() == 1 {
+                    sequence[0].text_content()
+                } else if weak && sequence.is_empty() {
+                    "".to_owned()
+                } else {
                     return Err(XMLError::RngValidData);
-                }
-                let value = &sequence[0].text_content();
+                };
 
                 let params = param
                     .iter()
@@ -4316,7 +4319,7 @@ impl RelaxNGNonEmptyPattern {
 
                 if let Some(library) = grammar.libraries.get(datatype_library)
                     && library
-                        .validate(type_name, &params, value)
+                        .validate(type_name, &params, &value)
                         .unwrap_or_default()
                 {
                     if let Some(except) = except_pattern.as_ref() {
@@ -4332,18 +4335,18 @@ impl RelaxNGNonEmptyPattern {
                             )
                             .is_err()
                         {
-                            seq_matches[0] = true;
+                            seq_matches.iter_mut().for_each(|m| *m = true);
                             Ok(())
                         } else {
-                            seq_matches[0] = false;
+                            seq_matches.iter_mut().for_each(|m| *m = false);
                             Err(XMLError::RngValidData)
                         }
                     } else {
-                        seq_matches[0] = true;
+                        seq_matches.iter_mut().for_each(|m| *m = true);
                         Ok(())
                     }
                 } else {
-                    seq_matches[0] = false;
+                    seq_matches.iter_mut().for_each(|m| *m = false);
                     Err(XMLError::RngValidData)
                 }
             }
@@ -4353,18 +4356,21 @@ impl RelaxNGNonEmptyPattern {
                 value,
                 ..
             } => {
-                if seq_matches.len() != 1 {
-                    return Err(XMLError::RngValidValue);
-                }
-                let lhs = &sequence[0].text_content();
+                let lhs = if sequence.len() == 1 {
+                    sequence[0].text_content()
+                } else if weak && sequence.is_empty() {
+                    "".to_owned()
+                } else {
+                    return Err(XMLError::RngValidData);
+                };
 
                 if let Some(library) = grammar.libraries.get(datatype_library)
-                    && library.eq(type_name, lhs, value).unwrap_or_default()
+                    && library.eq(type_name, &lhs, value).unwrap_or_default()
                 {
-                    seq_matches[0] = true;
+                    seq_matches.iter_mut().for_each(|m| *m = true);
                     Ok(())
                 } else {
-                    seq_matches[0] = false;
+                    seq_matches.iter_mut().for_each(|m| *m = false);
                     Err(XMLError::RngValidValue)
                 }
             }
