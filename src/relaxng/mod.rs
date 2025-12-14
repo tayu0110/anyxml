@@ -2730,6 +2730,11 @@ impl RelaxNGSchemaParseContext {
                                     "A 'name' element at the descendant of the first child of an 'attribute' element and that has an 'ns' attribute with empty value shall not have 'xmlns' as its content."
                                 );
                             } else if ns == XML_NS_NAMESPACE {
+                                // The specification targets `http://www.w3.org/2000/xmlns`
+                                // (without the trailing slash) as the constraint. However,
+                                // considering the intent, it should also generate an error
+                                // for `http://www.w3.org/2000/xmlns/`, which conforms to the
+                                // namespace specification.
                                 fatal_error!(
                                     self,
                                     handler,
@@ -2737,20 +2742,49 @@ impl RelaxNGSchemaParseContext {
                                     "A 'name' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
                                     XML_NS_NAMESPACE
                                 );
+                            } else if XML_NS_NAMESPACE[..XML_NS_NAMESPACE.len() - 1] == ns {
+                                // The specification states that the namespace name binding `xmlns`
+                                // is `http://www.w3.org/2000/xmlns` (without the trailing slash),
+                                // which appears to contradict the namespace specification.
+                                // However, it correctly reports an error as per the specification.
+                                fatal_error!(
+                                    self,
+                                    handler,
+                                    RngParseUnacceptableAttribute,
+                                    "A 'name' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
+                                    &XML_NS_NAMESPACE[..XML_NS_NAMESPACE.len() - 1]
+                                );
                             }
                         }
                     }
                     "nsName" => {
-                        if let Some(ns) = element.get_attribute("ns", None)
-                            && ns == XML_NS_NAMESPACE
-                        {
-                            fatal_error!(
-                                self,
-                                handler,
-                                RngParseUnacceptableAttribute,
-                                "A 'nsName' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
-                                XML_NS_NAMESPACE
-                            );
+                        if let Some(ns) = element.get_attribute("ns", None) {
+                            if ns == XML_NS_NAMESPACE {
+                                // The specification targets `http://www.w3.org/2000/xmlns`
+                                // (without the trailing slash) as the constraint. However,
+                                // considering the intent, it should also generate an error
+                                // for `http://www.w3.org/2000/xmlns/`, which conforms to the
+                                // namespace specification.
+                                fatal_error!(
+                                    self,
+                                    handler,
+                                    RngParseUnacceptableAttribute,
+                                    "A 'nsName' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
+                                    XML_NS_NAMESPACE
+                                );
+                            } else if XML_NS_NAMESPACE[..XML_NS_NAMESPACE.len() - 1] == ns {
+                                // The specification states that the namespace name binding `xmlns`
+                                // is `http://www.w3.org/2000/xmlns` (without the trailing slash),
+                                // which appears to contradict the namespace specification.
+                                // However, it correctly reports an error as per the specification.
+                                fatal_error!(
+                                    self,
+                                    handler,
+                                    RngParseUnacceptableAttribute,
+                                    "A 'name' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
+                                    &XML_NS_NAMESPACE[..XML_NS_NAMESPACE.len() - 1]
+                                );
+                            }
                         }
                     }
                     _ => {}
