@@ -417,6 +417,7 @@ impl RelaxNGSchemaParseContext {
         )?;
         self.last_error?;
         // ISO/IEC 19757-2:2008 7.20 `define` and `ref` elements
+        self.remove_unreachable_define(&mut grammar)?;
         self.normalize_define(&mut grammar.clone(), &mut grammar, &mut num_define)?;
         self.normalize_ref(&mut grammar, &mut handler, false, false)?;
         self.last_error?;
@@ -2166,7 +2167,7 @@ impl RelaxNGSchemaParseContext {
         &mut self,
         grammar: &mut Element,
         handler: &mut Handler,
-        parent_define: &mut HashMap<String, (String, usize, Element)>,
+        parent_define: &mut HashMap<String, (String, Element)>,
         num_define: &mut usize,
     ) -> Result<(), XMLError> {
         assert_eq!(grammar.local_name().as_ref(), "grammar");
@@ -2177,21 +2178,19 @@ impl RelaxNGSchemaParseContext {
 
         let mut start = None;
         let mut in_scope_define = HashMap::new();
-        let mut children = grammar.first_child();
-        while let Some(child) = children {
-            children = child.next_sibling();
+        let mut children = grammar.first_element_child();
+        while let Some(mut element) = children {
+            children = element.next_element_sibling();
 
-            if let Some(mut element) = child.as_element() {
-                if element.local_name().as_ref() == "define" {
-                    if let Some(name) = element.remove_attribute("name", None) {
-                        let alias = format!("define_alias{}", num_define);
-                        *num_define += 1;
-                        element.set_attribute("name", None, Some(&alias))?;
-                        in_scope_define.insert(name, (alias, 0, element));
-                    }
-                } else if element.local_name().as_ref() == "start" {
-                    start = Some(element);
+            if element.local_name().as_ref() == "define" {
+                if let Some(name) = element.remove_attribute("name", None) {
+                    let alias = format!("define_alias{}", num_define);
+                    *num_define += 1;
+                    element.set_attribute("name", None, Some(&alias))?;
+                    in_scope_define.insert(name, (alias, element));
                 }
+            } else if element.local_name().as_ref() == "start" {
+                start = Some(element);
             }
         }
 
@@ -2205,113 +2204,89 @@ impl RelaxNGSchemaParseContext {
             return Err(XMLError::RngParseStartNotFoundInGrammar);
         };
 
-        // search 'ref', 'parentRef' and 'grammar' that is reachable
-        let mut seen = HashSet::new();
-        let mut nt = vec![start.clone()];
-        while let Some(start) = nt.pop() {
-            let mut children = start.first_child();
-            while let Some(mut child) = children {
-                if let Some(mut element) = child.as_element() {
-                    match element.local_name().as_ref() {
-                        "grammar" => {
-                            if let Some(next) = child.next_sibling() {
+        let mut children = grammar.first_element_child();
+        while let Some(mut element) = children {
+            match element.local_name().as_ref() {
+                "grammar" => {
+                    if let Some(next) = element.next_element_sibling() {
+                        children = Some(next);
+                    } else {
+                        children = None;
+                        let mut now = element.clone();
+                        while let Some(parent) = now.parent_node() {
+                            if grammar.is_same_node(&parent) {
+                                break;
+                            }
+                            if let Some(next) = parent.next_element_sibling() {
                                 children = Some(next);
+                                break;
+                            }
+                            now = parent.as_element().unwrap();
+                        }
+                    }
+
+                    self.flatten_grammar(&mut element, handler, &mut in_scope_define, num_define)?;
+                    continue;
+                }
+                local_name @ ("ref" | "parentRef") => match local_name {
+                    "ref" => {
+                        if let Some(name) = element.remove_attribute("name", None) {
+                            if let Some(define) = in_scope_define.get_mut(&name) {
+                                element.set_attribute("name", None, Some(&define.0))?;
                             } else {
-                                children = None;
-                                let mut now = child.clone();
-                                while let Some(parent) = now.parent_node() {
-                                    if parent.is_same_node(&start) {
-                                        break;
-                                    } else if let Some(next) = parent.next_sibling() {
-                                        children = Some(next);
-                                        break;
-                                    }
-                                    now = parent.into();
-                                }
+                                fatal_error!(
+                                    self,
+                                    handler,
+                                    RngParseUnresolvableRefName,
+                                    "The 'name' attribute of 'ref' has a value '{}', but it is unresolvable.",
+                                    name
+                                );
                             }
-
-                            self.flatten_grammar(
-                                &mut element,
-                                handler,
-                                &mut in_scope_define,
-                                num_define,
-                            )?;
-                            continue;
                         }
-                        local_name @ ("ref" | "parentRef") => match local_name {
-                            "ref" => {
-                                if let Some(name) = element.get_attribute("name", None) {
-                                    if let Some(define) = in_scope_define.get_mut(&name) {
-                                        element.remove_attribute("name", None);
-                                        element.set_attribute("name", None, Some(&define.0))?;
-                                        define.1 += 1;
-                                    } else {
-                                        fatal_error!(
-                                            self,
-                                            handler,
-                                            RngParseUnresolvableRefName,
-                                            "The 'name' attribute of 'ref' has a value '{}', but it is unresolvable.",
-                                            name
-                                        );
-                                    }
-                                }
-                            }
-                            "parentRef" => {
-                                if let Some(name) = element.get_attribute("name", None) {
-                                    if let Some(define) = parent_define.get_mut(&name) {
-                                        // replace 'parentRef' to 'ref'
-                                        let mut r#ref = self.document.create_element(
-                                            "ref",
-                                            Some(XML_RELAX_NG_NAMESPACE.into()),
-                                        )?;
-                                        r#ref.remove_attribute("name", None);
-                                        r#ref.set_attribute("name", None, Some(&define.0))?;
-                                        element.insert_previous_sibling(&r#ref)?;
-                                        element.detach()?;
-                                        child = r#ref.into();
-                                        define.1 += 1;
-                                    } else {
-                                        fatal_error!(
-                                            self,
-                                            handler,
-                                            RngParseUnresolvableRefName,
-                                            "The 'name' attribute of 'parentRef' has a value '{}', but it is unresolvable.",
-                                            name
-                                        );
-                                    }
-                                }
-                            }
-                            _ => {}
-                        },
-                        _ => {}
                     }
-                }
-
-                if let Some(first) = child.first_child() {
-                    children = Some(first);
-                } else if let Some(next) = child.next_sibling() {
-                    children = Some(next);
-                } else {
-                    children = None;
-                    let mut now = child.clone();
-                    while let Some(parent) = now.parent_node() {
-                        if parent.is_same_node(&start) {
-                            break;
-                        } else if let Some(next) = parent.next_sibling() {
-                            children = Some(next);
-                            break;
+                    "parentRef" => {
+                        if let Some(name) = element.get_attribute("name", None) {
+                            if let Some(define) = parent_define.get_mut(&name) {
+                                // replace 'parentRef' to 'ref'
+                                let mut r#ref = self
+                                    .document
+                                    .create_element("ref", Some(XML_RELAX_NG_NAMESPACE.into()))?;
+                                r#ref.set_attribute("name", None, Some(&define.0))?;
+                                element.replace_subtree(&r#ref)?;
+                                element = r#ref;
+                            } else {
+                                fatal_error!(
+                                    self,
+                                    handler,
+                                    RngParseUnresolvableRefName,
+                                    "The 'name' attribute of 'parentRef' has a value '{}', but it is unresolvable.",
+                                    name
+                                );
+                            }
                         }
-                        now = parent.into();
                     }
-                }
+                    _ => {}
+                },
+                _ => {}
             }
 
-            for define in in_scope_define
-                .iter()
-                .filter(|&def| def.1.1 > 0 && !seen.contains(def.0) && seen.insert(def.0.clone()))
-                .map(|def| def.1.2.clone())
-            {
-                nt.push(define);
+            if let Some(first) = element.first_element_child() {
+                children = Some(first);
+            } else if let Some(next) = element.next_element_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+                let mut now = element.clone();
+                while let Some(parent) = now.parent_node() {
+                    if grammar.is_same_node(&parent) {
+                        break;
+                    }
+                    if let Some(next) = parent.next_element_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    now = parent.as_element().unwrap();
+                }
             }
         }
 
@@ -2324,12 +2299,9 @@ impl RelaxNGSchemaParseContext {
             master_grammar.namespace_name().as_deref(),
             Some(XML_RELAX_NG_NAMESPACE)
         );
-        for (_, (alias, count, mut define)) in in_scope_define {
-            define.detach()?;
-            if count > 0 {
-                master_grammar.append_child(&define)?;
-                self.defines.insert(alias, define);
-            }
+        for (_, (alias, define)) in in_scope_define {
+            master_grammar.append_child(&define)?;
+            self.defines.insert(alias, define);
         }
 
         if !grammar.is_same_node(master_grammar) {
@@ -2341,6 +2313,65 @@ impl RelaxNGSchemaParseContext {
             }
             grammar.detach()?;
         }
+        Ok(())
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 7.20 define and ref elements
+    fn remove_unreachable_define(&mut self, grammar: &mut Element) -> Result<(), XMLError> {
+        let mut next = vec![];
+        let mut children = grammar.first_element_child();
+        while let Some(element) = children {
+            children = element.next_element_sibling();
+
+            if element.local_name().as_ref() == "start" {
+                next.push(element);
+            }
+        }
+
+        let mut seen = HashSet::new();
+        while let Some(start) = next.pop() {
+            let mut children = start.first_element_child();
+            while let Some(element) = children {
+                if element.local_name().as_ref() == "ref" {
+                    let name = element
+                        .get_attribute("name", None)
+                        .ok_or(XMLError::RngParseUnknownError)?;
+                    let define = self
+                        .defines
+                        .get(&name)
+                        .ok_or(XMLError::RngParseUnknownError)?;
+                    if seen.insert(name) {
+                        next.push(define.clone());
+                    }
+                }
+
+                if let Some(first) = element.first_element_child() {
+                    children = Some(first);
+                } else if let Some(next) = element.next_element_sibling() {
+                    children = Some(next);
+                } else {
+                    children = None;
+                    let mut now = element;
+                    while let Some(parent) = now.parent_node() {
+                        if start.is_same_node(&parent) {
+                            break;
+                        }
+                        if let Some(next) = parent.next_element_sibling() {
+                            children = Some(next);
+                            break;
+                        }
+                        now = parent.as_element().unwrap();
+                    }
+                }
+            }
+        }
+
+        self.defines.shrink_to_fit();
+        for (_, mut define) in self.defines.extract_if(|name, _| !seen.contains(name)) {
+            define.detach()?;
+        }
+
         Ok(())
     }
 
