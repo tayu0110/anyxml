@@ -3314,7 +3314,7 @@ fn group_children(element: &mut Element) -> Result<(), XMLError> {
         return Ok(());
     };
     match element.local_name().as_ref() {
-        "define" | "oneOrMore" | "zeroOrMoe" | "optional" | "list" | "mixed" => {
+        "define" | "oneOrMore" | "zeroOrMore" | "optional" | "list" | "mixed" => {
             // There is exactly one child
             if element.last_child().unwrap().is_same_node(&first) {
                 return Ok(());
@@ -4243,24 +4243,26 @@ impl RelaxNGNonEmptyPattern {
                 Ok(())
             }
             Self::Interleave { pattern } => {
-                let mut buf = vec![];
-                let mut count = 0;
-                pattern[0].verify_element_name_uniqueness(grammar, &mut buf, &mut count)?;
-                pattern[1].verify_element_name_uniqueness(grammar, &mut buf, &mut count)?;
+                let mut buf1 = vec![];
+                let mut count1 = 0;
+                pattern[0].verify_element_name_uniqueness(grammar, &mut buf1, &mut count1)?;
+                let mut buf2 = vec![];
+                let mut count2 = 0;
+                pattern[1].verify_element_name_uniqueness(grammar, &mut buf2, &mut count2)?;
 
-                if count > 1 {
+                if count1 != 0 && count2 != 0 {
                     return Err(XMLError::RngParseConflictAttributeNameClass);
                 }
-                for (i, &l) in buf.iter().enumerate() {
-                    for &r in buf.iter().skip(i + 1) {
+                *text_count += count1 + count2;
+                for &l in &buf1 {
+                    for &r in &buf2 {
                         if l.has_non_empty_intersection(r) {
                             return Err(XMLError::RngParseConflictAttributeNameClass);
                         }
                     }
                 }
-
-                name_classes.extend(buf);
-                *text_count += count;
+                name_classes.extend(buf1);
+                name_classes.extend(buf2);
                 Ok(())
             }
         }
