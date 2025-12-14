@@ -1090,6 +1090,9 @@ impl RelaxNGSchemaParseContext {
                 element.remove_attribute("ns", None);
             }
         }
+
+        // 'xml:base' is no longer necessary.
+        element.remove_attribute("base", Some(XML_XML_NAMESPACE));
         Ok(())
     }
 
@@ -1216,6 +1219,8 @@ impl RelaxNGSchemaParseContext {
         // ISO/IEC 19757-2:2008 7.13 Number of child elements
         group_children(element)?;
 
+        // 'xml:base' is no longer necessary.
+        element.remove_attribute("base", Some(XML_XML_NAMESPACE));
         Ok(())
     }
 
@@ -1627,8 +1632,6 @@ impl RelaxNGSchemaParseContext {
                     text_node.detach()?;
                     element.append_child(local)?;
                 }
-
-                Ok(())
             }
             local_name @ ("anyName" | "nsName") => {
                 if let Some(ns) = element.get_attribute("ns", None) {
@@ -1693,7 +1696,6 @@ impl RelaxNGSchemaParseContext {
 
                 // ISO/IEC 19757-2:2008 7.17 Constraints
                 self.check_name_class_constraint(element, handler)?;
-                Ok(())
             }
             "choice" => {
                 if let Some(ns) = element.get_attribute("ns", None) {
@@ -1728,8 +1730,6 @@ impl RelaxNGSchemaParseContext {
                 element.remove_attribute("datatypeLibrary", None);
                 // ISO/IEC 19757-2:2008 7.10 `ns` attribute
                 element.remove_attribute("ns", None);
-
-                Ok(())
             }
             _ => {
                 fatal_error!(
@@ -1739,9 +1739,13 @@ impl RelaxNGSchemaParseContext {
                     "The element '{}' does not match to a nameClass element.",
                     element.local_name()
                 );
-                Err(XMLError::RngParseUnacceptablePattern)
+                return Err(XMLError::RngParseUnacceptablePattern);
             }
         }
+
+        // 'xml:base' is no longer necessary.
+        element.remove_attribute("base", Some(XML_XML_NAMESPACE));
+        Ok(())
     }
 
     fn handle_except_name_class<Handler: ErrorHandler>(
@@ -4675,21 +4679,27 @@ impl TryFrom<Element> for RelaxNGNonEmptyPattern {
             "data" => {
                 let mut param = vec![];
                 let mut children = value.first_child();
-                while let Some(child) = children {
-                    children = child.next_sibling();
+                while let Some(child) = children.as_ref() {
+                    let ch = child.as_element().ok_or(XMLError::RngParseUnknownError)?;
+                    match ch.local_name().as_ref() {
+                        "param" => param.push(ch.try_into()?),
+                        "except" => break,
+                        _ => return Err(XMLError::RngParseUnknownError),
+                    }
 
-                    param.push(
-                        child
-                            .as_element()
-                            .ok_or(XMLError::RngParseUnknownError)?
-                            .try_into()?,
-                    );
+                    children = child.next_sibling();
                 }
 
-                if children
+                let mut except_pattern = None;
+                if let Some(except) = children
                     .as_ref()
-                    .is_some_and(|ch| !value.last_child().unwrap().is_same_node(ch))
+                    .and_then(|ch| ch.as_element())
+                    .filter(|ch| ch.local_name().as_ref() == "except")
                 {
+                    children = except.next_sibling();
+                    except_pattern = Some(Box::new(except.try_into()?));
+                }
+                if children.is_some() {
                     return Err(XMLError::RngParseUnknownError);
                 }
 
@@ -4705,11 +4715,7 @@ impl TryFrom<Element> for RelaxNGNonEmptyPattern {
                     )?
                     .into(),
                     param,
-                    except_pattern: children
-                        .and_then(|ch| ch.as_element())
-                        .map(RelaxNGExceptPattern::try_from)
-                        .transpose()?
-                        .map(|ch| ch.into()),
+                    except_pattern,
                 })
             }
             "value" => Ok(Self::Value {
