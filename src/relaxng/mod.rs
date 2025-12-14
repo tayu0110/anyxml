@@ -399,6 +399,15 @@ impl RelaxNGSchemaParseContext {
         start.append_child(document_element)?;
         grammar.append_child(start)?;
         self.document.append_child(&grammar)?;
+        // ISO/IEC 19757-2:2008 7.18 `combine` attribute
+        let grammars = grammar
+            .get_elements_by_expanded_name("grammar", Some(XML_RELAX_NG_NAMESPACE))
+            .collect::<Vec<_>>();
+        for mut grammar in grammars {
+            self.bundle_start_and_define(&mut grammar, &mut handler)?;
+        }
+        self.last_error?;
+        // ISO/IEC 19757-2:2008 7.19 `grammar` element
         let mut num_define = 0;
         self.flatten_grammar(
             &mut grammar,
@@ -1066,9 +1075,6 @@ impl RelaxNGSchemaParseContext {
                                 child.detach()?;
                             }
                         }
-
-                        // ISO/IEC 19757-2:2008 7.18 `combine` attribute
-                        self.bundle_start_and_define(element, handler)?;
                     }
                     _ => {
                         fatal_error!(
@@ -2912,6 +2918,13 @@ impl RelaxNGSchemaParseContext {
             start.append_child(&combine)?;
             combine.append_child(frag_start)?;
             group_children(&mut combine)?;
+        } else {
+            fatal_error!(
+                self,
+                handler,
+                RngParseStartNotFoundInGrammar,
+                "'start' is not found in 'grammar'"
+            );
         }
 
         // reconstruct 'define'
