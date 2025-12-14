@@ -4288,6 +4288,7 @@ impl RelaxNGNonEmptyPattern {
                     .iter()
                     .all(|node| matches!(node.node_type(), NodeType::CDATASection | NodeType::Text))
                 {
+                    seq_matches.iter_mut().for_each(|m| *m = true);
                     Ok(())
                 } else {
                     Err(XMLError::RngValidText)
@@ -4479,7 +4480,7 @@ impl RelaxNGNonEmptyPattern {
                     match node.downcast() {
                         NodeKind::Element(element) => {
                             if pattern[0].contains_element_name(
-                                element.namespace_name().as_deref().unwrap(),
+                                element.namespace_name().as_deref().unwrap_or_default(),
                                 &element.local_name(),
                                 grammar,
                             ) {
