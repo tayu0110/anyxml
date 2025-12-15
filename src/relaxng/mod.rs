@@ -4515,7 +4515,7 @@ impl RelaxNGNonEmptyPattern {
                 Err(XMLError::RngValidAttribute)
             }
             Self::Ref { .. } => {
-                if !attributes.is_empty() || sequence.len() != 1 {
+                if sequence.len() != 1 {
                     return Err(XMLError::RngValidRef);
                 }
                 let element = sequence[0].as_element().ok_or(XMLError::RngValidRef)?;
@@ -4533,7 +4533,7 @@ impl RelaxNGNonEmptyPattern {
                 let mut am = attr_matches.to_owned();
                 let mut sm = seq_matches.to_owned();
                 let left = left.validate(attributes, &mut am, sequence, &mut sm, grammar, weak);
-                if left.is_ok() {
+                if left.is_ok() && am.iter().all(|&m| m) && sm.iter().all(|&m| m) {
                     attr_matches
                         .iter_mut()
                         .zip(am)
@@ -4546,6 +4546,7 @@ impl RelaxNGNonEmptyPattern {
                         .for_each(|v| *v.0 = true);
                     return Ok(());
                 }
+
                 right.validate(
                     attributes,
                     attr_matches,
@@ -4592,7 +4593,10 @@ impl RelaxNGNonEmptyPattern {
                 let mut rm = vec![false; right.len()];
                 pattern[1].validate(attributes, attr_matches, &right, &mut rm, grammar, weak)?;
 
-                if lm.into_iter().any(|m| !m) || rm.into_iter().any(|m| !m) {
+                if attr_matches.iter().any(|&m| !m)
+                    || lm.into_iter().any(|m| !m)
+                    || rm.into_iter().any(|m| !m)
+                {
                     return Err(XMLError::RngValidInterleave);
                 }
 
@@ -4655,41 +4659,43 @@ impl RelaxNGNonEmptyPattern {
         grammar: &RelaxNGGrammar,
         weak: bool,
     ) -> Result<(), XMLError> {
-        for mid in (1.min(sequence.len())..=sequence.len()).rev() {
+        for mid in (0..=sequence.len()).rev() {
             let (front, back) = sequence.split_at(mid);
-            let mut attr_matches = vec![false; attributes.len()];
-            let mut seq_matches = vec![false; sequence.len()];
+            let mut am = vec![false; attributes.len()];
+            let mut sm = vec![false; sequence.len()];
             if self
                 .validate(
                     attributes,
-                    &mut attr_matches,
+                    &mut am,
                     front,
-                    &mut seq_matches[..front.len()],
+                    &mut sm[..front.len()],
                     grammar,
                     weak,
                 )
                 .is_ok()
             {
-                if seq_matches.iter().take(front.len()).any(|&m| !m) {
+                if sm.iter().take(front.len()).any(|&m| !m) {
                     continue;
                 }
                 if other
                     .validate(
                         attributes,
-                        &mut attr_matches,
+                        &mut am,
                         back,
-                        &mut seq_matches[front.len()..],
+                        &mut sm[front.len()..],
                         grammar,
                         weak,
                     )
                     .is_ok()
+                    && am.iter().all(|&m| m)
+                    && sm.iter().skip(front.len()).all(|&m| m)
                 {
                     return Ok(());
                 }
             }
         }
 
-        Err(XMLError::RngValidOneOrMore)
+        Err(XMLError::RngValidGroup)
     }
 
     fn contains_element_name(
