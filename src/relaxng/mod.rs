@@ -4374,7 +4374,11 @@ impl RelaxNGNonEmptyPattern {
                 except_pattern,
             } => {
                 let value = if sequence.len() == 1 {
-                    sequence[0].text_content()
+                    sequence[0]
+                        .as_text()
+                        .ok_or(XMLError::RngValidData)?
+                        .data()
+                        .to_string()
                 } else if weak && sequence.is_empty() {
                     "".to_owned()
                 } else {
@@ -4426,7 +4430,11 @@ impl RelaxNGNonEmptyPattern {
                 ..
             } => {
                 let lhs = if sequence.len() == 1 {
-                    sequence[0].text_content()
+                    sequence[0]
+                        .as_text()
+                        .ok_or(XMLError::RngValidData)?
+                        .data()
+                        .to_string()
                 } else if weak && sequence.is_empty() {
                     "".to_owned()
                 } else {
