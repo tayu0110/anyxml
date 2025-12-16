@@ -4530,7 +4530,7 @@ impl RelaxNGNonEmptyPattern {
                             .data()
                             .chars()
                             .any(|c| !XMLVersion::default().is_whitespace(c)),
-                        _ => false,
+                        _ => true,
                     })
                 {
                     return Err(XMLError::RngValidRef);
