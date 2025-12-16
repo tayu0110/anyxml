@@ -4050,26 +4050,23 @@ impl RelaxNGPattern {
             )
         } else {
             // ISO/IEC 19757-2:2008 9.3.3 `empty` pattern
-            if attributes.is_empty() {
-                if sequence.is_empty()
-                    || (weak
-                        && sequence.iter().all(|node| {
-                            let ver = XMLVersion::default();
-                            node.as_text()
-                                .map(|text| text.data().chars().all(|c| ver.is_whitespace(c)))
-                                .or_else(|| {
-                                    node.as_cdata_section().map(|text| {
-                                        text.data().chars().all(|c| ver.is_whitespace(c))
-                                    })
-                                })
-                                .unwrap_or_default()
-                        }))
-                {
-                    Ok(())
-                } else {
-                    Err(XMLError::RngValidEmpty)
-                }
+            if sequence.is_empty()
+                || (weak
+                    && sequence.iter().all(|node| {
+                        let ver = XMLVersion::default();
+                        node.as_text()
+                            .map(|text| text.data().chars().all(|c| ver.is_whitespace(c)))
+                            .or_else(|| {
+                                node.as_cdata_section()
+                                    .map(|text| text.data().chars().all(|c| ver.is_whitespace(c)))
+                            })
+                            .unwrap_or_default()
+                    }))
+            {
+                seq_matches.fill(true);
+                Ok(())
             } else {
+                seq_matches.fill(false);
                 Err(XMLError::RngValidEmpty)
             }
         }
@@ -4370,9 +4367,10 @@ impl RelaxNGNonEmptyPattern {
                     .iter()
                     .all(|node| matches!(node.node_type(), NodeType::CDATASection | NodeType::Text))
                 {
-                    seq_matches.iter_mut().for_each(|m| *m = true);
+                    seq_matches.fill(true);
                     Ok(())
                 } else {
+                    seq_matches.fill(false);
                     Err(XMLError::RngValidText)
                 }
             }
@@ -4413,18 +4411,18 @@ impl RelaxNGNonEmptyPattern {
                             )
                             .is_err()
                         {
-                            seq_matches.iter_mut().for_each(|m| *m = true);
+                            seq_matches.fill(true);
                             Ok(())
                         } else {
-                            seq_matches.iter_mut().for_each(|m| *m = false);
+                            seq_matches.fill(false);
                             Err(XMLError::RngValidData)
                         }
                     } else {
-                        seq_matches.iter_mut().for_each(|m| *m = true);
+                        seq_matches.fill(true);
                         Ok(())
                     }
                 } else {
-                    seq_matches.iter_mut().for_each(|m| *m = false);
+                    seq_matches.fill(false);
                     Err(XMLError::RngValidData)
                 }
             }
@@ -4445,10 +4443,10 @@ impl RelaxNGNonEmptyPattern {
                 if let Some(library) = grammar.libraries.get(datatype_library)
                     && library.eq(type_name, &lhs, value).unwrap_or_default()
                 {
-                    seq_matches.iter_mut().for_each(|m| *m = true);
+                    seq_matches.fill(true);
                     Ok(())
                 } else {
-                    seq_matches.iter_mut().for_each(|m| *m = false);
+                    seq_matches.fill(false);
                     Err(XMLError::RngValidValue)
                 }
             }
@@ -4515,12 +4513,31 @@ impl RelaxNGNonEmptyPattern {
                 Err(XMLError::RngValidAttribute)
             }
             Self::Ref { .. } => {
-                if sequence.len() != 1 {
+                let pos = sequence
+                    .iter()
+                    .position(|ch| matches!(ch.node_type(), NodeType::Element))
+                    .ok_or(XMLError::RngValidRef)?;
+                if sequence
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, ch)| (i != pos).then_some(ch))
+                    .any(|ch| match ch.downcast() {
+                        NodeKind::CDATASection(cdata) => cdata
+                            .data()
+                            .chars()
+                            .any(|c| !XMLVersion::default().is_whitespace(c)),
+                        NodeKind::Text(text) => text
+                            .data()
+                            .chars()
+                            .any(|c| !XMLVersion::default().is_whitespace(c)),
+                        _ => false,
+                    })
+                {
                     return Err(XMLError::RngValidRef);
                 }
-                let element = sequence[0].as_element().ok_or(XMLError::RngValidRef)?;
+                let element = sequence[pos].as_element().ok_or(XMLError::RngValidRef)?;
                 self.validate_element(&element, grammar)?;
-                seq_matches[0] = true;
+                seq_matches.fill(true);
                 Ok(())
             }
             Self::OneOrMore { pattern } => {
@@ -4558,8 +4575,8 @@ impl RelaxNGNonEmptyPattern {
             }
             Self::Group { pattern } => {
                 pattern[0].handle_group(&pattern[1], attributes, sequence, grammar, weak)?;
-                attr_matches.iter_mut().for_each(|b| *b = true);
-                seq_matches.iter_mut().for_each(|b| *b = true);
+                attr_matches.fill(true);
+                seq_matches.fill(true);
                 Ok(())
             }
             Self::Interleave { pattern } => {
@@ -4600,7 +4617,7 @@ impl RelaxNGNonEmptyPattern {
                     return Err(XMLError::RngValidInterleave);
                 }
 
-                seq_matches.iter_mut().for_each(|m| *m = true);
+                seq_matches.fill(true);
                 Ok(())
             }
         }
