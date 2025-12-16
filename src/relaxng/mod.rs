@@ -297,18 +297,16 @@ impl RelaxNGDatatypeLibrary for RelaxNGBuiltinDatatypeLibrary {
         match type_name {
             "string" => Some(lhs == rhs),
             "token" => {
-                let mut lhs = lhs
+                let lhs = lhs
                     .split(|c: char| XMLVersion::default().is_whitespace(c))
-                    .filter(|s| !s.is_empty());
-                let mut rhs = rhs
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>();
+                let rhs = rhs
                     .split(|c: char| XMLVersion::default().is_whitespace(c))
-                    .filter(|s| !s.is_empty());
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>();
 
-                Some(
-                    lhs.by_ref().zip(rhs.by_ref()).all(|(lhs, rhs)| lhs == rhs)
-                        && lhs.next().is_none()
-                        && rhs.next().is_none(),
-                )
+                Some(lhs == rhs)
             }
             _ => None,
         }
