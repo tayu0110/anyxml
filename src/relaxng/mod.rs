@@ -4430,7 +4430,7 @@ impl RelaxNGNonEmptyPattern {
                 } else if weak && sequence.is_empty() {
                     "".to_owned()
                 } else {
-                    return Err(XMLError::RngValidData);
+                    return Err(XMLError::RngValidValue);
                 };
 
                 if let Some(library) = grammar.libraries.get(datatype_library)
@@ -5270,15 +5270,24 @@ impl std::fmt::Display for RelaxNGExceptNameClass {
 }
 
 fn collect_child_sequence(node: &Node<impl NodeSpec>) -> Vec<Node<dyn NodeSpec>> {
+    let document = node.owner_document();
     let mut sequence = vec![];
     let mut children = node.first_child();
     let mut depth = 0;
+    let mut buf = String::new();
     while let Some(child) = children {
-        if matches!(
-            child.node_type(),
-            NodeType::Element | NodeType::Text | NodeType::CDATASection
-        ) {
-            sequence.push(child.clone());
+        match child.downcast() {
+            NodeKind::Text(text) => buf.push_str(&text.data()),
+            NodeKind::CDATASection(cdata) => buf.push_str(&cdata.data()),
+            NodeKind::Element(_) => {
+                if !buf.is_empty() {
+                    let text = document.create_text(buf.as_str());
+                    sequence.push(text.into());
+                    buf.clear();
+                }
+                sequence.push(child.clone());
+            }
+            _ => {}
         }
         if matches!(child.node_type(), NodeType::EntityReference)
             && let Some(first) = child.first_child()
@@ -5301,6 +5310,11 @@ fn collect_child_sequence(node: &Node<impl NodeSpec>) -> Vec<Node<dyn NodeSpec>>
                 }
             }
         }
+    }
+
+    if !buf.is_empty() {
+        let text = document.create_text(buf.as_str());
+        sequence.push(text.into());
     }
     sequence
 }
