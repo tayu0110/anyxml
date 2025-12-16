@@ -4446,10 +4446,6 @@ impl RelaxNGNonEmptyPattern {
                 }
             }
             Self::List { pattern } => {
-                if !attributes.is_empty() {
-                    return Err(XMLError::RngValidList);
-                }
-
                 if sequence.is_empty() {
                     return pattern.validate(
                         attributes,
@@ -4457,7 +4453,7 @@ impl RelaxNGNonEmptyPattern {
                         sequence,
                         seq_matches,
                         grammar,
-                        weak,
+                        false,
                     );
                 }
 
@@ -4478,7 +4474,16 @@ impl RelaxNGNonEmptyPattern {
                 {
                     sequence.push(document.create_text(token).into());
                 }
-                pattern.validate(&[], attr_matches, &sequence, seq_matches, grammar, weak)
+
+                let mut sm = vec![false; sequence.len()];
+                pattern.validate(&[], attr_matches, &sequence, &mut sm, grammar, false)?;
+                if sm.iter().all(|&m| m) {
+                    seq_matches.fill(true);
+                    Ok(())
+                } else {
+                    seq_matches.fill(false);
+                    Err(XMLError::RngValidList)
+                }
             }
             Self::Attribute {
                 name_class,
