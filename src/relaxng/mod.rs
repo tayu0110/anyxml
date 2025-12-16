@@ -3764,16 +3764,14 @@ impl TryFrom<Element> for RelaxNGGrammar {
 
         let mut start = None;
         let mut define = BTreeMap::new();
-        let mut children = grammar.first_child();
-        while let Some(child) = children {
-            children = child.next_sibling();
+        let mut children = grammar.first_element_child();
+        while let Some(element) = children {
+            children = element.next_element_sibling();
 
-            let element = child.as_element().ok_or(XMLError::RngParseUnknownError)?;
             match element.local_name().as_ref() {
                 "start" => {
                     let top = element
-                        .first_child()
-                        .and_then(|ch| ch.as_element())
+                        .first_element_child()
                         .ok_or(XMLError::RngParseUnknownError)?;
                     if top.local_name().as_ref() != "notAllowed" {
                         start = Some(RelaxNGPattern::try_from(top)?);
@@ -3914,8 +3912,7 @@ impl TryFrom<Element> for RelaxNGDefine {
 
     fn try_from(define: Element) -> Result<Self, Self::Error> {
         let element = define
-            .first_child()
-            .and_then(|ch| ch.as_element())
+            .first_element_child()
             .filter(|elem| elem.local_name().as_ref() == "element")
             .ok_or(XMLError::RngParseUnknownError)?;
 
@@ -3924,12 +3921,10 @@ impl TryFrom<Element> for RelaxNGDefine {
             .ok_or(XMLError::RngParseUnknownError)?
             .into();
         let name_class = element
-            .first_child()
-            .and_then(|ch| ch.as_element())
+            .first_element_child()
             .ok_or(XMLError::RngParseUnknownError)?;
         let top = element
-            .last_child()
-            .and_then(|ch| ch.as_element())
+            .last_element_child()
             .ok_or(XMLError::RngParseUnknownError)?;
 
         if name_class
@@ -4843,7 +4838,7 @@ impl TryFrom<Element> for RelaxNGNonEmptyPattern {
                 value: value
                     .first_child()
                     .map(|ch| ch.text_content())
-                    .ok_or(XMLError::RngParseUnknownError)?
+                    .unwrap_or_default()
                     .into(),
             }),
             "list" => Ok(Self::List {
@@ -4857,14 +4852,12 @@ impl TryFrom<Element> for RelaxNGNonEmptyPattern {
             }),
             "attribute" => Ok(Self::Attribute {
                 name_class: value
-                    .first_child()
-                    .and_then(|ch| ch.as_element())
+                    .first_element_child()
                     .ok_or(XMLError::RngParseUnknownError)?
                     .try_into()?,
                 pattern: Box::new(
                     value
-                        .last_child()
-                        .and_then(|ch| ch.as_element())
+                        .last_element_child()
                         .ok_or(XMLError::RngParseUnknownError)?
                         .try_into()?,
                 ),
