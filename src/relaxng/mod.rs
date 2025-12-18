@@ -4586,43 +4586,8 @@ impl RelaxNGNonEmptyPattern {
                 Ok(())
             }
             Self::Interleave { pattern } => {
-                let mut left = vec![];
-                let mut right = vec![];
-                for node in sequence {
-                    match node.downcast() {
-                        NodeKind::Element(element) => {
-                            if pattern[0].contains_element_name(
-                                element.namespace_name().as_deref().unwrap_or_default(),
-                                &element.local_name(),
-                                grammar,
-                            ) {
-                                left.push(node.clone());
-                            } else {
-                                right.push(node.clone());
-                            }
-                        }
-                        _ => {
-                            if pattern[0].contains_element_name("", "#text", grammar) {
-                                left.push(node.clone());
-                            } else {
-                                right.push(node.clone());
-                            }
-                        }
-                    }
-                }
-
-                let mut lm = vec![false; left.len()];
-                pattern[0].validate(attributes, attr_matches, &left, &mut lm, grammar, weak)?;
-                let mut rm = vec![false; right.len()];
-                pattern[1].validate(attributes, attr_matches, &right, &mut rm, grammar, weak)?;
-
-                if attr_matches.iter().any(|&m| !m)
-                    || lm.into_iter().any(|m| !m)
-                    || rm.into_iter().any(|m| !m)
-                {
-                    return Err(XMLError::RngValidInterleave);
-                }
-
+                pattern[0].handle_interleave(&pattern[1], attributes, sequence, grammar, weak)?;
+                attr_matches.fill(true);
                 seq_matches.fill(true);
                 Ok(())
             }
@@ -4674,6 +4639,90 @@ impl RelaxNGNonEmptyPattern {
         Err(XMLError::RngValidOneOrMore)
     }
 
+    /// Verify that `attributes` and `sequence` match the `interleave` pattern.  \
+    /// `attributes` and `sequence` must match completely for all entries to return `Ok`.
+    fn handle_interleave(
+        &self,
+        other: &Self,
+        attributes: &[Attribute],
+        sequence: &[Node<dyn NodeSpec>],
+        grammar: &RelaxNGGrammar,
+        weak: bool,
+    ) -> Result<(), XMLError> {
+        // Based on the constraints in Section 10.4,
+        // it is possible to determine which pattern a name can match.
+        //
+        // Rerefence: 10.4 Restrictions on attributes
+        let mut la = vec![];
+        let mut ra = vec![];
+        for attr in attributes {
+            if self.contains_attribute_name(
+                attr.namespace_name().as_deref().unwrap_or_default(),
+                &attr.local_name(),
+            ) {
+                la.push(attr.clone());
+            } else {
+                ra.push(attr.clone());
+            }
+        }
+
+        // Based on the constraints in Section 10.5,
+        // it is possible to determine which pattern a name can match.
+        //
+        // Rerefence: 10.5 Restrictions on `interleave`
+        let mut lm = vec![];
+        let mut rm = vec![];
+        for node in sequence {
+            match node.downcast() {
+                NodeKind::Element(element) => {
+                    if self.contains_element_name(
+                        element.namespace_name().as_deref().unwrap_or_default(),
+                        &element.local_name(),
+                        grammar,
+                    ) {
+                        lm.push(node.clone());
+                    } else {
+                        rm.push(node.clone());
+                    }
+                }
+                _ => {
+                    if self.contains_element_name("", "#text", grammar) {
+                        lm.push(node.clone());
+                    } else {
+                        rm.push(node.clone());
+                    }
+                }
+            }
+        }
+
+        let mut attr_matches = vec![false; attributes.len()];
+        let mut seq_matches = vec![false; sequence.len()];
+        self.validate(
+            &la,
+            &mut attr_matches[..la.len()],
+            &lm,
+            &mut seq_matches[..lm.len()],
+            grammar,
+            weak,
+        )?;
+        other.validate(
+            &ra,
+            &mut attr_matches[la.len()..],
+            &rm,
+            &mut seq_matches[lm.len()..],
+            grammar,
+            weak,
+        )?;
+
+        if attr_matches.iter().any(|&m| !m) || seq_matches.into_iter().any(|m| !m) {
+            Err(XMLError::RngValidInterleave)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Verify that `attributes` and `sequence` match the `group` pattern.  \
+    /// `attributes` and `sequence` must match completely for all entries to return `Ok`.
     fn handle_group(
         &self,
         other: &Self,
@@ -4682,35 +4731,52 @@ impl RelaxNGNonEmptyPattern {
         grammar: &RelaxNGGrammar,
         weak: bool,
     ) -> Result<(), XMLError> {
+        // Based on the constraints in Section 10.4,
+        // it is possible to determine which pattern a name can match.
+        //
+        // Rerefence: 10.4 Restrictions on attributes
+        let mut la = vec![];
+        let mut ra = vec![];
+        for attr in attributes {
+            if self.contains_attribute_name(
+                attr.namespace_name().as_deref().unwrap_or_default(),
+                &attr.local_name(),
+            ) {
+                la.push(attr.clone());
+            } else {
+                ra.push(attr.clone());
+            }
+        }
+
         for mid in (0..=sequence.len()).rev() {
             let (front, back) = sequence.split_at(mid);
-            let mut am = vec![false; attributes.len()];
+            let mut la_matches = vec![false; la.len()];
             let mut sm = vec![false; sequence.len()];
             if self
                 .validate(
-                    attributes,
-                    &mut am,
+                    &la,
+                    &mut la_matches,
                     front,
                     &mut sm[..front.len()],
                     grammar,
                     weak,
                 )
                 .is_ok()
+                && la_matches.iter().all(|&m| m)
+                && sm.iter().take(front.len()).all(|&m| m)
             {
-                if sm.iter().take(front.len()).any(|&m| !m) {
-                    continue;
-                }
+                let mut ra_matches = vec![false; ra.len()];
                 if other
                     .validate(
-                        attributes,
-                        &mut am,
+                        &ra,
+                        &mut ra_matches,
                         back,
                         &mut sm[front.len()..],
                         grammar,
                         weak,
                     )
                     .is_ok()
-                    && am.iter().all(|&m| m)
+                    && ra_matches.iter().all(|&m| m)
                     && sm.iter().skip(front.len()).all(|&m| m)
                 {
                     return Ok(());
@@ -4749,6 +4815,30 @@ impl RelaxNGNonEmptyPattern {
             Self::Group { pattern } | Self::Interleave { pattern } => {
                 pattern[0].contains_element_name(namespace_name, local_name, grammar)
                     || pattern[1].contains_element_name(namespace_name, local_name, grammar)
+            }
+        }
+    }
+
+    fn contains_attribute_name(&self, namespace_name: &str, local_name: &str) -> bool {
+        match self {
+            Self::Text
+            | Self::Data { .. }
+            | Self::Value { .. }
+            | Self::List { .. }
+            | Self::Ref { .. } => false,
+            Self::Attribute { name_class, .. } => name_class.try_match(local_name, namespace_name),
+            Self::OneOrMore { pattern } => {
+                pattern.contains_attribute_name(namespace_name, local_name)
+            }
+            Self::Choice { left, right } => {
+                left.pattern
+                    .as_ref()
+                    .is_some_and(|left| left.contains_attribute_name(namespace_name, local_name))
+                    || right.contains_attribute_name(namespace_name, local_name)
+            }
+            Self::Group { pattern } | Self::Interleave { pattern } => {
+                pattern[0].contains_attribute_name(namespace_name, local_name)
+                    || pattern[1].contains_attribute_name(namespace_name, local_name)
             }
         }
     }
