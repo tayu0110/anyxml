@@ -5207,40 +5207,51 @@ impl RelaxNGNameClass {
     /// Check if two nameClasses have non-empty intersection of acceptable name set.
     ///
     /// If have, return `true`, otherwise return `false`.
+    ///
+    /// # Reference
+    /// - [Name class analysis](https://relaxng.org/jclark/nameclass.html)
     fn has_non_empty_intersection(&self, other: &Self) -> bool {
-        fn _has_non_empty_intersection(lhs: &RelaxNGNameClass, rhs: &RelaxNGNameClass) -> bool {
-            match lhs {
-                RelaxNGNameClass::AnyName { except } => {
-                    // Both `local_name` and `namesace_name` are invalid names,
-                    // but if `rhs` contains anyName, it should match.
-                    if !rhs.try_match("*", "*") {
-                        return false;
+        let mut stack = vec![self, other];
+        let mut seen = HashSet::new();
+        let mut seen_anyname = false;
+        let mut representatives = std::iter::from_fn(move || {
+            while let Some(now) = stack.pop() {
+                match now {
+                    RelaxNGNameClass::AnyName { except } => {
+                        if let Some(except) = except.as_ref() {
+                            stack.push(&except.name_class);
+                        }
+                        if !seen_anyname {
+                            seen_anyname = true;
+                            return Some(("*", "*"));
+                        }
                     }
-                    if let Some(except) = except.as_ref() {
-                        return !_has_non_empty_intersection(&except.name_class, rhs);
+                    RelaxNGNameClass::NsName { ns, except } => {
+                        if let Some(except) = except.as_ref() {
+                            stack.push(&except.name_class);
+                        }
+                        if seen.insert((ns.as_ref(), "*")) {
+                            return Some((ns.as_ref(), "*"));
+                        }
                     }
-                    true
-                }
-                RelaxNGNameClass::NsName { ns, except } => {
-                    // `local_name` is a invalid name, but if `rhs` contains anyName or nsName
-                    // with the namespace name as same as `ns`, it should match.
-                    if !rhs.try_match("*", ns) {
-                        return false;
+                    RelaxNGNameClass::Name { ns, value } => {
+                        if seen.insert((ns.as_ref(), value.as_ref())) {
+                            return Some((ns.as_ref(), value.as_ref()));
+                        }
                     }
-                    if let Some(except) = except.as_ref() {
-                        return !_has_non_empty_intersection(&except.name_class, rhs);
+                    RelaxNGNameClass::Choice { name_class } => {
+                        stack.push(name_class[0].as_ref());
+                        stack.push(name_class[1].as_ref());
                     }
-                    true
-                }
-                RelaxNGNameClass::Name { ns, value } => rhs.try_match(value, ns),
-                RelaxNGNameClass::Choice { name_class } => {
-                    _has_non_empty_intersection(&name_class[0], rhs)
-                        || _has_non_empty_intersection(&name_class[1], rhs)
                 }
             }
-        }
+            None
+        });
 
-        _has_non_empty_intersection(self, other) || _has_non_empty_intersection(other, self)
+        representatives.any(|(namespace_name, local_name)| {
+            self.try_match(local_name, namespace_name)
+                && other.try_match(local_name, namespace_name)
+        })
     }
 
     /// Check if `self` or its descendant nameClass is `anyName` or `nsName`.

@@ -32,11 +32,11 @@ fn spectest() {
 }
 
 fn handle_testsuite(testsuite: Element) {
-    let documentation = testsuite
-        .get_elements_by_qname("documentation")
-        .next()
-        .unwrap();
-    eprintln!("=== test suite: {} ===", documentation.text_content());
+    if let Some(documentation) = testsuite.get_elements_by_qname("documentation").next() {
+        eprintln!("=== test suite: {} ===", documentation.text_content());
+    } else {
+        eprintln!("=== test suite: (no documentation) ===");
+    }
 
     for testcase in testsuite.get_elements_by_qname("testCase") {
         if let Some(documentation) = testcase.get_elements_by_qname("documentation").next() {
