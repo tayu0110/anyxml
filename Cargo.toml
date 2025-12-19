@@ -8,13 +8,13 @@ package.rust-version = "1.89.0"
 
 [package]
 name = "anyxml"
-version = "0.6.2"
+version = "0.7.0"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "A fully spec-conformant XML library"
-keywords = ["xml", "dtd", "xpath", "catalog"]
+keywords = ["xml", "dtd", "xpath", "catalog", "relaxng"]
 rust-version.workspace = true
 
 [dependencies]
