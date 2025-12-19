@@ -158,7 +158,7 @@ pub enum XMLError {
     },
     DecoderUnknownError,
     // URI errors
-    URIParseFailure,
+    URIParseError(ParseRIError),
     URIBaseURINotAbsolute,
     URIBaseURINotFound,
     // Tree errors
@@ -262,8 +262,8 @@ impl From<DecodeError> for XMLError {
 }
 
 impl From<ParseRIError> for XMLError {
-    fn from(_: ParseRIError) -> Self {
-        Self::URIParseFailure
+    fn from(value: ParseRIError) -> Self {
+        Self::URIParseError(value)
     }
 }
 
