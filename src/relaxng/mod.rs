@@ -387,7 +387,7 @@ impl RelaxNGSchemaParseContext {
         self.defines.clear();
         self.last_error = Ok(());
         self.handle_pattern(&mut document_element, &mut handler, Cow::Borrowed(""))?;
-        self.last_error?;
+        self.last_error.clone()?;
         let mut grammar = self
             .document
             .create_element("grammar", Some(XML_RELAX_NG_NAMESPACE.into()))?;
@@ -404,7 +404,7 @@ impl RelaxNGSchemaParseContext {
         for mut grammar in grammars {
             self.bundle_start_and_define(&mut grammar, &mut handler)?;
         }
-        self.last_error?;
+        self.last_error.clone()?;
         // ISO/IEC 19757-2:2008 7.19 `grammar` element
         let mut num_define = 0;
         self.flatten_grammar(
@@ -413,12 +413,12 @@ impl RelaxNGSchemaParseContext {
             &mut HashMap::new(),
             &mut num_define,
         )?;
-        self.last_error?;
+        self.last_error.clone()?;
         // ISO/IEC 19757-2:2008 7.20 `define` and `ref` elements
         self.remove_unreachable_define(&mut grammar)?;
         self.normalize_define(&mut grammar.clone(), &mut grammar, &mut num_define)?;
         self.normalize_ref(&mut grammar, &mut handler, false, false)?;
-        self.last_error?;
+        self.last_error.clone()?;
         for (_, mut define) in self.defines.extract_if(|_, define| {
             define
                 .first_child()
@@ -430,7 +430,7 @@ impl RelaxNGSchemaParseContext {
         // ISO/IEC 19757-2:2008 7.21 `notAllowed` element
         let mut removable_except = vec![];
         normalize_not_allowed(&mut grammar, &mut removable_except)?;
-        self.last_error?;
+        self.last_error.clone()?;
         for mut except in removable_except {
             except.detach()?;
         }
@@ -481,7 +481,7 @@ impl RelaxNGSchemaParseContext {
         // ISO/IEC 19757-2:2008 7.22 `empty` element
         normalize_empty(&mut grammar)?;
         self.verify_prohibited_paths(&grammar, &mut HashSet::new(), &mut handler)?;
-        self.last_error?;
+        self.last_error.clone()?;
         let mut grammar = RelaxNGGrammar::try_from(grammar)?;
         grammar.libraries = self.datatype_libraries.clone();
         grammar.verify_content_type()?;

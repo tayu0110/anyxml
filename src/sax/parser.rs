@@ -417,7 +417,7 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
             self.base_uri = base_uri.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
-        self.parse_document().inspect_err(|&err| {
+        self.parse_document().inspect_err(|err| {
             fatal_error!(self, err, "Unrecoverable error: {}", err);
         })
     }
@@ -445,7 +445,7 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
             self.base_uri = base_uri.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
-        self.parse_document().inspect_err(|&err| {
+        self.parse_document().inspect_err(|err| {
             fatal_error!(self, err, "Unrecoverable error: {}", err);
         })
     }
@@ -468,7 +468,7 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
             self.base_uri = base_uri.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
-        self.parse_document().inspect_err(|&err| {
+        self.parse_document().inspect_err(|err| {
             fatal_error!(self, err, "Unrecoverable error: {}", err);
         })
     }
@@ -538,7 +538,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
             }
             Ok(())
         })()
-        .inspect_err(|&err| {
+        .inspect_err(|err| {
             fatal_error!(self, err, "Unrecoverable error: {}", err);
         })
     }

@@ -170,7 +170,11 @@ pub trait EntityResolver {
         base_uri: Option<&URIStr>,
     ) -> Result<InputSource<'static>, XMLError> {
         let _ = (name, base_uri);
-        Err(XMLError::IONotFound)
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("An external subset '{}' is not found.", name),
+        )
+        .into())
     }
 
     /// By default, it attempts to retrieve local files using `base_uri` and `system_id`.

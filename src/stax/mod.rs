@@ -153,7 +153,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
             }
             Ok(())
         })()
-        .inspect_err(|&err| {
+        .inspect_err(|err| {
             fatal_error!(self.reader, err, "Unrecoverable error: {}", err);
         })?;
         Ok(self.create_event())
@@ -252,7 +252,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
             }
             Ok(())
         })()
-        .inspect_err(|&err| {
+        .inspect_err(|err| {
             fatal_error!(self.reader, err, "Unrecoverable error: {}", err);
         })?;
 

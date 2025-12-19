@@ -85,7 +85,7 @@ macro_rules! fatal_error {
         $crate::sax::error::generic_error!(
             fatal_error,
             $reader.handler,
-            $code,
+            $code.clone(),
             $crate::error::XMLErrorLevel::FatalError,
             $crate::error::XMLErrorDomain::Parser,
             $reader.locator,

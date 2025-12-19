@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     encoding::{DecodeError, EncodeError},
     tree::XMLTreeError,
@@ -41,7 +43,7 @@ impl std::fmt::Display for XMLErrorDomain {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub enum XMLError {
     // general errors
     InternalError,
@@ -136,47 +138,7 @@ pub enum XMLError {
     ParserUnexpectedDocumentContent,
     ParserUnexpectedEOF,
     // I/O errors
-    IOUnknownError,
-    IONotFound,
-    IOPermissionDenied,
-    IOConnectionRefused,
-    IOConnectionReset,
-    IOHostUnreachable,
-    IONetworkUnreachable,
-    IOConnectionAborted,
-    IONotConnected,
-    IOAddrInUse,
-    IOAddrNotAvailable,
-    IONetworkDown,
-    IOBrokenPipe,
-    IOAlreadyExists,
-    IOWouldBlock,
-    IONotADirectory,
-    IOIsADirectory,
-    IODirectoryNotEmpty,
-    IOReadOnlyFilesystem,
-    IOFilesystemLoop,
-    IOStaleNetworkFileHandle,
-    IOInvalidInput,
-    IOInvalidData,
-    IOTimedOut,
-    IOWriteZero,
-    IOStorageFull,
-    IONotSeekable,
-    IOQuotaExceeded,
-    IOFileTooLarge,
-    IOResourceBusy,
-    IOExecutableFileBusy,
-    IODeadlock,
-    IOCrossesDevices,
-    IOTooManyLinks,
-    IOInvalidFilename,
-    IOArgumentListTooLong,
-    IOInterrupted,
-    IOUnsupported,
-    IOUnexpectedEof,
-    IOOutOfMemory,
-    IOInProgress,
+    IOError(Arc<std::io::Error>),
     // encoding errors
     EncoderInputIsEmpty,
     EncoderOutputTooShort,
@@ -261,49 +223,7 @@ impl std::error::Error for XMLError {}
 
 impl From<std::io::Error> for XMLError {
     fn from(value: std::io::Error) -> Self {
-        use std::io::ErrorKind::*;
-        match value.kind() {
-            NotFound => XMLError::IONotFound,
-            PermissionDenied => XMLError::IOPermissionDenied,
-            ConnectionRefused => XMLError::IOConnectionRefused,
-            ConnectionReset => XMLError::IOConnectionReset,
-            HostUnreachable => XMLError::IOHostUnreachable,
-            NetworkUnreachable => XMLError::IONetworkUnreachable,
-            ConnectionAborted => XMLError::IOConnectionAborted,
-            NotConnected => XMLError::IONotConnected,
-            AddrInUse => XMLError::IOAddrInUse,
-            AddrNotAvailable => XMLError::IOAddrNotAvailable,
-            NetworkDown => XMLError::IONetworkDown,
-            BrokenPipe => XMLError::IOBrokenPipe,
-            AlreadyExists => XMLError::IOAlreadyExists,
-            WouldBlock => XMLError::IOWouldBlock,
-            NotADirectory => XMLError::IONotADirectory,
-            IsADirectory => XMLError::IOIsADirectory,
-            DirectoryNotEmpty => XMLError::IODirectoryNotEmpty,
-            ReadOnlyFilesystem => XMLError::IOReadOnlyFilesystem,
-            StaleNetworkFileHandle => XMLError::IOStaleNetworkFileHandle,
-            InvalidInput => XMLError::IOInvalidInput,
-            InvalidData => XMLError::IOInvalidData,
-            TimedOut => XMLError::IOTimedOut,
-            WriteZero => XMLError::IOWriteZero,
-            StorageFull => XMLError::IOStorageFull,
-            NotSeekable => XMLError::IONotSeekable,
-            QuotaExceeded => XMLError::IOQuotaExceeded,
-            FileTooLarge => XMLError::IOFileTooLarge,
-            ResourceBusy => XMLError::IOResourceBusy,
-            ExecutableFileBusy => XMLError::IOExecutableFileBusy,
-            Deadlock => XMLError::IODeadlock,
-            CrossesDevices => XMLError::IOCrossesDevices,
-            TooManyLinks => XMLError::IOTooManyLinks,
-            InvalidFilename => XMLError::IOInvalidFilename,
-            ArgumentListTooLong => XMLError::IOArgumentListTooLong,
-            Interrupted => XMLError::IOInterrupted,
-            Unsupported => XMLError::IOUnsupported,
-            UnexpectedEof => XMLError::IOUnexpectedEof,
-            OutOfMemory => XMLError::IOOutOfMemory,
-            Other => XMLError::IOUnknownError,
-            _ => unimplemented!(),
-        }
+        Self::IOError(Arc::new(value))
     }
 }
 
