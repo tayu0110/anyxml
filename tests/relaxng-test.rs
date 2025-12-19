@@ -15,11 +15,7 @@ use anyxml::{
 
 #[test]
 fn spectest() {
-    let uri = URIString::parse(format!(
-        "{}/resources/relaxng/spectest.xml",
-        env!("CARGO_MANIFEST_DIR"),
-    ))
-    .unwrap();
+    let uri = URIString::parse("resources/relaxng/spectest.xml").unwrap();
 
     let testsuites = evaluate_uri("//testSuite", uri.as_ref(), None)
         .unwrap()
