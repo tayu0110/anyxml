@@ -1,13 +1,15 @@
+mod datatype_library;
+
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
     io::Read,
-    sync::Arc,
 };
 
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
+    relaxng::datatype_library::RelaxNGDatatypeLibraries,
     sax::{
         handler::{ErrorHandler, SAXHandler},
         parser::XMLReaderBuilder,
@@ -231,117 +233,6 @@ impl RelaxNGSchema {
 
     pub fn validate(&self, element: &Element) -> Result<(), XMLError> {
         self.grammar.validate(element)
-    }
-}
-
-pub trait RelaxNGDatatypeLibrary: Send + Sync {
-    /// If a type named `type_name` exists in the library, return `true`,
-    /// otherwise return `false`.
-    fn contains(&self, type_name: &str) -> bool;
-    /// If a type named `type_name` exists in the library, return [`Some`] wrapped around
-    /// [`true`] if `value` is a valid representation of that type, or [`false`] otherwise.
-    ///
-    /// Even if a type exists, if the arguments sufficient for determination are not included
-    /// in `params`, [`None`] is returned.
-    ///
-    /// If a type named `type_name` does not exist in the library, return [`None`].
-    ///
-    /// # Reference
-    /// ISO/IEC 19757-2:2008 9.3.8 data and value pattern
-    fn validate(
-        &self,
-        type_name: &str,
-        params: &HashMap<String, String>,
-        value: &str,
-    ) -> Option<bool>;
-    /// If a type named `type_name` exists in the library, return [`Some`] wrapped around
-    /// [`true`] if `params` is a valid parameter list of that type, or [`false`] otherwise.
-    ///
-    /// If a type named `type_name` does not exist in the library, return [`None`].
-    fn validate_params(&self, type_name: &str, params: &HashMap<String, String>) -> Option<bool>;
-    /// If a type named `type_name` exists in the library, return [`Some`] wrapped around
-    /// [`true`] if `lhs` and `rhs` are equal as representations of that type,
-    /// or [`false`] if they are not equal.
-    ///
-    /// If a type named `type_name` does not exist in the library, returns [`None`].
-    ///
-    /// # Reference
-    /// ISO/IEC 19757-2:2008 9.3.8 data and value pattern
-    fn eq(&self, type_name: &str, lhs: &str, rhs: &str) -> Option<bool>;
-}
-
-pub struct RelaxNGBuiltinDatatypeLibrary;
-
-impl RelaxNGDatatypeLibrary for RelaxNGBuiltinDatatypeLibrary {
-    fn contains(&self, type_name: &str) -> bool {
-        matches!(type_name, "string" | "token")
-    }
-
-    fn validate(
-        &self,
-        type_name: &str,
-        _params: &HashMap<String, String>,
-        _value: &str,
-    ) -> Option<bool> {
-        match type_name {
-            "string" | "token" => Some(true),
-            _ => None,
-        }
-    }
-
-    fn validate_params(&self, type_name: &str, params: &HashMap<String, String>) -> Option<bool> {
-        self.contains(type_name).then_some(params.is_empty())
-    }
-
-    fn eq(&self, type_name: &str, lhs: &str, rhs: &str) -> Option<bool> {
-        match type_name {
-            "string" => Some(lhs == rhs),
-            "token" => {
-                let lhs = lhs
-                    .split(|c: char| XMLVersion::default().is_whitespace(c))
-                    .filter(|s| !s.is_empty())
-                    .collect::<Vec<_>>();
-                let rhs = rhs
-                    .split(|c: char| XMLVersion::default().is_whitespace(c))
-                    .filter(|s| !s.is_empty())
-                    .collect::<Vec<_>>();
-
-                Some(lhs == rhs)
-            }
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct RelaxNGDatatypeLibraries {
-    map: HashMap<URIString, Arc<dyn RelaxNGDatatypeLibrary>>,
-}
-
-impl RelaxNGDatatypeLibraries {
-    fn get(&self, namespace_name: &URIStr) -> Option<&dyn RelaxNGDatatypeLibrary> {
-        self.map.get(namespace_name).map(|library| &**library)
-    }
-
-    fn insert(
-        &mut self,
-        namespace_name: URIString,
-        library: Arc<dyn RelaxNGDatatypeLibrary>,
-    ) -> Option<Arc<dyn RelaxNGDatatypeLibrary>> {
-        self.map.insert(namespace_name, library)
-    }
-}
-
-impl Default for RelaxNGDatatypeLibraries {
-    fn default() -> Self {
-        let mut libraries = Self {
-            map: HashMap::new(),
-        };
-        libraries.insert(
-            URIString::parse("").unwrap(),
-            Arc::new(RelaxNGBuiltinDatatypeLibrary),
-        );
-        libraries
     }
 }
 
