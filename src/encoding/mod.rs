@@ -49,7 +49,7 @@ pub trait Decoder {
     ) -> Result<(usize, usize), DecodeError>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EncodeError {
     /// Input buffer is empty.
     InputIsEmpty,
@@ -65,7 +65,7 @@ pub enum EncodeError {
     /// Other errors.
     Other { msg: Cow<'static, str> },
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DecodeError {
     /// Input buffer is empty.
     InputIsEmpty,

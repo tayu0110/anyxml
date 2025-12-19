@@ -140,22 +140,9 @@ pub enum XMLError {
     // I/O errors
     IOError(Arc<std::io::Error>),
     // encoding errors
-    EncoderInputIsEmpty,
-    EncoderOutputTooShort,
-    EncoderUnmappable {
-        read: usize,
-        write: usize,
-        c: char,
-    },
+    EncodeError(EncodeError),
     EncoderUnknownError,
-    DecoderInputIsEmpty,
-    DecoderOutputTooShort,
-    DecoderMalformed {
-        read: usize,
-        write: usize,
-        length: usize,
-        offset: usize,
-    },
+    DecodeError(DecodeError),
     DecoderUnknownError,
     // URI errors
     URIParseError(ParseRIError),
@@ -198,6 +185,7 @@ pub enum XMLError {
     RngParseUngroupablePattern,
     RngParseConflictAttributeNameClass,
     RngParseUnrepeatedAttributeWithInfiniteNameClass,
+    RngParseUnknownError,
     RngValidNotAllowed,
     RngValidEmpty,
     RngValidText,
@@ -210,7 +198,7 @@ pub enum XMLError {
     RngValidRef,
     RngValidElement,
     RngValidOneOrMore,
-    RngParseUnknownError,
+    RngValidUnknownError,
 }
 
 impl std::fmt::Display for XMLError {
@@ -229,35 +217,13 @@ impl From<std::io::Error> for XMLError {
 
 impl From<EncodeError> for XMLError {
     fn from(value: EncodeError) -> Self {
-        use EncodeError::*;
-        match value {
-            InputIsEmpty => XMLError::EncoderInputIsEmpty,
-            OutputTooShort => XMLError::EncoderOutputTooShort,
-            Unmappable { read, write, c } => XMLError::EncoderUnmappable { read, write, c },
-            Other { msg: _ } => XMLError::EncoderUnknownError,
-        }
+        Self::EncodeError(value)
     }
 }
 
 impl From<DecodeError> for XMLError {
     fn from(value: DecodeError) -> Self {
-        use DecodeError::*;
-        match value {
-            InputIsEmpty => XMLError::DecoderInputIsEmpty,
-            OutputTooShort => XMLError::DecoderOutputTooShort,
-            Malformed {
-                read,
-                write,
-                length,
-                offset,
-            } => XMLError::DecoderMalformed {
-                read,
-                write,
-                length,
-                offset,
-            },
-            Other { msg: _ } => XMLError::DecoderUnknownError,
-        }
+        Self::DecodeError(value)
     }
 }
 
