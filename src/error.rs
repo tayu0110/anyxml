@@ -45,6 +45,7 @@ impl std::fmt::Display for XMLErrorDomain {
 pub enum XMLError {
     // general errors
     InternalError,
+    UnsupportedError,
     // parser errors
     ParserUnknownError,
     ParserUnsupportedEncoding,

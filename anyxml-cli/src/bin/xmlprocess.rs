@@ -5,6 +5,7 @@ use std::{
 
 use anyxml::{
     error::{XMLError, XMLErrorDomain},
+    relaxng::RelaxNGSchema,
     sax::{
         error::SAXParseError,
         handler::{DebugHandler, DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
@@ -37,6 +38,8 @@ enum Command {
     Validate {
         #[clap(long, help = "validation scheme")]
         mode: ValidationScheme,
+        #[clap(long, help = "Path to the schema (unsupported for DTD)")]
+        schema: Option<String>,
         document: Option<String>,
     },
     #[clap(name = "xpath")]
@@ -63,6 +66,8 @@ pub enum InspectMode {
 pub enum ValidationScheme {
     #[clap(name = "dtd")]
     DTD,
+    #[clap(name = "relaxng")]
+    RELAXNG,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -70,7 +75,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Command::Show { document } => do_show_command(document)?,
         Command::Inspect { mode, document } => do_inspect_command(mode, document)?,
-        Command::Validate { mode, document } => do_validate_command(mode, document)?,
+        Command::Validate {
+            mode,
+            schema,
+            document,
+        } => do_validate_command(mode, schema, document)?,
         Command::XPath { xpath, document } => do_xpath_command(xpath, document)?,
     }
     Ok(())
@@ -230,9 +239,18 @@ fn do_inspect_command(mode: InspectMode, document: Option<String>) -> Result<(),
     Ok(())
 }
 
-fn do_validate_command(mode: ValidationScheme, document: Option<String>) -> Result<(), XMLError> {
+fn do_validate_command(
+    mode: ValidationScheme,
+    schema: Option<String>,
+    document: Option<String>,
+) -> Result<(), XMLError> {
     match mode {
         ValidationScheme::DTD => {
+            if schema.is_some() {
+                eprintln!("'--schema' flag is unsupported for DTD.");
+                return Err(XMLError::UnsupportedError);
+            }
+
             struct DTDValidationHandler {
                 error: bool,
             }
@@ -278,20 +296,55 @@ fn do_validate_command(mode: ValidationScheme, document: Option<String>) -> Resu
                 let uri = URIString::parse(document.as_str())?;
                 reader.parse_uri(uri, None)?;
                 if reader.handler.error {
-                    println!("Validation of {} is failed.", document);
+                    eprintln!("validation of {} is failed.", document);
                 } else {
-                    println!("{} is successfully validated", document);
+                    eprintln!("{} is successfully validated", document);
                 }
             } else {
                 let stdin = std::io::stdin();
                 let lock = stdin.lock();
                 reader.parse_reader(lock, None, None)?;
                 if reader.handler.error {
-                    println!("Validation of a document from stdin is failed.");
+                    eprintln!("validation of a document from stdin is failed.");
                 } else {
-                    println!("successfully validate a document from stdin");
+                    eprintln!("successfully validate a document from stdin");
                 }
             }
+        }
+        ValidationScheme::RELAXNG => {
+            let Some(schema) = schema else {
+                eprintln!("'--schema' flag is missing for RELAX NG validation.");
+                return Err(XMLError::UnsupportedError);
+            };
+
+            let schema_uri = URIString::parse(schema)?;
+            let schema = RelaxNGSchema::parse_uri(schema_uri, None, None::<DefaultSAXHandler>)?;
+
+            let mut reader = XMLReaderBuilder::new()
+                .set_handler(TreeBuildHandler::default())
+                .build();
+            let document = if let Some(document) = document {
+                let uri = URIString::parse(document)?;
+                reader.parse_uri(uri, None)?;
+                reader.handler.document
+            } else {
+                let stdin = std::io::stdin();
+                let lock = stdin.lock();
+                reader.parse_reader(lock, None, None)?;
+                reader.handler.document
+            };
+
+            let Some(document_element) = document.document_element() else {
+                eprintln!("Failed to parse the document because of unknown errors.");
+                return Err(XMLError::InternalError);
+            };
+
+            schema
+                .validate(&document_element)
+                .inspect(|_| eprintln!("successfully validate a document."))
+                .inspect_err(|err| {
+                    eprintln!("failed to validate a document because of '{err:?}'")
+                })?
         }
     }
     Ok(())
