@@ -10,7 +10,8 @@ The current implementation supports the following features:
     - [x] Character reference substitution
     - [x] Attribute value normalization
     - [x] Default attribute value handling
-- validate XML 1.0 document using DTD
+- validate XML 1.0 document using DTD and RELAX NG
+    - The current implementation of RELAX NG does not support Compact Syntax.
 - handle namespace conforming to XML Namespace 1.0
 - build, modify and serialize XML document trees
 - execute XPath and lookup specific node in the document tree
@@ -229,6 +230,7 @@ This crate conforms to the following specifications:
 - [xml:id Version 1.0](https://www.w3.org/TR/2005/REC-xml-id-20050909/)
 - [XML Path Language (XPath) Version 1.0](https://www.w3.org/TR/1999/REC-xpath-19991116/)
 - [XML Catalogs (OASIS Standard V1.1, 7 October 2005)](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
+- [ISO/IEC 19757-2:2008 Part 2: Regular-grammar-based validation — RELAX NG](https://www.iso.org/standard/52348.html)
 
 # Tests
 This crate passes the following tests:
