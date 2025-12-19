@@ -4,7 +4,8 @@ use crate::{
     XMLVersion,
     error::XMLError,
     relaxng::{
-        RelaxNGDefine, RelaxNGGrammar, RelaxNGNonEmptyPattern, RelaxNGPattern, RelaxNGSchema,
+        RelaxNGGrammar, RelaxNGSchema,
+        grammar::{RelaxNGDefine, RelaxNGNonEmptyPattern, RelaxNGPattern},
     },
     tree::{Attribute, Element, Node, NodeType, convert::NodeKind, node::NodeSpec},
 };
