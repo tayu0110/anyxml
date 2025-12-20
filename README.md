@@ -242,5 +242,11 @@ This crate passes the following tests:
 - [RELAX NG Test Suite by James Clark](https://gnosis.cx/download/gnosis/xml/relax/spectest.xml)
 - some self-made tests
 
+# Performance
+Currently, I won't make any specific comments regarding performance.  \
+I only care about two things: expanding features and ensuring proper operation.
+
+Some crates improve performance by not adhering to the specification—such as skipping DTD reading, entity expansion, or value normalization—but this crate prioritizes conforming to the specification as much as possible.
+
 # Command Line Utility
 As a related project, a simple command line utility [`anyxml-cli`](https://crates.io/crates/anyxml-cli) is also provided.
