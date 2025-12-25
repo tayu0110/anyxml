@@ -1,3 +1,7 @@
+//! Provide APIs for compiling and evaluating XPath.
+//!
+//! The current implementation supports only XPath 1.0.
+
 mod compile;
 mod function;
 mod ops;

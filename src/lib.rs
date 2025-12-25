@@ -12,6 +12,7 @@ pub mod stax;
 pub mod tree;
 pub mod uri;
 pub mod xpath;
+pub mod xpointer;
 
 use std::{convert::Infallible, marker::PhantomData, str::FromStr};
 
