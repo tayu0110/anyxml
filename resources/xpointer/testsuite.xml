@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE testSuite [
+    <!ELEMENT testSuite (testCases+)>
+    
+    <!ELEMENT testCases (description,testCase*)>
+    
+    <!ELEMENT description (#PCDATA)>
+    
+    <!ELEMENT testCase (resource,xpointer,result)>
+    
+    <!ELEMENT resource (#PCDATA)>
+    <!ATTLIST resource type (document|entity) "document">
+    
+    <!ELEMENT xpointer (#PCDATA)>
+
+    <!ELEMENT result (#PCDATA)>
+    <!ATTLIST result unparsable (yes|no) "no">
+    <!ATTLIST result unresolvable (yes|no) "no">
+]>
+<testSuite>
+    <testCases>
+        <description>Shorthand Pointer tests</description>
+        <testCase>
+            <resource>
+                <![CDATA[ 
+                <root xml:id="id_root">success</root>
+                ]]>
+            </resource>
+            <xpointer>id_root</xpointer>
+            <result>success</result>
+        </testCase>
+        <testCase>
+            <resource>
+                <![CDATA[ 
+                <root xml:id="id_root">success</root>
+                ]]>
+            </resource>
+            <xpointer>bad_id</xpointer>
+            <result unresolvable="yes" />
+        </testCase>
+        <testCase>
+            <resource>
+                <![CDATA[
+                <root>
+                    <child>bad</child>
+                    <child xml:id="id_child">success</child>
+                    <child>bad</child>
+                </root>
+                ]]>
+            </resource>
+            <xpointer>id_child</xpointer>
+            <result>success</result>
+        </testCase>
+                <testCase>
+            <resource><![CDATA[<root />]]></resource>
+            <xpointer>id:root</xpointer>
+            <result unparsable="yes" />
+        </testCase>
+    </testCases>
+    <testCases>
+        <description>element() scheme tests</description>
+        <testCase>
+            <resource>
+                <![CDATA[ 
+                <root xml:id="id_root">success</root>
+                ]]>
+            </resource>
+            <xpointer>element(id_root)</xpointer>
+            <result>success</result>
+        </testCase>
+        <testCase>
+            <resource>
+                <![CDATA[ 
+                <root xml:id="id_root">success</root>
+                ]]>
+            </resource>
+            <xpointer>element(bad_id)</xpointer>
+            <result unresolvable="yes" />
+        </testCase>
+        <testCase>
+            <resource>
+                <![CDATA[
+                <root>
+                    <child>bad</child>
+                    <child xml:id="id_child">success</child>
+                    <child>bad</child>
+                </root>
+                ]]>
+            </resource>
+            <xpointer>element(id_child)</xpointer>
+            <result>success</result>
+        </testCase>
+        <testCase>
+            <resource>
+                <![CDATA[
+                <root xml:id="id_root">
+                    <child>bad</child>
+                    <child>
+                        <descendant>success</descendant>
+                    </child>
+                    <child>bad</child>
+                </root>
+                ]]>
+            </resource>
+            <xpointer>element(id_root/2/1)</xpointer>
+            <result>success</result>
+        </testCase>
+        <testCase>
+            <resource>
+                <![CDATA[
+                <root>
+                    <child>bad</child>
+                    <child>
+                        <descendant>success</descendant>
+                    </child>
+                    <child>bad</child>
+                </root>
+                ]]>
+            </resource>
+            <xpointer>element(/1/2/1)</xpointer>
+            <result>success</result>
+        </testCase>
+        <testCase>
+            <resource>
+                <![CDATA[
+                <root xml:id="id_root">
+                    <child>bad</child>
+                    <child>
+                        <descendant>success</descendant>
+                    </child>
+                    <child>bad</child>
+                </root>
+                ]]>
+            </resource>
+            <xpointer>element(id_bad)</xpointer>
+            <result unresolvable="yes" />
+        </testCase>
+        <testCase>
+            <resource>
+                <![CDATA[
+                <root xml:id="id_root">
+                    <child>bad</child>
+                    <child>
+                        <descendant>success</descendant>
+                    </child>
+                    <child>bad</child>
+                </root>
+                ]]>
+            </resource>
+            <xpointer>element(id_root/0)</xpointer>
+            <result unresolvable="yes" />
+        </testCase>
+        <testCase>
+            <resource><![CDATA[<root />]]></resource>
+            <xpointer>element(id_bad/2/1)</xpointer>
+            <result unresolvable="yes" />
+        </testCase>
+        <testCase>
+            <resource><![CDATA[<root />]]></resource>
+            <xpointer>element()</xpointer>
+            <result unparsable="yes" />
+        </testCase>
+        <testCase>
+            <resource><![CDATA[<root />]]></resource>
+            <xpointer>element(//)</xpointer>
+            <result unparsable="yes" />
+        </testCase>
+        <testCase>
+            <resource><![CDATA[<root />]]></resource>
+            <xpointer>element(0)</xpointer>
+            <result unparsable="yes" />
+        </testCase>
+        <testCase>
+            <resource><![CDATA[<root />]]></resource>
+            <xpointer>element(id:root)</xpointer>
+            <result unparsable="yes" />
+        </testCase>
+    </testCases>
+    <testCases>
+        <description>xmlns() scheme tests</description>
+        <!-- Currently, since the xpointer() scheme is not supported,
+             there are no cases where the xmlns() scheme takes effect. -->
+    </testCases>
+</testSuite>

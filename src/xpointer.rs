@@ -53,7 +53,8 @@ impl XPointerResolver {
                             seq -= 1;
                         }
                         top = children.map(From::from);
-                        if top.is_none() {
+                        if top.is_none() || seq != 1 {
+                            top = None;
                             break;
                         }
                     }
@@ -141,7 +142,8 @@ impl XPointerResolver {
                             seq -= 1;
                         }
                         top = children.map(From::from);
-                        if top.is_none() {
+                        if top.is_none() || seq != 1 {
+                            top = None;
                             break;
                         }
                     }
@@ -183,7 +185,9 @@ pub enum XPointerParseError {
     InvalidCharacter,
     ParenthesNotFoundAfterSchemeName,
     UnmatchParentheses,
+    EmptyPointerParts,
     SpaceFoundAfterAllPointerPart,
+    ElementEmptySchemeData,
     ElementInvalidChildSequence,
     ElementEmptySequenceNumber,
     ElementNegativeSequenceNumber,
@@ -290,7 +294,11 @@ pub fn parse_xpointer(mut xpointer: &str) -> Result<XPointerResolver, XPointerPa
         }
     }
 
-    Ok(XPointerResolver { parts })
+    if parts.is_empty() {
+        Err(XPointerParseError::EmptyPointerParts)
+    } else {
+        Ok(XPointerResolver { parts })
+    }
 }
 
 fn parse_element_scheme_data(mut data: &str) -> Result<XPointerPart, XPointerParseError> {
@@ -329,6 +337,9 @@ fn parse_element_scheme_data(mut data: &str) -> Result<XPointerPart, XPointerPar
         }
     } else if !data.is_empty() || id.is_none() {
         return Err(XPointerParseError::ElementInvalidChildSequence);
+    }
+    if id.is_none() && sequence.is_empty() {
+        return Err(XPointerParseError::ElementEmptySchemeData);
     }
 
     Ok(XPointerPart::Element { id, sequence })

@@ -39,6 +39,10 @@ name = "xpath-test"
 path = "tests/xpath-test.rs"
 
 [[test]]
+name = "xpointer-test"
+path = "tests/xpointer-test.rs"
+
+[[test]]
 name = "catalog-test"
 path = "tests/catalog-test.rs"
 
