@@ -5,6 +5,11 @@ use crate::{
     xpath::{Axis, NodeTest, XPathCompileError, XPathContext, XPathExpression, XPathSyntaxTree},
 };
 
+/// Compile `xpath` as a XPath expression.
+///
+/// For one-time execution, using `evaluate_str` and its family is convenient.
+/// However, when reusing the same expression multiple times, it is possible to
+/// precompile the expression with this function.
 pub fn compile(mut xpath: &str) -> Result<XPathExpression, XPathCompileError> {
     let mut tree = vec![];
     let root = parse_expr(&mut xpath, &mut tree)?;

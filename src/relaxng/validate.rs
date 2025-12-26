@@ -11,6 +11,7 @@ use crate::{
 };
 
 impl RelaxNGSchema {
+    /// Validate XML document subtree whose root element is `element`.
     pub fn validate(&self, element: &Element) -> Result<(), XMLError> {
         self.grammar.validate(element)
     }
