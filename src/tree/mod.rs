@@ -1,3 +1,5 @@
+//! Provide APIs and data structures that represents and manipulates XML document tree.
+
 pub mod attlist_decl;
 pub mod attribute;
 pub mod cdata_section;
