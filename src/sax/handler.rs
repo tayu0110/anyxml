@@ -57,17 +57,17 @@ pub trait SAXHandler: EntityResolver + ErrorHandler {
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn start_element(
         &mut self,
-        uri: Option<&str>,
+        namespace_name: Option<&str>,
         local_name: Option<&str>,
         qname: &str,
         atts: &Attributes,
     ) {
-        let _ = (uri, local_name, qname, atts);
+        let _ = (namespace_name, local_name, qname, atts);
     }
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn end_element(&mut self, uri: Option<&str>, local_name: Option<&str>, qname: &str) {
-        let _ = (uri, local_name, qname);
+    fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
+        let _ = (namespace_name, local_name, qname);
     }
 
     /// # Reference
@@ -291,8 +291,8 @@ impl<H: SAXHandler> SAXHandler for &mut H {
         (*self).end_dtd();
     }
 
-    fn end_element(&mut self, uri: Option<&str>, local_name: Option<&str>, qname: &str) {
-        (*self).end_element(uri, local_name, qname);
+    fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
+        (*self).end_element(namespace_name, local_name, qname);
     }
 
     fn end_entity(&mut self) {
@@ -345,12 +345,12 @@ impl<H: SAXHandler> SAXHandler for &mut H {
 
     fn start_element(
         &mut self,
-        uri: Option<&str>,
+        namespace_name: Option<&str>,
         local_name: Option<&str>,
         qname: &str,
         atts: &Attributes,
     ) {
-        (*self).start_element(uri, local_name, qname, atts);
+        (*self).start_element(namespace_name, local_name, qname, atts);
     }
 
     fn start_entity(&mut self, name: &str) {
@@ -496,7 +496,7 @@ impl<Child: SAXHandler> SAXHandler for DebugHandler<Child> {
 
     fn start_element(
         &mut self,
-        uri: Option<&str>,
+        namespace_name: Option<&str>,
         local_name: Option<&str>,
         qname: &str,
         atts: &Attributes,
@@ -504,7 +504,7 @@ impl<Child: SAXHandler> SAXHandler for DebugHandler<Child> {
         write!(
             self.buffer,
             "startElement({}, {}, {qname}",
-            uri.unwrap_or("None"),
+            namespace_name.unwrap_or("None"),
             local_name.unwrap_or("None")
         )
         .ok();
@@ -520,17 +520,18 @@ impl<Child: SAXHandler> SAXHandler for DebugHandler<Child> {
             }
         }
         writeln!(self.buffer, ")").ok();
-        self.child.start_element(uri, local_name, qname, atts);
+        self.child
+            .start_element(namespace_name, local_name, qname, atts);
     }
-    fn end_element(&mut self, uri: Option<&str>, local_name: Option<&str>, qname: &str) {
+    fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
         writeln!(
             self.buffer,
             "endElement({}, {}, {qname})",
-            uri.unwrap_or("None"),
+            namespace_name.unwrap_or("None"),
             local_name.unwrap_or("None")
         )
         .ok();
-        self.child.end_element(uri, local_name, qname);
+        self.child.end_element(namespace_name, local_name, qname);
     }
 
     fn start_prefix_mapping(&mut self, prefix: Option<&str>, uri: &str) {

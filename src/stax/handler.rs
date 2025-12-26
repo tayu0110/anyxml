@@ -144,16 +144,16 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
 
     fn start_element(
         &mut self,
-        uri: Option<&str>,
+        namespace_name: Option<&str>,
         local_name: Option<&str>,
         qname: &str,
         atts: &Attributes,
     ) {
         self.event = XMLEventType::StartElement;
-        if let Some(uri) = uri {
+        if let Some(namespace_name) = namespace_name {
             let buf = self.namespace_name.get_or_insert_default();
             buf.clear();
-            buf.push_str(uri);
+            buf.push_str(namespace_name);
         } else {
             self.namespace_name = None;
         }
@@ -170,16 +170,16 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
         self.reported = false;
     }
 
-    fn end_element(&mut self, uri: Option<&str>, local_name: Option<&str>, qname: &str) {
+    fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
         if matches!(self.event, XMLEventType::StartElement) && !self.reported {
             self.event = XMLEventType::StartEmptyTag;
             return;
         }
         self.event = XMLEventType::EndElement;
-        if let Some(uri) = uri {
+        if let Some(namespace_name) = namespace_name {
             let buf = self.namespace_name.get_or_insert_default();
             buf.clear();
-            buf.push_str(uri);
+            buf.push_str(namespace_name);
         } else {
             self.namespace_name = None;
         }

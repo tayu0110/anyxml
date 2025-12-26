@@ -6,7 +6,8 @@ The current implementation supports the following features:
 
 - parse XML 1.0 document
     - [x] DTD parsing
-    - [x] Entity reference substitution (both general entity and parameter entity are supported)
+    - [x] General entity reference substitution
+    - [x] Parameter entity reference substitution
     - [x] Character reference substitution
     - [x] Attribute value normalization
     - [x] Default attribute value handling
@@ -50,7 +51,7 @@ impl SAXHandler for ExampleHandler {
 
     fn start_element(
         &mut self,
-        _uri: Option<&str>,
+        _namespace_name: Option<&str>,
         _local_name: Option<&str>,
         qname: &str,
         _atts: &Attributes,
@@ -59,7 +60,7 @@ impl SAXHandler for ExampleHandler {
     }
     fn end_element(
         &mut self,
-        _uri: Option<&str>,
+        _namespace_name: Option<&str>,
         _local_name: Option<&str>,
         qname: &str
     ) {

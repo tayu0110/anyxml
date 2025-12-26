@@ -363,14 +363,14 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
 
     fn start_element(
         &mut self,
-        uri: Option<&str>,
+        namespace_name: Option<&str>,
         local_name: Option<&str>,
         qname: &str,
         atts: &Attributes,
     ) {
         if let Ok(mut elem) = self
             .document
-            .create_element(qname, uri.map(|uri| uri.into()))
+            .create_element(qname, namespace_name.map(|uri| uri.into()))
         {
             for att in atts {
                 if att.is_nsdecl() {
@@ -403,13 +403,14 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
             self.node.append_child(elem.clone()).unwrap();
             self.node = elem.into();
         }
-        self.handler.start_element(uri, local_name, qname, atts);
+        self.handler
+            .start_element(namespace_name, local_name, qname, atts);
     }
-    fn end_element(&mut self, uri: Option<&str>, local_name: Option<&str>, qname: &str) {
+    fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
         if let Some(parent) = self.node.parent_node() {
             self.node = parent;
         }
-        self.handler.end_element(uri, local_name, qname);
+        self.handler.end_element(namespace_name, local_name, qname);
     }
 
     fn start_entity(&mut self, name: &str) {
