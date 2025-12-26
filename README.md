@@ -231,6 +231,10 @@ This crate conforms to the following specifications:
 - [XML Path Language (XPath) Version 1.0](https://www.w3.org/TR/1999/REC-xpath-19991116/)
 - [XML Catalogs (OASIS Standard V1.1, 7 October 2005)](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
 - [ISO/IEC 19757-2:2008 Part 2: Regular-grammar-based validation — RELAX NG](https://www.iso.org/standard/52348.html)
+- XPointer specifications
+    - [XPointer Framework](https://www.w3.org/TR/xptr-framework/)
+    - [XPointer element() Scheme](https://www.w3.org/TR/xptr-element/)
+    - [XPointer xmlns() Scheme](https://www.w3.org/TR/xptr-xmlns/)
 
 # Tests
 This crate passes the following tests:
