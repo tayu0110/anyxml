@@ -1,3 +1,12 @@
+//! APIs for parsing RELAX NG schema document and validate XML document using parsed schema.
+//!
+//! The current implementation supports only RELAX NG schemas using XML syntax and only
+//! supports tree validation. Parsing schemas using Compact Syntax and streaming validation
+//! that can be inserted into SAX handlers are not supported at this time.
+//!
+//! # Reference
+//! - [XML Catalogs (OASIS Standard V1.1, 7 October 2005)](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
+
 mod datatype_library;
 mod grammar;
 mod validate;
