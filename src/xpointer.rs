@@ -202,7 +202,7 @@ pub enum XPointerParseError {
 /// any percent encoding or character references must be decoded.  \
 /// However, escapes using the circumflex character (`"^"`) as defined in
 /// [section 3.1 of XPointer Framework specification](https://www.w3.org/TR/xptr-framework/#syntax)
-/// must be preserved because because it cannot correctly recognize the matching of parentheses.
+/// must be preserved because it cannot correctly recognize the matching of parentheses.
 ///
 /// If parsing fails, return `Err`.
 ///
