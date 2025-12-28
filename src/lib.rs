@@ -11,6 +11,7 @@ pub mod sax;
 pub mod stax;
 pub mod tree;
 pub mod uri;
+pub mod xinclude;
 pub mod xpath;
 pub mod xpointer;
 
