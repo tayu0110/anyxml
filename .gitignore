@@ -1,5 +1,6 @@
 /target
 /resources/xmlconf
 /resources/XSLT-testsuite-04
+/resources/XIncl*
 /resources/*.zip
 /.vscode

@@ -27,6 +27,7 @@ jobs:
         run: |
           deno run -A resources/get-xmlconf.ts
           deno run -A resources/get-xslt-testsuite.ts
+          deno run -A resources/get-xinclude-testsuite.ts
 
       - name: Check Rust version
         run: |
