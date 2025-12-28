@@ -297,6 +297,42 @@ impl DocumentType {
     pub fn public_id(&self) -> Option<Rc<str>> {
         self.core.borrow().spec.public_id.clone()
     }
+
+    /// Create new node and copy internal data to the new node other than pointers to neighbor
+    /// nodes and declarations.
+    ///
+    /// While [`Clone::clone`] merely copies the pointer, this method copies the internal data
+    /// to new memory, creating a completely different node. Comparing the source node and
+    /// the new node using [`Node::is_same_node`] will always return `false`.
+    pub fn deep_copy(&self) -> Self {
+        Node::create_node(
+            DocumentTypeSpec {
+                first_child: None,
+                last_child: None,
+                element_decl: Default::default(),
+                attlist_decl: Default::default(),
+                entity_decl: Default::default(),
+                notation_decl: Default::default(),
+                name: self.name(),
+                system_id: self.system_id(),
+                public_id: self.public_id(),
+            },
+            self.owner_document(),
+        )
+    }
+
+    /// Perform a deep copy on all descendant nodes and construct a tree with the same structure.
+    ///
+    /// The link to the parent is not preserved.
+    pub fn deep_copy_subtree(&self) -> Result<Self, XMLTreeError> {
+        let mut ret = self.deep_copy();
+        let mut children = self.first_child();
+        while let Some(child) = children {
+            children = child.next_sibling();
+            ret.append_child(child.deep_copy_subtree()?)?;
+        }
+        Ok(ret)
+    }
 }
 
 impl std::fmt::Display for DocumentType {

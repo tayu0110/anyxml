@@ -6,6 +6,7 @@ use crate::tree::{
     node::{InternalNodeSpec, Node, NodeCore, NodeSpec},
 };
 
+#[derive(Debug, Clone, Copy)]
 enum State {
     // cannot be determined
     None,
@@ -260,6 +261,35 @@ impl DocumentFragment {
             })),
             owner_document: owner_document.core.clone(),
         }
+    }
+
+    /// Create new node and copy internal data to the new node other than pointers to neighbor nodes.
+    ///
+    /// While [`Clone::clone`] merely copies the pointer, this method copies the internal data
+    /// to new memory, creating a completely different node. Comparing the source node and
+    /// the new node using [`Node::is_same_node`] will always return `false`.
+    pub fn deep_copy(&self) -> Self {
+        Node::create_node(
+            DocumentFragmentSpec {
+                first_child: None,
+                last_child: None,
+                state: self.core.borrow().spec.state,
+            },
+            self.owner_document(),
+        )
+    }
+
+    /// Perform a deep copy on all descendant nodes and construct a tree with the same structure.
+    ///
+    /// The link to the parent is not preserved.
+    pub fn deep_copy_subtree(&self) -> Result<Self, XMLTreeError> {
+        let mut ret = self.deep_copy();
+        let mut children = self.first_child();
+        while let Some(child) = children {
+            children = child.next_sibling();
+            ret.append_child(child.deep_copy_subtree()?)?;
+        }
+        Ok(ret)
     }
 }
 

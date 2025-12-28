@@ -697,6 +697,56 @@ impl Node<dyn NodeSpec> {
         collect_text_content(self.clone(), &mut buf);
         buf
     }
+
+    /// Create new node and copy internal data to the new node other than pointers to neighbor nodes.
+    ///
+    /// Attribute nodes and namespace nodes are cloned.
+    ///
+    /// While [`Clone::clone`] merely copies the pointer, this method copies the internal data
+    /// to new memory, creating a completely different node. Comparing the source node and
+    /// the new node using [`Node::is_same_node`] will always return `false`.
+    pub fn deep_copy(&self) -> Result<Node<dyn NodeSpec>, XMLTreeError> {
+        match self.downcast() {
+            NodeKind::AttlistDecl(node) => Ok(node.deep_copy().into()),
+            NodeKind::Attribute(_) => Err(XMLTreeError::Unsupported),
+            NodeKind::CDATASection(node) => Ok(node.deep_copy().into()),
+            NodeKind::Comment(node) => Ok(node.deep_copy().into()),
+            NodeKind::Document(node) => Ok(node.deep_copy().into()),
+            NodeKind::DocumentFragment(node) => Ok(node.deep_copy().into()),
+            NodeKind::DocumentType(node) => Ok(node.deep_copy().into()),
+            NodeKind::Element(node) => Ok(node.deep_copy()?.into()),
+            NodeKind::ElementDecl(node) => Ok(node.deep_copy().into()),
+            NodeKind::EntityDecl(node) => Ok(node.deep_copy().into()),
+            NodeKind::EntityReference(node) => Ok(node.deep_copy().into()),
+            NodeKind::Namespace(_) => Err(XMLTreeError::Unsupported),
+            NodeKind::NotationDecl(node) => Ok(node.deep_copy().into()),
+            NodeKind::ProcessingInstruction(node) => Ok(node.deep_copy().into()),
+            NodeKind::Text(node) => Ok(node.deep_copy().into()),
+        }
+    }
+
+    /// Perform a deep copy on all descendant nodes and construct a tree with the same structure.
+    ///
+    /// The link to the parent is not preserved.
+    pub fn deep_copy_subtree(&self) -> Result<Node<dyn NodeSpec>, XMLTreeError> {
+        match self.downcast() {
+            NodeKind::AttlistDecl(node) => Ok(node.deep_copy().into()),
+            NodeKind::Attribute(_) => Err(XMLTreeError::Unsupported),
+            NodeKind::CDATASection(node) => Ok(node.deep_copy().into()),
+            NodeKind::Comment(node) => Ok(node.deep_copy().into()),
+            NodeKind::Document(node) => Ok(node.deep_copy_subtree()?.into()),
+            NodeKind::DocumentFragment(node) => Ok(node.deep_copy_subtree()?.into()),
+            NodeKind::DocumentType(node) => Ok(node.deep_copy_subtree()?.into()),
+            NodeKind::Element(node) => Ok(node.deep_copy_subtree()?.into()),
+            NodeKind::ElementDecl(node) => Ok(node.deep_copy().into()),
+            NodeKind::EntityDecl(node) => Ok(node.deep_copy_subtree()?.into()),
+            NodeKind::EntityReference(node) => Ok(node.deep_copy_subtree()?.into()),
+            NodeKind::Namespace(_) => Err(XMLTreeError::Unsupported),
+            NodeKind::NotationDecl(node) => Ok(node.deep_copy().into()),
+            NodeKind::ProcessingInstruction(node) => Ok(node.deep_copy().into()),
+            NodeKind::Text(node) => Ok(node.deep_copy().into()),
+        }
+    }
 }
 
 impl Node<dyn InternalNodeSpec> {
@@ -828,6 +878,16 @@ impl Node<dyn InternalNodeSpec> {
     /// Please see [Node::text_content].
     pub fn text_content(&self) -> String {
         Node::<dyn NodeSpec>::from(self).text_content()
+    }
+
+    /// Please see [Node::deep_copy].
+    pub fn deep_copy(&self) -> Result<Node<dyn NodeSpec>, XMLTreeError> {
+        Node::<dyn NodeSpec>::from(self).deep_copy()
+    }
+
+    /// Please see [Node::deep_copy_subtree].
+    pub fn deep_copy_subtree(&self) -> Result<Node<dyn NodeSpec>, XMLTreeError> {
+        Node::<dyn NodeSpec>::from(self).deep_copy_subtree()
     }
 }
 
