@@ -37,12 +37,29 @@ impl ElementDecl {
         Node::create_node(ElementDeclSpec { name, content_spec }, owner_document)
     }
 
+    /// Element name declared by this declaration.
     pub fn name(&self) -> Rc<str> {
         self.core.borrow().spec.name.clone()
     }
 
+    /// ContentSpec of declaration target element.
     pub fn content_spec(&self) -> Ref<'_, ContentSpec> {
         Ref::map(self.core.borrow(), |core| &core.spec.content_spec)
+    }
+
+    /// Create new node and copy internal data to the new node.
+    ///
+    /// While [`Clone::clone`] merely copies the pointer, this method copies the internal data
+    /// to new memory, creating a completely different node. Comparing the source node and
+    /// the new node using [`Node::is_same_node`] will always return `false`.
+    pub fn deep_copy(&self) -> Self {
+        Node::create_node(
+            ElementDeclSpec {
+                name: self.name(),
+                content_spec: self.content_spec().clone(),
+            },
+            self.owner_document(),
+        )
     }
 }
 

@@ -176,6 +176,9 @@ impl Element {
         self.namespace().map(|namespace| namespace.namespace_name())
     }
 
+    /// Return the node that represents an attribute indicated by `local_name` and `namespace_name`.
+    ///
+    /// If an attribute is not found, return [`None`].
     pub fn get_attribute_node(
         &self,
         local_name: &str,
@@ -192,6 +195,9 @@ impl Element {
         })
     }
 
+    /// Return the value of an attribute indicated by `local_name` and `namespace_name`.
+    ///
+    /// If an attribute is not found, return [`None`].
     pub fn get_attribute(&self, local_name: &str, namespace_name: Option<&str>) -> Option<String> {
         self.get_attribute_node(local_name, namespace_name)
             .map(|attr| attr.value())
@@ -283,6 +289,10 @@ impl Element {
         Ok(())
     }
 
+    /// Remove an attribute indicated by `local_name` and `namespace_name`.
+    ///
+    /// If removal occurs, return the value of removed attribute wrapped by [`Some`],
+    /// otherwise return [`None`].
     pub fn remove_attribute(
         &mut self,
         local_name: &str,
@@ -293,6 +303,9 @@ impl Element {
         Some(attribute.value())
     }
 
+    /// Remove an attribute that is same as `attribute`.
+    ///
+    /// If removal occurs, return [`Ok`], otherwise return [`Err`].
     pub fn remove_attribute_node(&mut self, attribute: Attribute) -> Result<(), XMLTreeError> {
         if attribute
             .owner_element()
@@ -683,7 +696,7 @@ impl Element {
         ret.into_iter()
     }
 
-    /// Returns the descendant elements whose expanded name is {`namespace_name`}`local_name`.
+    /// Returns the descendant elements whose expanded name is `{namespace_name}local_name`.
     ///
     /// `self` is not included in the returned elements.
     pub fn get_elements_by_expanded_name(
@@ -720,6 +733,52 @@ impl Element {
             }
         }
         ret.into_iter()
+    }
+
+    /// Create new node and copy internal data to the new node other than pointers to neighbor nodes.
+    ///
+    /// Attribute nodes and namespace nodes are cloned.
+    ///
+    /// While [`Clone::clone`] merely copies the pointer, this method copies the internal data
+    /// to new memory, creating a completely different node. Comparing the source node and
+    /// the new node using [`Node::is_same_node`] will always return `false`.
+    pub fn deep_copy(&self) -> Result<Self, XMLTreeError> {
+        let mut ret = Self::new(self.name(), self.namespace_name(), self.owner_document())?;
+        for att in self.attributes() {
+            ret.set_attribute(&att.name(), att.namespace_name().as_deref(), None)?;
+            if let Some(mut ret) =
+                ret.get_attribute_node(&att.local_name(), att.namespace_name().as_deref())
+            {
+                if att.is_specified() {
+                    ret.set_specified();
+                } else {
+                    ret.unset_specified();
+                }
+                let mut children = att.first_child();
+                while let Some(child) = children {
+                    children = child.next_sibling();
+                    ret.append_child(child.deep_copy_subtree()?)?;
+                }
+            }
+        }
+
+        for ns in self.namespaces() {
+            ret.declare_namespace(ns.prefix().as_deref(), &ns.namespace_name())?;
+        }
+        Ok(ret)
+    }
+
+    /// Perform a deep copy on all descendant nodes and construct a tree with the same structure.
+    ///
+    /// The link to the parent is not preserved.
+    pub fn deep_copy_subtree(&self) -> Result<Self, XMLTreeError> {
+        let mut ret = self.deep_copy()?;
+        let mut children = self.first_child();
+        while let Some(child) = children {
+            children = child.next_sibling();
+            ret.append_child(child.deep_copy_subtree()?)?;
+        }
+        Ok(ret)
     }
 }
 

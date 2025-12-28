@@ -72,6 +72,23 @@ impl AttlistDecl {
     pub fn default_decl(&self) -> Ref<'_, DefaultDecl> {
         Ref::map(self.core.borrow(), |core| &core.spec.default_decl)
     }
+
+    /// Create new node and copy internal data to the new node.
+    ///
+    /// While [`Clone::clone`] merely copies the pointer, this method copies the internal data
+    /// to new memory, creating a completely different node. Comparing the source node and
+    /// the new node using [`Node::is_same_node`] will always return `false`.
+    pub fn deep_copy(&self) -> Self {
+        Node::create_node(
+            AttlistDeclSpec {
+                elem_name: self.elem_name(),
+                attr_name: self.attr_name(),
+                attr_type: self.attr_type().clone(),
+                default_decl: self.default_decl().clone(),
+            },
+            self.owner_document(),
+        )
+    }
 }
 
 impl std::fmt::Display for AttlistDecl {
