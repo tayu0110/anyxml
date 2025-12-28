@@ -749,6 +749,11 @@ impl Element {
             if let Some(mut ret) =
                 ret.get_attribute_node(&att.local_name(), att.namespace_name().as_deref())
             {
+                if att.is_specified() {
+                    ret.set_specified();
+                } else {
+                    ret.unset_specified();
+                }
                 let mut children = att.first_child();
                 while let Some(child) = children {
                     children = child.next_sibling();

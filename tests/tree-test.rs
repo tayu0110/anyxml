@@ -252,6 +252,35 @@ fn tree_dump_tests() {
     }
 }
 
+#[test]
+fn tree_deep_copy_tests() {
+    for ent in read_dir("resources/well-formed").unwrap() {
+        if let Ok(ent) = ent
+            && ent.metadata().unwrap().is_file()
+        {
+            let path = ent.path();
+            let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
+            let mut reader = XMLReaderBuilder::new()
+                .set_handler(TreeBuildHandler::default())
+                .build();
+            reader.parse_uri(&uri, None).ok();
+            assert!(!reader.handler.fatal_error);
+
+            let document = reader.handler.document;
+            let copied = document.deep_copy_subtree().unwrap();
+
+            assert_eq!(
+                document.to_string(),
+                copied.to_string(),
+                "uri: {}\ndocument:\n{}\ncopied:\n{}",
+                uri.as_escaped_str(),
+                document,
+                copied
+            );
+        }
+    }
+}
+
 // reference of test method: https://www.w3.org/XML/2005/01/xml-id/runtests.xsl
 #[test]
 fn xml_id_tests() {
