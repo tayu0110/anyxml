@@ -1,7 +1,5 @@
 use std::io::Read;
 
-use anyxml_uri::uri::URIString;
-
 use crate::{
     DefaultParserSpec,
     error::XMLError,
@@ -10,8 +8,10 @@ use crate::{
         parser::XMLReader,
     },
     tree::{Document, Element, Node, TreeBuildHandler, node::NodeSpec},
-    uri::URIStr,
+    uri::{URIStr, URIString},
 };
+
+pub const XML_XINCLUDE_NAMESPACE: &str = "http://www.w3.org/2001/XInclude";
 
 pub trait XIncludeResourceResolver {
     fn resolve_xml(
