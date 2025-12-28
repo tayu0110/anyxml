@@ -62,7 +62,10 @@ pub struct XIncludeResource {
     pub encoding: Option<String>,
 }
 
-pub enum XIncludeError {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XIncludeError {
+    UnknownError,
+}
 
 pub struct XIncludeProcessor<
     'a,
@@ -74,18 +77,71 @@ pub struct XIncludeProcessor<
 }
 
 impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
-    pub fn process(&mut self, document: Document) -> Result<Document, XIncludeError> {
-        todo!()
-    }
-
-    pub fn process_once(&mut self, element: Element) -> Result<Element, XIncludeError> {
-        todo!()
+    pub fn process(&mut self, document: Document) -> Result<Document, XMLError> {
+        let ret = self.process_subtree(document.into())?;
+        Ok(ret.as_document().ok_or(XIncludeError::UnknownError)?)
     }
 
     pub fn process_subtree(
         &mut self,
         root: Node<dyn NodeSpec>,
-    ) -> Result<Node<dyn NodeSpec>, XIncludeError> {
+    ) -> Result<Node<dyn NodeSpec>, XMLError> {
+        let ret = root.deep_copy_subtree()?;
+        let mut children = Some(ret.clone());
+        while let Some(child) = children {
+            if let Some(mut include) = child.as_element().filter(|elem| {
+                elem.local_name().as_ref() == "include"
+                    && elem.namespace_name().as_deref() == Some(XML_XINCLUDE_NAMESPACE)
+            }) {
+                if let Some(next) = child.next_sibling() {
+                    children = Some(next);
+                } else {
+                    children = None;
+
+                    let mut parent = child.parent_node();
+                    while let Some(par) = parent {
+                        if let Some(next) = par.next_sibling() {
+                            children = Some(next);
+                            break;
+                        }
+                        parent = par.parent_node();
+                    }
+                }
+
+                let expanded =
+                    self.expand_include_element(root.owner_document(), include.clone())?;
+                include.replace_subtree(expanded)?;
+            } else if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+
+                let mut parent = child.parent_node();
+                while let Some(par) = parent {
+                    if let Some(next) = par.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = par.parent_node();
+                }
+            }
+        }
+
+        Ok(ret)
+    }
+
+    fn expand_include_element(
+        &mut self,
+        source_document: Document,
+        include: Element,
+    ) -> Result<Node<dyn NodeSpec>, XMLError> {
+        // let mut fallback = None;
+        let mut children = include.first_child();
+        while let Some(child) = children {
+            children = child.next_sibling();
+        }
         todo!()
     }
 }

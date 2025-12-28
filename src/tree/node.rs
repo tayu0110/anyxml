@@ -129,10 +129,29 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
     pub fn previous_element_sibling(&self) -> Option<Element> {
         let mut previous = self.previous_sibling();
         while let Some(now) = previous {
-            previous = now.previous_sibling();
-
             if let Some(element) = now.as_element() {
                 return Some(element);
+            }
+
+            if matches!(now.node_type(), NodeType::EntityReference)
+                && let Some(last) = now.last_child()
+            {
+                previous = Some(last);
+            } else if let Some(prev) = now.previous_sibling() {
+                previous = Some(prev);
+            } else {
+                previous = None;
+
+                let mut parent = now.parent_node();
+                while let Some(par) =
+                    parent.filter(|par| matches!(par.node_type(), NodeType::EntityReference))
+                {
+                    if let Some(prev) = par.previous_sibling() {
+                        previous = Some(prev);
+                        break;
+                    }
+                    parent = par.parent_node();
+                }
             }
         }
         None
@@ -152,10 +171,29 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
     pub fn next_element_sibling(&self) -> Option<Element> {
         let mut next = self.next_sibling();
         while let Some(now) = next {
-            next = now.next_sibling();
-
             if let Some(element) = now.as_element() {
                 return Some(element);
+            }
+
+            if matches!(now.node_type(), NodeType::EntityReference)
+                && let Some(first) = now.first_child()
+            {
+                next = Some(first);
+            } else if let Some(nt) = now.next_sibling() {
+                next = Some(nt);
+            } else {
+                next = None;
+
+                let mut parent = now.parent_node();
+                while let Some(par) =
+                    parent.filter(|par| matches!(par.node_type(), NodeType::EntityReference))
+                {
+                    if let Some(nt) = par.next_sibling() {
+                        next = Some(nt);
+                        break;
+                    }
+                    parent = par.parent_node();
+                }
             }
         }
         None
@@ -171,10 +209,29 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
     pub fn first_element_child(&self) -> Option<Element> {
         let mut children = self.first_child();
         while let Some(child) = children {
-            children = child.next_sibling();
-
             if let Some(element) = child.as_element() {
                 return Some(element);
+            }
+
+            if matches!(child.node_type(), NodeType::EntityReference)
+                && let Some(first) = child.first_child()
+            {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+
+                let mut parent = child.parent_node();
+                while let Some(par) =
+                    parent.filter(|par| matches!(par.node_type(), NodeType::EntityReference))
+                {
+                    if let Some(next) = par.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = par.parent_node();
+                }
             }
         }
         None
@@ -190,10 +247,29 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
     pub fn last_element_child(&self) -> Option<Element> {
         let mut children = self.last_child();
         while let Some(child) = children {
-            children = child.previous_sibling();
-
             if let Some(element) = child.as_element() {
                 return Some(element);
+            }
+
+            if matches!(child.node_type(), NodeType::EntityReference)
+                && let Some(first) = child.last_child()
+            {
+                children = Some(first);
+            } else if let Some(next) = child.previous_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+
+                let mut parent = child.parent_node();
+                while let Some(par) =
+                    parent.filter(|par| matches!(par.node_type(), NodeType::EntityReference))
+                {
+                    if let Some(next) = par.previous_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = par.parent_node();
+                }
             }
         }
         None

@@ -4,6 +4,7 @@ use crate::{
     encoding::{DecodeError, EncodeError},
     tree::XMLTreeError,
     uri::ParseRIError,
+    xinclude::XIncludeError,
     xpath::{XPathCompileError, XPathError},
 };
 
@@ -199,6 +200,8 @@ pub enum XMLError {
     RngValidElement,
     RngValidOneOrMore,
     RngValidUnknownError,
+    // XInclude errors
+    XIncludeError(XIncludeError),
 }
 
 impl std::fmt::Display for XMLError {
@@ -248,5 +251,11 @@ impl From<XPathError> for XMLError {
 impl From<XPathCompileError> for XMLError {
     fn from(value: XPathCompileError) -> Self {
         XPathError::from(value).into()
+    }
+}
+
+impl From<XIncludeError> for XMLError {
+    fn from(value: XIncludeError) -> Self {
+        XMLError::XIncludeError(value)
     }
 }
