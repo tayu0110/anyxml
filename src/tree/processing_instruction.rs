@@ -38,12 +38,42 @@ impl ProcessingInstruction {
         Node::create_node(ProcessingInstructionSpec { target, data }, owner_document)
     }
 
+    /// The target name of this processing instruction.
     pub fn target(&self) -> Rc<str> {
         self.core.borrow().spec.target.clone()
     }
 
+    /// The data of this processing instruction.
     pub fn data(&self) -> Option<Rc<str>> {
         self.core.borrow().spec.data.clone()
+    }
+
+    /// Create new node and copy internal data to the new node.
+    ///
+    /// While [`Clone::clone`] merely copies the pointer, this method copies the internal data
+    /// to new memory, creating a completely different node. Comparing the source node and
+    /// the new node using [`Node::is_same_node`] will always return `false`.
+    ///
+    /// # Example
+    /// ```rust
+    /// use anyxml::tree::Document;
+    ///
+    /// let document = Document::new();
+    /// let pi1 = document.create_processing_instruction("target", Some("data".into()));
+    /// let pi2 = pi1.deep_copy();
+    /// assert!(pi1.is_same_node(pi1.clone()));
+    /// assert_eq!(pi1.target(), pi2.target());
+    /// assert_eq!(pi1.data(), pi2.data());
+    /// assert!(!pi1.is_same_node(pi2));
+    /// ```
+    pub fn deep_copy(&self) -> Self {
+        Node::create_node(
+            ProcessingInstructionSpec {
+                target: self.target(),
+                data: self.data(),
+            },
+            self.owner_document(),
+        )
     }
 }
 
