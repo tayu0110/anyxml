@@ -315,6 +315,11 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         let href = include.get_attribute("href", None).unwrap_or_default();
         let accept = include.get_attribute("accept", None);
         let accept_language = include.get_attribute("accept-language", None);
+        self.validate_accept_attribute(
+            include.owner_document(),
+            accept.as_deref(),
+            accept_language.as_deref(),
+        )?;
         let encoding = include.get_attribute("encoding", None);
 
         let href = if href.is_empty() {
@@ -386,7 +391,12 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             };
 
             let xpointer = parse_xpointer(&xpointer)?;
-            return Ok(xpointer.resolve(source_document.clone()));
+            let resource = xpointer.resolve(source_document.clone());
+            return if let Some(resource) = resource {
+                Ok(Some(self.process_subtree(resource)?))
+            } else {
+                Ok(None)
+            };
         }
 
         let href = include
@@ -395,6 +405,11 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             .resolve(&URIString::parse(href)?);
         let accept = include.get_attribute("accept", None);
         let accept_language = include.get_attribute("accept-language", None);
+        self.validate_accept_attribute(
+            include.owner_document(),
+            accept.as_deref(),
+            accept_language.as_deref(),
+        )?;
 
         if let Some(document) =
             self.document_cache
@@ -473,6 +488,42 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                 }
             }
         }
+    }
+
+    fn validate_accept_attribute(
+        &mut self,
+        document: Document,
+        accept: Option<&str>,
+        accept_language: Option<&str>,
+    ) -> Result<(), XIncludeError> {
+        let mut ret = Ok(());
+        if let Some(accept) = accept
+            && accept.bytes().any(|b| !matches!(b, 0x20..=0x7E))
+        {
+            fatal_error!(
+                self,
+                document,
+                UnacceptableAttributeValue,
+                "'{}' is invalid for 'accept' value of 'include'.",
+                accept
+            );
+            ret = Err(XIncludeError::UnacceptableAttributeValue);
+        }
+
+        if let Some(accept_language) = accept_language
+            && accept_language.bytes().any(|b| !matches!(b, 0x20..=0x7E))
+        {
+            fatal_error!(
+                self,
+                document,
+                UnacceptableAttributeValue,
+                "'{}' is invalid for 'accept-language' value of 'include'.",
+                accept_language
+            );
+            ret = Err(XIncludeError::UnacceptableAttributeValue);
+        }
+
+        ret
     }
 }
 
