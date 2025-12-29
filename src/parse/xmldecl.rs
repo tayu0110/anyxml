@@ -29,7 +29,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         self.locator.update_column(|c| c + 5);
 
         // parse VersionInfo
-        let (version, version_str) = self.parse_version_info(true)?;
+        let (version, version_str) = self.parse_version_info(true, false)?;
 
         // parse EncodingDecl if exists
         let mut s = self.skip_whitespaces()?;
@@ -109,6 +109,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
     pub(crate) fn parse_version_info(
         &mut self,
         need_trim_whitespace: bool,
+        text_decl: bool,
     ) -> Result<(XMLVersion, String), XMLError> {
         if need_trim_whitespace && self.skip_whitespaces()? == 0 {
             fatal_error!(
@@ -203,7 +204,15 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             );
             return Err(XMLError::ParserInvalidXMLVersion);
         };
-        if version == XMLVersion::Unknown {
+        if text_decl && version != self.version {
+            fatal_error!(
+                self,
+                ParserUnsupportedXMLVersion,
+                "XML {} document must not refer to XML {} entity.",
+                self.version,
+                version
+            );
+        } else if version == XMLVersion::Unknown {
             warning!(
                 self,
                 ParserUnsupportedXMLVersion,
@@ -497,7 +506,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     "Whitespaces are required before 'encoding'."
                 );
             }
-            let (version, _) = self.parse_version_info(false)?;
+            let (version, _) = self.parse_version_info(false, true)?;
             self.version = version;
             s = self.skip_whitespaces()?;
         }
