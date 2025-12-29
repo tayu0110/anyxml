@@ -34,6 +34,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         self.locator.update_column(|c| c + 9);
 
         let base_source_id = self.source.source_id();
+        let is_pe_base_source = self.entity_name().is_some_and(|name| name.starts_with('%'));
         let is_external_markup = self.is_external_markup();
         if self.skip_whitespaces_with_handle_peref(true)? == 0 {
             fatal_error!(
@@ -214,12 +215,21 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
 
         self.skip_whitespaces_with_handle_peref(true)?;
         if self.source.source_id() != base_source_id {
-            // [VC: Proper Declaration/PE Nesting]
-            validity_error!(
-                self,
-                ParserEntityIncorrectNesting,
-                "A parameter entity in an element declaration is nested incorrectly."
-            );
+            if is_pe_base_source {
+                // [WFC: PE Between Declarations]
+                fatal_error!(
+                    self,
+                    ParserEntityIncorrectNesting,
+                    "The replacement text of a PE reference in a DeclSep must be extSubsetDecl."
+                );
+            } else {
+                // [VC: Proper Declaration/PE Nesting]
+                validity_error!(
+                    self,
+                    ParserEntityIncorrectNesting,
+                    "A parameter entity in an element declaration is nested incorrectly."
+                );
+            }
         }
 
         self.grow()?;
