@@ -55,8 +55,35 @@ pub struct XIncludeResource {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XIncludeError {
+    UnacceptableElement,
+    UnacceptableAttributeValue,
+    InclusionLoop,
     BaseURINotFound,
+    ResourceResolutionFailed,
+    NonWellFormedInclusionTarget,
     UnknownError,
+}
+
+macro_rules! fatal_error {
+    ( $proc:ident, $document:expr, $code:expr, $msg:literal, $( $arg:expr ),* ) => {{
+        use self::XIncludeError::*;
+        #[allow(unused)]
+        use $crate::error::XMLError::*;
+        use crate::sax::handler::ErrorHandler;
+        $proc.reader.handler.fatal_error($crate::sax::error::SAXParseError {
+            error: $code.into(),
+            level: $crate::error::XMLErrorLevel::FatalError,
+            domain: $crate::error::XMLErrorDomain::XInclude,
+            line: 0,
+            column: 0,
+            system_id: $document.document_base_uri().as_ref().into(),
+            public_id: None,
+            message: ::std::borrow::Cow::Owned(format!($msg, $( $arg ),*)),
+        });
+    }};
+    ( $proc:ident, $document:expr, $code:expr, $msg:literal ) => {
+        fatal_error!($proc, $document, $code, $msg, );
+    };
 }
 
 pub struct XIncludeProcessor<
@@ -88,14 +115,27 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                 .filter(|elem| elem.namespace_name().as_deref() == Some(XML_XINCLUDE_NAMESPACE))
             {
                 if include.local_name().as_ref() != "include" {
-                    todo!("fatal error");
+                    fatal_error!(
+                        self,
+                        include.owner_document(),
+                        UnacceptableElement,
+                        "The element '{}' in XInclude namespace is unacceptable at this position.",
+                        include.local_name()
+                    );
+                    return Err(XIncludeError::UnacceptableElement.into());
                 }
                 if self
                     .include_stack
                     .iter()
                     .any(|elem| include.is_same_node(elem))
                 {
-                    todo!("fatal error");
+                    fatal_error!(
+                        self,
+                        include.owner_document(),
+                        InclusionLoop,
+                        "Includsion loop is detected."
+                    );
+                    return Err(XIncludeError::InclusionLoop.into());
                 }
                 self.include_stack.push(include.clone());
 
@@ -152,11 +192,24 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             if child.namespace_name().as_deref() == Some(XML_XINCLUDE_NAMESPACE) {
                 if child.local_name().as_ref() == "fallback" {
                     if fallback.is_some() {
-                        todo!("fatal error");
+                        fatal_error!(
+                            self,
+                            include.owner_document(),
+                            UnacceptableElement,
+                            "Multiple fallbacks are unacceptable as children of 'include'.",
+                        );
+                        return Err(XIncludeError::UnacceptableElement.into());
                     }
                     fallback = Some(child.clone());
                 } else {
-                    todo!("fatal error")
+                    fatal_error!(
+                        self,
+                        include.owner_document(),
+                        UnacceptableElement,
+                        "The element '{}' in XInclude namespace is unacceptable as a child of 'include'.",
+                        include.local_name()
+                    );
+                    return Err(XIncludeError::UnacceptableElement.into());
                 }
             }
         }
@@ -168,7 +221,16 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         let ret = match parse.as_str() {
             "xml" => self.expand_xml(source_document, include.clone())?,
             "text" => self.expand_text(source_document, include.clone())?,
-            _ => todo!("fatal error"),
+            value => {
+                fatal_error!(
+                    self,
+                    include.owner_document(),
+                    UnacceptableAttributeValue,
+                    "'{}' is unacceptable value as 'parse' in 'include'.",
+                    value
+                );
+                return Err(XIncludeError::UnacceptableAttributeValue.into());
+            }
         };
 
         if let Some(ret) = ret {
@@ -183,7 +245,17 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             }
             Ok(fragment.into())
         } else {
-            todo!("fatal error");
+            fatal_error!(
+                self,
+                include.owner_document(),
+                ResourceResolutionFailed,
+                "The resource resolution for 'include' is failed: href='{}', parse='{}', xpointer='{}', encoding='{}'",
+                include.get_attribute("href", None).unwrap_or_default(),
+                include.get_attribute("parse", None).unwrap_or_default(),
+                include.get_attribute("xpointer", None).unwrap_or_default(),
+                include.get_attribute("encoding", None).unwrap_or_default()
+            );
+            Err(XIncludeError::ResourceResolutionFailed.into())
         }
     }
 
@@ -254,9 +326,15 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         let href = include.get_attribute("href", None).unwrap_or_default();
 
         if href.is_empty() {
-            // same document reference
+            // self document reference
             let Some(xpointer) = include.get_attribute("xpointer", None) else {
-                todo!("fatal error");
+                fatal_error!(
+                    self,
+                    include.owner_document(),
+                    InclusionLoop,
+                    "'xpointer' attribute must be set for 'include' specified href=''."
+                );
+                return Err(XIncludeError::InclusionLoop.into());
             };
 
             let xpointer = parse_xpointer(&xpointer)?;
@@ -283,7 +361,13 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                 };
             } else {
                 // reference loop
-                todo!("fatal error")
+                fatal_error!(
+                    self,
+                    include.owner_document(),
+                    InclusionLoop,
+                    "Includsion loop is detected."
+                );
+                return Err(XIncludeError::InclusionLoop.into());
             }
         }
 
@@ -327,6 +411,16 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                     Ok(None)
                 } else {
                     // otherwise, it is fatal error because of non-well-formed XML document.
+                    fatal_error!(
+                        self,
+                        include.owner_document(),
+                        NonWellFormedInclusionTarget,
+                        "The resource '{}' is non-well-formed XML document because of '{}'.",
+                        href.as_unescaped_str()
+                            .as_deref()
+                            .unwrap_or(href.as_escaped_str()),
+                        err
+                    );
                     Err(err)
                 }
             }
