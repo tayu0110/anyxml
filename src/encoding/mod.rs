@@ -228,110 +228,110 @@ pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {
     NAMES
 };
 /// Manage aliases for encoding names.
-pub static ENCODING_ALIASES: LazyLock<RwLock<BTreeMap<&'static str, &'static str>>> =
+pub static ENCODING_ALIASES: LazyLock<RwLock<BTreeMap<Cow<'static, str>, &'static str>>> =
     LazyLock::new(|| {
         // To perform case-insensitive comparisons, capitalize all aliases.
         RwLock::new(BTreeMap::from([
-            ("UTF8", UTF8_NAME),
-            ("UTF16", UTF16_NAME),
-            ("UTF16BE", UTF16BE_NAME),
-            ("UTF16LE", UTF16LE_NAME),
-            ("ISO-IR-100", ISO_8859_1_NAME),
-            ("ISO_8859-1", ISO_8859_1_NAME),
-            ("ISO-8859-1", ISO_8859_1_NAME),
-            ("LATIN1", ISO_8859_1_NAME),
-            ("L1", ISO_8859_1_NAME),
-            ("IBM819", ISO_8859_1_NAME),
-            ("CP819", ISO_8859_1_NAME),
-            ("ISOLATIN1", ISO_8859_1_NAME),
-            ("ISO-IR-101", ISO_8859_2_NAME),
-            ("ISO_8859-2", ISO_8859_2_NAME),
-            ("ISO-8859-2", ISO_8859_2_NAME),
-            ("LATIN2", ISO_8859_2_NAME),
-            ("L2", ISO_8859_2_NAME),
-            ("ISOLATIN2", ISO_8859_2_NAME),
-            ("ISO-IR-109", ISO_8859_3_NAME),
-            ("ISO_8859-3", ISO_8859_3_NAME),
-            ("ISO-8859-3", ISO_8859_3_NAME),
-            ("LATIN3", ISO_8859_3_NAME),
-            ("L3", ISO_8859_3_NAME),
-            ("ISOLATIN3", ISO_8859_3_NAME),
-            ("ISO-IR-110", ISO_8859_4_NAME),
-            ("ISO_8859-4", ISO_8859_4_NAME),
-            ("ISO-8859-4", ISO_8859_4_NAME),
-            ("LATIN4", ISO_8859_4_NAME),
-            ("L4", ISO_8859_4_NAME),
-            ("ISOLATIN4", ISO_8859_4_NAME),
-            ("ISO-IR-144", ISO_8859_5_NAME),
-            ("ISO_8859-5", ISO_8859_5_NAME),
-            ("ISO-8859-5", ISO_8859_5_NAME),
-            ("CYRILLIC", ISO_8859_5_NAME),
-            ("ISOLATINCYRILLIC", ISO_8859_5_NAME),
-            ("ISO-IR-127", ISO_8859_6_NAME),
-            ("ISO_8859-6", ISO_8859_6_NAME),
-            ("ISO-8859-6", ISO_8859_6_NAME),
-            ("ECMA-114", ISO_8859_6_NAME),
-            ("ASMO-708", ISO_8859_6_NAME),
-            ("ARABIC", ISO_8859_6_NAME),
-            ("ISOLATINARABIC", ISO_8859_6_NAME),
-            ("ISO-IR-126", ISO_8859_7_NAME),
-            ("ISO_8859-7", ISO_8859_7_NAME),
-            ("ISO-8859-7", ISO_8859_7_NAME),
-            ("ELOT_928", ISO_8859_7_NAME),
-            ("ECMA-118", ISO_8859_7_NAME),
-            ("GREEK", ISO_8859_7_NAME),
-            ("GREEK8", ISO_8859_7_NAME),
-            ("ISOLATINGREEK", ISO_8859_7_NAME),
-            ("ISO-IR-138", ISO_8859_8_NAME),
-            ("ISO_8859-8", ISO_8859_8_NAME),
-            ("ISO-8859-8", ISO_8859_8_NAME),
-            ("HEBREW", ISO_8859_8_NAME),
-            ("ISOLATINHEBREW", ISO_8859_8_NAME),
-            ("ISO-IR-148", ISO_8859_9_NAME),
-            ("ISO_8859-9", ISO_8859_9_NAME),
-            ("ISO-8859-9", ISO_8859_9_NAME),
-            ("LATIN5", ISO_8859_9_NAME),
-            ("L5", ISO_8859_9_NAME),
-            ("ISOLATIN5", ISO_8859_9_NAME),
-            ("ISO-IR-157", ISO_8859_10_NAME),
-            ("L6", ISO_8859_10_NAME),
-            ("ISO_8859-10:1992", ISO_8859_10_NAME),
-            ("ISOLATIN6", ISO_8859_10_NAME),
-            ("LATIN6", ISO_8859_10_NAME),
-            ("TIS620", ISO_8859_11_NAME),
-            ("ISO-8859-11", ISO_8859_11_NAME),
-            ("ISO885913", ISO_8859_13_NAME),
-            ("ISO-IR-199", ISO_8859_14_NAME),
-            ("ISO_8859-14:1998", ISO_8859_14_NAME),
-            ("ISO_8859-14", ISO_8859_14_NAME),
-            ("LATIN8", ISO_8859_14_NAME),
-            ("ISO-CELTIC", ISO_8859_14_NAME),
-            ("L8", ISO_8859_14_NAME),
-            ("ISO885914", ISO_8859_14_NAME),
-            ("ISO_8859-15", ISO_8859_15_NAME),
-            ("LATIN-9", ISO_8859_15_NAME),
-            ("ISO885915", ISO_8859_15_NAME),
-            ("ISO-IR-226", ISO_8859_16_NAME),
-            ("ISO_8859-16:2001", ISO_8859_16_NAME),
-            ("ISO_8859-16", ISO_8859_16_NAME),
-            ("LATIN10", ISO_8859_16_NAME),
-            ("L10", ISO_8859_16_NAME),
-            ("ISO885916", ISO_8859_16_NAME),
-            ("UTF32", UTF32_NAME),
-            ("UTF32BE", UTF32BE_NAME),
-            ("UTF32LE", UTF32LE_NAME),
-            ("MS_KANJI", SHIFT_JIS_NAME),
-            ("SHIFTJIS", SHIFT_JIS_NAME),
-            ("ISO-IR-6", US_ASCII_NAME),
-            ("ANSI_X3.4-1968", US_ASCII_NAME),
-            ("ANSI_X3.4-1986", US_ASCII_NAME),
-            ("ISO_646.IRV:1991", US_ASCII_NAME),
-            ("ISO646-US", US_ASCII_NAME),
-            ("US-ASCII", US_ASCII_NAME),
-            ("US", US_ASCII_NAME),
-            ("IBM367", US_ASCII_NAME),
-            ("CP367", US_ASCII_NAME),
-            ("ASCII", US_ASCII_NAME),
+            ("UTF8".into(), UTF8_NAME),
+            ("UTF16".into(), UTF16_NAME),
+            ("UTF16BE".into(), UTF16BE_NAME),
+            ("UTF16LE".into(), UTF16LE_NAME),
+            ("ISO-IR-100".into(), ISO_8859_1_NAME),
+            ("ISO_8859-1".into(), ISO_8859_1_NAME),
+            ("ISO-8859-1".into(), ISO_8859_1_NAME),
+            ("LATIN1".into(), ISO_8859_1_NAME),
+            ("L1".into(), ISO_8859_1_NAME),
+            ("IBM819".into(), ISO_8859_1_NAME),
+            ("CP819".into(), ISO_8859_1_NAME),
+            ("ISOLATIN1".into(), ISO_8859_1_NAME),
+            ("ISO-IR-101".into(), ISO_8859_2_NAME),
+            ("ISO_8859-2".into(), ISO_8859_2_NAME),
+            ("ISO-8859-2".into(), ISO_8859_2_NAME),
+            ("LATIN2".into(), ISO_8859_2_NAME),
+            ("L2".into(), ISO_8859_2_NAME),
+            ("ISOLATIN2".into(), ISO_8859_2_NAME),
+            ("ISO-IR-109".into(), ISO_8859_3_NAME),
+            ("ISO_8859-3".into(), ISO_8859_3_NAME),
+            ("ISO-8859-3".into(), ISO_8859_3_NAME),
+            ("LATIN3".into(), ISO_8859_3_NAME),
+            ("L3".into(), ISO_8859_3_NAME),
+            ("ISOLATIN3".into(), ISO_8859_3_NAME),
+            ("ISO-IR-110".into(), ISO_8859_4_NAME),
+            ("ISO_8859-4".into(), ISO_8859_4_NAME),
+            ("ISO-8859-4".into(), ISO_8859_4_NAME),
+            ("LATIN4".into(), ISO_8859_4_NAME),
+            ("L4".into(), ISO_8859_4_NAME),
+            ("ISOLATIN4".into(), ISO_8859_4_NAME),
+            ("ISO-IR-144".into(), ISO_8859_5_NAME),
+            ("ISO_8859-5".into(), ISO_8859_5_NAME),
+            ("ISO-8859-5".into(), ISO_8859_5_NAME),
+            ("CYRILLIC".into(), ISO_8859_5_NAME),
+            ("ISOLATINCYRILLIC".into(), ISO_8859_5_NAME),
+            ("ISO-IR-127".into(), ISO_8859_6_NAME),
+            ("ISO_8859-6".into(), ISO_8859_6_NAME),
+            ("ISO-8859-6".into(), ISO_8859_6_NAME),
+            ("ECMA-114".into(), ISO_8859_6_NAME),
+            ("ASMO-708".into(), ISO_8859_6_NAME),
+            ("ARABIC".into(), ISO_8859_6_NAME),
+            ("ISOLATINARABIC".into(), ISO_8859_6_NAME),
+            ("ISO-IR-126".into(), ISO_8859_7_NAME),
+            ("ISO_8859-7".into(), ISO_8859_7_NAME),
+            ("ISO-8859-7".into(), ISO_8859_7_NAME),
+            ("ELOT_928".into(), ISO_8859_7_NAME),
+            ("ECMA-118".into(), ISO_8859_7_NAME),
+            ("GREEK".into(), ISO_8859_7_NAME),
+            ("GREEK8".into(), ISO_8859_7_NAME),
+            ("ISOLATINGREEK".into(), ISO_8859_7_NAME),
+            ("ISO-IR-138".into(), ISO_8859_8_NAME),
+            ("ISO_8859-8".into(), ISO_8859_8_NAME),
+            ("ISO-8859-8".into(), ISO_8859_8_NAME),
+            ("HEBREW".into(), ISO_8859_8_NAME),
+            ("ISOLATINHEBREW".into(), ISO_8859_8_NAME),
+            ("ISO-IR-148".into(), ISO_8859_9_NAME),
+            ("ISO_8859-9".into(), ISO_8859_9_NAME),
+            ("ISO-8859-9".into(), ISO_8859_9_NAME),
+            ("LATIN5".into(), ISO_8859_9_NAME),
+            ("L5".into(), ISO_8859_9_NAME),
+            ("ISOLATIN5".into(), ISO_8859_9_NAME),
+            ("ISO-IR-157".into(), ISO_8859_10_NAME),
+            ("L6".into(), ISO_8859_10_NAME),
+            ("ISO_8859-10:1992".into(), ISO_8859_10_NAME),
+            ("ISOLATIN6".into(), ISO_8859_10_NAME),
+            ("LATIN6".into(), ISO_8859_10_NAME),
+            ("TIS620".into(), ISO_8859_11_NAME),
+            ("ISO-8859-11".into(), ISO_8859_11_NAME),
+            ("ISO885913".into(), ISO_8859_13_NAME),
+            ("ISO-IR-199".into(), ISO_8859_14_NAME),
+            ("ISO_8859-14:1998".into(), ISO_8859_14_NAME),
+            ("ISO_8859-14".into(), ISO_8859_14_NAME),
+            ("LATIN8".into(), ISO_8859_14_NAME),
+            ("ISO-CELTIC".into(), ISO_8859_14_NAME),
+            ("L8".into(), ISO_8859_14_NAME),
+            ("ISO885914".into(), ISO_8859_14_NAME),
+            ("ISO_8859-15".into(), ISO_8859_15_NAME),
+            ("LATIN-9".into(), ISO_8859_15_NAME),
+            ("ISO885915".into(), ISO_8859_15_NAME),
+            ("ISO-IR-226".into(), ISO_8859_16_NAME),
+            ("ISO_8859-16:2001".into(), ISO_8859_16_NAME),
+            ("ISO_8859-16".into(), ISO_8859_16_NAME),
+            ("LATIN10".into(), ISO_8859_16_NAME),
+            ("L10".into(), ISO_8859_16_NAME),
+            ("ISO885916".into(), ISO_8859_16_NAME),
+            ("UTF32".into(), UTF32_NAME),
+            ("UTF32BE".into(), UTF32BE_NAME),
+            ("UTF32LE".into(), UTF32LE_NAME),
+            ("MS_KANJI".into(), SHIFT_JIS_NAME),
+            ("SHIFTJIS".into(), SHIFT_JIS_NAME),
+            ("ISO-IR-6".into(), US_ASCII_NAME),
+            ("ANSI_X3.4-1968".into(), US_ASCII_NAME),
+            ("ANSI_X3.4-1986".into(), US_ASCII_NAME),
+            ("ISO_646.IRV:1991".into(), US_ASCII_NAME),
+            ("ISO646-US".into(), US_ASCII_NAME),
+            ("US-ASCII".into(), US_ASCII_NAME),
+            ("US".into(), US_ASCII_NAME),
+            ("IBM367".into(), US_ASCII_NAME),
+            ("CP367".into(), US_ASCII_NAME),
+            ("ASCII".into(), US_ASCII_NAME),
         ]))
     });
 /// Register `alias` as an alias for the encoding name `real`.  \
@@ -347,12 +347,20 @@ pub static ENCODING_ALIASES: LazyLock<RwLock<BTreeMap<&'static str, &'static str
 ///
 /// Reference: [Charcter sets registered by IANA](https://www.iana.org/assignments/character-sets/character-sets.xhtml)
 pub fn register_encoding_alias(alias: &'static str, real: &'static str) -> Option<&'static str> {
-    ENCODING_ALIASES.write().unwrap().insert(alias, real)
+    let mut table = ENCODING_ALIASES.write().unwrap();
+    if alias.chars().all(|c| c.is_ascii_uppercase()) {
+        table.insert(alias.into(), real)
+    } else {
+        table.insert(alias.to_ascii_uppercase().into(), real)
+    }
 }
 /// Unregister `alias` if it is registerd as an alias for an encoding name.  \
 /// If successfully removed, return the real name.
 pub fn unregister_encoding_alias(alias: &'static str) -> Option<&'static str> {
-    ENCODING_ALIASES.write().unwrap().remove(alias)
+    ENCODING_ALIASES
+        .write()
+        .unwrap()
+        .remove(alias.to_ascii_uppercase().as_str())
 }
 /// Retrieve the encoding name from `alias`, which is an alias for a certain encoding name.  \
 /// If retrieval fails, returns [`None`].
@@ -399,6 +407,9 @@ pub static ENCODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, EncoderFactory>
 pub fn find_encoder(encoding_name: &str) -> Option<Box<dyn Encoder>> {
     let table = ENCODER_TABLE.read().unwrap();
     if let Some(factory) = table.get(encoding_name) {
+        return Some(factory());
+    }
+    if let Some(factory) = table.get(encoding_name.to_ascii_uppercase().as_str()) {
         return Some(factory());
     }
 
@@ -450,6 +461,9 @@ pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>
     });
 pub fn find_decoder(encoding_name: &str) -> Option<Box<dyn Decoder>> {
     let table = DECODER_TABLE.read().unwrap();
+    if let Some(factory) = table.get(encoding_name) {
+        return Some(factory());
+    }
     if let Some(factory) = table.get(encoding_name.to_ascii_uppercase().as_str()) {
         return Some(factory());
     }

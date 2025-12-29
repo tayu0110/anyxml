@@ -192,10 +192,11 @@ fn tree_walk_tests() {
         {
             let path = ent.path();
             let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
-            let handler = TreeBuildHandler::with_handler(DebugHandler {
+            let mut handler = TreeBuildHandler::with_handler(DebugHandler {
                 child: DefaultSAXHandler,
                 buffer: String::new(),
             });
+            handler.expand_entity_reference = false;
             let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
             reader.parse_uri(&uri, None).ok();
 
@@ -233,9 +234,9 @@ fn tree_dump_tests() {
         {
             let path = ent.path();
             let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
-            let mut reader = XMLReaderBuilder::new()
-                .set_handler(TreeBuildHandler::default())
-                .build();
+            let mut handler = TreeBuildHandler::default();
+            handler.expand_entity_reference = false;
+            let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
             reader.parse_uri(&uri, None).ok();
             assert!(!reader.handler.fatal_error);
 

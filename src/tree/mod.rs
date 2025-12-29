@@ -121,6 +121,17 @@ pub struct TreeBuildHandler<H: SAXHandler = DefaultSAXHandler> {
     /// When this flag is true, `document` is considered to contain no meaningful data.
     pub fatal_error: bool,
     in_cdata: bool,
+    /// If `true`, suppresses the generation of [`EntityReference`] nodes for successfully expanded
+    /// entity references. In other words, for [`EntityReference`] nodes with children when this
+    /// setting is `false`, replaces those children with [`EntityReference`] nodes.  \
+    /// Entity references that failed to expand or were ignored due to parser settings are still
+    /// represented as [`EntityReference`] nodes.
+    ///
+    /// If `false`, an [`EntityReference`] node is always generated at the location where the entity
+    /// reference appears.
+    ///
+    /// The default value is `true`.
+    pub expand_entity_reference: bool,
 }
 
 impl<H: SAXHandler> TreeBuildHandler<H> {
@@ -132,6 +143,7 @@ impl<H: SAXHandler> TreeBuildHandler<H> {
             handler,
             fatal_error: false,
             in_cdata: false,
+            expand_entity_reference: true,
         }
     }
 }
@@ -145,6 +157,7 @@ impl Default for TreeBuildHandler {
             handler: DefaultSAXHandler,
             fatal_error: false,
             in_cdata: false,
+            expand_entity_reference: true,
         }
     }
 }
@@ -416,7 +429,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
     }
 
     fn start_entity(&mut self, name: &str) {
-        if name != "[dtd]" {
+        if !self.expand_entity_reference && name != "[dtd]" {
             // we should create an empty entity reference,
             // so we should use `EntityReference::new`, not but `self.document.create_entity_reference`.
             let ent = EntityReference::new(name.into(), self.document.clone());
@@ -426,7 +439,8 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
         self.handler.start_entity(name);
     }
     fn end_entity(&mut self) {
-        if matches!(self.node.node_type(), NodeType::EntityReference)
+        if !self.expand_entity_reference
+            && matches!(self.node.node_type(), NodeType::EntityReference)
             && let Some(parent) = self.node.parent_node()
         {
             self.node = parent;
