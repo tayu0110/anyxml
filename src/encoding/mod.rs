@@ -450,7 +450,7 @@ pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>
     });
 pub fn find_decoder(encoding_name: &str) -> Option<Box<dyn Decoder>> {
     let table = DECODER_TABLE.read().unwrap();
-    if let Some(factory) = table.get(encoding_name) {
+    if let Some(factory) = table.get(encoding_name.to_ascii_uppercase().as_str()) {
         return Some(factory());
     }
 
