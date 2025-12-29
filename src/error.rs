@@ -6,6 +6,7 @@ use crate::{
     uri::ParseRIError,
     xinclude::XIncludeError,
     xpath::{XPathCompileError, XPathError},
+    xpointer::XPointerParseError,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -200,6 +201,8 @@ pub enum XMLError {
     RngValidElement,
     RngValidOneOrMore,
     RngValidUnknownError,
+    // XPointer errors
+    XPointerParseError(XPointerParseError),
     // XInclude errors
     XIncludeError(XIncludeError),
 }
@@ -251,6 +254,12 @@ impl From<XPathError> for XMLError {
 impl From<XPathCompileError> for XMLError {
     fn from(value: XPathCompileError) -> Self {
         XPathError::from(value).into()
+    }
+}
+
+impl From<XPointerParseError> for XMLError {
+    fn from(value: XPointerParseError) -> Self {
+        XMLError::XPointerParseError(value)
     }
 }
 
