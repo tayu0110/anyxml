@@ -32,6 +32,7 @@ pub enum XMLErrorDomain {
     Namespace,
     DTDValid,
     RngParser,
+    XInclude,
 }
 
 impl std::fmt::Display for XMLErrorDomain {
@@ -41,6 +42,7 @@ impl std::fmt::Display for XMLErrorDomain {
             Self::Namespace => write!(f, "namespace"),
             Self::DTDValid => write!(f, "dtd-valid"),
             Self::RngParser => write!(f, "relaxng-parser"),
+            Self::XInclude => write!(f, "xinclude"),
         }
     }
 }

@@ -1,4 +1,11 @@
-use std::io::Read;
+//! XInclude processing APIs and data types.
+//!
+//!
+//!
+//! # Reference
+//! - [XML Inclusions (XInclude) Version 1.0 (Second Edition)](https://www.w3.org/TR/2006/REC-xinclude-20061115/)
+
+use std::{collections::HashMap, io::Read};
 
 use crate::{
     DefaultParserSpec,
@@ -59,6 +66,8 @@ pub struct XIncludeProcessor<
 > {
     pub reader: XMLReader<DefaultParserSpec<'a>, TreeBuildHandler<H>>,
     pub resolver: R,
+    document_cache: HashMap<(URIString, Option<String>, Option<String>), Document>,
+    include_stack: Vec<Element>,
 }
 
 impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
@@ -74,10 +83,22 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         let ret = root.deep_copy_subtree()?;
         let mut children = Some(ret.clone());
         while let Some(child) = children {
-            if let Some(mut include) = child.as_element().filter(|elem| {
-                elem.local_name().as_ref() == "include"
-                    && elem.namespace_name().as_deref() == Some(XML_XINCLUDE_NAMESPACE)
-            }) {
+            if let Some(mut include) = child
+                .as_element()
+                .filter(|elem| elem.namespace_name().as_deref() == Some(XML_XINCLUDE_NAMESPACE))
+            {
+                if include.local_name().as_ref() != "include" {
+                    todo!("fatal error");
+                }
+                if self
+                    .include_stack
+                    .iter()
+                    .any(|elem| include.is_same_node(elem))
+                {
+                    todo!("fatal error");
+                }
+                self.include_stack.push(include.clone());
+
                 if let Some(next) = child.next_sibling() {
                     children = Some(next);
                 } else {
@@ -96,6 +117,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                 let expanded =
                     self.expand_include_element(root.owner_document(), include.clone())?;
                 include.replace_subtree(expanded)?;
+                self.include_stack.pop();
             } else if let Some(first) = child.first_child() {
                 children = Some(first);
             } else if let Some(next) = child.next_sibling() {
@@ -144,15 +166,24 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             .unwrap_or_else(|| "xml".to_owned());
 
         let ret = match parse.as_str() {
-            "xml" => self.expand_xml(source_document, include)?,
-            "text" => self.expand_text(source_document, include)?,
+            "xml" => self.expand_xml(source_document, include.clone())?,
+            "text" => self.expand_text(source_document, include.clone())?,
             _ => todo!("fatal error"),
         };
 
         if let Some(ret) = ret {
             Ok(ret)
+        } else if let Some(fallback) = fallback {
+            let mut fragment = include.owner_document().create_document_fragment();
+            let mut children = fallback.first_child();
+            while let Some(child) = children {
+                children = child.next_sibling();
+
+                fragment.append_child(self.process_subtree(child)?)?;
+            }
+            Ok(fragment.into())
         } else {
-            todo!("fallback");
+            todo!("fatal error");
         }
     }
 
@@ -239,6 +270,23 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         let accept = include.get_attribute("accept", None);
         let accept_language = include.get_attribute("accept-language", None);
 
+        if let Some(document) =
+            self.document_cache
+                .get(&(href.clone(), accept.clone(), accept_language.clone()))
+        {
+            if let Some(xpointer) = include.get_attribute("xpointer", None) {
+                let xpointer = parse_xpointer(&xpointer)?;
+                return if let Some(resource) = xpointer.resolve(document.clone()) {
+                    Ok(Some(self.process_subtree(resource)?))
+                } else {
+                    Ok(None)
+                };
+            } else {
+                // reference loop
+                todo!("fatal error")
+            }
+        }
+
         let Some(XIncludeResource {
             resource,
             base_uri,
@@ -256,7 +304,23 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             .reader
             .parse_reader(resource, encoding.as_deref(), Some(&base_uri))
         {
-            Ok(()) => Ok(Some(self.reader.handler.document.clone().into())),
+            Ok(()) => {
+                let document = self.reader.handler.document.clone();
+                self.document_cache
+                    .insert((href, accept, accept_language), document.clone());
+                let mut ret = if let Some(xpointer) = include.get_attribute("xpointer", None) {
+                    let xpointer = parse_xpointer(&xpointer)?;
+                    xpointer.resolve(document)
+                } else {
+                    Some(document.into())
+                };
+
+                if let Some(tree) = ret {
+                    ret = Some(self.process_subtree(tree)?);
+                }
+
+                Ok(ret)
+            }
             Err(err) => {
                 if matches!(media_type.as_deref(), Some("text/xml" | "application/xml")) {
                     // If resource is not XML media type, it is treated as resource error,
