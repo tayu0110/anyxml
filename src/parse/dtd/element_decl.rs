@@ -199,7 +199,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     // [50] seq      ::= '(' S? cp ( S? ',' S? cp )* S? ')' [VC: Proper Group/PE Nesting]
                     let mut content = ElementContent::new(is_external_markup);
                     let mut buffer = String::new();
-                    self.parse_children(&mut buffer, &mut content)?;
+                    self.parse_children(&mut buffer, &mut content, model_source_id)?;
                     if content.compile().unwrap() {
                         error!(
                             self,
@@ -279,8 +279,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         &mut self,
         buffer: &mut String,
         model: &mut ElementContent,
+        base_source_id: usize,
     ) -> Result<(), XMLError> {
-        let base_source_id = self.source.source_id();
         let mut id = self.parse_cp(buffer, model)?;
         self.skip_whitespaces_with_handle_peref(true)?;
 
