@@ -25,8 +25,9 @@ fn testsuite() {
 }
 
 fn handle_testcases(base_uri: &URIStr, testcases: Element) {
-    let basedir = base_uri
-        .resolve(&URIString::parse(testcases.get_attribute("basedir", None).unwrap()).unwrap());
+    let basedir = base_uri.resolve(
+        &URIString::parse(testcases.get_attribute("basedir", None).unwrap() + "/").unwrap(),
+    );
 
     let creator = testcases.get_attribute("creator", None).unwrap();
     eprintln!("=== start testcases by {} ===", creator);
@@ -67,6 +68,7 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
             let mut reader = XMLReaderBuilder::new()
                 .set_handler(TreeBuildHandler::default())
                 .build();
+            eprintln!("href: {}", href.as_unescaped_str().unwrap());
             reader.parse_uri(href.as_ref(), None).unwrap();
 
             let document = reader.handler.document.clone();

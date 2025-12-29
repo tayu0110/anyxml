@@ -43,6 +43,10 @@ name = "xpointer-test"
 path = "tests/xpointer-test.rs"
 
 [[test]]
+name = "xinclude-test"
+path = "tests/xinclude-test.rs"
+
+[[test]]
 name = "catalog-test"
 path = "tests/catalog-test.rs"
 

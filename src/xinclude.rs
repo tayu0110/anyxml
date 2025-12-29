@@ -5,10 +5,10 @@
 //! # Reference
 //! - [XML Inclusions (XInclude) Version 1.0 (Second Edition)](https://www.w3.org/TR/2006/REC-xinclude-20061115/)
 
-use std::{collections::HashMap, io::Read};
+use std::{collections::HashMap, fs::File, io::Read};
 
 use crate::{
-    DefaultParserSpec,
+    DefaultParserSpec, XML_XML_NAMESPACE,
     error::XMLError,
     sax::{
         handler::{DefaultSAXHandler, SAXHandler},
@@ -44,7 +44,31 @@ pub trait XIncludeResourceResolver {
 }
 
 pub struct XIncludeDefaultResourceResolver;
-impl XIncludeResourceResolver for XIncludeDefaultResourceResolver {}
+impl XIncludeResourceResolver for XIncludeDefaultResourceResolver {
+    fn resolve_xml(
+        &mut self,
+        href: &URIStr,
+        _accept: Option<&str>,
+        _accept_language: Option<&str>,
+    ) -> Option<XIncludeResource> {
+        let file = File::open(href.path()).ok()?;
+        Some(XIncludeResource {
+            resource: Box::new(file),
+            base_uri: href.to_owned(),
+            media_type: None,
+            encoding: None,
+        })
+    }
+
+    fn resolve_text(
+        &mut self,
+        href: &URIStr,
+        accept: Option<&str>,
+        accept_language: Option<&str>,
+    ) -> Option<XIncludeResource> {
+        self.resolve_xml(href, accept, accept_language)
+    }
+}
 
 pub struct XIncludeResource {
     pub resource: Box<dyn Read>,
@@ -166,8 +190,20 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                     }
                 }
 
-                let expanded =
+                let mut expanded =
                     self.expand_include_element(root.owner_document(), include.clone())?;
+                if let Some(document) = expanded.as_document() {
+                    expanded = document
+                        .document_element()
+                        .ok_or(XIncludeError::UnknownError)?
+                        .into();
+                }
+                let mut expanded = include.owner_document().import_node(expanded);
+                fixup_base_uri(
+                    include.parent_node().map(From::from),
+                    include.clone(),
+                    &mut expanded,
+                )?;
                 include.replace_subtree(expanded)?;
                 self.include_stack.pop();
             } else if let Some(first) = child.first_child() {
@@ -451,4 +487,21 @@ impl Default for XIncludeProcessor<'_> {
             include_stack: vec![],
         }
     }
+}
+
+fn fixup_base_uri(
+    include_parent: Option<Node<dyn NodeSpec>>,
+    include: Element,
+    node: &mut Node<dyn NodeSpec>,
+) -> Result<(), XMLError> {
+    let pb = include_parent.and_then(|p| p.base_uri());
+    let nb = node.base_uri();
+
+    if pb != nb
+        && let Some(mut element) = node.as_element()
+        && let Some(href) = include.get_attribute("href", None)
+    {
+        element.set_attribute("xml:base", Some(XML_XML_NAMESPACE), Some(&href))?;
+    }
+    Ok(())
 }
