@@ -354,7 +354,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         source.set_compact_mode();
         source.grow()?;
         let mut buf = String::new();
-        while !source.content_str().is_empty() {
+        while !source.is_empty() {
             let s = source.content_str();
             let len = s.len();
             buf.push_str(s);
