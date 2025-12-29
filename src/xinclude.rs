@@ -12,7 +12,7 @@ use crate::{
     error::XMLError,
     sax::{
         handler::{DefaultSAXHandler, SAXHandler},
-        parser::XMLReader,
+        parser::{XMLReader, XMLReaderBuilder},
         source::InputSource,
     },
     tree::{Document, Element, Node, TreeBuildHandler, node::NodeSpec},
@@ -98,6 +98,18 @@ pub struct XIncludeProcessor<
 }
 
 impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
+    pub fn new<'a>(
+        reader: XMLReader<DefaultParserSpec<'a>, TreeBuildHandler<H>>,
+        resolver: R,
+    ) -> XIncludeProcessor<'a, H, R> {
+        XIncludeProcessor {
+            reader,
+            resolver,
+            document_cache: HashMap::new(),
+            include_stack: vec![],
+        }
+    }
+
     pub fn process(&mut self, document: Document) -> Result<Document, XMLError> {
         let ret = self.process_subtree(document.into())?;
         Ok(ret.as_document().ok_or(XIncludeError::UnknownError)?)
@@ -424,6 +436,19 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                     Err(err)
                 }
             }
+        }
+    }
+}
+
+impl Default for XIncludeProcessor<'_> {
+    fn default() -> Self {
+        Self {
+            reader: XMLReaderBuilder::new()
+                .set_handler(TreeBuildHandler::default())
+                .build(),
+            resolver: XIncludeDefaultResourceResolver,
+            document_cache: HashMap::new(),
+            include_stack: vec![],
         }
     }
 }
