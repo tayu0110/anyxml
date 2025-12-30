@@ -1,6 +1,6 @@
 use anyxml::{
     sax::parser::XMLReaderBuilder,
-    tree::{Document, Element, TreeBuildHandler},
+    tree::{Document, Element, Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec},
     uri::{URIStr, URIString},
     xinclude::XIncludeProcessor,
     xpath::evaluate_uri,
@@ -117,18 +117,18 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
 }
 
 fn normalize_tree(mut document: Document, base_uri: &URIStr) -> Document {
-    let mut children = document.document_element();
-    while let Some(mut child) = children {
-        if let Some(first) = child.first_element_child() {
+    let mut children = document.document_element().map(Node::<dyn NodeSpec>::from);
+    while let Some(child) = children {
+        if let Some(first) = child.first_child() {
             children = Some(first);
-        } else if let Some(next) = child.next_element_sibling() {
+        } else if let Some(next) = child.next_sibling() {
             children = Some(next);
         } else {
             children = None;
 
             let mut parent = child.parent_node();
             while let Some(par) = parent {
-                if let Some(next) = par.next_element_sibling() {
+                if let Some(next) = par.next_sibling() {
                     children = Some(next);
                     break;
                 }
@@ -136,35 +136,44 @@ fn normalize_tree(mut document: Document, base_uri: &URIStr) -> Document {
             }
         }
 
-        let orig_base_uri = document.document_base_uri();
-        document.set_document_base_uri(base_uri).unwrap();
-        let base_uri = child.base_uri().unwrap().to_string();
-        let mut buf = vec![];
-        for att in child.attributes() {
-            buf.push((
-                att.name(),
-                att.local_name(),
-                att.namespace_name(),
-                att.value(),
-            ));
-        }
-        buf.sort_unstable();
-        for (_, local_name, namespace_name, _) in &buf {
-            child
-                .remove_attribute(local_name, namespace_name.as_deref())
-                .unwrap();
-        }
-        for (name, _, namespace_name, mut value) in buf {
-            if name.as_ref() == "xml:base" {
-                value = base_uri.clone();
+        match child.downcast() {
+            NodeKind::Element(mut child) => {
+                let orig_base_uri = document.document_base_uri();
+                document.set_document_base_uri(base_uri).unwrap();
+                let base_uri = child.base_uri().unwrap().to_string();
+                let mut buf = vec![];
+                for att in child.attributes() {
+                    buf.push((
+                        att.name(),
+                        att.local_name(),
+                        att.namespace_name(),
+                        att.value(),
+                    ));
+                }
+                buf.sort_unstable();
+                for (_, local_name, namespace_name, _) in &buf {
+                    child
+                        .remove_attribute(local_name, namespace_name.as_deref())
+                        .unwrap();
+                }
+                for (name, _, namespace_name, mut value) in buf {
+                    if name.as_ref() == "xml:base" {
+                        value = base_uri.clone();
+                    }
+                    child
+                        .set_attribute(&name, namespace_name.as_deref(), Some(&value))
+                        .unwrap();
+                }
+                document
+                    .set_document_base_uri(orig_base_uri.as_ref())
+                    .unwrap();
             }
-            child
-                .set_attribute(&name, namespace_name.as_deref(), Some(&value))
-                .unwrap();
+            NodeKind::CDATASection(mut cdata) => {
+                let text = document.create_text(&*cdata.data());
+                cdata.replace_subtree(text).unwrap();
+            }
+            _ => {}
         }
-        document
-            .set_document_base_uri(orig_base_uri.as_ref())
-            .unwrap();
     }
 
     document
