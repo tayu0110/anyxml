@@ -200,7 +200,12 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                     .into();
             }
 
-            fixup_base_uri(elem.parent_node().map(From::from), elem, &mut expanded)?;
+            fixup_base_uri(
+                elem.parent_node().map(From::from),
+                elem.clone(),
+                &mut expanded,
+            )?;
+            fixup_language(elem.parent_node().map(From::from), &mut expanded)?;
 
             self.include_stack.pop();
             return Ok(expanded);
@@ -447,14 +452,17 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         {
             Ok(()) => {
                 let document = self.reader.handler.document.clone();
+                // guard for inclusion loop
                 self.document_cache.insert(
                     (href.clone(), accept.clone(), accept_language.clone()),
                     document.clone(),
                 );
+                // expand document before XPointer processing
                 let document = self
                     .do_process(document.into())?
                     .as_document()
                     .ok_or(XIncludeError::UnknownError)?;
+                // re-save document after XInclude processing
                 self.document_cache.insert(
                     (href.clone(), accept.clone(), accept_language.clone()),
                     document.clone(),
@@ -469,7 +477,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                     }
                 } else {
                     self.validate_document_type(document.clone().into())?;
-                    Ok(Some(self.do_process(document.into())?))
+                    Ok(Some(document.deep_copy_subtree()?.into()))
                 }
             }
             Err(err) => {
@@ -687,9 +695,29 @@ fn fixup_base_uri(
 
     if pb != nb
         && let Some(mut element) = node.as_element()
+        && !element.has_attribute("base", Some(XML_XML_NAMESPACE))
         && let Some(href) = include.get_attribute("href", None)
     {
         element.set_attribute("xml:base", Some(XML_XML_NAMESPACE), Some(&href))?;
+    }
+    Ok(())
+}
+
+fn fixup_language(
+    include_parent: Option<Node<dyn NodeSpec>>,
+    node: &mut Node<dyn NodeSpec>,
+) -> Result<(), XMLError> {
+    let pb = include_parent
+        .and_then(|p| p.as_element())
+        .and_then(|elem| elem.language());
+    let nb = node.as_element().and_then(|elem| elem.language());
+
+    if pb.as_deref().map(|pb| pb.to_ascii_lowercase())
+        != nb.as_deref().map(|nb| nb.to_ascii_lowercase())
+        && let Some(mut element) = node.as_element()
+        && !element.has_attribute("lang", Some(XML_XML_NAMESPACE))
+    {
+        element.set_attribute("xml:lang", Some(XML_XML_NAMESPACE), nb.as_deref())?;
     }
     Ok(())
 }

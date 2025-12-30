@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell,
+    cell::{Ref, RefCell},
     rc::{Rc, Weak},
 };
 
@@ -28,6 +28,7 @@ pub struct AttributeSpec {
     namespace: Option<Rc<RefCell<NodeCore<NamespaceSpec>>>>,
 
     specified: bool,
+    att_type: AttributeType,
 }
 
 impl NodeSpec for AttributeSpec {
@@ -130,6 +131,7 @@ impl Attribute {
                     local_name: qname.clone(),
                     namespace: None,
                     specified: true,
+                    att_type: AttributeType::CDATA,
                 },
             })),
             owner_document: owner_element.owner_document().core,
@@ -207,6 +209,7 @@ impl Attribute {
                         local_name: local_name.into(),
                         namespace: Some(namespace.core),
                         specified: true,
+                        att_type: AttributeType::CDATA,
                     },
                 })),
                 owner_document: owner_element.owner_document().core,
@@ -236,6 +239,7 @@ impl Attribute {
                         local_name: qname.clone(),
                         namespace: None,
                         specified: true,
+                        att_type: AttributeType::CDATA,
                     },
                 })),
                 owner_document: owner_element.owner_document().core,
@@ -348,20 +352,25 @@ impl Attribute {
         self.core.borrow_mut().spec.specified = false;
     }
 
+    /// Declared attribute type.
+    ///
+    /// Attributes edited by users or certain APIs may return types that are inconsistent with
+    /// the information in the owner document's [`DocumentType`](crate::tree::DocumentType) node.
+    pub fn attribute_type(&self) -> Ref<'_, AttributeType> {
+        Ref::map(self.core.borrow(), |core| &core.spec.att_type)
+    }
+
+    pub(crate) fn set_attribute_type(&mut self, att_type: AttributeType) {
+        self.core.borrow_mut().spec.att_type = att_type;
+    }
+
     /// If this attribute is the ID attribute, return `true`.
     ///
     /// # Reference
     /// - [3.3.1 Attribute Types](https://www.w3.org/TR/xml/#sec-attribute-types)
     /// - [xml:id Version 1.0](https://www.w3.org/TR/xml-id/)
     pub fn is_id(&self) -> bool {
-        self.name().as_ref() == "xml:id"
-            || self
-                .owner_document()
-                .document_type()
-                .and_then(|doctype| {
-                    doctype.get_attlist_decl(&self.owner_element()?.name(), &self.name())
-                })
-                .is_some_and(|attlist| matches!(*attlist.attr_type(), AttributeType::ID))
+        self.name().as_ref() == "xml:id" || matches!(*self.attribute_type(), AttributeType::ID)
     }
 }
 

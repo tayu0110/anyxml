@@ -413,6 +413,14 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
                         } else {
                             attribute.unset_specified();
                         }
+
+                        if let Some(attlist) = self
+                            .document
+                            .document_type()
+                            .and_then(|doctype| doctype.get_attlist_decl(&elem.name(), &att.qname))
+                        {
+                            attribute.set_attribute_type(attlist.attr_type().clone());
+                        }
                     }
                 }
             }

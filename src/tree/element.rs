@@ -754,6 +754,7 @@ impl Element {
                 } else {
                     ret.unset_specified();
                 }
+                ret.set_attribute_type(att.attribute_type().clone());
                 let mut children = att.first_child();
                 while let Some(child) = children {
                     children = child.next_sibling();
