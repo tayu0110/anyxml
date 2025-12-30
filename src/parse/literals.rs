@@ -456,7 +456,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                                     Box::new(source),
                                     base_uri.clone(),
                                     Some(name.clone()),
-                                    URIString::parse(format!("?internal-entity.{name}"))?.into(),
+                                    URIString::parse(format!(
+                                        "?internal-parameter-entity.{}",
+                                        &name[1..]
+                                    ))?
+                                    .into(),
                                     None,
                                 )?;
 
@@ -515,7 +519,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                                                 base_uri.clone(),
                                                 Some(name.clone()),
                                                 URIString::parse(format!(
-                                                    "?internal-entity.{name}"
+                                                    "?external-parameter-entity.{}",
+                                                    &name[1..]
                                                 ))?
                                                 .into(),
                                                 None,
