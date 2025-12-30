@@ -84,8 +84,8 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
             reader.parse_uri(output, None).unwrap();
             let output = reader.handler.document.clone();
 
-            let result = normalize_tree(result);
-            let output = normalize_tree(output);
+            let result = normalize_tree(result, base_uri);
+            let output = normalize_tree(output, base_uri);
 
             let result = result.document_element().unwrap().to_string();
             let output = output.document_element().unwrap().to_string();
@@ -116,7 +116,7 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
     }
 }
 
-fn normalize_tree(document: Document) -> Document {
+fn normalize_tree(mut document: Document, base_uri: &URIStr) -> Document {
     let mut children = document.document_element();
     while let Some(mut child) = children {
         if let Some(first) = child.first_element_child() {
@@ -136,6 +136,9 @@ fn normalize_tree(document: Document) -> Document {
             }
         }
 
+        let orig_base_uri = document.document_base_uri();
+        document.set_document_base_uri(base_uri).unwrap();
+        let base_uri = child.base_uri().unwrap().to_string();
         let mut buf = vec![];
         for att in child.attributes() {
             buf.push((
@@ -151,11 +154,17 @@ fn normalize_tree(document: Document) -> Document {
                 .remove_attribute(local_name, namespace_name.as_deref())
                 .unwrap();
         }
-        for (name, _, namespace_name, value) in buf {
+        for (name, _, namespace_name, mut value) in buf {
+            if name.as_ref() == "xml:base" {
+                value = base_uri.clone();
+            }
             child
                 .set_attribute(&name, namespace_name.as_deref(), Some(&value))
                 .unwrap();
         }
+        document
+            .set_document_base_uri(orig_base_uri.as_ref())
+            .unwrap();
     }
 
     document

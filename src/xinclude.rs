@@ -390,12 +390,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             return if let Some(resource) = xpointer.resolve(source_document.clone()) {
                 self.validate_document_type(resource.clone())?;
                 let mut ret = self.do_process(resource.clone())?;
-                fixup_infoset(
-                    include.parent_node().map(From::from),
-                    &include,
-                    resource,
-                    &mut ret,
-                )?;
+                fixup_infoset(include.parent_node().map(From::from), resource, &mut ret)?;
                 Ok(Some(ret))
             } else {
                 Ok(None)
@@ -424,12 +419,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                 return if let Some(resource) = xpointer.resolve(document.clone()) {
                     self.validate_document_type(resource.clone())?;
                     let mut ret = self.do_process(resource.clone())?;
-                    fixup_infoset(
-                        include.parent_node().map(From::from),
-                        &include,
-                        resource,
-                        &mut ret,
-                    )?;
+                    fixup_infoset(include.parent_node().map(From::from), resource, &mut ret)?;
                     Ok(Some(ret))
                 } else {
                     Ok(None)
@@ -439,7 +429,6 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                 let mut ret = self.do_process(document.clone().into())?;
                 fixup_infoset(
                     include.parent_node().map(From::from),
-                    &include,
                     document.into(),
                     &mut ret,
                 )?;
@@ -486,12 +475,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                     if let Some(resource) = xpointer.resolve(document) {
                         self.validate_document_type(resource.clone())?;
                         let mut ret = self.do_process(resource.clone())?;
-                        fixup_infoset(
-                            include.parent_node().map(From::from),
-                            &include,
-                            resource,
-                            &mut ret,
-                        )?;
+                        fixup_infoset(include.parent_node().map(From::from), resource, &mut ret)?;
                         Ok(Some(ret))
                     } else {
                         Ok(None)
@@ -501,7 +485,6 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                     let mut ret = document.deep_copy_subtree()?.into();
                     fixup_infoset(
                         include.parent_node().map(From::from),
-                        &include,
                         document.into(),
                         &mut ret,
                     )?;
@@ -715,7 +698,6 @@ impl Default for XIncludeProcessor<'_> {
 
 fn fixup_base_uri(
     include_parent: Option<Node<dyn NodeSpec>>,
-    include: &Element,
     origin: Node<dyn NodeSpec>,
     result: &mut Node<dyn NodeSpec>,
 ) -> Result<(), XMLError> {
@@ -727,15 +709,11 @@ fn fixup_base_uri(
         && let Some(mut element) = result.as_element()
         && !element.has_attribute("base", Some(XML_XML_NAMESPACE))
     {
-        if let Some(href) = include.get_attribute("href", None) {
-            element.set_attribute("xml:base", Some(XML_XML_NAMESPACE), Some(&href))?;
-        } else {
-            element.set_attribute(
-                "xml:base",
-                Some(XML_XML_NAMESPACE),
-                Some(&base_uri.to_string()),
-            )?;
-        }
+        element.set_attribute(
+            "xml:base",
+            Some(XML_XML_NAMESPACE),
+            Some(&base_uri.to_string()),
+        )?;
     }
     Ok(())
 }
@@ -762,7 +740,6 @@ fn fixup_language(
 
 fn fixup_infoset(
     include_parent: Option<Node<dyn NodeSpec>>,
-    include: &Element,
     origin: Node<dyn NodeSpec>,
     result: &mut Node<dyn NodeSpec>,
 ) -> Result<(), XMLError> {
@@ -778,6 +755,6 @@ fn fixup_infoset(
         .unwrap_or(result.clone());
 
     fixup_language(include_parent.clone(), origin.clone(), &mut result)?;
-    fixup_base_uri(include_parent, include, origin, &mut result)?;
+    fixup_base_uri(include_parent, origin, &mut result)?;
     Ok(())
 }
