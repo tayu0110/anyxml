@@ -342,18 +342,93 @@ pub struct URIString {
 }
 
 impl URIString {
+    /// Parse the string as a URI by escaping all characters not specified as
+    /// [`reserved`](https://datatracker.ietf.org/doc/html/rfc3986#section-2.2)
+    /// or [`unreserved`](https://datatracker.ietf.org/doc/html/rfc3986#section-2.3)
+    /// in [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+    ///
+    /// Because certain characters containing `%` are escaped, the result of
+    /// [`URIStr::as_unescaped_str`] is equal to `uri`, but the result of
+    /// [`URIStr::as_escaped_str`] may differ from `uri`.
+    ///
+    /// Since it escapes nearly all characters—including control characters, `%`,
+    /// and non-ASCII characters—it will successfully parse any string that roughly
+    /// follows URI notation.
     pub fn parse(uri: impl AsRef<str>) -> Result<Self, ParseRIError> {
         fn _parse(uri: &str) -> Result<URIString, ParseRIError> {
             let uri = escape_except(uri, |b| {
                 b.is_ascii() && (is_reserved(b as u8) || is_unreserved(b as u8))
             });
+            URIString::parse_escaped(&uri)
+        }
+        _parse(uri.as_ref())
+    }
+
+    /// Parse the string as a URI after applying escaping according
+    /// to [XML 1.0 "4.2.2 External Entities"](https://www.w3.org/TR/xml/#sec-external-ent).
+    ///
+    /// Some characters are escaped without escaping the `%` character, so both the result
+    /// of [`URIStr::as_unescaped_str`] and the result of [`URIStr::as_escaped_str`] may
+    /// differ from `uri`.
+    ///
+    /// > System identifiers (and other XML strings meant to be used as URI references) may
+    /// > contain characters that, according to [IETF RFC 3986], must be escaped before a
+    /// > URI can be used to retrieve the referenced resource. The characters to be escaped
+    /// > are the control characters #x0 to #x1F and #x7F (most of which cannot appear in
+    /// > XML), space #x20, the delimiters '<' #x3C, '>' #x3E and '"' #x22, the unwise
+    /// > characters '{' #x7B, '}' #x7D, '|' #x7C, '\' #x5C, '^' #x5E and '`' #x60, as well
+    /// > as all characters above #x7F. Since escaping is not always a fully reversible
+    /// > process, it MUST be performed only when absolutely necessary and as late as
+    /// > possible in a processing chain. In particular, neither the process of converting
+    /// > a relative URI to an absolute one nor the process of passing a URI reference to a
+    /// > process or software component responsible for dereferencing it SHOULD trigger
+    /// > escaping. When escaping does occur, it MUST be performed as follows:
+    /// >
+    /// > 1. Each character to be escaped is represented in UTF-8 [Unicode] as one or more
+    /// >    bytes.
+    /// > 2. The resulting bytes are escaped with the URI escaping mechanism (that is,
+    /// >    converted to % HH, where HH is the hexadecimal notation of the byte value).
+    /// > 3. The original character is replaced by the resulting character sequence.
+    pub fn parse_system_id(uri: impl AsRef<str>) -> Result<Self, ParseRIError> {
+        fn _parse(uri: &str) -> Result<URIString, ParseRIError> {
+            let uri = escape_except(uri, |b| {
+                // XML 1.0 "4.2.2 External Entities"
+                b.is_ascii()
+                    && !matches!(
+                        b as u8,
+                        0..=0x1F
+                            | 0x20
+                            | 0x22
+                            | 0x3C
+                            | 0x3E
+                            | 0x5C
+                            | 0x5E
+                            | 0x60
+                            | 0x7B..=0x7D
+                            | 0x7F..
+                    )
+            });
+            URIString::parse_escaped(&uri)
+        }
+        _parse(uri.as_ref())
+    }
+
+    /// Parse the string as a URI without performing any escape processing whatsoever.  \
+    /// In other words, `uri` is treated as an escaped string.
+    ///
+    /// Since percent-encoded characters are treated as percent-encoded, the result of
+    /// [`URIStr::as_unescaped_str`] may differ from `uri`. On the other hand, since no
+    /// escaping is performed at all, the result of [`URIStr::as_escaped_str`] is always
+    /// equal to `uri`.
+    fn parse_escaped(uri: impl AsRef<str>) -> Result<Self, ParseRIError> {
+        fn _parse(uri: &str) -> Result<URIString, ParseRIError> {
             let mut bytes = uri.as_bytes();
             parse_uri_reference(&mut bytes)?;
             if !bytes.is_empty() {
                 Err(ParseRIError::NotTermination)
             } else {
                 Ok(URIString {
-                    uri: uri.into_owned(),
+                    uri: uri.to_owned(),
                 })
             }
         }

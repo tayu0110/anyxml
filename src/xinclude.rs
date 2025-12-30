@@ -89,6 +89,7 @@ pub enum XIncludeError {
     UnmatchSameNameNotationDeclarations,
     InclusionLoop,
     BaseURINotFound,
+    InvalidHRef,
     ResourceResolutionFailed,
     NonWellFormedInclusionTarget,
     UnknownError,
@@ -397,10 +398,24 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             };
         }
 
-        let href = include
-            .base_uri()
-            .ok_or(XIncludeError::BaseURINotFound)?
-            .resolve(&URIString::parse(href)?);
+        let href = match URIString::parse_system_id(href.as_str()) {
+            Ok(href) => include
+                .base_uri()
+                .ok_or(XIncludeError::BaseURINotFound)?
+                .resolve(&href),
+            Err(err) => {
+                fatal_error!(
+                    self,
+                    include.owner_document(),
+                    InvalidHRef,
+                    "The attribute 'href' of 'include' must be IRI, but '{}' is not becuase of '{:?}'.",
+                    href,
+                    err
+                );
+                return Err(XIncludeError::InvalidHRef.into());
+            }
+        };
+
         let accept = include.get_attribute("accept", None);
         let accept_language = include.get_attribute("accept-language", None);
         self.validate_accept_attribute(
