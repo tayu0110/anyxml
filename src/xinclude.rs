@@ -386,7 +386,10 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                 return Err(XIncludeError::InclusionLoop.into());
             };
 
-            let xpointer = parse_xpointer(&xpointer)?;
+            let Ok(xpointer) = parse_xpointer(&xpointer) else {
+                // XPointer error is treated as resource error.
+                return Ok(None);
+            };
             return if let Some(resource) = xpointer.resolve(source_document.clone()) {
                 self.validate_document_type(resource.clone())?;
                 let mut ret = self.do_process(resource.clone())?;
@@ -416,7 +419,10 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             .cloned()
         {
             if let Some(xpointer) = include.get_attribute("xpointer", None) {
-                let xpointer = parse_xpointer(&xpointer)?;
+                let Ok(xpointer) = parse_xpointer(&xpointer) else {
+                    // XPointer error is treated as resource error.
+                    return Ok(None);
+                };
                 return if let Some(resource) = xpointer.resolve(document.clone()) {
                     self.validate_document_type(resource.clone())?;
                     let mut ret = self.do_process(resource.clone())?;
@@ -472,7 +478,10 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                     document.clone(),
                 );
                 if let Some(xpointer) = include.get_attribute("xpointer", None) {
-                    let xpointer = parse_xpointer(&xpointer)?;
+                    let Ok(xpointer) = parse_xpointer(&xpointer) else {
+                        // XPointer error is treated as resource error.
+                        return Ok(None);
+                    };
                     if let Some(resource) = xpointer.resolve(document) {
                         self.validate_document_type(resource.clone())?;
                         let mut ret = self.do_process(resource.clone())?;
