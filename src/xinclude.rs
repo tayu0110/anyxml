@@ -348,7 +348,9 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         } else if encoding.is_some() {
             InputSource::from_reader(&mut resource.resource, encoding.as_deref())?
         } else {
-            InputSource::from_reader(&mut resource.resource, Some("UTF-8"))?
+            // The specification requires handling it as UTF-8,
+            // but since it may be detectable from the BOM, it is set to `None`.
+            InputSource::from_reader(&mut resource.resource, None)?
         };
 
         // decode and construct resource string

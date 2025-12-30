@@ -7,6 +7,18 @@ use anyxml::{
 };
 
 const SUPPORTED_FEATURES: &[&str] = &["unexpanded-entities", "unparsed-entities", "lang-fixup"];
+const IGNORED_TESTCASE: &[&str] = &[
+    // EBCDIC encodings are not supported yet
+    "harold-79",
+    // HTTP resource fetching is necessary
+    "harold-87",
+    // HTTP resource fetching is necessary
+    "harold-88",
+    // HTTP resource fetching is necessary
+    "harold-89",
+    // HTTP resource fetching is necessary
+    "harold-90",
+];
 
 #[test]
 fn testsuite() {
@@ -45,6 +57,11 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
         .unwrap()
         .text_content();
     eprintln!("====== {}: {} ======", id, description);
+
+    if IGNORED_TESTCASE.contains(&id.as_str()) {
+        eprintln!("skip testcase because using unsupported features.");
+        return;
+    }
 
     if let Some(features) = testcase
         .get_attribute("features", None)
@@ -92,7 +109,7 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
             assert_eq!(
                 result,
                 output,
-                "uri: {}\n\nresult:\n{}\n\noutput:\n{}",
+                "uri: {}\n\nresult:\n{}\n\nexpected:\n{}",
                 href.as_unescaped_str()
                     .as_deref()
                     .unwrap_or(href.as_escaped_str()),
