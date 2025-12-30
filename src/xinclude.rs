@@ -24,7 +24,18 @@ use crate::{
 
 pub const XML_XINCLUDE_NAMESPACE: &str = "http://www.w3.org/2001/XInclude";
 
+/// Resource resolver for processing `{http://www.w3.org/2001/XInclude}include` elements.
+///
+/// By default, neither method does anything; they simply return [`None`].
 pub trait XIncludeResourceResolver {
+    /// Resolver for XML resources.
+    ///
+    /// When fetching resources via HTTP, `accept` and `accept_language` must be set
+    /// as the values of the `Accept` and `Accept-Language` headers, respectively.
+    ///
+    /// # Reference
+    /// - [3.1 xi:include Element](https://www.w3.org/TR/2006/REC-xinclude-20061115/#include_element)
+    /// - [4.2 Included Items when parse="xml"](https://www.w3.org/TR/2006/REC-xinclude-20061115/#xml-included-items)
     fn resolve_xml(
         &mut self,
         href: &URIStr,
@@ -34,6 +45,19 @@ pub trait XIncludeResourceResolver {
         let _ = (href, accept, accept_language);
         None
     }
+    /// Resolver for text resources.
+    ///
+    /// When fetching resources via HTTP, `accept` and `accept_language` must be set
+    /// as the values of the `Accept` and `Accept-Language` headers, respectively.
+    ///
+    /// Since text resources themselves have no encoding resolution mechanisms,
+    /// it is recommended to provide as accurate encoding information as possible.  \
+    /// If the acquired resource is an XML resource, setting the media type appropriately
+    /// can provide an opportunity to utilize XML's encoding resolution mechanism.
+    ///
+    /// # Reference
+    /// - [3.1 xi:include Element](https://www.w3.org/TR/2006/REC-xinclude-20061115/#include_element)
+    /// - [4.3 Included Items when parse="text"](https://www.w3.org/TR/2006/REC-xinclude-20061115/#text-included-items)
     fn resolve_text(
         &mut self,
         href: &URIStr,
@@ -45,6 +69,13 @@ pub trait XIncludeResourceResolver {
     }
 }
 
+/// Default resource resolver.
+///
+/// Both XML resources and text resources attempt to retrieve the local file.  \
+/// If successful, return the resource with only the base URI set.
+///
+/// It attempts to retrieve any local file within its permissions,
+/// so it is not recommended for untrusted documents.
 pub struct XIncludeDefaultResourceResolver;
 impl XIncludeResourceResolver for XIncludeDefaultResourceResolver {
     fn resolve_xml(
@@ -128,6 +159,10 @@ pub struct XIncludeProcessor<
 }
 
 impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
+    /// Build an XInclude processor from a parser that constructs the document tree
+    /// of XML resources and a resource resolver for XInclude processing.
+    ///
+    /// XInclude processing errors are notified through the `reader`'s error handler.
     pub fn new<'a>(
         reader: XMLReader<DefaultParserSpec<'a>, TreeBuildHandler<H>>,
         resolver: R,
@@ -141,13 +176,27 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         }
     }
 
+    /// Apply XInclude processing to `document`.
+    ///
+    /// XInclude processing is not performed in-place;
+    /// therefore, this method always returns a deep copy when processing succeeds.
     pub fn process(&mut self, document: Document) -> Result<Document, XMLError> {
         // for validation of unparsed entities and notations
         self.result_document = document.clone();
+        self.document_cache.clear();
+        self.include_stack.clear();
         let ret = self.do_process(document.into())?;
         Ok(ret.as_document().ok_or(XIncludeError::UnknownError)?)
     }
 
+    /// Apply XInclude processing to the subtree whose root is `root`.
+    ///
+    /// XInclude processing is not performed in-place;
+    /// therefore, this method always returns a deep copy when processing succeeds.
+    ///
+    /// In addition to the usual XInclude processing errors, errors may occur when the
+    /// `root` is detached from the [`Document`] node, due to the inability to properly
+    /// obtain the base URI.
     pub fn process_subtree(
         &mut self,
         root: Node<dyn NodeSpec>,
@@ -158,6 +207,8 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         } else {
             self.result_document = Document::new();
         }
+        self.document_cache.clear();
+        self.include_stack.clear();
         self.do_process(root)
     }
 

@@ -18,6 +18,7 @@ The current implementation supports the following features:
 - execute XPath and lookup specific node in the document tree
     - only XPath 1.0 is supported in the current implementation
 - resolve an alternative URI of external identifiers or URI using XML Catalogs
+- merge XML documents using XInclude.
 
 ## Parser
 You can use a SAX-like API designed with reference to Java SAX API.
@@ -236,6 +237,7 @@ This crate conforms to the following specifications:
     - [XPointer Framework](https://www.w3.org/TR/xptr-framework/)
     - [XPointer element() Scheme](https://www.w3.org/TR/xptr-element/)
     - [XPointer xmlns() Scheme](https://www.w3.org/TR/xptr-xmlns/)
+- [XML Inclusions (XInclude) Version 1.0 (Second Edition)](https://www.w3.org/TR/2006/REC-xinclude-20061115/)
 
 # Tests
 This crate passes the following tests:
@@ -245,6 +247,7 @@ This crate passes the following tests:
 - [OASIS XSLT Test Suites](https://www.oasis-open.org/committees/document.php?document_id=12171&wg_abbrev=xslt) (for XPath)
     - This link is already broken and requires the Wayback Machine to access it.
 - [RELAX NG Test Suite by James Clark](https://gnosis.cx/download/gnosis/xml/relax/spectest.xml)
+- [XML Inclusions (XInclude) Conformance Test Suites](https://www.w3.org/XML/Test/XInclude/)
 - some self-made tests
 
 # Performance
