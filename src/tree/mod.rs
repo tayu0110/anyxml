@@ -96,6 +96,7 @@ pub enum XMLTreeError {
     UnacceptableHierarchy,
     UnacceptableHorizontality,
     BaseURINotAbsolute,
+    IncompatibleConversion,
     Unsupported,
 }
 

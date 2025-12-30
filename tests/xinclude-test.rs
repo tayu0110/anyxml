@@ -101,6 +101,7 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
             let mut reader = XMLReaderBuilder::new()
                 .set_handler(TreeBuildHandler::default())
                 .build();
+            eprintln!("href: {}", href.as_unescaped_str().unwrap());
             reader.parse_uri(href.as_ref(), None).unwrap();
 
             let document = reader.handler.document.clone();

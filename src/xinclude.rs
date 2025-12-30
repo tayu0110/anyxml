@@ -15,7 +15,10 @@ use crate::{
         parser::{XMLReader, XMLReaderBuilder},
         source::InputSource,
     },
-    tree::{Document, Element, Node, TreeBuildHandler, node::NodeSpec},
+    tree::{
+        Document, Element, Node, TreeBuildHandler,
+        node::{InternalNodeSpec, NodeSpec},
+    },
     uri::{URIStr, URIString},
     xpointer::parse_xpointer,
 };
@@ -135,7 +138,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
     }
 
     pub fn process(&mut self, document: Document) -> Result<Document, XMLError> {
-        let ret = self.process_subtree(document.into())?;
+        let ret = self.do_process(document.into())?;
         Ok(ret.as_document().ok_or(XIncludeError::UnknownError)?)
     }
 
@@ -143,88 +146,67 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         &mut self,
         root: Node<dyn NodeSpec>,
     ) -> Result<Node<dyn NodeSpec>, XMLError> {
-        let ret = root.deep_copy_subtree()?;
-        let mut children = Some(ret.clone());
-        while let Some(child) = children {
-            if let Some(mut include) = child
-                .as_element()
-                .filter(|elem| elem.namespace_name().as_deref() == Some(XML_XINCLUDE_NAMESPACE))
-            {
-                if include.local_name().as_ref() != "include" {
-                    fatal_error!(
-                        self,
-                        include.owner_document(),
-                        UnacceptableElement,
-                        "The element '{}' in XInclude namespace is unacceptable at this position.",
-                        include.local_name()
-                    );
-                    return Err(XIncludeError::UnacceptableElement.into());
-                }
-                if self
-                    .include_stack
-                    .iter()
-                    .any(|elem| include.is_same_node(elem))
-                {
-                    fatal_error!(
-                        self,
-                        include.owner_document(),
-                        InclusionLoop,
-                        "Includsion loop is detected."
-                    );
-                    return Err(XIncludeError::InclusionLoop.into());
-                }
-                self.include_stack.push(include.clone());
+        self.do_process(root)
+    }
 
-                if let Some(next) = child.next_sibling() {
-                    children = Some(next);
-                } else {
-                    children = None;
-
-                    let mut parent = child.parent_node();
-                    while let Some(par) = parent {
-                        if let Some(next) = par.next_sibling() {
-                            children = Some(next);
-                            break;
-                        }
-                        parent = par.parent_node();
-                    }
-                }
-
-                let mut expanded =
-                    self.expand_include_element(root.owner_document(), include.clone())?;
-                if let Some(document) = expanded.as_document() {
-                    expanded = document
-                        .document_element()
-                        .ok_or(XIncludeError::UnknownError)?
-                        .into();
-                }
-                let mut expanded = include.owner_document().import_node(expanded);
-                fixup_base_uri(
-                    include.parent_node().map(From::from),
-                    include.clone(),
-                    &mut expanded,
-                )?;
-                include.replace_subtree(expanded)?;
-                self.include_stack.pop();
-            } else if let Some(first) = child.first_child() {
-                children = Some(first);
-            } else if let Some(next) = child.next_sibling() {
-                children = Some(next);
-            } else {
-                children = None;
-
-                let mut parent = child.parent_node();
-                while let Some(par) = parent {
-                    if let Some(next) = par.next_sibling() {
-                        children = Some(next);
-                        break;
-                    }
-                    parent = par.parent_node();
-                }
+    fn do_process(&mut self, node: Node<dyn NodeSpec>) -> Result<Node<dyn NodeSpec>, XMLError> {
+        if let Some(elem) = node
+            .as_element()
+            .filter(|elem| elem.namespace_name().as_deref() == Some(XML_XINCLUDE_NAMESPACE))
+        {
+            if elem.local_name().as_ref() != "include" {
+                fatal_error!(
+                    self,
+                    elem.owner_document(),
+                    UnacceptableElement,
+                    "The element '{}' in XInclude namespace is unacceptable at this position.",
+                    elem.local_name()
+                );
+                return Err(XIncludeError::UnacceptableElement.into());
             }
+
+            if self.include_stack.iter().any(|e| elem.is_same_node(e)) {
+                fatal_error!(
+                    self,
+                    elem.owner_document(),
+                    InclusionLoop,
+                    "Inclusion loop is detected: href='{}', parse='{}', encoding='{}'.",
+                    elem.get_attribute("href", None).unwrap_or_default(),
+                    elem.get_attribute("parse", None).unwrap_or_default(),
+                    elem.get_attribute("encoding", None).unwrap_or_default()
+                );
+                return Err(XIncludeError::InclusionLoop.into());
+            }
+            self.include_stack.push(elem.clone());
+
+            let mut expanded = self.expand_include_element(elem.owner_document(), elem.clone())?;
+            if let Some(document) = expanded.as_document() {
+                expanded = document
+                    .document_element()
+                    .ok_or(XIncludeError::UnknownError)?
+                    .into();
+            }
+
+            fixup_base_uri(elem.parent_node().map(From::from), elem, &mut expanded)?;
+
+            self.include_stack.pop();
+            return Ok(expanded);
         }
 
-        Ok(ret)
+        let copied = node.deep_copy()?;
+        let document = copied.owner_document();
+        let Ok(mut copied) = Node::<dyn InternalNodeSpec>::try_from(copied.clone()) else {
+            return Ok(copied);
+        };
+        let mut children = node.first_child();
+        while let Some(child) = children {
+            children = child.next_sibling();
+
+            let subtree = self.do_process(child)?;
+            copied.append_child(document.import_node(subtree))?;
+        }
+
+        Ok(copied.into())
     }
 
     fn expand_include_element(
@@ -289,7 +271,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             while let Some(child) = children {
                 children = child.next_sibling();
 
-                fragment.append_child(self.process_subtree(child)?)?;
+                fragment.append_child(self.do_process(child)?)?;
             }
             Ok(fragment.into())
         } else {
@@ -391,9 +373,8 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             };
 
             let xpointer = parse_xpointer(&xpointer)?;
-            let resource = xpointer.resolve(source_document.clone());
-            return if let Some(resource) = resource {
-                Ok(Some(self.process_subtree(resource)?))
+            return if let Some(resource) = xpointer.resolve(source_document.clone()) {
+                Ok(Some(self.do_process(resource)?))
             } else {
                 Ok(None)
             };
@@ -418,25 +399,18 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             if let Some(xpointer) = include.get_attribute("xpointer", None) {
                 let xpointer = parse_xpointer(&xpointer)?;
                 return if let Some(resource) = xpointer.resolve(document.clone()) {
-                    Ok(Some(self.process_subtree(resource)?))
+                    Ok(Some(self.do_process(resource)?))
                 } else {
                     Ok(None)
                 };
             } else {
-                // reference loop
-                fatal_error!(
-                    self,
-                    include.owner_document(),
-                    InclusionLoop,
-                    "Includsion loop is detected."
-                );
-                return Err(XIncludeError::InclusionLoop.into());
+                return Ok(Some(self.do_process(document.clone().into())?));
             }
         }
 
         let Some(XIncludeResource {
             resource,
-            base_uri,
+            base_uri: resource_base_uri,
             media_type,
             encoding,
         }) = self
@@ -449,24 +423,22 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
 
         match self
             .reader
-            .parse_reader(resource, encoding.as_deref(), Some(&base_uri))
+            .parse_reader(resource, encoding.as_deref(), Some(&resource_base_uri))
         {
             Ok(()) => {
                 let document = self.reader.handler.document.clone();
                 self.document_cache
                     .insert((href, accept, accept_language), document.clone());
-                let mut ret = if let Some(xpointer) = include.get_attribute("xpointer", None) {
+                if let Some(xpointer) = include.get_attribute("xpointer", None) {
                     let xpointer = parse_xpointer(&xpointer)?;
-                    xpointer.resolve(document)
+                    if let Some(resource) = xpointer.resolve(document) {
+                        Ok(Some(self.do_process(resource)?))
+                    } else {
+                        Ok(None)
+                    }
                 } else {
-                    Some(document.into())
-                };
-
-                if let Some(tree) = ret {
-                    ret = Some(self.process_subtree(tree)?);
+                    Ok(Some(self.do_process(document.into())?))
                 }
-
-                Ok(ret)
             }
             Err(err) => {
                 if matches!(media_type.as_deref(), Some("text/xml" | "application/xml")) {

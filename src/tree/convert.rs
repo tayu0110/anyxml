@@ -3,7 +3,7 @@ use std::rc::Rc;
 use crate::tree::{
     AttlistDecl, Attribute, CDATASection, Comment, Document, DocumentFragment, DocumentType,
     Element, ElementDecl, EntityDecl, EntityReference, Node, NodeType, NotationDecl,
-    ProcessingInstruction, Text,
+    ProcessingInstruction, Text, XMLTreeError,
     namespace::Namespace,
     node::{InternalNodeSpec, NodeSpec},
 };
@@ -129,6 +129,30 @@ impl Node<dyn NodeSpec> {
 impl Node<dyn InternalNodeSpec> {
     pub fn downcast(&self) -> NodeKind {
         Node::<dyn NodeSpec>::from(self.clone()).downcast()
+    }
+}
+
+impl TryFrom<Node<dyn NodeSpec>> for Node<dyn InternalNodeSpec> {
+    type Error = XMLTreeError;
+
+    fn try_from(value: Node<dyn NodeSpec>) -> Result<Self, Self::Error> {
+        match value.downcast() {
+            NodeKind::AttlistDecl(_)
+            | NodeKind::CDATASection(_)
+            | NodeKind::Comment(_)
+            | NodeKind::ElementDecl(_)
+            | NodeKind::Namespace(_)
+            | NodeKind::NotationDecl(_)
+            | NodeKind::ProcessingInstruction(_)
+            | NodeKind::Text(_) => Err(XMLTreeError::IncompatibleConversion),
+            NodeKind::Attribute(attr) => Ok(attr.into()),
+            NodeKind::Document(document) => Ok(document.into()),
+            NodeKind::DocumentFragment(frag) => Ok(frag.into()),
+            NodeKind::DocumentType(doctype) => Ok(doctype.into()),
+            NodeKind::Element(elem) => Ok(elem.into()),
+            NodeKind::EntityDecl(decl) => Ok(decl.into()),
+            NodeKind::EntityReference(ent) => Ok(ent.into()),
+        }
     }
 }
 
