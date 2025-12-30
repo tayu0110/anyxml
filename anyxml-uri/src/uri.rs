@@ -294,6 +294,18 @@ impl Clone for Box<URIStr> {
     }
 }
 
+impl std::fmt::Display for URIStr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.as_unescaped_str()
+                .as_deref()
+                .unwrap_or(self.as_escaped_str())
+        )
+    }
+}
+
 macro_rules! impl_boxed_convertion_uri_str {
     ($( $t:ident ),*) => {
         $(
@@ -527,6 +539,12 @@ impl Deref for URIString {
 
     fn deref(&self) -> &Self::Target {
         self.as_ref()
+    }
+}
+
+impl std::fmt::Display for URIString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_ref())
     }
 }
 
