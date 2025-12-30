@@ -17,7 +17,7 @@ use crate::{
         source::InputSource,
     },
     tree::{
-        Document, Element, Node, TreeBuildHandler,
+        Document, Element, Node, NodeType, TreeBuildHandler,
         node::{InternalNodeSpec, NodeSpec},
     },
     uri::{URIStr, URIString},
@@ -784,13 +784,24 @@ fn fixup_infoset(
         .and_then(|doc| doc.document_element())
         .map(Node::<dyn NodeSpec>::from)
         .unwrap_or(origin);
-    let mut result = result
-        .as_document()
-        .and_then(|doc| doc.document_element())
-        .map(Node::<dyn NodeSpec>::from)
-        .unwrap_or(result.clone());
+    if let Some(document) = result.as_document() {
+        let mut fragment = document.create_document_fragment();
+        let mut children = document.first_child();
+        while let Some(mut child) = children {
+            children = child.next_sibling();
 
-    fixup_language(include_parent.clone(), origin.clone(), &mut result)?;
-    fixup_base_uri(include_parent, origin, &mut result)?;
+            if matches!(child.node_type(), NodeType::DocumentType) {
+                continue;
+            }
+
+            fixup_language(include_parent.clone(), origin.clone(), &mut child)?;
+            fixup_base_uri(include_parent.clone(), origin.clone(), &mut child)?;
+            fragment.append_child(child)?;
+        }
+        *result = fragment.into();
+    } else {
+        fixup_language(include_parent.clone(), origin.clone(), result)?;
+        fixup_base_uri(include_parent, origin, result)?;
+    }
     Ok(())
 }
