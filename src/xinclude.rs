@@ -322,11 +322,10 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         let href = if href.is_empty() {
             source_document.document_base_uri().as_ref().to_owned()
         } else {
-            let href = URIString::parse(href)?;
             include
                 .base_uri()
                 .ok_or(XIncludeError::BaseURINotFound)?
-                .resolve(&href)
+                .resolve(&self.validate_and_parse_non_empty_href(include.clone(), href)?)
         };
 
         let Some(mut resource) =
@@ -398,23 +397,10 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             };
         }
 
-        let href = match URIString::parse_system_id(href.as_str()) {
-            Ok(href) => include
-                .base_uri()
-                .ok_or(XIncludeError::BaseURINotFound)?
-                .resolve(&href),
-            Err(err) => {
-                fatal_error!(
-                    self,
-                    include.owner_document(),
-                    InvalidHRef,
-                    "The attribute 'href' of 'include' must be IRI, but '{}' is not becuase of '{:?}'.",
-                    href,
-                    err
-                );
-                return Err(XIncludeError::InvalidHRef.into());
-            }
-        };
+        let href = include
+            .base_uri()
+            .ok_or(XIncludeError::BaseURINotFound)?
+            .resolve(&self.validate_and_parse_non_empty_href(include.clone(), href)?);
 
         let accept = include.get_attribute("accept", None);
         let accept_language = include.get_attribute("accept-language", None);
@@ -524,6 +510,41 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                     );
                     Err(err)
                 }
+            }
+        }
+    }
+
+    fn validate_and_parse_non_empty_href(
+        &mut self,
+        include: Element,
+        href: String,
+    ) -> Result<URIString, XMLError> {
+        debug_assert!(!href.is_empty());
+
+        match URIString::parse_system_id(href.as_str()) {
+            Ok(href) => {
+                if let Some(fragment) = href.fragment() {
+                    fatal_error!(
+                        self,
+                        include.owner_document(),
+                        InvalidHRef,
+                        "The attribute 'href' of 'include' must be URI/IRI without fragment identifier, but '{}' is specified.",
+                        fragment
+                    );
+                    return Err(XIncludeError::InvalidHRef.into());
+                }
+                Ok(href)
+            }
+            Err(err) => {
+                fatal_error!(
+                    self,
+                    include.owner_document(),
+                    InvalidHRef,
+                    "The attribute 'href' of 'include' must be URI/IRI, but '{}' is not becuase of '{:?}'.",
+                    href,
+                    err
+                );
+                Err(XIncludeError::InvalidHRef.into())
             }
         }
     }
