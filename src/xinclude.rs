@@ -143,8 +143,9 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
     }
 
     pub fn process(&mut self, document: Document) -> Result<Document, XMLError> {
+        // for validation of unparsed entities and notations
+        self.result_document = document.clone();
         let ret = self.do_process(document.into())?;
-        self.result_document = Document::new();
         Ok(ret.as_document().ok_or(XIncludeError::UnknownError)?)
     }
 
@@ -152,7 +153,12 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         &mut self,
         root: Node<dyn NodeSpec>,
     ) -> Result<Node<dyn NodeSpec>, XMLError> {
-        self.result_document = Document::new();
+        if let Some(document) = root.as_document() {
+            // for validation of unparsed entities and notations
+            self.result_document = document;
+        } else {
+            self.result_document = Document::new();
+        }
         self.do_process(root)
     }
 
@@ -201,9 +207,8 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         }
 
         let copied = node.deep_copy()?;
-        if let Some(document) = copied.as_document() {
-            // for validation of unparsed entities and notations
-            self.result_document = document;
+        if self.result_document.is_same_node(&node) {
+            self.result_document = copied.as_document().ok_or(XIncludeError::UnknownError)?;
         }
         let document = copied.owner_document();
         let Ok(mut copied) = Node::<dyn InternalNodeSpec>::try_from(copied.clone()) else {
@@ -372,7 +377,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         let href = include.get_attribute("href", None).unwrap_or_default();
 
         if href.is_empty() {
-            // self document reference
+            // intra-document reference
             let Some(xpointer) = include.get_attribute("xpointer", None) else {
                 fatal_error!(
                     self,
@@ -442,8 +447,18 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         {
             Ok(()) => {
                 let document = self.reader.handler.document.clone();
-                self.document_cache
-                    .insert((href, accept, accept_language), document.clone());
+                self.document_cache.insert(
+                    (href.clone(), accept.clone(), accept_language.clone()),
+                    document.clone(),
+                );
+                let document = self
+                    .do_process(document.into())?
+                    .as_document()
+                    .ok_or(XIncludeError::UnknownError)?;
+                self.document_cache.insert(
+                    (href.clone(), accept.clone(), accept_language.clone()),
+                    document.clone(),
+                );
                 if let Some(xpointer) = include.get_attribute("xpointer", None) {
                     let xpointer = parse_xpointer(&xpointer)?;
                     if let Some(resource) = xpointer.resolve(document) {
@@ -588,7 +603,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                             self,
                             document,
                             UnmatchSameNameEntityDeclarations,
-                            "The declaration of unparsed entity '{}' is unmatch between document '{}' and '{}'.",
+                            "Unparsed entity declaration '{}' is unmatch between document '{}' and '{}'.",
                             ent.name(),
                             self.result_document.document_base_uri(),
                             document.document_base_uri()
@@ -610,13 +625,13 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                         fatal_error!(
                             self,
                             document,
-                            UnmatchSameNameEntityDeclarations,
-                            "The declaration of unparsed entity '{}' is unmatch between document '{}' and '{}'.",
+                            UnmatchSameNameNotationDeclarations,
+                            "Notation declaration '{}' is unmatch between document '{}' and '{}'.",
                             nota.name(),
                             self.result_document.document_base_uri(),
                             document.document_base_uri()
                         );
-                        return Err(XIncludeError::UnmatchSameNameEntityDeclarations.into());
+                        return Err(XIncludeError::UnmatchSameNameNotationDeclarations.into());
                     }
                 } else {
                     doctype.append_child(nota.deep_copy())?;

@@ -107,7 +107,7 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
             let document = reader.handler.document.clone();
             let mut processor = XIncludeProcessor::default();
             let result = processor.process(document);
-            assert!(result.is_err());
+            assert!(result.is_err(), "document: {}", result.unwrap());
         }
         _ => panic!("unknown test type: {test_type}"),
     }
