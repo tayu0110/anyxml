@@ -8,9 +8,10 @@
 use std::{collections::HashMap, fs::File, io::Read};
 
 use crate::{
-    DefaultParserSpec, XML_XML_NAMESPACE,
+    DefaultParserSpec, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::{
+        AttributeType,
         handler::{DefaultSAXHandler, SAXHandler},
         parser::{XMLReader, XMLReaderBuilder},
         source::InputSource,
@@ -84,6 +85,8 @@ pub struct XIncludeResource {
 pub enum XIncludeError {
     UnacceptableElement,
     UnacceptableAttributeValue,
+    UnmatchSameNameEntityDeclarations,
+    UnmatchSameNameNotationDeclarations,
     InclusionLoop,
     BaseURINotFound,
     ResourceResolutionFailed,
@@ -122,6 +125,7 @@ pub struct XIncludeProcessor<
     pub resolver: R,
     document_cache: HashMap<(URIString, Option<String>, Option<String>), Document>,
     include_stack: Vec<Element>,
+    result_document: Document,
 }
 
 impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
@@ -134,11 +138,13 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             resolver,
             document_cache: HashMap::new(),
             include_stack: vec![],
+            result_document: Document::new(),
         }
     }
 
     pub fn process(&mut self, document: Document) -> Result<Document, XMLError> {
         let ret = self.do_process(document.into())?;
+        self.result_document = Document::new();
         Ok(ret.as_document().ok_or(XIncludeError::UnknownError)?)
     }
 
@@ -146,6 +152,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         &mut self,
         root: Node<dyn NodeSpec>,
     ) -> Result<Node<dyn NodeSpec>, XMLError> {
+        self.result_document = Document::new();
         self.do_process(root)
     }
 
@@ -194,6 +201,10 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
         }
 
         let copied = node.deep_copy()?;
+        if let Some(document) = copied.as_document() {
+            // for validation of unparsed entities and notations
+            self.result_document = document;
+        }
         let document = copied.owner_document();
         let Ok(mut copied) = Node::<dyn InternalNodeSpec>::try_from(copied.clone()) else {
             return Ok(copied);
@@ -374,6 +385,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
 
             let xpointer = parse_xpointer(&xpointer)?;
             return if let Some(resource) = xpointer.resolve(source_document.clone()) {
+                self.validate_document_type(resource.clone())?;
                 Ok(Some(self.do_process(resource)?))
             } else {
                 Ok(None)
@@ -392,18 +404,21 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             accept_language.as_deref(),
         )?;
 
-        if let Some(document) =
-            self.document_cache
-                .get(&(href.clone(), accept.clone(), accept_language.clone()))
+        if let Some(document) = self
+            .document_cache
+            .get(&(href.clone(), accept.clone(), accept_language.clone()))
+            .cloned()
         {
             if let Some(xpointer) = include.get_attribute("xpointer", None) {
                 let xpointer = parse_xpointer(&xpointer)?;
                 return if let Some(resource) = xpointer.resolve(document.clone()) {
+                    self.validate_document_type(resource.clone())?;
                     Ok(Some(self.do_process(resource)?))
                 } else {
                     Ok(None)
                 };
             } else {
+                self.validate_document_type(document.clone().into())?;
                 return Ok(Some(self.do_process(document.clone().into())?));
             }
         }
@@ -432,11 +447,13 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                 if let Some(xpointer) = include.get_attribute("xpointer", None) {
                     let xpointer = parse_xpointer(&xpointer)?;
                     if let Some(resource) = xpointer.resolve(document) {
+                        self.validate_document_type(resource.clone())?;
                         Ok(Some(self.do_process(resource)?))
                     } else {
                         Ok(None)
                     }
                 } else {
+                    self.validate_document_type(document.clone().into())?;
                     Ok(Some(self.do_process(document.into())?))
                 }
             }
@@ -497,6 +514,138 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
 
         ret
     }
+
+    fn validate_document_type(
+        &mut self,
+        inclusion_items: Node<dyn NodeSpec>,
+    ) -> Result<(), XMLError> {
+        let document = inclusion_items.owner_document();
+        let Some(doctype) = document.document_type() else {
+            return Ok(());
+        };
+        let mut children = Some(inclusion_items.clone());
+        let mut entities = vec![];
+        let mut notations = vec![];
+        while let Some(child) = children {
+            if let Some(element) = child.as_element() {
+                for att in element.attributes() {
+                    if let Some(decl) =
+                        doctype.get_attlist_decl(element.name().as_ref(), att.name().as_ref())
+                    {
+                        match *decl.attr_type() {
+                            // 4.5.1 Unparsed Entities
+                            AttributeType::ENTITY | AttributeType::ENTITIES => {
+                                for name in att
+                                    .value()
+                                    .split(|c: char| XMLVersion::default().is_whitespace(c))
+                                    .filter(|f| !f.is_empty())
+                                {
+                                    if let Some(entity) = doctype.get_entity_decl(name) {
+                                        entities.push(entity);
+                                    }
+                                }
+                            }
+                            // 4.5.2 Notations
+                            AttributeType::NOTATION(_) => {
+                                let name = att.value();
+                                if let Some(notation) = doctype.get_notation_decl(&name) {
+                                    notations.push(notation);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            if let Some(first) = child.first_child() {
+                children = Some(first);
+            } else if let Some(next) = child.next_sibling() {
+                children = Some(next);
+            } else {
+                children = None;
+
+                let mut parent = child.parent_node();
+                while let Some(par) = parent.filter(|p| !inclusion_items.is_same_node(p)) {
+                    if let Some(next) = par.next_sibling() {
+                        children = Some(next);
+                        break;
+                    }
+                    parent = par.parent_node();
+                }
+            }
+        }
+
+        if let Some(mut doctype) = self.result_document.document_type() {
+            for ent in entities {
+                if let Some(existing) = doctype.get_entity_decl(&ent.name()) {
+                    // is this correct ???
+                    let is_duplicated = ent.system_id() == existing.system_id()
+                        && ent.public_id() == existing.public_id()
+                        && ent.notation_name() == existing.notation_name();
+                    if !is_duplicated {
+                        fatal_error!(
+                            self,
+                            document,
+                            UnmatchSameNameEntityDeclarations,
+                            "The declaration of unparsed entity '{}' is unmatch between document '{}' and '{}'.",
+                            ent.name(),
+                            self.result_document.document_base_uri(),
+                            document.document_base_uri()
+                        );
+                        return Err(XIncludeError::UnmatchSameNameEntityDeclarations.into());
+                    }
+                } else {
+                    doctype.append_child(ent.deep_copy_subtree()?)?;
+                }
+            }
+
+            for nota in notations {
+                if let Some(existing) = doctype.get_notation_decl(&nota.name()) {
+                    // is this correct ???
+                    let is_duplicated = nota.system_id() == existing.system_id()
+                        && nota.public_id() == existing.public_id()
+                        && nota.base_uri() == existing.base_uri();
+                    if !is_duplicated {
+                        fatal_error!(
+                            self,
+                            document,
+                            UnmatchSameNameEntityDeclarations,
+                            "The declaration of unparsed entity '{}' is unmatch between document '{}' and '{}'.",
+                            nota.name(),
+                            self.result_document.document_base_uri(),
+                            document.document_base_uri()
+                        );
+                        return Err(XIncludeError::UnmatchSameNameEntityDeclarations.into());
+                    }
+                } else {
+                    doctype.append_child(nota.deep_copy())?;
+                }
+            }
+        } else {
+            // if document element is not set yet, set a temporary name
+            let name = self
+                .result_document
+                .document_element()
+                .map(|elem| elem.name())
+                .unwrap_or_else(|| "root".into());
+            let mut doctype = self.result_document.create_document_type(name, None, None);
+            for ent in entities {
+                doctype.append_child(ent.deep_copy_subtree()?)?;
+            }
+            for nota in notations {
+                doctype.append_child(nota.deep_copy())?;
+            }
+
+            if let Some(mut first) = self.result_document.first_child() {
+                first.insert_previous_sibling(doctype)?;
+            } else {
+                self.result_document.append_child(doctype)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for XIncludeProcessor<'_> {
@@ -508,6 +657,7 @@ impl Default for XIncludeProcessor<'_> {
             resolver: XIncludeDefaultResourceResolver,
             document_cache: HashMap::new(),
             include_stack: vec![],
+            result_document: Document::new(),
         }
     }
 }
