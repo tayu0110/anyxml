@@ -1,6 +1,6 @@
 use anyxml::{
     sax::parser::XMLReaderBuilder,
-    tree::{Element, TreeBuildHandler},
+    tree::{Document, Element, TreeBuildHandler},
     uri::{URIStr, URIString},
     xinclude::XIncludeProcessor,
     xpath::evaluate_uri,
@@ -84,6 +84,9 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
             reader.parse_uri(output, None).unwrap();
             let output = reader.handler.document.clone();
 
+            let result = normalize_tree(result);
+            let output = normalize_tree(output);
+
             let result = result.document_element().unwrap().to_string();
             let output = output.document_element().unwrap().to_string();
             assert_eq!(
@@ -111,4 +114,49 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
         }
         _ => panic!("unknown test type: {test_type}"),
     }
+}
+
+fn normalize_tree(document: Document) -> Document {
+    let mut children = document.document_element();
+    while let Some(mut child) = children {
+        if let Some(first) = child.first_element_child() {
+            children = Some(first);
+        } else if let Some(next) = child.next_element_sibling() {
+            children = Some(next);
+        } else {
+            children = None;
+
+            let mut parent = child.parent_node();
+            while let Some(par) = parent {
+                if let Some(next) = par.next_element_sibling() {
+                    children = Some(next);
+                    break;
+                }
+                parent = par.parent_node();
+            }
+        }
+
+        let mut buf = vec![];
+        for att in child.attributes() {
+            buf.push((
+                att.name(),
+                att.local_name(),
+                att.namespace_name(),
+                att.value(),
+            ));
+        }
+        buf.sort_unstable();
+        for (_, local_name, namespace_name, _) in &buf {
+            child
+                .remove_attribute(local_name, namespace_name.as_deref())
+                .unwrap();
+        }
+        for (name, _, namespace_name, value) in buf {
+            child
+                .set_attribute(&name, namespace_name.as_deref(), Some(&value))
+                .unwrap();
+        }
+    }
+
+    document
 }
