@@ -744,6 +744,10 @@ impl Element {
     /// the new node using [`Node::is_same_node`] will always return `false`.
     pub fn deep_copy(&self) -> Result<Self, XMLTreeError> {
         let mut ret = Self::new(self.name(), self.namespace_name(), self.owner_document())?;
+        for ns in self.namespaces() {
+            ret.declare_namespace(ns.prefix().as_deref(), &ns.namespace_name())?;
+        }
+
         for att in self.attributes() {
             ret.set_attribute(&att.name(), att.namespace_name().as_deref(), None)?;
             if let Some(mut ret) =
@@ -763,9 +767,6 @@ impl Element {
             }
         }
 
-        for ns in self.namespaces() {
-            ret.declare_namespace(ns.prefix().as_deref(), &ns.namespace_name())?;
-        }
         Ok(ret)
     }
 
