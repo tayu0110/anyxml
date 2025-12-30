@@ -1,7 +1,5 @@
 //! XInclude processing APIs and data types.
 //!
-//!
-//!
 //! # Reference
 //! - [XML Inclusions (XInclude) Version 1.0 (Second Edition)](https://www.w3.org/TR/2006/REC-xinclude-20061115/)
 

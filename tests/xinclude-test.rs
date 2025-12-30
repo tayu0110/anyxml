@@ -1,3 +1,5 @@
+use std::{collections::HashMap, rc::Rc};
+
 use anyxml::{
     sax::parser::XMLReaderBuilder,
     tree::{Document, Element, Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec},
@@ -193,5 +195,39 @@ fn normalize_tree(mut document: Document, base_uri: &URIStr) -> Document {
         }
     }
 
+    fixup_namespace(&mut document.clone().into(), &mut HashMap::new());
     document
+}
+
+fn fixup_namespace(
+    node: &mut Node<dyn NodeSpec>,
+    mapping: &mut HashMap<Option<Rc<str>>, Vec<Rc<str>>>,
+) {
+    if let Some(mut element) = node.as_element() {
+        let mut removed = vec![];
+        for ns in element.namespaces() {
+            let namespace_name = ns.namespace_name();
+            let entity = mapping.entry(ns.prefix()).or_default();
+            if entity.last().is_some_and(|last| **last == *namespace_name) {
+                removed.push(ns.prefix());
+            } else {
+                entity.push(namespace_name);
+            }
+        }
+        for prefix in removed {
+            element.undeclare_namespace(prefix.as_deref());
+        }
+    }
+    let mut children = node.first_element_child();
+    while let Some(child) = children {
+        children = child.next_element_sibling();
+
+        fixup_namespace(&mut child.into(), mapping);
+    }
+
+    if let Some(element) = node.as_element() {
+        for ns in element.namespaces() {
+            mapping.entry(ns.prefix()).or_default().pop();
+        }
+    }
 }
