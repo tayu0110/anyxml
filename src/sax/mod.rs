@@ -49,18 +49,30 @@ use crate::{
     uri::{URIStr, URIString},
 };
 
+/// # Reference
+/// - [3.3.1 Attribute Types](https://www.w3.org/TR/xml/#sec-attribute-types)
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum AttributeType {
+    /// CDATA type (`'CDATA'`)
     #[default]
     CDATA,
+    /// ID type (`'ID'`)
     ID,
+    /// IDREF type (`'IDREF'`)
     IDREF,
+    /// IDREFS type (`'IDREFS'`)
     IDREFS,
+    /// Entity Name type (`'ENTITY'`)
     ENTITY,
+    /// Entity Names type (`'ENTITIES'`)
     ENTITIES,
+    /// Name token type (`'NMTOKEN'`)
     NMTOKEN,
+    /// Name tokens type (`'NMTOKENS'`)
     NMTOKENS,
+    /// Notation type (`'NOTATION'`)
     NOTATION(HashSet<Box<str>>),
+    /// Enumeration type
     Enumeration(HashSet<Box<str>>),
 }
 
@@ -95,11 +107,17 @@ impl std::fmt::Display for AttributeType {
     }
 }
 
+/// # Reference
+/// - [3.3.2 Attribute Defaults](https://www.w3.org/TR/xml/#sec-attr-defaults)
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DefaultDecl {
+    /// `'#REQUIRED'`
     REQUIRED,
+    /// `'#IMPLIED'`
     IMPLIED,
+    /// default attribute value with `'#FIXED'`
     FIXED(Box<str>),
+    /// default attribute value without `'#FIXED'`
     None(Box<str>),
 }
 
@@ -445,6 +463,9 @@ pub struct Notation {
     pub public_id: Option<Box<str>>,
 }
 
+/// A locator indicating the parser's current position within the document.
+///
+/// Basically, this object has no meaning except during document parsing.
 pub struct Locator {
     system_id: RwLock<Arc<URIStr>>,
     public_id: RwLock<Option<Arc<str>>>,
@@ -467,18 +488,22 @@ impl Locator {
         }
     }
 
+    /// The system identifier for the current document.
     pub fn system_id(&self) -> Arc<URIStr> {
         self.system_id.read().unwrap().clone()
     }
 
+    /// The public identifier for the current document.
     pub fn public_id(&self) -> Option<Arc<str>> {
         self.public_id.read().unwrap().clone()
     }
 
+    /// Line number in the parsing process.
     pub fn line(&self) -> usize {
         self.line.load(Ordering::Acquire)
     }
 
+    /// Offset from the first character within the line at the position being processed.
     pub fn column(&self) -> usize {
         self.column.load(Ordering::Acquire)
     }

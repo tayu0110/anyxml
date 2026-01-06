@@ -10,11 +10,17 @@ use crate::automata::{
     fa::{DFA, NFA, State},
 };
 
+/// # Reference
+/// - [3.2 Element Type Declarations](https://www.w3.org/TR/xml/#elemdecls)
 #[derive(Debug, Clone)]
 pub enum ContentSpec {
+    /// `'EMPTY'`
     EMPTY,
+    /// `'ANY'`
     ANY,
+    /// [Mixed Content](https://www.w3.org/TR/xml/#sec-mixed-content)
     Mixed(Arc<HashSet<Box<str>>>),
+    /// [Element Content](https://www.w3.org/TR/xml/#sec-element-content)
     Children(ElementContent),
 }
 

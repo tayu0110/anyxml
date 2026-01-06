@@ -175,6 +175,7 @@ pub(crate) enum ParserSubState {
     InProcessingInstruction,
 }
 
+/// SAX style XML parser.
 pub struct XMLReader<Spec: ParserSpec, H: SAXHandler = DefaultSAXHandler> {
     pub(crate) source: Box<Spec::Reader>,
     pub handler: H,
@@ -473,6 +474,10 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         })
     }
 
+    /// Reset the parser to its initial state.
+    ///
+    /// Parser options, user-defined base URI, custom SAX handlers,
+    /// and user-defined catalog lists are not reset.
     pub fn reset(&mut self) -> Result<(), XMLError> {
         self.source = Box::new(InputSource::default());
         self.base_uri = self.default_base_uri()?;
@@ -497,6 +502,9 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
     }
 
     /// Reset the parser to its initial state.
+    ///
+    /// Parser options, user-defined base URI, custom SAX handlers,
+    /// and user-defined catalog lists are not reset.
     pub fn reset(&mut self) -> Result<(), XMLError> {
         self.source = Box::new(InputSource::default());
         self.source.set_progressive_mode();

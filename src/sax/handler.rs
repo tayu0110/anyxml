@@ -392,7 +392,11 @@ impl EntityResolver for DefaultSAXHandler {}
 impl SAXHandler for DefaultSAXHandler {}
 
 pub struct DebugHandler<Child: SAXHandler = DefaultSAXHandler> {
+    /// The buffer where generated events are written.
     pub buffer: String,
+    /// Child handler.
+    ///
+    /// [`DebugHandler`] writes events to `buffer` and then redirects them to `child`.
     pub child: Child,
 }
 
