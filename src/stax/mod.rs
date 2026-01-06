@@ -1,3 +1,5 @@
+//! Provide StAX style XML parser and event types.
+
 pub mod events;
 mod handler;
 
@@ -51,6 +53,10 @@ impl<'a, Resolver: EntityResolver> XMLStreamReader<'a, Resolver> {
 }
 
 impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, Resolver, Reporter> {
+    /// Retrieves and parses the XML document specified by `uri`.  \
+    /// If retrieval or parsing of the XML document fails, an error is returned.
+    ///
+    /// The preferred encoding can be specified using `encoding`.
     pub fn parse_uri(
         &mut self,
         uri: impl AsRef<URIStr>,
@@ -80,9 +86,16 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
         Ok(())
     }
 
+    /// The data read from `reader` is parsed as an XML document.  \
+    /// If parsing of the XML document fails, an error is returned.
+    ///
+    /// The preferred encoding can be specified using `encoding`.
+    ///
+    /// `uri` is treated as the document's base URI. It is optional to set,
+    /// but may be required if the document being parsed references external resources.
     pub fn parse_reader(
         &mut self,
-        source: impl Read + 'a,
+        reader: impl Read + 'a,
         encoding: Option<&str>,
         uri: Option<&URIStr>,
     ) -> Result<(), XMLError> {
@@ -96,13 +109,20 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
         if let Some(encoding) = encoding {
             self.reader.set_encoding(encoding);
         }
-        self.source = Box::new(source);
+        self.source = Box::new(reader);
         self.buffer.clear();
         self.buffer.resize(INPUT_CHUNK, 0);
         Ok(())
     }
 
-    pub fn parse_str(&mut self, s: &str, uri: Option<&URIStr>) -> Result<(), XMLError> {
+    /// Parses `xml` as an XML document.  \
+    /// If parsing of the XML document fails, an error is returned.
+    ///
+    /// Assumes the document is encoded in UTF-8.
+    ///
+    /// `uri` is treated as the document's base URI. It is optional to set,
+    /// but may be required if the document being parsed references external resources.
+    pub fn parse_str(&mut self, xml: &str, uri: Option<&URIStr>) -> Result<(), XMLError> {
         self.reset()?;
         if let Some(uri) = uri {
             let mut base_uri = self.reader.default_base_uri()?.resolve(uri);
@@ -113,7 +133,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
 
         self.source = Box::new(std::io::empty());
         self.buffer.clear();
-        self.reader.source.push_bytes(s.as_bytes(), true)?;
+        self.reader.source.push_bytes(xml.as_bytes(), true)?;
         Ok(())
     }
 
