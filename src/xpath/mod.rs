@@ -129,6 +129,7 @@ pub fn evaluate_reader<'a>(
     Ok(expression.evaluate(document)?)
 }
 
+/// Precompiled XPath expression.
 pub struct XPathExpression {
     root: usize,
     tree: Vec<XPathSyntaxTree>,
@@ -468,6 +469,17 @@ impl XPathExpression {
     }
 }
 
+/// XPath evaluation context.
+///
+/// # Rerefence
+/// - [1 Introduction](https://www.w3.org/TR/1999/REC-xpath-19991116/#section-Introduction)
+///
+/// > Expression evaluation occurs with respect to a context. XSLT and XPointer specify how the context is determined for XPath expressions used in XSLT and XPointer respectively. The context consists of:
+/// >   - a node (the context node)
+/// >   - a pair of non-zero positive integers (the context position and the context size)
+/// >   - a set of variable bindings
+/// >   - a function library
+/// >   - the set of namespace declarations in scope for the expression
 #[derive(Default)]
 pub struct XPathContext {
     node: Option<Node<dyn NodeSpec>>,
@@ -489,15 +501,35 @@ impl XPathContext {
     }
 }
 
+/// XPath object types.
+///
+/// Currently, only the basic types defined in the XPath 1.0 specification are available.
+///
+/// # Reference
+/// - [1 Introduction](https://www.w3.org/TR/1999/REC-xpath-19991116/#section-Introduction)
+///
+/// > The primary syntactic construct in XPath is the expression. An expression matches the production Expr. An expression is evaluated to yield an object, which has one of the following four basic types:
+/// >   - node-set (an unordered collection of nodes without duplicates)
+/// >   - boolean (true or false)
+/// >   - number (a floating-point number)
+/// >   - string (a sequence of UCS characters)
 #[derive(Clone)]
 pub enum XPathObject {
+    /// number (a floating-point number)
     Number(f64),
+    /// string (a sequence of UCS characters)
     String(Box<str>),
+    /// boolean (true or false)
     Boolean(bool),
+    /// node-set (an unordered collection of nodes without duplicates)
     NodeSet(XPathNodeSet),
 }
 
 impl XPathObject {
+    /// Attempt to cast to a number type object.
+    ///
+    /// # Reference
+    /// - [Function: number number(object?)](https://www.w3.org/TR/1999/REC-xpath-19991116/#function-number)
     pub fn cast_to_number(self) -> Result<Self, XPathError> {
         match self {
             XPathObject::Number(number) => Ok(XPathObject::Number(number)),
@@ -509,6 +541,10 @@ impl XPathObject {
         }
     }
 
+    /// Attempt to cast to a string type object.
+    ///
+    /// # Reference
+    /// - [Function: string string(object?)](https://www.w3.org/TR/1999/REC-xpath-19991116/#function-string)
     pub fn cast_to_string(self) -> Result<Self, XPathError> {
         match self {
             XPathObject::Number(number) => {
@@ -534,6 +570,10 @@ impl XPathObject {
         }
     }
 
+    /// Attempt to cast to a boolean type object.
+    ///
+    /// # Reference
+    /// - [Function: boolean boolean(object)](https://www.w3.org/TR/1999/REC-xpath-19991116/#function-boolean)
     pub fn cast_to_boolean(self) -> Result<Self, XPathError> {
         match self {
             XPathObject::Number(number) => Ok(XPathObject::Boolean(
@@ -545,6 +585,7 @@ impl XPathObject {
         }
     }
 
+    /// When castable to a number type object, retrieve the internal data.
     pub fn as_number(self) -> Result<f64, XPathError> {
         match self {
             XPathObject::Number(number) => Ok(number),
@@ -557,6 +598,7 @@ impl XPathObject {
         }
     }
 
+    /// When castable to a string type object, retrieve the internal data.
     pub fn as_string(self) -> Result<Box<str>, XPathError> {
         match self {
             XPathObject::String(string) => Ok(string),
@@ -569,6 +611,7 @@ impl XPathObject {
         }
     }
 
+    /// When castable to a boolean type object, retrieve the internal data.
     pub fn as_boolean(self) -> Result<bool, XPathError> {
         match self {
             XPathObject::Boolean(boolean) => Ok(boolean),
@@ -581,6 +624,7 @@ impl XPathObject {
         }
     }
 
+    /// When castable to a node-set type object, retrieve the internal data.
     pub fn as_nodeset(self) -> Result<XPathNodeSet, XPathError> {
         if let XPathObject::NodeSet(node_set) = self {
             Ok(node_set)
@@ -750,6 +794,15 @@ impl XPathNodeSet {
         }
         ret.sort();
         ret
+    }
+}
+
+impl IntoIterator for XPathNodeSet {
+    type Item = Node<dyn NodeSpec>;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.nodes.into_iter()
     }
 }
 
