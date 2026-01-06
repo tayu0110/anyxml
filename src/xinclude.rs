@@ -103,10 +103,24 @@ impl XIncludeResourceResolver for XIncludeDefaultResourceResolver {
     }
 }
 
+/// Resource obtained by the resource resolver.
+///
+/// At a minimum, `resource` and `base_uri` must be set.  \
+/// `media_type` and `encoding` are optional, but since they provide hints
+/// for decoding methods and errors to report, it is recommended to set them
+/// appropriately as much as possible.
 pub struct XIncludeResource {
+    /// the acquired resource.
     pub resource: Box<dyn Read>,
+    /// the base URI of `resource`.
     pub base_uri: URIString,
+    /// the media type of `resource`.
+    ///
+    /// If the media type is unknown, set `None`.
     pub media_type: Option<String>,
+    /// the encoding name of `resource`.
+    ///
+    /// If the encoding name is unknown, set `None`.
     pub encoding: Option<String>,
 }
 
@@ -154,6 +168,7 @@ macro_rules! fatal_error {
     };
 }
 
+/// XInclude processor.
 pub struct XIncludeProcessor<
     'a,
     H: SAXHandler = DefaultSAXHandler,
