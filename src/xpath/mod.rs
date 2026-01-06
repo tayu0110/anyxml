@@ -41,6 +41,14 @@ impl From<XPathCompileError> for XPathError {
     }
 }
 
+impl std::fmt::Display for XPathError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for XPathError {}
+
 /// Evaluate `xpath` as an XPath expression with `document` as the initial context node.
 ///
 /// If successfully executed, it returns an [`XPathObject`] representing the evaluation
@@ -809,6 +817,14 @@ pub enum XPathCompileError {
     InvalidQName,
     UnknownError,
 }
+
+impl std::fmt::Display for XPathCompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for XPathCompileError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Axis {

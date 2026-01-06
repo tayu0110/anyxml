@@ -100,6 +100,14 @@ pub enum XMLTreeError {
     Unsupported,
 }
 
+impl std::fmt::Display for XMLTreeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for XMLTreeError {}
+
 /// SAX handler that helps build the tree.
 ///
 /// Due to API limitations, when using this handler, it is necessary to enable

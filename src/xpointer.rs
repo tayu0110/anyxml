@@ -195,6 +195,14 @@ pub enum XPointerParseError {
     XMLNSEqualMarkNotFound,
 }
 
+impl std::fmt::Display for XPointerParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for XPointerParseError {}
+
 /// Parse `xpointer` as an XPointer string.
 ///
 /// `xpointer` must not contain the fragment identifier delimiter `"#"`.

@@ -124,6 +124,14 @@ pub enum XIncludeError {
     UnknownError,
 }
 
+impl std::fmt::Display for XIncludeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for XIncludeError {}
+
 macro_rules! fatal_error {
     ( $proc:ident, $document:expr, $code:expr, $msg:literal, $( $arg:expr ),* ) => {{
         use self::XIncludeError::*;

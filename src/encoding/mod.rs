@@ -65,6 +65,15 @@ pub enum EncodeError {
     /// Other errors.
     Other { msg: Cow<'static, str> },
 }
+
+impl std::fmt::Display for EncodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for EncodeError {}
+
 #[derive(Debug, Clone)]
 pub enum DecodeError {
     /// Input buffer is empty.
@@ -85,6 +94,14 @@ pub enum DecodeError {
     /// Other errors.
     Other { msg: Cow<'static, str> },
 }
+
+impl std::fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for DecodeError {}
 
 pub const UTF8_NAME: &str = "UTF-8";
 
