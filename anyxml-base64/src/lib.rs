@@ -35,7 +35,14 @@ const DECODING_TABLE: [u8; 1 << 8] = {
     table
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Base64Error {
+    MalformedByte { byte: u8, position: usize },
+    InsufficientPadding,
+}
+
 /// Base64-encoded byte sequence.
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Base64Binary {
     bin: Vec<u8>,
 }
@@ -60,7 +67,7 @@ impl Base64Binary {
     /// ```rust
     /// use anyxml_base64::Base64Binary;
     ///
-    /// let encoded = Base64Binary::from("Hello");
+    /// let encoded = Base64Binary::from_encoded(*b"SGVsbG8=", false).unwrap();
     /// let decoded = encoded.decode().map(|b| b as char).collect::<String>();
     /// assert_eq!(decoded, "Hello");
     /// ```
@@ -76,6 +83,46 @@ impl Base64Binary {
             let mut r2 = (b3 != u8::MAX).then_some(b2.wrapping_shl(6) | b3);
             std::iter::from_fn(move || r0.take().or_else(|| r1.take()).or_else(|| r2.take()))
         })
+    }
+
+    /// Construct a [`Base64Binary`] from a Base64-encoded byte sequence.
+    ///
+    /// When `allow_whitespace` is true, bytes for which [`u8::is_ascii_whitespace`]
+    /// returns true are ignored during byte sequence validation.
+    ///
+    /// Returns an error if the `iter` is invalid as a Base64 byte sequence.
+    pub fn from_encoded(
+        iter: impl IntoIterator<Item = u8>,
+        allow_whitespace: bool,
+    ) -> Result<Self, Base64Error> {
+        let mut bin = vec![];
+        let mut pad = None;
+        for (position, byte) in iter.into_iter().enumerate() {
+            if allow_whitespace && byte.is_ascii_whitespace() {
+                continue;
+            }
+            if byte == b'=' {
+                pad.get_or_insert((bin.len(), position));
+            } else if DECODING_TABLE[byte as usize] == u8::MAX {
+                return Err(Base64Error::MalformedByte { byte, position });
+            }
+            bin.push(byte);
+        }
+
+        if bin.len() % 4 != 0 {
+            return Err(Base64Error::InsufficientPadding);
+        }
+
+        if let Some((pad, position)) = pad
+            && (bin.len() - pad > 2 || bin[pad..].iter().any(|&b| b != b'='))
+        {
+            return Err(Base64Error::MalformedByte {
+                byte: b'=',
+                position,
+            });
+        }
+
+        Ok(Base64Binary { bin })
     }
 }
 
@@ -238,6 +285,48 @@ mod tests {
                 [.., b'='] => assert_eq!(pad, 1),
                 [..] => assert_eq!(pad, 0),
             }
+
+            let encoded2 = Base64Binary::from_encoded(encoded.to_string().bytes(), false).unwrap();
+            assert_eq!(encoded, encoded2);
         }
+    }
+
+    #[test]
+    fn encoded_bytes_tests() {
+        assert!(Base64Binary::from_encoded(*b"", false).is_ok());
+        let state = RandomState::new().build_hasher();
+        let seed = state.finish();
+        let mut bytes = bytes(seed);
+        for _ in 0..10000 {
+            let len = bytes.next().unwrap() as usize;
+            let len = len.div_ceil(4) * 4;
+            let bytes = bytes
+                .by_ref()
+                .filter(|b| DECODING_TABLE[*b as usize] != u8::MAX)
+                .take(len)
+                .collect::<Vec<_>>();
+
+            let encoded = Base64Binary::from_encoded(bytes, false);
+            assert!(encoded.is_ok());
+        }
+    }
+
+    #[test]
+    fn erroneous_encoded_bytes_tests() {
+        assert!(Base64Binary::from_encoded(*b"a", false).is_err());
+        assert!(Base64Binary::from_encoded(*b"aa", false).is_err());
+        assert!(Base64Binary::from_encoded(*b"aaa", false).is_err());
+        assert!(Base64Binary::from_encoded(*b"aaaaa", false).is_err());
+        assert!(Base64Binary::from_encoded(*b"aaaaaa", false).is_err());
+        assert!(Base64Binary::from_encoded(*b"aaaaaaa", false).is_err());
+
+        assert!(Base64Binary::from_encoded(*b"=", false).is_err());
+        assert!(Base64Binary::from_encoded(*b"==", false).is_err());
+        assert!(Base64Binary::from_encoded(*b"===", false).is_err());
+        assert!(Base64Binary::from_encoded(*b"====", false).is_err());
+
+        assert!(Base64Binary::from_encoded(*b"a=", false).is_err());
+        assert!(Base64Binary::from_encoded(*b"a==", false).is_err());
+        assert!(Base64Binary::from_encoded(*b"a===", false).is_err());
     }
 }
