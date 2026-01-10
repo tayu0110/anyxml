@@ -5,6 +5,8 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "simple Base64 library for XML"
+keywords = ["base64", "xml"]
 rust-version.workspace = true
 
 [dependencies]
