@@ -1,5 +1,5 @@
 [workspace]
-members = ["anyxml-automata", "anyxml-cli", "anyxml-uri"]
+members = ["anyxml-automata", "anyxml-base64", "anyxml-cli", "anyxml-uri"]
 package.edition = "2024"
 package.authors = ["tayu0110"]
 package.license = "MIT"
