@@ -36,6 +36,7 @@ pub enum ErrorKind {
     FailedToParseInt(ParseIntError),
     TooLarge,
     TooSmall,
+    OutOfRange,
     InvalidFormat,
 }
 
@@ -56,6 +57,11 @@ impl std::fmt::Display for DateTimeError {
             TooLarge => write!(f, "The {} is too large.", self.segment),
             TooSmall => write!(f, "The {} is too small.", self.segment),
             InvalidFormat => write!(f, "The format of {} is invalid.", self.segment),
+            OutOfRange => write!(
+                f,
+                "The value of {} is outside the range of the domain.",
+                self.segment
+            ),
         }
     }
 }
@@ -88,9 +94,17 @@ impl FromStr for NaiveYear {
             return Err(datetime_error!(Year, NotEnoughDigits));
         }
 
-        s.parse()
+        let ret = s
+            .parse()
             .map(Self)
-            .map_err(|err| datetime_error!(Year, FailedToParseInt(err)))
+            .map_err(|err| datetime_error!(Year, FailedToParseInt(err)))?;
+        if ret.0 == 0 {
+            // '0000' is not allowed in XML Schema v1.0.
+            // '0000' is allowed in v1.1, but since only v1.0 is supported currently,
+            // this is not an issue.
+            return Err(datetime_error!(Year, OutOfRange));
+        }
+        Ok(ret)
     }
 }
 
@@ -203,6 +217,160 @@ impl FromStr for GYear {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct NaiveMonth(u8);
+
+impl std::fmt::Display for NaiveMonth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:02}", self.0)
+    }
+}
+
+impl FromStr for NaiveMonth {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let ret = s
+            .parse()
+            .map(Self)
+            .map_err(|err| datetime_error!(Month, FailedToParseInt(err)))?;
+        if s.starts_with('+') {
+            Err(datetime_error!(Month, InvalidFormat))
+        } else if s.len() < 2 {
+            Err(datetime_error!(Month, NotEnoughDigits))
+        } else if !(1..=12).contains(&ret.0) {
+            Err(datetime_error!(Month, OutOfRange))
+        } else {
+            Ok(ret)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GMonth {
+    month: NaiveMonth,
+    tz: Option<TimeZone>,
+}
+
+impl PartialOrd for GMonth {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self.tz, other.tz) {
+            (Some(stz), Some(otz)) => match self.month.cmp(&other.month) {
+                std::cmp::Ordering::Equal => Some(stz.cmp(&otz)),
+                cmp => Some(cmp),
+            },
+            (None, None) => self.month.partial_cmp(&other.month),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for GMonth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.month)?;
+        if let Some(tz) = self.tz.as_ref() {
+            write!(f, "{}", tz)?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for GMonth {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(sep) = s.bytes().position(|b| !b.is_ascii_digit()) {
+            let (month, tz) = s.split_at(sep);
+            Ok(Self {
+                month: month.parse()?,
+                tz: Some(tz.parse()?),
+            })
+        } else {
+            Ok(Self {
+                month: s.parse()?,
+                tz: None,
+            })
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct NaiveDay(u8);
+
+impl std::fmt::Display for NaiveDay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:02}", self.0)
+    }
+}
+
+impl FromStr for NaiveDay {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let ret = s
+            .parse()
+            .map(Self)
+            .map_err(|err| datetime_error!(Day, FailedToParseInt(err)))?;
+        if s.starts_with('+') {
+            Err(datetime_error!(Day, InvalidFormat))
+        } else if s.len() < 2 {
+            Err(datetime_error!(Day, NotEnoughDigits))
+        } else if !(1..=31).contains(&ret.0) {
+            Err(datetime_error!(Day, OutOfRange))
+        } else {
+            Ok(ret)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GDay {
+    day: NaiveDay,
+    tz: Option<TimeZone>,
+}
+
+impl PartialOrd for GDay {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self.tz, other.tz) {
+            (Some(stz), Some(otz)) => match self.day.cmp(&other.day) {
+                std::cmp::Ordering::Equal => Some(stz.cmp(&otz)),
+                cmp => Some(cmp),
+            },
+            (None, None) => self.day.partial_cmp(&other.day),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for GDay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.day)?;
+        if let Some(tz) = self.tz.as_ref() {
+            write!(f, "{}", tz)?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for GDay {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(sep) = s.bytes().position(|b| !b.is_ascii_digit()) {
+            let (day, tz) = s.split_at(sep);
+            Ok(Self {
+                day: day.parse()?,
+                tz: Some(tz.parse()?),
+            })
+        } else {
+            Ok(Self {
+                day: s.parse()?,
+                tz: None,
+            })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,6 +397,9 @@ mod tests {
         assert!("-231999+09:00".parse::<GYear>().is_ok());
         assert!("-231999-09:00".parse::<GYear>().is_ok());
 
+        // '0000' is not allowed.
+        assert!("0000".parse::<GYear>().is_err());
+        assert!("0000+09:00".parse::<GYear>().is_err());
         // Too large year
         assert!(
             "1000000000000000000000000000000000000000"
