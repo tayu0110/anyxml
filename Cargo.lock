@@ -77,6 +77,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyxml-datetime"
+version = "0.1.0"
+
+[[package]]
 name = "anyxml-uri"
 version = "0.1.6"
 
