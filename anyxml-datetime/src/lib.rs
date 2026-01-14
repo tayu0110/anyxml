@@ -77,37 +77,6 @@ macro_rules! datetime_error {
     }};
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct NaiveYear(i128);
-
-impl std::fmt::Display for NaiveYear {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:04}", self.0)
-    }
-}
-
-impl FromStr for NaiveYear {
-    type Err = DateTimeError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() < 4 + s.starts_with('-') as usize {
-            return Err(datetime_error!(Year, NotEnoughDigits));
-        }
-
-        let ret = s
-            .parse()
-            .map(Self)
-            .map_err(|err| datetime_error!(Year, FailedToParseInt(err)))?;
-        if ret.0 == 0 {
-            // '0000' is not allowed in XML Schema v1.0.
-            // '0000' is allowed in v1.1, but since only v1.0 is supported currently,
-            // this is not an issue.
-            return Err(datetime_error!(Year, OutOfRange));
-        }
-        Ok(ret)
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TimeZone(i8, u8);
 
@@ -165,6 +134,37 @@ impl FromStr for TimeZone {
         } else {
             Ok(Self(hour, minute))
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct NaiveYear(i128);
+
+impl std::fmt::Display for NaiveYear {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:04}", self.0)
+    }
+}
+
+impl FromStr for NaiveYear {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() < 4 + s.starts_with('-') as usize {
+            return Err(datetime_error!(Year, NotEnoughDigits));
+        }
+
+        let ret = s
+            .parse()
+            .map(Self)
+            .map_err(|err| datetime_error!(Year, FailedToParseInt(err)))?;
+        if ret.0 == 0 {
+            // '0000' is not allowed in XML Schema v1.0.
+            // '0000' is allowed in v1.1, but since only v1.0 is supported currently,
+            // this is not an issue.
+            return Err(datetime_error!(Year, OutOfRange));
+        }
+        Ok(ret)
     }
 }
 
@@ -365,6 +365,88 @@ impl FromStr for GDay {
         } else {
             Ok(Self {
                 day: s.parse()?,
+                tz: None,
+            })
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct NaiveYearMonth {
+    year: NaiveYear,
+    month: NaiveMonth,
+}
+
+impl std::fmt::Display for NaiveYearMonth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}-{}", self.year, self.month)
+    }
+}
+
+impl FromStr for NaiveYearMonth {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (year, month) = s
+            .rsplit_once('-')
+            .ok_or(datetime_error!(Month, InvalidFormat))?;
+        Ok(Self {
+            year: year.parse()?,
+            month: month.parse()?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GYearMonth {
+    ym: NaiveYearMonth,
+    tz: Option<TimeZone>,
+}
+
+impl PartialOrd for GYearMonth {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self.tz, other.tz) {
+            (Some(stz), Some(otz)) => match self.ym.cmp(&other.ym) {
+                std::cmp::Ordering::Equal => Some(stz.cmp(&otz)),
+                cmp => Some(cmp),
+            },
+            (None, None) => self.ym.partial_cmp(&other.ym),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for GYearMonth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.ym)?;
+        if let Some(tz) = self.tz.as_ref() {
+            write!(f, "{}", tz)?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for GYearMonth {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() < 8 {
+            // CCYY-MMZ
+            Err(datetime_error!(Year, InvalidFormat))
+        } else if s.ends_with('Z') {
+            let (ym, tz) = s.split_at(s.len() - 1);
+            Ok(Self {
+                ym: ym.parse()?,
+                tz: Some(tz.parse()?),
+            })
+        } else if let (ym, tz) = s.split_at(s.len() - 6)
+            && let Ok(tz) = tz.parse()
+            && let Ok(ym) = ym.parse()
+        {
+            Ok(Self { ym, tz: Some(tz) })
+        } else {
+            Ok(Self {
+                ym: s.parse()?,
                 tz: None,
             })
         }
