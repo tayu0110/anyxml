@@ -389,7 +389,7 @@ impl FromStr for NaiveYearMonth {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (year, month) = s
             .rsplit_once('-')
-            .ok_or(datetime_error!(Month, InvalidFormat))?;
+            .ok_or(datetime_error!(Year, InvalidFormat))?;
         Ok(Self {
             year: year.parse()?,
             month: month.parse()?,
@@ -447,6 +447,87 @@ impl FromStr for GYearMonth {
         } else {
             Ok(Self {
                 ym: s.parse()?,
+                tz: None,
+            })
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct NaiveMonthDay {
+    month: NaiveMonth,
+    day: NaiveDay,
+}
+
+impl std::fmt::Display for NaiveMonthDay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}-{}", self.month, self.day)
+    }
+}
+
+impl FromStr for NaiveMonthDay {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (month, day) = s
+            .split_once('-')
+            .ok_or(datetime_error!(Month, InvalidFormat))?;
+        Ok(Self {
+            month: month.parse()?,
+            day: day.parse()?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GMonthDay {
+    md: NaiveMonthDay,
+    tz: Option<TimeZone>,
+}
+
+impl PartialOrd for GMonthDay {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self.tz, other.tz) {
+            (Some(stz), Some(otz)) => match self.md.cmp(&other.md) {
+                std::cmp::Ordering::Equal => Some(stz.cmp(&otz)),
+                cmp => Some(cmp),
+            },
+            (None, None) => self.md.partial_cmp(&other.md),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for GMonthDay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.md)?;
+        if let Some(tz) = self.tz.as_ref() {
+            write!(f, "{}", tz)?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for GMonthDay {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() < 6 {
+            // MM-DDZ
+            Err(datetime_error!(Month, InvalidFormat))
+        } else if let Some(md) = s.strip_suffix('Z') {
+            Ok(Self {
+                md: md.parse()?,
+                tz: Some("Z".parse()?),
+            })
+        } else if let (md, tz) = s.split_at(s.len() - 6)
+            && let Ok(tz) = tz.parse()
+            && let Ok(md) = md.parse()
+        {
+            Ok(Self { md, tz: Some(tz) })
+        } else {
+            Ok(Self {
+                md: s.parse()?,
                 tz: None,
             })
         }
