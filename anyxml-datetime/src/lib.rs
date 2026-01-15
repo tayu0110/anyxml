@@ -430,8 +430,8 @@ impl FromStr for GYearMonth {
     type Err = DateTimeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() < 8 {
-            // CCYY-MMZ
+        if s.len() < 7 {
+            // CCYY-MM
             Err(datetime_error!(Year, InvalidFormat))
         } else if s.ends_with('Z') {
             let (ym, tz) = s.split_at(s.len() - 1);
@@ -512,15 +512,16 @@ impl FromStr for GMonthDay {
     type Err = DateTimeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() < 6 {
-            // MM-DDZ
+        if s.len() < 5 {
+            // MM-DD
             Err(datetime_error!(Month, InvalidFormat))
         } else if let Some(md) = s.strip_suffix('Z') {
             Ok(Self {
                 md: md.parse()?,
                 tz: Some("Z".parse()?),
             })
-        } else if let (md, tz) = s.split_at(s.len() - 6)
+        } else if s.len() >= 6
+            && let (md, tz) = s.split_at(s.len() - 6)
             && let Ok(tz) = tz.parse()
             && let Ok(md) = md.parse()
         {
@@ -528,6 +529,92 @@ impl FromStr for GMonthDay {
         } else {
             Ok(Self {
                 md: s.parse()?,
+                tz: None,
+            })
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct NaiveDate {
+    year: NaiveYear,
+    month: NaiveMonth,
+    day: NaiveDay,
+}
+
+impl std::fmt::Display for NaiveDate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}-{}-{}", self.year, self.month, self.day)
+    }
+}
+
+impl FromStr for NaiveDate {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (ym, day) = s
+            .rsplit_once('-')
+            .ok_or(datetime_error!(Month, InvalidFormat))?;
+        let (year, month) = ym
+            .rsplit_once('-')
+            .ok_or(datetime_error!(Year, InvalidFormat))?;
+        Ok(Self {
+            year: year.parse()?,
+            month: month.parse()?,
+            day: day.parse()?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Date {
+    ymd: NaiveDate,
+    tz: Option<TimeZone>,
+}
+
+impl PartialOrd for Date {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self.tz, other.tz) {
+            (Some(stz), Some(otz)) => match self.ymd.cmp(&other.ymd) {
+                std::cmp::Ordering::Equal => Some(stz.cmp(&otz)),
+                cmp => Some(cmp),
+            },
+            (None, None) => self.ymd.partial_cmp(&other.ymd),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for Date {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.ymd)?;
+        if let Some(tz) = self.tz.as_ref() {
+            write!(f, "{}", tz)?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for Date {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() < 10 {
+            // CCYY-MM-DD
+            Err(datetime_error!(Month, InvalidFormat))
+        } else if let Some(ymd) = s.strip_suffix('Z') {
+            Ok(Self {
+                ymd: ymd.parse()?,
+                tz: Some("Z".parse()?),
+            })
+        } else if let (ymd, tz) = s.split_at(s.len() - 6)
+            && let Ok(tz) = tz.parse()
+            && let Ok(ymd) = ymd.parse()
+        {
+            Ok(Self { ymd, tz: Some(tz) })
+        } else {
+            Ok(Self {
+                ymd: s.parse()?,
                 tz: None,
             })
         }
