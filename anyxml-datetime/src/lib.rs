@@ -137,6 +137,8 @@ impl FromStr for TimeZone {
     }
 }
 
+const NUM_OF_DAYS_IN_A_MONTH: [u8; 13] = [0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct NaiveYear(i128);
 
@@ -150,6 +152,9 @@ impl FromStr for NaiveYear {
     type Err = DateTimeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.starts_with('+') {
+            return Err(datetime_error!(Year, InvalidFormat));
+        }
         if s.len() < 4 + s.starts_with('-') as usize {
             return Err(datetime_error!(Year, NotEnoughDigits));
         }
@@ -472,10 +477,14 @@ impl FromStr for NaiveMonthDay {
         let (month, day) = s
             .split_once('-')
             .ok_or(datetime_error!(Month, InvalidFormat))?;
-        Ok(Self {
+        let ret = Self {
             month: month.parse()?,
             day: day.parse()?,
-        })
+        };
+        if NUM_OF_DAYS_IN_A_MONTH[ret.month.0 as usize] < ret.day.0 {
+            return Err(datetime_error!(Day, TooLarge));
+        }
+        Ok(ret)
     }
 }
 
@@ -552,16 +561,24 @@ impl FromStr for NaiveDate {
     type Err = DateTimeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (ym, day) = s
-            .rsplit_once('-')
-            .ok_or(datetime_error!(Month, InvalidFormat))?;
-        let (year, month) = ym
-            .rsplit_once('-')
+        let len = s.len();
+        if len < 10 {
+            // CCYY-MM-DD
+            return Err(datetime_error!(Year, InvalidFormat));
+        }
+        let (year, md) = s.split_at(len - 5);
+        let md = md.parse::<NaiveMonthDay>()?;
+        let year = year
+            .strip_suffix('-')
             .ok_or(datetime_error!(Year, InvalidFormat))?;
+        let year = year.parse::<NaiveYear>()?;
+        if !is_leap(year) && md.month.0 == 2 && md.day.0 == 29 {
+            return Err(datetime_error!(Day, TooLarge));
+        }
         Ok(Self {
-            year: year.parse()?,
-            month: month.parse()?,
-            day: day.parse()?,
+            year,
+            month: md.month,
+            day: md.day,
         })
     }
 }
@@ -621,6 +638,10 @@ impl FromStr for Date {
     }
 }
 
+fn is_leap(year: NaiveYear) -> bool {
+    year.0 % 400 == 0 || (year.0 % 100 != 0 && year.0 % 4 == 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -629,6 +650,8 @@ mod tests {
     fn gyear_parse_test() {
         assert!("1999".parse::<GYear>().is_ok());
         assert!("-1999".parse::<GYear>().is_ok());
+        assert!("1999Z".parse::<GYear>().is_ok());
+        assert!("-1999Z".parse::<GYear>().is_ok());
         assert!("1999+09:00".parse::<GYear>().is_ok());
         assert!("1999-09:00".parse::<GYear>().is_ok());
         assert!("-1999+09:00".parse::<GYear>().is_ok());
@@ -667,6 +690,7 @@ mod tests {
         assert!("1999+12:000".parse::<GYear>().is_err());
         assert!("1999+012:00".parse::<GYear>().is_err());
         // unallowed positive sign
+        assert!("+1999".parse::<GYear>().is_err());
         assert!("+1999+09:00".parse::<GYear>().is_err());
         // Too large timezone
         assert!("1999+15:00".parse::<GYear>().is_err());
@@ -676,5 +700,132 @@ mod tests {
         assert!("1999+14:01".parse::<GYear>().is_err());
         // Too small timezone (edge case)
         assert!("1999-14:01".parse::<GYear>().is_err());
+    }
+
+    #[test]
+    fn gmonth_parse_test() {
+        assert!("12".parse::<GMonth>().is_ok());
+        assert!("12Z".parse::<GMonth>().is_ok());
+        assert!("12+09:00".parse::<GMonth>().is_ok());
+        assert!("12-09:00".parse::<GMonth>().is_ok());
+
+        // '00' is not allowed.
+        assert!("00".parse::<GMonth>().is_err());
+        assert!("00+09:00".parse::<GMonth>().is_err());
+        // Too large month
+        assert!("13".parse::<GMonth>().is_err());
+        // invalid timezone
+        assert!("12+12:60".parse::<GMonth>().is_err());
+        assert!("12+12:000".parse::<GMonth>().is_err());
+        assert!("12+012:00".parse::<GMonth>().is_err());
+        // unallowed positive sign
+        assert!("+12+09:00".parse::<GMonth>().is_err());
+        // unallowed negative sign
+        assert!("-12+09:00".parse::<GMonth>().is_err());
+    }
+
+    #[test]
+    fn gday_parse_test() {
+        assert!("08".parse::<GDay>().is_ok());
+        assert!("08Z".parse::<GDay>().is_ok());
+        assert!("08+09:00".parse::<GDay>().is_ok());
+        assert!("08-09:00".parse::<GDay>().is_ok());
+
+        // '00' is not allowed.
+        assert!("00".parse::<GDay>().is_err());
+        assert!("00+09:00".parse::<GDay>().is_err());
+        // Too large day
+        assert!("32".parse::<GDay>().is_err());
+        // invalid timezone
+        assert!("12+12:60".parse::<GDay>().is_err());
+        assert!("12+12:000".parse::<GDay>().is_err());
+        assert!("12+012:00".parse::<GDay>().is_err());
+        // unallowed positive sign
+        assert!("+12+09:00".parse::<GDay>().is_err());
+        // unallowed negative sign
+        assert!("-12+09:00".parse::<GDay>().is_err());
+    }
+
+    #[test]
+    fn gyearmonth_parse_test() {
+        assert!("2015-05".parse::<GYearMonth>().is_ok());
+        assert!("2015-05Z".parse::<GYearMonth>().is_ok());
+        assert!("2015-05+09:00".parse::<GYearMonth>().is_ok());
+        assert!("2015-05-09:00".parse::<GYearMonth>().is_ok());
+        assert!("-0660-02+09:00".parse::<GYearMonth>().is_ok());
+        assert!("-0660-02-09:00".parse::<GYearMonth>().is_ok());
+
+        // invalid timezone
+        assert!("2015-05+12:60".parse::<GYearMonth>().is_err());
+        assert!("2015-05+12:000".parse::<GYearMonth>().is_err());
+        assert!("2025-05+012:00".parse::<GYearMonth>().is_err());
+        // unallowed positive sign
+        assert!("+2015-05+09:00".parse::<GYearMonth>().is_err());
+    }
+
+    #[test]
+    fn gmonthday_parse_test() {
+        assert!("05-15".parse::<GMonthDay>().is_ok());
+        assert!("05-15Z".parse::<GMonthDay>().is_ok());
+        assert!("05-15+09:00".parse::<GMonthDay>().is_ok());
+        assert!("05-15-09:00".parse::<GMonthDay>().is_ok());
+        assert!("02-11+09:00".parse::<GMonthDay>().is_ok());
+        assert!("02-11-09:00".parse::<GMonthDay>().is_ok());
+        // edge case
+        assert!("01-31".parse::<GMonthDay>().is_ok());
+        assert!("02-29".parse::<GMonthDay>().is_ok());
+        assert!("03-31".parse::<GMonthDay>().is_ok());
+        assert!("04-30".parse::<GMonthDay>().is_ok());
+        assert!("05-31".parse::<GMonthDay>().is_ok());
+        assert!("06-30".parse::<GMonthDay>().is_ok());
+        assert!("07-31".parse::<GMonthDay>().is_ok());
+        assert!("08-31".parse::<GMonthDay>().is_ok());
+        assert!("09-30".parse::<GMonthDay>().is_ok());
+        assert!("10-31".parse::<GMonthDay>().is_ok());
+        assert!("11-30".parse::<GMonthDay>().is_ok());
+        assert!("12-31".parse::<GMonthDay>().is_ok());
+
+        // invalid timezone
+        assert!("05-15+12:60".parse::<GMonthDay>().is_err());
+        assert!("05-15+12:000".parse::<GMonthDay>().is_err());
+        assert!("05-15+012:00".parse::<GMonthDay>().is_err());
+        // unallowed positive sign
+        assert!("+05-15+09:00".parse::<GMonthDay>().is_err());
+        // out of range
+        assert!("01-32".parse::<GMonthDay>().is_err());
+        assert!("02-30".parse::<GMonthDay>().is_err());
+        assert!("03-32".parse::<GMonthDay>().is_err());
+        assert!("04-31".parse::<GMonthDay>().is_err());
+        assert!("05-32".parse::<GMonthDay>().is_err());
+        assert!("06-31".parse::<GMonthDay>().is_err());
+        assert!("07-32".parse::<GMonthDay>().is_err());
+        assert!("08-32".parse::<GMonthDay>().is_err());
+        assert!("09-31".parse::<GMonthDay>().is_err());
+        assert!("10-32".parse::<GMonthDay>().is_err());
+        assert!("11-31".parse::<GMonthDay>().is_err());
+        assert!("12-32".parse::<GMonthDay>().is_err());
+    }
+
+    #[test]
+    fn date_parse_test() {
+        assert!("2015-05-15".parse::<Date>().is_ok());
+        assert!("2015-05-15Z".parse::<Date>().is_ok());
+        assert!("2015-05-15+09:00".parse::<Date>().is_ok());
+        assert!("2015-05-15-09:00".parse::<Date>().is_ok());
+        assert!("-0660-02-11+09:00".parse::<Date>().is_ok());
+        assert!("-0660-02-11-09:00".parse::<Date>().is_ok());
+        // leap year
+        assert!("2024-02-29".parse::<Date>().is_ok());
+        assert!("2000-02-29".parse::<Date>().is_ok());
+
+        // invalid timezone
+        assert!("2015-05-15+12:60".parse::<Date>().is_err());
+        assert!("2015-05-15+12:000".parse::<Date>().is_err());
+        assert!("2015-05-15+012:00".parse::<Date>().is_err());
+        // unallowed positive sign
+        assert!("+2015-05-15+09:00".parse::<Date>().is_err());
+        // non-leap year
+        assert!("2015-02-29".parse::<Date>().is_err());
+        assert!("1900-02-29".parse::<Date>().is_err());
     }
 }
