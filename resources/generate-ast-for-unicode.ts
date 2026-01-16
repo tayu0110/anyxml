@@ -1,6 +1,6 @@
 /// usage: deno run -A resources/generate-ast-for-unicode.ts | rustfmt > tmp.rs
 
-import * as path from "jsr:@std/path";
+import * as path from "jsr:@std/path@1.1.0";
 
 const UNICODE_DATA_TXT: string =
     "https://www.unicode.org/Public/UCD/latest/ucd/UnicodeData.txt";
