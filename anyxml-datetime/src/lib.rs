@@ -809,6 +809,113 @@ impl FromStr for Time {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct NaiveDateTime {
+    date: NaiveDate,
+    time: NaiveTime,
+}
+
+impl std::fmt::Display for NaiveDateTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}T{}", self.date, self.time)
+    }
+}
+
+impl FromStr for NaiveDateTime {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() < 19 {
+            // CCYY-MM-DDThh:mm:ss
+            return Err(datetime_error!(Year, InvalidFormat));
+        }
+
+        let (date, time) = s
+            .split_once('T')
+            .ok_or(datetime_error!(Year, InvalidFormat))?;
+        let ret = Self {
+            date: date.parse()?,
+            time: time.parse()?,
+        };
+
+        if ret.time.second == 60 {
+            // leap second (insertion)
+            if let Ok(year) = u16::try_from(ret.date.year.0)
+                && INSERTED_LEAPSECONDS
+                    .binary_search(&(year, ret.date.month.0, ret.date.day.0))
+                    .is_err()
+            {
+                return Err(datetime_error!(Second, OutOfRange));
+            }
+        } else if ret.time.second == 59 {
+            // leap second (removal)
+            if let Ok(year) = u16::try_from(ret.date.year.0)
+                && REMOVED_LEAPSECONDS
+                    .binary_search(&(year, ret.date.month.0, ret.date.day.0))
+                    .is_ok()
+            {
+                return Err(datetime_error!(Second, OutOfRange));
+            }
+        }
+
+        Ok(ret)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DateTime {
+    datetime: NaiveDateTime,
+    tz: Option<TimeZone>,
+}
+
+impl PartialOrd for DateTime {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self.tz, other.tz) {
+            (Some(stz), Some(otz)) => match self.datetime.cmp(&other.datetime) {
+                std::cmp::Ordering::Equal => Some(stz.cmp(&otz)),
+                cmp => Some(cmp),
+            },
+            (None, None) => self.datetime.partial_cmp(&other.datetime),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for DateTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.datetime)?;
+        if let Some(tz) = self.tz.as_ref() {
+            write!(f, "{}", tz)?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for DateTime {
+    type Err = DateTimeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(datetime) = s.strip_suffix('Z') {
+            Ok(Self {
+                datetime: datetime.parse()?,
+                tz: Some("Z".parse()?),
+            })
+        } else if s.len() >= 25 && matches!(s.as_bytes()[s.len() - 6], b'+' | b'-') {
+            // CCYY-MM-DDThh:mm:ss+zz:zz
+            let (datetime, tz) = s.split_at(s.len() - 6);
+            Ok(Self {
+                datetime: datetime.parse()?,
+                tz: Some(tz.parse()?),
+            })
+        } else {
+            Ok(Self {
+                datetime: s.parse()?,
+                tz: None,
+            })
+        }
+    }
+}
+
 fn is_leap(year: NaiveYear) -> bool {
     year.0 % 400 == 0 || (year.0 % 100 != 0 && year.0 % 4 == 0)
 }
