@@ -50,6 +50,7 @@ pub enum ErrorKind {
     InvalidFormat,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DateTimeError {
     segment: ErrorSegment,
     kind: ErrorKind,
@@ -75,6 +76,8 @@ impl std::fmt::Display for DateTimeError {
         }
     }
 }
+
+impl std::error::Error for DateTimeError {}
 
 macro_rules! datetime_error {
     ( $segment:ident, $kind:expr ) => {{
@@ -125,7 +128,11 @@ impl FromStr for TimeZone {
         let (hour, minute) = s
             .split_once(':')
             .ok_or(datetime_error!(TimeZone, InvalidFormat))?;
-        if !hour.starts_with(['+', '-']) || hour.len() != 3 || minute.len() != 2 {
+        if !hour.starts_with(['+', '-'])
+            || hour.len() != 3
+            || minute.len() != 2
+            || minute.starts_with(['+', '-'])
+        {
             return Err(datetime_error!(TimeZone, InvalidFormat))?;
         }
         let hour = hour
@@ -1105,5 +1112,62 @@ mod tests {
         // non-leap year
         assert!("2015-02-29".parse::<Date>().is_err());
         assert!("1900-02-29".parse::<Date>().is_err());
+    }
+
+    #[test]
+    fn time_parse_test() {
+        assert!("00:00:00".parse::<Time>().is_ok());
+        assert!("12:00:00".parse::<Time>().is_ok());
+        // 24:00:00 is allowed
+        assert!("24:00:00".parse::<Time>().is_ok());
+        // leap second (inserted)
+        assert!("23:59:60".parse::<Time>().is_ok());
+        assert!("12:30:00Z".parse::<Time>().is_ok());
+        assert!("12:00:30+09:00".parse::<Time>().is_ok());
+        assert!("12:15:15-09:00".parse::<Time>().is_ok());
+
+        assert!("25:00:00".parse::<Time>().is_err());
+        assert!("12:60:00".parse::<Time>().is_err());
+        assert!("09:00:60".parse::<Time>().is_err());
+        assert!("9:00:00".parse::<Time>().is_err());
+        assert!("+09:00:00".parse::<Time>().is_err());
+        assert!("-09:00:00".parse::<Time>().is_err());
+        assert!("+9:00:00".parse::<Time>().is_err());
+        assert!("-9:00:00".parse::<Time>().is_err());
+        assert!("09:+0:00".parse::<Time>().is_err());
+        assert!("09:-0:00".parse::<Time>().is_err());
+        assert!("09:00:+0".parse::<Time>().is_err());
+        assert!("09:00:-0".parse::<Time>().is_err());
+        assert!("09:00:00++1:00".parse::<Time>().is_err());
+        assert!("09:00:00+-1:00".parse::<Time>().is_err());
+        assert!("09:00:00-+1:00".parse::<Time>().is_err());
+        assert!("09:00:00--1:00".parse::<Time>().is_err());
+        assert!("09:00:00+01:+0".parse::<Time>().is_err());
+        assert!("09:00:00+01:-0".parse::<Time>().is_err());
+        // unallowed positive sign
+        assert!("+09:00:10".parse::<Time>().is_err());
+        // unallowed negative sign
+        assert!("-09:00:10".parse::<Time>().is_err());
+        // invalid leap second
+        assert!("23:00:60".parse::<Time>().is_err());
+        // '24' is not allowed as hour other than '24:00:00'
+        assert!("24:00:01".parse::<Time>().is_err());
+    }
+
+    #[test]
+    fn datetime_parse_test() {
+        assert!("2000-01-20T12:00:00-13:00".parse::<DateTime>().is_ok());
+        assert!("2000-01-20T12:00:00Z".parse::<DateTime>().is_ok());
+        assert!("2000-01-12T12:13:14Z".parse::<DateTime>().is_ok());
+        assert!("-0660-02-11T00:00:00+09:00".parse::<DateTime>().is_ok());
+
+        assert!("+2000-01-20T12:00:00-13:00".parse::<DateTime>().is_err());
+        assert!("2000-01-20t12:00:00-13:00".parse::<DateTime>().is_err());
+        assert!("2000-+1-20T12:00:00-13:00".parse::<DateTime>().is_err());
+        assert!("+000-01-20T12:00:00-13:00".parse::<DateTime>().is_err());
+        assert!("0000-01-20T12:00:00-13:00".parse::<DateTime>().is_err());
+        assert!("2000-01-2012:00:00-13:00".parse::<DateTime>().is_err());
+        assert!("2000001-20T12:00:00-13:00".parse::<DateTime>().is_err());
+        assert!("2000-01-20T-12:00".parse::<DateTime>().is_err());
     }
 }
