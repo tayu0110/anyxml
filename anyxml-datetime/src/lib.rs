@@ -251,7 +251,7 @@ impl Default for NaiveYear {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct GYear {
     year: NaiveYear,
     tz: Option<TimeZone>,
@@ -335,7 +335,7 @@ impl Default for NaiveMonth {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct GMonth {
     month: NaiveMonth,
     tz: Option<TimeZone>,
@@ -418,7 +418,7 @@ impl Default for NaiveDay {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct GDay {
     day: NaiveDay,
     tz: Option<TimeZone>,
@@ -426,14 +426,37 @@ pub struct GDay {
 
 impl PartialOrd for GDay {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match (self.tz, other.tz) {
-            (Some(stz), Some(otz)) => match self.day.cmp(&other.day) {
-                std::cmp::Ordering::Equal => Some(stz.cmp(&otz)),
-                cmp => Some(cmp),
+        let year = NaiveYear(2015);
+        // This must be any month with 31 days.
+        let month = NaiveMonth(5);
+        let time = NaiveTime {
+            hour: 0,
+            minute: 0,
+            nanosecond: 0,
+        };
+
+        DateTime {
+            datetime: NaiveDateTime {
+                date: NaiveDate {
+                    year,
+                    month,
+                    day: self.day,
+                },
+                time,
             },
-            (None, None) => self.day.partial_cmp(&other.day),
-            _ => None,
+            tz: self.tz,
         }
+        .partial_cmp(&DateTime {
+            datetime: NaiveDateTime {
+                date: NaiveDate {
+                    year,
+                    month,
+                    day: other.day,
+                },
+                time,
+            },
+            tz: other.tz,
+        })
     }
 }
 
@@ -492,7 +515,7 @@ impl FromStr for NaiveYearMonth {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct GYearMonth {
     ym: NaiveYearMonth,
     tz: Option<TimeZone>,
@@ -578,7 +601,7 @@ impl FromStr for NaiveMonthDay {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct GMonthDay {
     md: NaiveMonthDay,
     tz: Option<TimeZone>,
@@ -586,14 +609,36 @@ pub struct GMonthDay {
 
 impl PartialOrd for GMonthDay {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match (self.tz, other.tz) {
-            (Some(stz), Some(otz)) => match self.md.cmp(&other.md) {
-                std::cmp::Ordering::Equal => Some(stz.cmp(&otz)),
-                cmp => Some(cmp),
+        // This must be an arbitrary leap year.
+        let year = NaiveYear(2000);
+        let time = NaiveTime {
+            hour: 0,
+            minute: 0,
+            nanosecond: 0,
+        };
+
+        DateTime {
+            datetime: NaiveDateTime {
+                date: NaiveDate {
+                    year,
+                    month: self.md.month,
+                    day: self.md.day,
+                },
+                time,
             },
-            (None, None) => self.md.partial_cmp(&other.md),
-            _ => None,
+            tz: self.tz,
         }
+        .partial_cmp(&DateTime {
+            datetime: NaiveDateTime {
+                date: NaiveDate {
+                    year,
+                    month: other.md.month,
+                    day: other.md.day,
+                },
+                time,
+            },
+            tz: other.tz,
+        })
     }
 }
 
@@ -673,7 +718,7 @@ impl FromStr for NaiveDate {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct Date {
     ymd: NaiveDate,
     tz: Option<TimeZone>,
@@ -681,14 +726,25 @@ pub struct Date {
 
 impl PartialOrd for Date {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match (self.tz, other.tz) {
-            (Some(stz), Some(otz)) => match self.ymd.cmp(&other.ymd) {
-                std::cmp::Ordering::Equal => Some(stz.cmp(&otz)),
-                cmp => Some(cmp),
+        let time = NaiveTime {
+            hour: 0,
+            minute: 0,
+            nanosecond: 0,
+        };
+        DateTime {
+            datetime: NaiveDateTime {
+                date: self.ymd,
+                time,
             },
-            (None, None) => self.ymd.partial_cmp(&other.ymd),
-            _ => None,
+            tz: self.tz,
         }
+        .partial_cmp(&DateTime {
+            datetime: NaiveDateTime {
+                date: other.ymd,
+                time,
+            },
+            tz: other.tz,
+        })
     }
 }
 
@@ -831,7 +887,7 @@ impl FromStr for NaiveTime {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct Time {
     time: NaiveTime,
     tz: Option<TimeZone>,
@@ -839,14 +895,26 @@ pub struct Time {
 
 impl PartialOrd for Time {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match (self.tz, other.tz) {
-            (Some(stz), Some(otz)) => match self.time.cmp(&other.time) {
-                std::cmp::Ordering::Equal => Some(stz.cmp(&otz)),
-                cmp => Some(cmp),
+        let date = NaiveDate {
+            year: NaiveYear(2015),
+            month: NaiveMonth(5),
+            day: NaiveDay(15),
+        };
+
+        DateTime {
+            datetime: NaiveDateTime {
+                date,
+                time: self.time,
             },
-            (None, None) => self.time.partial_cmp(&other.time),
-            _ => None,
+            tz: self.tz,
         }
+        .partial_cmp(&DateTime {
+            datetime: NaiveDateTime {
+                date,
+                time: other.time,
+            },
+            tz: other.tz,
+        })
     }
 }
 
@@ -1362,12 +1430,6 @@ impl PartialOrd for DateTime {
     }
 }
 
-impl PartialEq for DateTime {
-    fn eq(&self, other: &Self) -> bool {
-        self.partial_cmp(other).is_some_and(|ret| ret.is_eq())
-    }
-}
-
 impl std::fmt::Display for DateTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.datetime)?;
@@ -1474,12 +1536,6 @@ impl PartialOrd for Duration {
         let ret2 = (BASELINE[2] + *self).partial_cmp(&(BASELINE[2] + *other))?;
         let ret3 = (BASELINE[3] + *self).partial_cmp(&(BASELINE[3] + *other))?;
         (ret0 == ret1 && ret0 == ret2 && ret0 == ret3).then_some(ret0)
-    }
-}
-
-impl PartialEq for Duration {
-    fn eq(&self, other: &Self) -> bool {
-        self.partial_cmp(other).is_some_and(|ret| ret.is_eq())
     }
 }
 
@@ -1633,6 +1689,21 @@ impl FromStr for Duration {
 fn is_leap(year: NaiveYear) -> bool {
     year.0 % 400 == 0 || (year.0 % 100 != 0 && year.0 % 4 == 0)
 }
+
+macro_rules! impl_partial_eq_for_datetime_objects {
+    ( $( $t:ty ),* ) => {
+        $(
+            impl PartialEq for $t {
+                fn eq(&self, other: &Self) -> bool {
+                    self.partial_cmp(other).is_some_and(|ret| ret.is_eq())
+                }
+            }
+        )*
+    };
+}
+impl_partial_eq_for_datetime_objects!(
+    Duration, DateTime, Time, Date, GYearMonth, GYear, GMonthDay, GDay, GMonth
+);
 
 /// If overflow occurs, return [`None`].
 ///
