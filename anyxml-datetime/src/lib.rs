@@ -165,6 +165,24 @@ const NUM_OF_DAYS_IN_A_MONTH: [u8; 13] = [0, 31, 29, 31, 30, 31, 30, 31, 31, 30,
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct NaiveYear(i128);
 
+impl NaiveYear {
+    fn checked_add(&self, rhs: i128) -> Option<Self> {
+        let mut ret = self.0.checked_add(rhs)?;
+        if ret == 0 {
+            ret = 1;
+        }
+        Some(Self(ret))
+    }
+
+    fn checked_sub(&self, rhs: i128) -> Option<Self> {
+        let mut ret = self.0.checked_sub(rhs)?;
+        if ret == 0 {
+            ret = -1;
+        }
+        Some(Self(ret))
+    }
+}
+
 impl std::fmt::Display for NaiveYear {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:04}", self.0)
@@ -195,6 +213,43 @@ impl FromStr for NaiveYear {
         Ok(ret)
     }
 }
+
+macro_rules! impl_add_for_naive_year {
+    ( $( $t:ty ),* ) => {
+        $(
+            impl Add<$t> for NaiveYear {
+                type Output = NaiveYear;
+
+                fn add(self, rhs: $t) -> Self::Output {
+                    let mut ret = self.0 + rhs as i128;
+                    if ret == 0 {
+                        ret += 1;
+                    }
+                    Self(ret)
+                }
+            }
+        )*
+    };
+}
+impl_add_for_naive_year!(i8, u8, i16, u16, i32, u32, i64, u64, i128);
+macro_rules! impl_sub_for_naive_year {
+    ( $( $t:ty ),* ) => {
+        $(
+            impl Sub<$t> for NaiveYear {
+                type Output = NaiveYear;
+
+                fn sub(self, rhs: $t) -> Self::Output {
+                    let mut ret = self.0 - rhs as i128;
+                    if ret == 0 {
+                        ret -= 1;
+                    }
+                    Self(ret)
+                }
+            }
+        )*
+    };
+}
+impl_sub_for_naive_year!(i8, u8, i16, u16, i32, u32, i64, u64, i128);
 
 impl Default for NaiveYear {
     fn default() -> Self {
@@ -922,11 +977,10 @@ impl DateTime {
 
         // Years (may be modified additionally below)
         //  - E[year]   := S[year] + D[year] + carry
-        ret.datetime.date.year.0 = self
+        ret.datetime.date.year = self
             .datetime
             .date
             .year
-            .0
             .checked_add(rhs.year.map(|y| y.get()).unwrap_or(0) as i128)?
             .checked_add(carry as i128)?;
 
@@ -1007,29 +1061,26 @@ impl DateTime {
         //
         // First, advance the year in units of 365*400+100-4+1 days.
         const NUM_OF_DAYS_OVER_400YEARS: u64 = 365 * 400 + 100 - 4 + 1;
-        ret.datetime.date.year.0 = ret
+        ret.datetime.date.year = ret
             .datetime
             .date
             .year
-            .0
             .checked_add((day / NUM_OF_DAYS_OVER_400YEARS) as i128)?;
         day %= NUM_OF_DAYS_OVER_400YEARS;
         // Next, advance the year in units of 100 years.
         const NUM_OF_DAYS_OVER_100YEARS: u64 = 365 * 100 + 25 - 1;
-        ret.datetime.date.year.0 = ret
+        ret.datetime.date.year = ret
             .datetime
             .date
             .year
-            .0
             .checked_add((day / NUM_OF_DAYS_OVER_100YEARS) as i128)?;
         day %= NUM_OF_DAYS_OVER_100YEARS;
         // Next, advance the year in units of 4 years.
         const NUM_OF_DAYS_OVER_4YEARS: u64 = 365 * 4 + 1;
-        ret.datetime.date.year.0 = ret
+        ret.datetime.date.year = ret
             .datetime
             .date
             .year
-            .0
             .checked_add((day / NUM_OF_DAYS_OVER_4YEARS) as i128)?;
         day %= NUM_OF_DAYS_OVER_4YEARS;
         // Finally, it is determined using a loop method.It should take no more than 50 iterations.
@@ -1053,11 +1104,10 @@ impl DateTime {
             };
 
             ret.datetime.date.month.0 = (temp - 1).rem_euclid(12) as u8 + 1;
-            ret.datetime.date.year.0 = ret
+            ret.datetime.date.year = ret
                 .datetime
                 .date
                 .year
-                .0
                 .checked_add((temp - 1).div_euclid(12) as i128)?;
         }
         ret.datetime.date.day.0 = day as u8;
@@ -1086,11 +1136,10 @@ impl DateTime {
 
         // Years (may be modified additionally below)
         //  - E[year]   := S[year] + D[year] + carry
-        ret.datetime.date.year.0 = self
+        ret.datetime.date.year = self
             .datetime
             .date
             .year
-            .0
             .checked_sub(rhs.year.map(|y| y.get()).unwrap_or(0) as i128)?
             .checked_add(carry)?;
 
@@ -1160,29 +1209,26 @@ impl DateTime {
         //
         // First, advance the year in units of 365*400+100-4+1 days.
         const NUM_OF_DAYS_OVER_400YEARS: i128 = 365 * 400 + 100 - 4 + 1;
-        ret.datetime.date.year.0 = ret
+        ret.datetime.date.year = ret
             .datetime
             .date
             .year
-            .0
             .checked_add(day / NUM_OF_DAYS_OVER_400YEARS)?;
         day %= NUM_OF_DAYS_OVER_400YEARS;
         // Next, advance the year in units of 100 years.
         const NUM_OF_DAYS_OVER_100YEARS: i128 = 365 * 100 + 25 - 1;
-        ret.datetime.date.year.0 = ret
+        ret.datetime.date.year = ret
             .datetime
             .date
             .year
-            .0
             .checked_add(day / NUM_OF_DAYS_OVER_100YEARS)?;
         day %= NUM_OF_DAYS_OVER_100YEARS;
         // Next, advance the year in units of 4 years.
         const NUM_OF_DAYS_OVER_4YEARS: i128 = 365 * 4 + 1;
-        ret.datetime.date.year.0 = ret
+        ret.datetime.date.year = ret
             .datetime
             .date
             .year
-            .0
             .checked_add(day / NUM_OF_DAYS_OVER_4YEARS)?;
         day %= NUM_OF_DAYS_OVER_4YEARS;
         // Finally, it is determined using a loop method.It should take no more than 50 iterations.
@@ -1206,11 +1252,10 @@ impl DateTime {
             };
 
             ret.datetime.date.month.0 = (temp - 1).rem_euclid(12) as u8 + 1;
-            ret.datetime.date.year.0 = ret
+            ret.datetime.date.year = ret
                 .datetime
                 .date
                 .year
-                .0
                 .checked_add((temp - 1).div_euclid(12) as i128)?;
         }
         ret.datetime.date.day.0 = day as u8;
