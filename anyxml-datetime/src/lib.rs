@@ -95,11 +95,12 @@ macro_rules! datetime_error {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct TimeZone(i16);
+pub struct TimeZone(i16);
 
 impl TimeZone {
     const MIN: Self = Self(-14 * 60);
     const MAX: Self = Self(14 * 60);
+    const UTC: Self = Self(0);
 }
 
 impl std::fmt::Display for TimeZone {
@@ -944,6 +945,37 @@ pub struct DateTime {
 }
 
 impl DateTime {
+    /// # Safety
+    /// The datetime must be valid.
+    ///
+    /// Note that some values may be calculated assuming a strictly limited range,
+    /// which could lead to unexpected results.
+    pub const unsafe fn new_unchecked(
+        year: i128,
+        month: u8,
+        day: u8,
+        hour: u8,
+        minute: u8,
+        nanosecond: u64,
+        tz: Option<TimeZone>,
+    ) -> Self {
+        DateTime {
+            datetime: NaiveDateTime {
+                date: NaiveDate {
+                    year: NaiveYear(year),
+                    month: NaiveMonth(month),
+                    day: NaiveDay(day),
+                },
+                time: NaiveTime {
+                    hour,
+                    minute,
+                    nanosecond,
+                },
+            },
+            tz,
+        }
+    }
+
     /// # Reference
     /// - [E Adding durations to dateTimes](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#adding-durations-to-dateTimes)
     pub fn checked_add(&self, rhs: Duration) -> Option<DateTime> {
@@ -1402,7 +1434,7 @@ impl SubAssign<Duration> for DateTime {
 
 const NANOSECONDS_PER_SECOND: u64 = 1_000_000_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Duration {
     neg: bool,
     year: Option<NonZeroU64>,
@@ -1411,6 +1443,44 @@ pub struct Duration {
     hour: Option<NonZeroU64>,
     minute: Option<NonZeroU64>,
     nanosecond: Option<NonZeroU64>,
+}
+
+impl PartialOrd for Duration {
+    /// # Reference
+    /// - [3.2.6.2 Order relation on duration](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#duration)
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        // Since the suggested optimization method is not well understood,
+        // comparisons will be made based on the baseline dates provided
+        // in the specifications unless critical performance degradation occurs.
+
+        // 1696-09-01T00:00:00Z
+        // 1697-02-01T00:00:00Z
+        // 1903-03-01T00:00:00Z
+        // 1903-07-01T00:00:00Z
+        const BASELINE: [DateTime; 4] = unsafe {
+            // # Safety
+            // The datetimes specified in the specification,
+            // and also datetimes whose existence is obvious.
+            [
+                DateTime::new_unchecked(1696, 9, 1, 0, 0, 0, Some(TimeZone::UTC)),
+                DateTime::new_unchecked(1697, 2, 1, 0, 0, 0, Some(TimeZone::UTC)),
+                DateTime::new_unchecked(1903, 3, 1, 0, 0, 0, Some(TimeZone::UTC)),
+                DateTime::new_unchecked(1903, 7, 1, 0, 0, 0, Some(TimeZone::UTC)),
+            ]
+        };
+
+        let ret0 = (BASELINE[0] + *self).partial_cmp(&(BASELINE[0] + *other))?;
+        let ret1 = (BASELINE[1] + *self).partial_cmp(&(BASELINE[1] + *other))?;
+        let ret2 = (BASELINE[2] + *self).partial_cmp(&(BASELINE[2] + *other))?;
+        let ret3 = (BASELINE[3] + *self).partial_cmp(&(BASELINE[3] + *other))?;
+        (ret0 == ret1 && ret0 == ret2 && ret0 == ret3).then_some(ret0)
+    }
+}
+
+impl PartialEq for Duration {
+    fn eq(&self, other: &Self) -> bool {
+        self.partial_cmp(other).is_some_and(|ret| ret.is_eq())
+    }
 }
 
 impl std::fmt::Display for Duration {
@@ -1894,5 +1964,30 @@ mod tests {
                 .partial_cmp(&"2000-01-16T12:00:00Z".parse().unwrap())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn duration_comparison_test() {
+        let p1y = "P1Y".parse::<Duration>().unwrap();
+        assert!(p1y > "P364D".parse().unwrap());
+        assert!(p1y < "P367D".parse().unwrap());
+        assert!(p1y.partial_cmp(&"P365D".parse().unwrap()).is_none());
+        assert!(p1y.partial_cmp(&"P366D".parse().unwrap()).is_none());
+
+        let p1m = "P1M".parse::<Duration>().unwrap();
+        assert!(p1m > "P27D".parse().unwrap());
+        assert!(p1m < "P32D".parse().unwrap());
+        assert!(p1m.partial_cmp(&"P28D".parse().unwrap()).is_none());
+        assert!(p1m.partial_cmp(&"P29D".parse().unwrap()).is_none());
+        assert!(p1m.partial_cmp(&"P30D".parse().unwrap()).is_none());
+        assert!(p1m.partial_cmp(&"P31D".parse().unwrap()).is_none());
+
+        let p5m = "P5M".parse::<Duration>().unwrap();
+        assert!(p5m > "P149D".parse().unwrap());
+        assert!(p5m < "P154D".parse().unwrap());
+        assert!(p5m.partial_cmp(&"P150D".parse().unwrap()).is_none());
+        assert!(p5m.partial_cmp(&"P151D".parse().unwrap()).is_none());
+        assert!(p5m.partial_cmp(&"P152D".parse().unwrap()).is_none());
+        assert!(p5m.partial_cmp(&"P153D".parse().unwrap()).is_none());
     }
 }
