@@ -690,16 +690,16 @@ const REMOVED_LEAPSECONDS: &[(u16, u8, u8)] = include!("../resources/removed-lea
 struct NaiveTime {
     hour: u8,
     minute: u8,
-    second: u8,
     // support down to the nanosecond level
-    nano: u32,
+    nanosecond: u64,
 }
 
 impl std::fmt::Display for NaiveTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:02}:{:02}:{:02}", self.hour, self.minute, self.second)?;
-        if self.nano != 0 {
-            let mut nano = self.nano;
+        let second = self.nanosecond / NANOSECONDS_PER_SECOND;
+        let mut nano = self.nanosecond % NANOSECONDS_PER_SECOND;
+        write!(f, "{:02}:{:02}:{:02}", self.hour, self.minute, second)?;
+        if nano != 0 {
             while nano % 10 == 0 {
                 nano /= 10;
             }
@@ -744,13 +744,12 @@ impl FromStr for NaiveTime {
             .strip_prefix(':')
             .ok_or(datetime_error!(Minute, InvalidFormat))?
             .split_at(2);
-        let second = parse_number!(ss, Second, 60);
+        let second: u64 = parse_number!(ss, Second, 60);
         let ret = if nano.is_empty() {
             Self {
                 hour,
                 minute,
-                second,
-                nano: 0,
+                nanosecond: second * NANOSECONDS_PER_SECOND,
             }
         } else if nano.len() == 1 {
             // If a decimal point is present, at least one digit must follow it;
@@ -762,21 +761,20 @@ impl FromStr for NaiveTime {
                 .ok_or(datetime_error!(Second, InvalidFormat))?;
             // It only supports up to nanoseconds,
             // so it does not handle values with more than 9 digits.
-            let mut nano: u32 = parse_number!(sn, Second, 999_999_999);
+            let mut nano: u64 = parse_number!(sn, Second, 999_999_999);
             let base = 9 - sn.len();
-            nano *= 10u32.pow(base as u32);
+            nano *= 10u64.pow(base as u32);
             Self {
                 hour,
                 minute,
-                second,
-                nano,
+                nanosecond: second * NANOSECONDS_PER_SECOND + nano,
             }
         };
 
-        if ret.hour == 24 && (ret.minute != 0 || ret.second != 0 || ret.nano != 0) {
+        if ret.hour == 24 && (ret.minute != 0 || ret.nanosecond != 0) {
             return Err(datetime_error!(Hour, OutOfRange));
         }
-        if ret.second == 60 && (ret.hour != 23 || ret.minute != 59) {
+        if ret.nanosecond == 60 * NANOSECONDS_PER_SECOND && (ret.hour != 23 || ret.minute != 59) {
             return Err(datetime_error!(Second, OutOfRange));
         }
 
@@ -867,7 +865,7 @@ impl FromStr for NaiveDateTime {
             time: time.parse()?,
         };
 
-        if ret.time.second == 60 {
+        if ret.time.nanosecond == 60 * NANOSECONDS_PER_SECOND {
             // leap second (insertion)
             if let Ok(year) = u16::try_from(ret.date.year.0)
                 && INSERTED_LEAPSECONDS
@@ -876,7 +874,7 @@ impl FromStr for NaiveDateTime {
             {
                 return Err(datetime_error!(Second, OutOfRange));
             }
-        } else if ret.time.second == 59 {
+        } else if ret.time.nanosecond == 59 * NANOSECONDS_PER_SECOND {
             // leap second (removal)
             if let Ok(year) = u16::try_from(ret.date.year.0)
                 && REMOVED_LEAPSECONDS
@@ -940,7 +938,13 @@ impl DateTime {
         //  - temp      := S[second] + D[second]
         //  - E[second] := modulo(temp, 60)
         //  - carry     := fQuotient(temp, 60)
-        let carry = todo!();
+        let temp = rhs
+            .nanosecond
+            .map(|n| n.get())
+            .unwrap_or(0)
+            .checked_add(self.datetime.time.nanosecond)?;
+        ret.datetime.time.nanosecond = temp % (60 * NANOSECONDS_PER_SECOND);
+        let carry = temp / (60 * NANOSECONDS_PER_SECOND);
 
         // Minutes
         //  - temp      := S[minute] + D[minute] + carry
@@ -1066,7 +1070,152 @@ impl DateTime {
             return self.checked_add(Duration { neg: false, ..rhs });
         }
 
-        todo!()
+        let mut ret = DateTime {
+            datetime: NaiveDateTime::default(),
+            tz: None,
+        };
+
+        // Months (may be modified additionally below)
+        //  - temp      := S[month] + D[month]
+        //  - E[month]  := modulo(temp, 1, 13)
+        //  - carry     := fQuotient(temp, 1, 13)
+        let temp = (self.datetime.date.month.0 as i128)
+            .checked_sub(rhs.month.map(|m| m.get() as i128).unwrap_or(0))?;
+        ret.datetime.date.month.0 = temp.checked_sub(1)?.rem_euclid(12) as u8 + 1;
+        let carry = (temp - 1).div_euclid(12);
+
+        // Years (may be modified additionally below)
+        //  - E[year]   := S[year] + D[year] + carry
+        ret.datetime.date.year.0 = self
+            .datetime
+            .date
+            .year
+            .0
+            .checked_sub(rhs.year.map(|y| y.get()).unwrap_or(0) as i128)?
+            .checked_add(carry)?;
+
+        // Zone
+        //  - E[zone]   := S[zone]
+        ret.tz = self.tz;
+
+        // Seconds
+        //  - temp      := S[second] + D[second]
+        //  - E[second] := modulo(temp, 60)
+        //  - carry     := fQuotient(temp, 60)
+        let temp = (self.datetime.time.nanosecond as i128)
+            .checked_sub(rhs.nanosecond.map(|n| n.get()).unwrap_or(0) as i128)?;
+        ret.datetime.time.nanosecond =
+            temp.rem_euclid((60 * NANOSECONDS_PER_SECOND) as i128) as u64;
+        let carry = temp.div_euclid((60 * NANOSECONDS_PER_SECOND) as i128);
+
+        // Minutes
+        //  - temp      := S[minute] + D[minute] + carry
+        //  - E[minute] := modulo(temp, 60)
+        //  - carry     := fQuotient(temp, 60)
+        let temp = (self.datetime.time.minute as i128)
+            .checked_sub(rhs.minute.map(|m| m.get()).unwrap_or(0) as i128)?
+            .checked_add(carry)?;
+        ret.datetime.time.minute = temp.rem_euclid(60) as u8;
+        let carry = temp.div_euclid(60);
+
+        // Hours
+        //  - temp      := S[hour] + D[hour] + carry
+        //  - E[hour]   := modulo(temp, 24)
+        //  - carry     := fQuotient(temp, 24)
+        let temp = (self.datetime.time.hour as i128)
+            .checked_sub(rhs.hour.map(|h| h.get()).unwrap_or(0) as i128)?
+            .checked_add(carry)?;
+        ret.datetime.time.hour = temp.rem_euclid(24) as u8;
+        let carry = temp.div_euclid(24);
+
+        // Days
+        //  - if S[day] > maximumDayInMonthFor(E[year], E[month])
+        //      - tempDays  := maximumDayInMonthFor(E[year], E[month])
+        //  - else if S[day] < 1
+        //      - tempDays  := 1
+        //  - else
+        //      - tempDays  := S[day]
+        let temp_days = self.datetime.date.day.0.clamp(
+            1,
+            maximum_day_in_month_for(ret.datetime.date.year, ret.datetime.date.month.0 as i8)?,
+        );
+        //  - E[day]    := tempDays + D[day] + carry
+        let mut day = (temp_days as i128)
+            .checked_sub(rhs.day.map(|d| d.get()).unwrap_or(0) as i128)?
+            .checked_add(carry)?;
+        //  - START LOOP
+        //      - IF E[day] < 1
+        //            E[day]        := E[day] + maximumDayInMonthFor(E[year], E[month] - 1)
+        //            carry         := -1
+        //      - ELSE IF E[day] > maximumDayInMonthFor(E[year], E[month])
+        //            E[day]        := E[day] - maximumDayInMonthFor(E[year], E[month])
+        //            carry         := 1
+        //      - ELSE EXIT LOOP
+        //      - temp      := E[month] + carry
+        //      - E[month]  := modulo(temp, 1, 13)
+        //      - E[year]   := E[year] + fQuotient(temp, 1, 13)
+        //      - GOTO START LOOP
+
+        // The original loop-based calculation is too slow, so I will change the approach.
+        //
+        // First, advance the year in units of 365*400+100-4+1 days.
+        const NUM_OF_DAYS_OVER_400YEARS: i128 = 365 * 400 + 100 - 4 + 1;
+        ret.datetime.date.year.0 = ret
+            .datetime
+            .date
+            .year
+            .0
+            .checked_add(day / NUM_OF_DAYS_OVER_400YEARS)?;
+        day %= NUM_OF_DAYS_OVER_400YEARS;
+        // Next, advance the year in units of 100 years.
+        const NUM_OF_DAYS_OVER_100YEARS: i128 = 365 * 100 + 25 - 1;
+        ret.datetime.date.year.0 = ret
+            .datetime
+            .date
+            .year
+            .0
+            .checked_add(day / NUM_OF_DAYS_OVER_100YEARS)?;
+        day %= NUM_OF_DAYS_OVER_100YEARS;
+        // Next, advance the year in units of 4 years.
+        const NUM_OF_DAYS_OVER_4YEARS: i128 = 365 * 4 + 1;
+        ret.datetime.date.year.0 = ret
+            .datetime
+            .date
+            .year
+            .0
+            .checked_add(day / NUM_OF_DAYS_OVER_4YEARS)?;
+        day %= NUM_OF_DAYS_OVER_4YEARS;
+        // Finally, it is determined using a loop method.It should take no more than 50 iterations.
+        // While advancing one year at a time is possible, handling boundary cases is complex,
+        // so I determine the last four years using a loop.
+        loop {
+            let temp = if day < 1 {
+                let month = ret.datetime.date.month.0 as i8 - 1;
+                day = day
+                    .checked_add(maximum_day_in_month_for(ret.datetime.date.year, month)? as i128)?;
+                month
+            } else if let max_days =
+                maximum_day_in_month_for(ret.datetime.date.year, ret.datetime.date.month.0 as i8)?
+                    as i128
+                && day > max_days
+            {
+                day -= max_days;
+                ret.datetime.date.month.0 as i8 + 1
+            } else {
+                break;
+            };
+
+            ret.datetime.date.month.0 = (temp - 1).rem_euclid(12) as u8 + 1;
+            ret.datetime.date.year.0 = ret
+                .datetime
+                .date
+                .year
+                .0
+                .checked_add((temp - 1).div_euclid(12) as i128)?;
+        }
+        ret.datetime.date.day.0 = day as u8;
+
+        Some(ret)
     }
 }
 
@@ -1591,5 +1740,15 @@ mod tests {
         let duration = "P1Y3M5DT7H10M3.3S".parse::<Duration>().unwrap();
         let ret = datetime + duration;
         assert_eq!(ret.to_string(), "2001-04-17T19:23:17.3Z");
+
+        let datetime = "2000-01-01T00:00:00Z".parse::<DateTime>().unwrap();
+        let duration = "-P3M".parse::<Duration>().unwrap();
+        let ret = datetime + duration;
+        assert_eq!(ret.to_string(), "1999-10-01T00:00:00Z");
+
+        let datetime = "2000-01-12T00:00:00Z".parse::<DateTime>().unwrap();
+        let duration = "PT33H".parse::<Duration>().unwrap();
+        let ret = datetime + duration;
+        assert_eq!(ret.to_string(), "2000-01-13T09:00:00Z");
     }
 }
