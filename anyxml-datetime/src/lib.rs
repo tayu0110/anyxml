@@ -15,6 +15,7 @@
 
 use std::{
     num::{NonZeroU64, ParseIntError},
+    ops::{Add, AddAssign, Sub, SubAssign},
     str::FromStr,
 };
 
@@ -195,6 +196,12 @@ impl FromStr for NaiveYear {
     }
 }
 
+impl Default for NaiveYear {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GYear {
     year: NaiveYear,
@@ -273,6 +280,12 @@ impl FromStr for NaiveMonth {
     }
 }
 
+impl Default for NaiveMonth {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GMonth {
     month: NaiveMonth,
@@ -347,6 +360,12 @@ impl FromStr for NaiveDay {
         } else {
             Ok(ret)
         }
+    }
+}
+
+impl Default for NaiveDay {
+    fn default() -> Self {
+        Self(1)
     }
 }
 
@@ -566,7 +585,7 @@ impl FromStr for GMonthDay {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 struct NaiveDate {
     year: NaiveYear,
     month: NaiveMonth,
@@ -667,7 +686,7 @@ impl FromStr for Date {
 const INSERTED_LEAPSECONDS: &[(u16, u8, u8)] = include!("../resources/inserted-leapseconds.rs");
 const REMOVED_LEAPSECONDS: &[(u16, u8, u8)] = include!("../resources/removed-leapseconds.rs");
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 struct NaiveTime {
     hour: u8,
     minute: u8,
@@ -819,7 +838,7 @@ impl FromStr for Time {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 struct NaiveDateTime {
     date: NaiveDate,
     time: NaiveTime,
@@ -878,6 +897,179 @@ pub struct DateTime {
     tz: Option<TimeZone>,
 }
 
+impl DateTime {
+    /// # Reference
+    /// - [E Adding durations to dateTimes](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#adding-durations-to-dateTimes)
+    pub fn checked_add(&self, rhs: Duration) -> Option<DateTime> {
+        if rhs.neg {
+            return self.checked_sub(Duration { neg: false, ..rhs });
+        }
+
+        let mut ret = DateTime {
+            datetime: NaiveDateTime::default(),
+            tz: None,
+        };
+
+        // Months (may be modified additionally below)
+        //  - temp      := S[month] + D[month]
+        //  - E[month]  := modulo(temp, 1, 13)
+        //  - carry     := fQuotient(temp, 1, 13)
+        let temp = rhs
+            .month
+            .map(|m| m.get())
+            .unwrap_or(0)
+            .checked_add(self.datetime.date.month.0 as u64)?;
+        ret.datetime.date.month.0 = ((temp - 1) % 12 + 1) as u8;
+        let carry = (temp - 1) / 12;
+
+        // Years (may be modified additionally below)
+        //  - E[year]   := S[year] + D[year] + carry
+        ret.datetime.date.year.0 = self
+            .datetime
+            .date
+            .year
+            .0
+            .checked_add(rhs.year.map(|y| y.get()).unwrap_or(0) as i128)?
+            .checked_add(carry as i128)?;
+
+        // Zone
+        //  - E[zone]   := S[zone]
+        ret.tz = self.tz;
+
+        // Seconds
+        //  - temp      := S[second] + D[second]
+        //  - E[second] := modulo(temp, 60)
+        //  - carry     := fQuotient(temp, 60)
+        let carry = todo!();
+
+        // Minutes
+        //  - temp      := S[minute] + D[minute] + carry
+        //  - E[minute] := modulo(temp, 60)
+        //  - carry     := fQuotient(temp, 60)
+        let temp = rhs
+            .minute
+            .map(|m| m.get())
+            .unwrap_or(0)
+            .checked_add(self.datetime.time.minute as u64)?
+            .checked_add(carry)?;
+        ret.datetime.time.minute = (temp % 60) as u8;
+        let carry = temp / 60;
+
+        // Hours
+        //  - temp      := S[hour] + D[hour] + carry
+        //  - E[hour]   := modulo(temp, 24)
+        //  - carry     := fQuotient(temp, 24)
+        let temp = rhs
+            .hour
+            .map(|h| h.get())
+            .unwrap_or(0)
+            .checked_add(self.datetime.time.hour as u64)?
+            .checked_add(carry)?;
+        ret.datetime.time.hour = (temp % 24) as u8;
+        let carry = temp / 24;
+
+        // Days
+        //  - if S[day] > maximumDayInMonthFor(E[year], E[month])
+        //      - tempDays  := maximumDayInMonthFor(E[year], E[month])
+        //  - else if S[day] < 1
+        //      - tempDays  := 1
+        //  - else
+        //      - tempDays  := S[day]
+        let temp_days = self.datetime.date.day.0.clamp(
+            1,
+            maximum_day_in_month_for(ret.datetime.date.year, ret.datetime.date.month.0 as i8)?,
+        );
+        //  - E[day]    := tempDays + D[day] + carry
+        let mut day = rhs
+            .day
+            .map(|d| d.get())
+            .unwrap_or(0)
+            .checked_add(temp_days as u64)?
+            .checked_add(carry)?;
+        //  - START LOOP
+        //      - IF E[day] < 1
+        //            E[day]        := E[day] + maximumDayInMonthFor(E[year], E[month] - 1)
+        //            carry         := -1
+        //      - ELSE IF E[day] > maximumDayInMonthFor(E[year], E[month])
+        //            E[day]        := E[day] - maximumDayInMonthFor(E[year], E[month])
+        //            carry         := 1
+        //      - ELSE EXIT LOOP
+        //      - temp      := E[month] + carry
+        //      - E[month]  := modulo(temp, 1, 13)
+        //      - E[year]   := E[year] + fQuotient(temp, 1, 13)
+        //      - GOTO START LOOP
+
+        // The original loop-based calculation is too slow, so I will change the approach.
+        //
+        // First, advance the year in units of 365*400+100-4+1 days.
+        const NUM_OF_DAYS_OVER_400YEARS: u64 = 365 * 400 + 100 - 4 + 1;
+        ret.datetime.date.year.0 = ret
+            .datetime
+            .date
+            .year
+            .0
+            .checked_add((day / NUM_OF_DAYS_OVER_400YEARS) as i128)?;
+        day %= NUM_OF_DAYS_OVER_400YEARS;
+        // Next, advance the year in units of 100 years.
+        const NUM_OF_DAYS_OVER_100YEARS: u64 = 365 * 100 + 25 - 1;
+        ret.datetime.date.year.0 = ret
+            .datetime
+            .date
+            .year
+            .0
+            .checked_add((day / NUM_OF_DAYS_OVER_100YEARS) as i128)?;
+        day %= NUM_OF_DAYS_OVER_100YEARS;
+        // Next, advance the year in units of 4 years.
+        const NUM_OF_DAYS_OVER_4YEARS: u64 = 365 * 4 + 1;
+        ret.datetime.date.year.0 = ret
+            .datetime
+            .date
+            .year
+            .0
+            .checked_add((day / NUM_OF_DAYS_OVER_4YEARS) as i128)?;
+        day %= NUM_OF_DAYS_OVER_4YEARS;
+        // Finally, it is determined using a loop method.It should take no more than 50 iterations.
+        // While advancing one year at a time is possible, handling boundary cases is complex,
+        // so I determine the last four years using a loop.
+        loop {
+            let temp = if day < 1 {
+                let month = ret.datetime.date.month.0 as i8 - 1;
+                day = day
+                    .checked_add(maximum_day_in_month_for(ret.datetime.date.year, month)? as u64)?;
+                month
+            } else if let max_days =
+                maximum_day_in_month_for(ret.datetime.date.year, ret.datetime.date.month.0 as i8)?
+                    as u64
+                && day > max_days
+            {
+                day -= max_days;
+                ret.datetime.date.month.0 as i8 + 1
+            } else {
+                break;
+            };
+
+            ret.datetime.date.month.0 = (temp - 1).rem_euclid(12) as u8 + 1;
+            ret.datetime.date.year.0 = ret
+                .datetime
+                .date
+                .year
+                .0
+                .checked_add((temp - 1).div_euclid(12) as i128)?;
+        }
+        ret.datetime.date.day.0 = day as u8;
+
+        Some(ret)
+    }
+
+    pub fn checked_sub(&self, rhs: Duration) -> Option<DateTime> {
+        if rhs.neg {
+            return self.checked_add(Duration { neg: false, ..rhs });
+        }
+
+        todo!()
+    }
+}
+
 impl PartialOrd for DateTime {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match (self.tz, other.tz) {
@@ -923,6 +1115,35 @@ impl FromStr for DateTime {
                 tz: None,
             })
         }
+    }
+}
+
+impl Add<Duration> for DateTime {
+    type Output = DateTime;
+
+    fn add(self, rhs: Duration) -> Self::Output {
+        self.checked_add(rhs).expect("attempt to add with overflow")
+    }
+}
+
+impl AddAssign<Duration> for DateTime {
+    fn add_assign(&mut self, rhs: Duration) {
+        *self = *self + rhs;
+    }
+}
+
+impl Sub<Duration> for DateTime {
+    type Output = DateTime;
+
+    fn sub(self, rhs: Duration) -> Self::Output {
+        self.checked_sub(rhs)
+            .expect("attempt to subtract with overflow")
+    }
+}
+
+impl SubAssign<Duration> for DateTime {
+    fn sub_assign(&mut self, rhs: Duration) {
+        *self = *self - rhs;
     }
 }
 
@@ -1088,6 +1309,23 @@ impl FromStr for Duration {
 
 fn is_leap(year: NaiveYear) -> bool {
     year.0 % 400 == 0 || (year.0 % 100 != 0 && year.0 % 4 == 0)
+}
+
+/// If overflow occurs, return [`None`].
+///
+/// # Reference
+/// - [E.1 Algorithm](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#adding-durations-to-dateTimes)
+fn maximum_day_in_month_for(year: NaiveYear, month: i8) -> Option<u8> {
+    let m = (month - 1).rem_euclid(12) + 1;
+    let mut y = year.0.checked_add((month - 1).div_euclid(12) as i128)?;
+    if y == 0 {
+        y = 1;
+    }
+    if m == 2 {
+        Some(28 + is_leap(NaiveYear(y)) as u8)
+    } else {
+        Some(NUM_OF_DAYS_IN_A_MONTH[m as usize])
+    }
 }
 
 #[cfg(test)]
@@ -1345,5 +1583,13 @@ mod tests {
 
         assert!("P-1347M".parse::<Duration>().is_err());
         assert!("P1Y2MT".parse::<Duration>().is_err());
+    }
+
+    #[test]
+    fn datetime_addition_test() {
+        let datetime = "2000-01-12T12:13:14Z".parse::<DateTime>().unwrap();
+        let duration = "P1Y3M5DT7H10M3.3S".parse::<Duration>().unwrap();
+        let ret = datetime + duration;
+        assert_eq!(ret.to_string(), "2001-04-17T19:23:17.3Z");
     }
 }
