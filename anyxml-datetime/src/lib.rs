@@ -94,29 +94,22 @@ macro_rules! datetime_error {
     }};
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TimeZone(i8, u8);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct TimeZone(i16);
 
-impl PartialOrd for TimeZone {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for TimeZone {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let s = (self.0.abs() as i16 * 60 + self.1 as i16) * self.0.signum() as i16;
-        let o = (other.0.abs() as i16 * 60 + other.1 as i16) * other.0.signum() as i16;
-        s.cmp(&o)
-    }
+impl TimeZone {
+    const MIN: Self = Self(-14 * 60);
+    const MAX: Self = Self(14 * 60);
 }
 
 impl std::fmt::Display for TimeZone {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.0 == 0 && self.1 == 0 {
+        if self.0 == 0 {
             write!(f, "Z")
         } else {
-            write!(f, "{:+02}:{:02}", self.0, self.1)
+            let h = self.0 / 60;
+            let m = self.0 % 60;
+            write!(f, "{:+02}:{:02}", h, m.abs())
         }
     }
 }
@@ -126,7 +119,7 @@ impl FromStr for TimeZone {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == "Z" {
-            return Ok(Self(0, 0));
+            return Ok(Self(0));
         }
 
         let (hour, minute) = s
@@ -140,10 +133,10 @@ impl FromStr for TimeZone {
             return Err(datetime_error!(TimeZone, InvalidFormat))?;
         }
         let hour = hour
-            .parse()
+            .parse::<i16>()
             .map_err(|err| datetime_error!(TimeZone, ParseIntError(err)))?;
         let minute = minute
-            .parse()
+            .parse::<i16>()
             .map_err(|err| datetime_error!(TimeZone, ParseIntError(err)))?;
 
         if minute >= 60 {
@@ -155,7 +148,7 @@ impl FromStr for TimeZone {
         } else if hour > 14 || (hour == 14 && minute != 0) {
             Err(datetime_error!(TimeZone, TooLarge))
         } else {
-            Ok(Self(hour, minute))
+            Ok(Self(hour * 60 + minute * hour.signum()))
         }
     }
 }
@@ -944,7 +937,7 @@ impl FromStr for NaiveDateTime {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct DateTime {
     datetime: NaiveDateTime,
     tz: Option<TimeZone>,
@@ -1115,6 +1108,8 @@ impl DateTime {
         Some(ret)
     }
 
+    /// # Reference
+    /// - [E Adding durations to dateTimes](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#adding-durations-to-dateTimes)
     pub fn checked_sub(&self, rhs: Duration) -> Option<DateTime> {
         if rhs.neg {
             return self.checked_add(Duration { neg: false, ..rhs });
@@ -1262,18 +1257,82 @@ impl DateTime {
 
         Some(ret)
     }
+
+    /// If a time zone is set, change it to UTC. If no time zone is set, do nothing.
+    pub fn to_utc(&self) -> DateTime {
+        let Some(tz) = self.tz else {
+            return *self;
+        };
+
+        // self is already set to UTC
+        if tz.0 == 0 {
+            return *self;
+        }
+
+        let h = tz.0 / 60;
+        let m = tz.0 % 60;
+        let duration = Duration {
+            neg: tz.0 > 0,
+            hour: NonZeroU64::new(h.unsigned_abs() as u64),
+            minute: NonZeroU64::new(m.unsigned_abs() as u64),
+            ..Default::default()
+        };
+
+        DateTime {
+            tz: Some(TimeZone(0)),
+            ..*self + duration
+        }
+    }
 }
 
 impl PartialOrd for DateTime {
+    /// # Reference
+    /// - [3.2.7.4 Order relation on dateTime](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#dateTime)
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match (self.tz, other.tz) {
-            (Some(stz), Some(otz)) => match self.datetime.cmp(&other.datetime) {
-                std::cmp::Ordering::Equal => Some(stz.cmp(&otz)),
-                cmp => Some(cmp),
-            },
-            (None, None) => self.datetime.partial_cmp(&other.datetime),
-            _ => None,
+        let lhs = self.to_utc();
+        let rhs = other.to_utc();
+
+        if lhs.tz.is_some() == rhs.tz.is_some() {
+            Some(lhs.datetime.cmp(&rhs.datetime))
+        } else if lhs.tz.is_some() {
+            let min = DateTime {
+                datetime: rhs.datetime,
+                tz: Some(TimeZone::MAX),
+            };
+            let max = DateTime {
+                datetime: rhs.datetime,
+                tz: Some(TimeZone::MIN),
+            };
+            if lhs < min {
+                Some(std::cmp::Ordering::Less)
+            } else if max < lhs {
+                Some(std::cmp::Ordering::Greater)
+            } else {
+                None
+            }
+        } else {
+            let min = DateTime {
+                datetime: lhs.datetime,
+                tz: Some(TimeZone::MAX),
+            };
+            let max = DateTime {
+                datetime: lhs.datetime,
+                tz: Some(TimeZone::MIN),
+            };
+            if max < rhs {
+                Some(std::cmp::Ordering::Less)
+            } else if rhs < min {
+                Some(std::cmp::Ordering::Greater)
+            } else {
+                None
+            }
         }
+    }
+}
+
+impl PartialEq for DateTime {
+    fn eq(&self, other: &Self) -> bool {
+        self.partial_cmp(other).is_some_and(|ret| ret.is_eq())
     }
 }
 
@@ -1343,7 +1402,7 @@ impl SubAssign<Duration> for DateTime {
 
 const NANOSECONDS_PER_SECOND: u64 = 1_000_000_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Duration {
     neg: bool,
     year: Option<NonZeroU64>,
@@ -1795,5 +1854,45 @@ mod tests {
         let duration = "PT33H".parse::<Duration>().unwrap();
         let ret = datetime + duration;
         assert_eq!(ret.to_string(), "2000-01-13T09:00:00Z");
+
+        let datetime = "2000-03-04T23:00:00+03:00".parse::<DateTime>().unwrap();
+        let utc = datetime.to_utc();
+        assert_eq!(utc.to_string(), "2000-03-04T20:00:00Z");
+    }
+
+    #[test]
+    fn datetime_comparison_test() {
+        // Determinate
+        assert!(
+            "2000-01-15T00:00:00".parse::<DateTime>().unwrap()
+                < "2000-02-15T00:00:00".parse::<DateTime>().unwrap()
+        );
+        assert!(
+            "2000-01-15T12:00:00".parse::<DateTime>().unwrap()
+                < "2000-01-16T12:00:00Z".parse::<DateTime>().unwrap()
+        );
+
+        // Indeterminate
+        assert!(
+            "2000-01-01T12:00:00"
+                .parse::<DateTime>()
+                .unwrap()
+                .partial_cmp(&"1999-12-31T23:00:00Z".parse().unwrap())
+                .is_none()
+        );
+        assert!(
+            "2000-01-16T12:00:00"
+                .parse::<DateTime>()
+                .unwrap()
+                .partial_cmp(&"2000-01-16T12:00:00Z".parse().unwrap())
+                .is_none()
+        );
+        assert!(
+            "2000-01-16T00:00:00"
+                .parse::<DateTime>()
+                .unwrap()
+                .partial_cmp(&"2000-01-16T12:00:00Z".parse().unwrap())
+                .is_none()
+        );
     }
 }
