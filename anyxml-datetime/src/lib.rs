@@ -13,7 +13,10 @@
 //! Since XML Schema 1.1 now conforms to the current ISO 8601, this crate may follow
 //! the new notation in the future.
 
-use std::{num::ParseIntError, str::FromStr};
+use std::{
+    num::{NonZeroU64, ParseIntError},
+    str::FromStr,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorSegment {
@@ -923,6 +926,166 @@ impl FromStr for DateTime {
     }
 }
 
+const NANOSECONDS_PER_SECOND: u64 = 1_000_000_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Duration {
+    neg: bool,
+    year: Option<NonZeroU64>,
+    month: Option<NonZeroU64>,
+    day: Option<NonZeroU64>,
+    hour: Option<NonZeroU64>,
+    minute: Option<NonZeroU64>,
+    nanosecond: Option<NonZeroU64>,
+}
+
+impl std::fmt::Display for Duration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.neg {
+            write!(f, "-")?;
+        }
+        write!(f, "P")?;
+        if self.year.is_none()
+            && self.month.is_none()
+            && self.day.is_none()
+            && self.hour.is_none()
+            && self.minute.is_none()
+            && self.nanosecond.is_none()
+        {
+            write!(f, "0Y")?;
+            return Ok(());
+        }
+        if let Some(year) = self.year {
+            write!(f, "{}Y", year)?;
+        }
+        if let Some(month) = self.month {
+            write!(f, "{}M", month)?;
+        }
+        if let Some(day) = self.day {
+            write!(f, "{}D", day)?;
+        }
+
+        match (self.hour, self.minute, self.nanosecond) {
+            (None, None, None) => {}
+            (hour, minute, nanosecond) => {
+                write!(f, "T")?;
+                if let Some(hour) = hour {
+                    write!(f, "{}H", hour)?;
+                }
+                if let Some(minute) = minute {
+                    write!(f, "{}M", minute)?;
+                }
+                if let Some(nanosecond) = nanosecond {
+                    let sec = nanosecond.get() / NANOSECONDS_PER_SECOND;
+                    let mut nano = nanosecond.get() % NANOSECONDS_PER_SECOND;
+                    if nano == 0 {
+                        write!(f, "{}S", sec)?;
+                    } else {
+                        while nano % 10 == 0 {
+                            nano /= 10;
+                        }
+                        write!(f, "{}.{}S", sec, nano)?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl FromStr for Duration {
+    type Err = DateTimeError;
+
+    fn from_str(mut s: &str) -> Result<Self, Self::Err> {
+        let mut neg = false;
+        if let Some(rem) = s.strip_prefix('-') {
+            neg = true;
+            s = rem;
+        }
+
+        s = s
+            .strip_prefix('P')
+            .ok_or(datetime_error!(Year, InvalidFormat))?;
+        if s.is_empty() {
+            return Err(datetime_error!(Year, InvalidFormat))?;
+        }
+
+        let mut year = None;
+        let mut month = None;
+        let mut day = None;
+        let mut hour = None;
+        let mut minute = None;
+        let mut nanosecond = None;
+
+        macro_rules! parse_number {
+            ( $s:expr, $ind:literal, $seg:ident, $res:expr ) => {
+                if let Some((seg, rem)) = $s.split_once($ind) {
+                    let seg = seg
+                        .parse::<u64>()
+                        .map_err(|err| datetime_error!($seg, ParseIntError(err)))?;
+                    $res = NonZeroU64::new(seg);
+                    $s = rem;
+                }
+            };
+        }
+        parse_number!(s, 'Y', Year, year);
+        parse_number!(s, 'M', Month, month);
+        parse_number!(s, 'D', Day, day);
+        if let Some(rem) = s.strip_prefix('T') {
+            s = rem;
+            if s.is_empty() {
+                return Err(datetime_error!(Hour, InvalidFormat));
+            }
+            parse_number!(s, 'H', Hour, hour);
+            parse_number!(s, 'M', Minute, minute);
+            if let Some((sec, rem)) = s.split_once('S') {
+                s = rem;
+
+                if let Some((sec, frac)) = sec.split_once('.') {
+                    let sec = sec
+                        .parse::<u64>()
+                        .map_err(|err| datetime_error!(Second, ParseIntError(err)))?
+                        .checked_mul(NANOSECONDS_PER_SECOND)
+                        .ok_or(datetime_error!(Second, TooLarge))?;
+                    let base = 10u64.pow(9 - frac.len() as u32);
+                    let frac = frac
+                        .parse::<u64>()
+                        .map_err(|err| datetime_error!(Second, ParseIntError(err)))?
+                        .checked_mul(base)
+                        .ok_or(datetime_error!(Second, TooLarge))?;
+                    let nano = sec
+                        .checked_add(frac)
+                        .ok_or(datetime_error!(Second, TooLarge))?;
+                    nanosecond = NonZeroU64::new(nano);
+                } else {
+                    let sec = sec
+                        .parse::<u64>()
+                        .map_err(|err| datetime_error!(Second, ParseIntError(err)))?;
+                    let nano = sec
+                        .checked_mul(NANOSECONDS_PER_SECOND)
+                        .ok_or(datetime_error!(Second, TooLarge))?;
+                    nanosecond = NonZeroU64::new(nano);
+                }
+            }
+        }
+
+        if !s.is_empty() {
+            return Err(datetime_error!(Second, InvalidFormat));
+        }
+
+        Ok(Self {
+            neg,
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            nanosecond,
+        })
+    }
+}
+
 fn is_leap(year: NaiveYear) -> bool {
     year.0 % 400 == 0 || (year.0 % 100 != 0 && year.0 % 4 == 0)
 }
@@ -1169,5 +1332,18 @@ mod tests {
         assert!("2000-01-2012:00:00-13:00".parse::<DateTime>().is_err());
         assert!("2000001-20T12:00:00-13:00".parse::<DateTime>().is_err());
         assert!("2000-01-20T-12:00".parse::<DateTime>().is_err());
+    }
+
+    #[test]
+    fn duration_parse_test() {
+        assert!("P1347Y".parse::<Duration>().is_ok());
+        assert!("P1347M".parse::<Duration>().is_ok());
+        assert!("P1Y2MT2H".parse::<Duration>().is_ok());
+        assert!("P0Y1347M".parse::<Duration>().is_ok());
+        assert!("P0Y1347M0D".parse::<Duration>().is_ok());
+        assert!("-P1347M".parse::<Duration>().is_ok());
+
+        assert!("P-1347M".parse::<Duration>().is_err());
+        assert!("P1Y2MT".parse::<Duration>().is_err());
     }
 }
