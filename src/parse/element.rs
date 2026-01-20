@@ -559,14 +559,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
 
         if !self.fatal_error_occurred {
             for att in atts.iter().filter(|att| att.is_nsdecl()) {
-                let len = att.local_name.as_deref().unwrap().len();
-                if len == att.qname.len() {
+                let local_name = att.local_name.as_deref().unwrap();
+                if local_name.len() == att.qname.len() {
                     self.handler.start_prefix_mapping(None, &att.value);
                 } else {
-                    self.handler.start_prefix_mapping(
-                        Some(&att.qname[..att.qname.len() - len - 1]),
-                        &att.value,
-                    );
+                    self.handler
+                        .start_prefix_mapping(Some(local_name), &att.value);
                 }
             }
             if self.config.is_enable(ParserOption::Namespaces) {

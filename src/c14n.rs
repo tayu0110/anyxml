@@ -1,3 +1,48 @@
+//! XML canonicalization APIs.
+//!
+//! The current implementation supports only C14N 1.0 and can only use octet streams
+//! as document sources.
+//!
+//! Support for C14N 1.1 and Exclusive XML C14N, as well as support for XPath node set input,
+//! is planned for future expansion.
+//!
+//! # Example
+//! ```rust
+//! use anyxml::{
+//!     c14n::CanonicalizeHandler,
+//!     sax::parser::{ParserOption, XMLReaderBuilder},
+//!     uri::URIString,
+//! };
+//!
+//! const DOC: &str = r#"<?xml version="1.0"?>
+//!
+//! <?xml-stylesheet   href="doc.xsl"
+//!    type="text/xsl"   ?>
+//!
+//! <!DOCTYPE doc SYSTEM "doc.dtd">
+//!
+//! <doc>Hello, world!<!-- Comment 1 --></doc>
+//!
+//! <?pi-without-data     ?>
+//!
+//! <!-- Comment 2 -->
+//!
+//! <!-- Comment 3 -->"#;
+//!
+//! let mut reader = XMLReaderBuilder::new()
+//!     .set_handler(CanonicalizeHandler::default())
+//!     .build();
+//! reader.parse_str(DOC, None).ok();
+//!
+//! assert_eq!(reader.handler.buffer, r#"<?xml-stylesheet href="doc.xsl"
+//!    type="text/xsl"   ?>
+//! <doc>Hello, world!</doc>
+//! <?pi-without-data?>"#);
+//! ```
+//!
+//! # Reference
+//! - [Canonical XML Version 1.0 W3C Recommendation 15 March 2001](https://www.w3.org/TR/xml-c14n10/)
+
 use std::{borrow::Cow, collections::HashMap, fmt::Write as _, sync::Arc};
 
 use crate::{
@@ -25,11 +70,25 @@ enum Position {
     After,
 }
 
+/// SAX handler to support streaming XML canonicalization.
+///
+/// By configuring this handler for the SAX parser and executing parsing,
+/// it is possible to canonicalize an octet stream XML document source.
 pub struct CanonicalizeHandler<H: SAXHandler = DefaultSAXHandler> {
+    /// Canonicalize method. C14N 1.0 is only supported now.
     pub method: CanonicalizeMethod,
+    /// If `true`, comments are retained. Default is `false`.
     pub with_comment: bool,
+    /// If `true`, writes the canonical XML string to `buffer`.
+    /// If `false`, no writing occurs.
+    ///
+    /// Useful when only interested in receiving events. Default is `true`.
     pub serialize: bool,
+    /// Buffer to which the canonical XML string is written.
+    ///
+    /// Automatically initialized when parsing begins.
     pub buffer: String,
+    /// Child handler that receives canonicalized events.
     pub child: H,
 
     state: Position,
@@ -39,6 +98,7 @@ pub struct CanonicalizeHandler<H: SAXHandler = DefaultSAXHandler> {
 }
 
 impl<H: SAXHandler> CanonicalizeHandler<H> {
+    /// Initialize the handler with the user-defined handler as its child.
     pub fn with_handler(handler: H) -> Self {
         Self {
             method: Default::default(),
@@ -136,17 +196,19 @@ impl<H: SAXHandler> SAXHandler for CanonicalizeHandler<H> {
         for att in atts {
             if !att.is_nsdecl() {
                 general_atts.push(att);
-            } else if let Some(stack) = self
-                .namespace_stack
-                .get(att.local_name.as_deref().unwrap_or_default())
-                && stack.last().is_some_and(|l| l.0 == self.depth)
+            } else if let Some(stack) = self.namespace_stack.get(
+                att.local_name
+                    .as_deref()
+                    .filter(|&l| l != "xmlns")
+                    .unwrap_or_default(),
+            ) && stack.last().is_some_and(|l| l.0 == self.depth)
             {
                 ns_atts.push(att);
             }
         }
 
         general_atts.sort_unstable_by_key(|att| (att.uri.as_deref(), att.local_name.as_deref()));
-        ns_atts.sort_unstable_by_key(|att| att.local_name.as_deref());
+        ns_atts.sort_unstable_by_key(|att| att.local_name.as_deref().filter(|&l| l != "xmlns"));
 
         let mut retained_atts = Attributes::new();
         for att in ns_atts {
@@ -206,7 +268,7 @@ impl<H: SAXHandler> SAXHandler for CanonicalizeHandler<H> {
                 stack.push((self.depth, uri.to_owned()));
                 self.child.start_prefix_mapping(prefix, uri);
             }
-        } else if pre.is_empty() && !uri.is_empty() {
+        } else if !pre.is_empty() || !uri.is_empty() {
             let pre = pre.to_owned();
             let stack = self.namespace_stack.entry(pre).or_default();
             stack.push((self.depth, uri.to_owned()));
@@ -220,7 +282,7 @@ impl<H: SAXHandler> SAXHandler for CanonicalizeHandler<H> {
             if stack.is_empty() {
                 self.namespace_stack.remove(pre);
             }
-            self.end_prefix_mapping(prefix);
+            self.child.end_prefix_mapping(prefix);
         }
     }
 
