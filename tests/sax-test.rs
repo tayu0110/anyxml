@@ -63,7 +63,9 @@ impl ErrorHandler for TestSAXHandler {
             XMLErrorDomain::Parser => self.error.update(|c| c + 1),
             XMLErrorDomain::Namespace => self.ns_error.update(|c| c + 1),
             XMLErrorDomain::DTDValid => self.validity_error.update(|c| c + 1),
-            XMLErrorDomain::RngParser | XMLErrorDomain::XInclude => self.error.update(|c| c + 1),
+            XMLErrorDomain::RngParser | XMLErrorDomain::C14N | XMLErrorDomain::XInclude => {
+                self.error.update(|c| c + 1)
+            }
         }
         writeln!(self.buffer.borrow_mut(), "{}", error).ok();
     }
