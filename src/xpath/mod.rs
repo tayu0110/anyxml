@@ -1,6 +1,57 @@
 //! Provide APIs for compiling and evaluating XPath.
 //!
 //! The current implementation supports only XPath 1.0.
+//!
+//! # Example
+//! ```rust
+//! use anyxml::xpath::evaluate_str;
+//!
+//! const DOCUMENT: &str = r#"<root>
+//!     <greeting xml:lang='en'>Hello</greeting>
+//!     <greeting xml:lang='ja'>こんにちは</greeting>
+//!     <greeting xml:lang='ch'>你好</greeting>
+//! </root>
+//! "#;
+//! const XPATH: &str = "//greeting[lang('ja')]/text()";
+//!
+//! let text = evaluate_str(XPATH, DOCUMENT, None)
+//!     .unwrap()
+//!     .as_string()
+//!     .unwrap();
+//! assert_eq!(text.as_ref(), "こんにちは");
+//! ```
+//!
+//! If a single expression is reused multiple times,
+//! it can be precompiled using the `compile` function.
+//!
+//! ```rust
+//! use anyxml::{
+//!     sax::parser::XMLReaderBuilder,
+//!     tree::TreeBuildHandler,
+//!     xpath::compile,
+//! };
+//!
+//! const DOCUMENT: &str = r#"<root>
+//!     <greeting xml:lang='en'>Hello</greeting>
+//!     <greeting xml:lang='ja'>こんにちは</greeting>
+//!     <greeting xml:lang='ch'>你好</greeting>
+//! </root>
+//! "#;
+//! const XPATH: &str = "//greeting[lang('ja')]/text()";
+//!
+//! let mut reader = XMLReaderBuilder::new()
+//!     .set_handler(TreeBuildHandler::default())
+//!     .build();
+//! reader.parse_str(DOCUMENT, None).unwrap();
+//! let document = reader.handler.document;
+//!
+//! let mut expression = compile(XPATH).unwrap();
+//! let text = expression.evaluate(document)
+//!     .unwrap()
+//!     .as_string()
+//!     .unwrap();
+//! assert_eq!(text.as_ref(), "こんにちは");
+//! ```
 
 mod compile;
 mod function;

@@ -29,12 +29,17 @@ impl Attribute {
         self.flag |= 1 << 3;
     }
 
+    /// Check if this attribute is declared in DTD.
     pub fn is_declared(&self) -> bool {
         self.flag & (1 << 0) != 0
     }
+    /// Check if this attribute is specified explicitly.
+    ///
+    /// In other words, check if this attribute originates from the default declaration.
     pub fn is_specified(&self) -> bool {
         self.flag & (1 << 1) != 0
     }
+    /// Check if this attribute is a namespace declaration attribute.
     pub fn is_nsdecl(&self) -> bool {
         self.flag & (1 << 2) != 0
     }
@@ -44,6 +49,9 @@ impl Attribute {
     }
 }
 
+/// A list of attributes.
+///
+/// This list may contain namespace declarations.  
 #[derive(Debug, Clone, Default)]
 pub struct Attributes {
     attributes: Vec<Attribute>,
@@ -62,65 +70,77 @@ impl Attributes {
         }
     }
 
+    /// Get the index of an attribute whose QName is `qname`.
     pub fn get_index_by_qname(&self, qname: &str) -> Option<usize> {
         self.index_by_qname.get(qname).copied()
     }
 
+    /// Get the index of an attribute whose extended name is `{namespace_name}local_name`.
     pub fn get_index_by_expanded_name(
         &self,
-        namespace_uri: Option<&str>,
+        namespace_name: Option<&str>,
         local_name: &str,
     ) -> Option<usize> {
         self.index_by_expanded_name
             .get(local_name)?
-            .get(namespace_uri.unwrap_or(""))
+            .get(namespace_name.unwrap_or(""))
             .copied()
     }
 
+    /// The number of attributes contained in this list.
     pub fn len(&self) -> usize {
         self.attributes.len()
     }
 
+    /// Check if this list has no attributes.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Check if this list has an attribute whose QName is `qname`.
     pub fn contains_qname(&self, qname: &str) -> bool {
         self.get_index_by_qname(qname).is_some()
     }
 
-    pub fn contains_expanded_name(&self, namespace_uri: Option<&str>, local_name: &str) -> bool {
-        self.get_index_by_expanded_name(namespace_uri, local_name)
+    /// Check if this list has an attribute whose extended name is `{namespace_name}local_name`.
+    pub fn contains_expanded_name(&self, namespace_name: Option<&str>, local_name: &str) -> bool {
+        self.get_index_by_expanded_name(namespace_name, local_name)
             .is_some()
     }
 
+    /// Get the local name of `index`-th attribute in this list.
     pub fn get_local_name(&self, index: usize) -> Option<&str> {
         self.attributes.get(index)?.local_name.as_deref()
     }
 
+    /// Get the QName of `index`-th attribute in this list.
     pub fn get_qname(&self, index: usize) -> Option<&str> {
         Some(self.attributes.get(index)?.qname.as_ref())
     }
 
+    /// Get the namespace name of `index`-th attribute in this list.
     pub fn get_namespace_uri(&self, index: usize) -> Option<&str> {
         self.attributes.get(index)?.uri.as_deref()
     }
 
+    /// Get the value of `index`-th attribute in this list.
     pub fn get_value(&self, index: usize) -> Option<&str> {
         Some(self.attributes.get(index)?.value.as_ref())
     }
 
+    /// Get the value of an attribute whose QName is `qname`.
     pub fn get_value_by_qname(&self, qname: &str) -> Option<&str> {
         let index = self.get_index_by_qname(qname)?;
         self.get_value(index)
     }
 
+    /// Get the value of an attribute whose extended name is `{namespace_name}local_name`.
     pub fn get_value_by_expanded_name(
         &self,
-        namespace_uri: Option<&str>,
+        namespace_name: Option<&str>,
         local_name: &str,
     ) -> Option<&str> {
-        let index = self.get_index_by_expanded_name(namespace_uri, local_name)?;
+        let index = self.get_index_by_expanded_name(namespace_name, local_name)?;
         self.get_value(index)
     }
 
@@ -141,14 +161,14 @@ impl Attributes {
         if let Some(local_name) = attribute.local_name.clone() {
             match self.index_by_expanded_name.entry(local_name) {
                 Vacant(entry) => {
-                    let namespace_uri = attribute.uri.clone().unwrap_or_default();
-                    let new = HashMap::from([(namespace_uri, index)]);
+                    let namespace_name = attribute.uri.clone().unwrap_or_default();
+                    let new = HashMap::from([(namespace_name, index)]);
                     entry.insert(new);
                 }
                 Occupied(mut entry) => {
                     let map = entry.get_mut();
-                    let namespace_uri = attribute.uri.clone().unwrap_or_default();
-                    match map.entry(namespace_uri) {
+                    let namespace_name = attribute.uri.clone().unwrap_or_default();
+                    match map.entry(namespace_name) {
                         Vacant(entry) => {
                             entry.insert(index);
                         }
