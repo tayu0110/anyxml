@@ -14,7 +14,7 @@ package.rust-version = "1.89.0"
 
 [package]
 name = "anyxml"
-version = "0.9.1"
+version = "0.10.0"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -24,7 +24,7 @@ keywords = ["xml", "dtd", "xpath", "catalog", "relaxng"]
 rust-version.workspace = true
 
 [dependencies]
-anyxml-uri = { path = "./anyxml-uri", version = "0.1.6" }
+anyxml-uri = { path = "./anyxml-uri", version = "0.1.7" }
 anyxml-automata = { path = "./anyxml-automata", version = "0.1.1" }
 
 
