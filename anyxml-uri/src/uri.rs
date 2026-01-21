@@ -513,10 +513,24 @@ impl URIString {
                         }
                     },
                     RootDir => {}
-                    CurDir => path_str.push_str("/."),
-                    ParentDir => path_str.push_str("/.."),
+                    CurDir => {
+                        if !path_str.is_empty() {
+                            path_str.push_str("/.");
+                        } else {
+                            path_str.push_str(".");
+                        }
+                    }
+                    ParentDir => {
+                        if !path_str.is_empty() {
+                            path_str.push_str("/..");
+                        } else {
+                            path_str.push_str("..")
+                        }
+                    }
                     Normal(segment) => {
-                        path_str.push('/');
+                        if !path_str.is_empty() {
+                            path_str.push('/');
+                        }
                         let segment = segment.to_str().ok_or(ParseRIError::Unsupported)?;
                         if verbatim {
                             path_str.push_str(&segment.replace('/', "%2F"));
