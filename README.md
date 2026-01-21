@@ -14,12 +14,12 @@ The current implementation supports the following features:
 - validate XML 1.0 document using DTD and RELAX NG
     - [x] DTD (parser embeded)
     - [x] RELAX NG (for document tree, XML Syntax only)
-    - [] XML Schema
+    - [ ] XML Schema
 - handle namespace conforming to XML Namespace 1.0
 - build, modify and serialize XML document trees
 - execute XPath and lookup specific node in the document tree
     - [x] XPath 1.0
-    - [] XPath 2.0 or later
+    - [ ] XPath 2.0 or later
 - resolve an alternative URI of external identifiers or URI using XML Catalogs
 - merge XML documents using XInclude.
 - canonicalize XML document.

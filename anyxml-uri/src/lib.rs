@@ -303,5 +303,20 @@ mod tests {
                 .as_escaped_str(),
             "file://localhost/share/"
         );
+
+        let test = URIString::parse_file_path("resources\\test.xml").unwrap();
+        assert_eq!(test.as_unescaped_str().unwrap(), "resources/test.xml");
+
+        let base = URIString::parse_file_path("C:\\Users\\someuser\\Document\\").unwrap();
+        assert_eq!(
+            base.as_unescaped_str().unwrap(),
+            "file:C:/Users/someuser/Document/"
+        );
+
+        let resolved = base.resolve(&test);
+        assert_eq!(
+            resolved.as_unescaped_str().unwrap(),
+            "file:C:/Users/someuser/Document/resources/test.xml"
+        );
     }
 }
