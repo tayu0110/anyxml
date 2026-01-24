@@ -1,0 +1,7 @@
+setDocumentLocator()
+startDocument()
+startPrefixMapping(a, http://example.com/a)
+startElement(None, root, root, {http://example.com/a}att='nsatt', {http://www.w3.org/2000/xmlns/}a='http://example.com/a')
+endElement(None, root, root)
+endPrefixMapping(a)
+endDocument()

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, path::Path, rc::Rc};
 
 use anyxml::{
     sax::parser::XMLReaderBuilder,
@@ -24,9 +24,12 @@ const IGNORED_TESTCASE: &[&str] = &[
 
 #[test]
 fn testsuite() {
-    let uri = URIString::parse_file_path(env!("CARGO_MANIFEST_PATH"))
-        .unwrap()
-        .resolve(&URIString::parse("resources/XIncl20060927/testdescr.xml").unwrap());
+    let uri = URIString::parse_file_path(
+        Path::new("resources/XIncl20060927/testdescr.xml")
+            .canonicalize()
+            .unwrap(),
+    )
+    .unwrap();
 
     let testcases = evaluate_uri("//testcases", uri.as_ref(), None)
         .unwrap()

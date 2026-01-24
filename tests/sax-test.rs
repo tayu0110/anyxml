@@ -427,3 +427,46 @@ fn progressive_xmlconf_tests() {
         handler.unexpected_failure.get(),
     );
 }
+
+#[test]
+fn ns_well_formed_tests() {
+    let handler = DebugHandler {
+        child: TestSAXHandler::new(),
+        buffer: String::new(),
+    };
+
+    let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+
+    for ent in read_dir("resources/ns-well-formed").unwrap() {
+        if let Ok(ent) = ent
+            && ent.metadata().unwrap().is_file()
+        {
+            let path = ent.path();
+            let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
+            reader.parse_uri(&uri, None).ok();
+            assert_eq!(
+                reader.handler.child.fatal_error.get(),
+                0,
+                "uri: {}\nerrors:\n{}",
+                uri.as_escaped_str(),
+                reader.handler.child.buffer.borrow(),
+            );
+
+            let outname = path.file_name().unwrap().to_str().unwrap();
+            let outname = format!("resources/ns-well-formed/output/{outname}.sax");
+            let outname = Path::new(outname.as_str());
+            let output = std::fs::read_to_string(outname).unwrap();
+
+            assert_eq!(
+                output,
+                reader.handler.buffer,
+                "uri: {}\n{}",
+                uri.as_escaped_str(),
+                reader.handler.buffer,
+            );
+
+            reader.handler.buffer.clear();
+            reader.handler.child.reset();
+        }
+    }
+}

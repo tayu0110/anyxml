@@ -588,7 +588,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     // default namespace
                     if let Some(namespace) = self.namespaces.get("") {
                         self.handler.start_element(
-                            Some(&namespace.namespace_name),
+                            (!namespace.namespace_name.is_empty())
+                                .then_some(&namespace.namespace_name),
                             Some(name),
                             name,
                             &atts,
@@ -709,8 +710,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 } else {
                     // default namespace
                     if let Some(namespace) = self.namespaces.get("") {
-                        self.handler
-                            .end_element(Some(&namespace.namespace_name), Some(name), name);
+                        self.handler.end_element(
+                            (!namespace.namespace_name.is_empty())
+                                .then_some(&namespace.namespace_name),
+                            Some(name),
+                            name,
+                        );
                     } else {
                         self.handler.end_element(None, Some(name), name);
                     }

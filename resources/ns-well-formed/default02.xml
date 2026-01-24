@@ -1,0 +1,1 @@
+<root xmlns="http://example.com" xmlns:a="http://example.com"><child att="att-default" a:att="att-a" /></root>
