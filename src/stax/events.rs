@@ -22,6 +22,7 @@ pub(crate) enum XMLEventType {
     Finished,
 }
 
+/// Parser event from StAX parser.
 pub enum XMLEvent<'a> {
     StartDocument,
     EndDocument,
@@ -48,24 +49,29 @@ pub struct StartElement<'a> {
 }
 
 impl StartElement<'_> {
+    /// QName of this element.
     pub fn name(&self) -> &str {
         self.qname
     }
 
+    /// Local part of QName of this element.
     pub fn local_name(&self) -> Option<&str> {
         self.local_name
     }
 
+    /// Prefix of QName of this element.
     pub fn prefix(&self) -> Option<&str> {
         let local_name = self.local_name?;
         let prefix_len = self.qname.len() - local_name.len();
         (prefix_len > 0).then(|| &self.qname[..prefix_len - 1])
     }
 
-    pub fn namespace_uri(&self) -> Option<&str> {
+    /// Namespace name of this element.
+    pub fn namespace_name(&self) -> Option<&str> {
         self.namespace_name
     }
 
+    /// Attributes of this element.
     pub fn attributes(&self) -> &Attributes {
         self.atts
     }
@@ -78,21 +84,25 @@ pub struct EndElement<'a> {
 }
 
 impl EndElement<'_> {
+    /// QName of this element.
     pub fn name(&self) -> &str {
         self.qname
     }
 
+    /// Local part of QName of this element.
     pub fn local_name(&self) -> Option<&str> {
         self.local_name
     }
 
+    /// Prefix of QName of this element.
     pub fn prefix(&self) -> Option<&str> {
         let local_name = self.local_name?;
         let prefix_len = self.qname.len() - local_name.len();
         (prefix_len > 0).then(|| &self.qname[..prefix_len - 1])
     }
 
-    pub fn namespace_uri(&self) -> Option<&str> {
+    /// Namespace name of this element.
+    pub fn namespace_name(&self) -> Option<&str> {
         self.namespace_name
     }
 }
@@ -104,10 +114,12 @@ pub struct Declaration<'a> {
 }
 
 impl Declaration<'_> {
+    /// XML version.
     pub fn version(&self) -> XMLVersion {
         self.version
     }
 
+    /// Encoding name specified at this declaration.
     pub fn encoding(&self) -> Option<&str> {
         self.encoding
     }
@@ -132,10 +144,12 @@ pub struct ProcessingInstruction<'a> {
 }
 
 impl ProcessingInstruction<'_> {
+    /// Target name of this processing instruction.
     pub fn target(&self) -> &str {
         self.target
     }
 
+    /// Data of this processing instruction.
     pub fn data(&self) -> Option<&str> {
         self.data
     }

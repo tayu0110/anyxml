@@ -27,8 +27,8 @@ pub enum ContentSpec {
 impl ContentSpec {
     pub fn new_validator(&mut self) -> ContentSpecValidationContext {
         let (validator, is_external_element_content) = match self {
-            ContentSpec::EMPTY => (ContentSpecValidator::EMPTY, false),
-            ContentSpec::ANY => (ContentSpecValidator::ANY, false),
+            ContentSpec::EMPTY => (ContentSpecValidator::Empty, false),
+            ContentSpec::ANY => (ContentSpecValidator::Any, false),
             ContentSpec::Mixed(set) => (ContentSpecValidator::Mixed(set.clone()), false),
             ContentSpec::Children(model) => {
                 let validator = model.new_validator();
@@ -90,13 +90,13 @@ enum ElementContentState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ElementContentStateID {
+pub(crate) struct ElementContentStateID {
     holder_id: usize,
     state_id: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
-pub struct NameID(usize);
+pub(crate) struct NameID(usize);
 
 impl Atom for NameID {
     const EPSILON: Self = Self(0);
@@ -117,16 +117,16 @@ pub enum ElementContentCompileError {
 }
 
 #[derive(Debug, Clone)]
-pub enum ElementContentValidator {
-    NFA(Arc<NFA<NameID>>),
-    DFA(Arc<DFA<NameID>>),
+pub(crate) enum ElementContentValidator {
+    Nfa(Arc<NFA<NameID>>),
+    Dfa(Arc<DFA<NameID>>),
 }
 
 impl ElementContentValidator {
     fn initial_state(&self) -> State<NameID> {
         match self {
-            ElementContentValidator::NFA(nfa) => nfa.initial_state(),
-            ElementContentValidator::DFA(dfa) => dfa.initial_state(),
+            ElementContentValidator::Nfa(nfa) => nfa.initial_state(),
+            ElementContentValidator::Dfa(dfa) => dfa.initial_state(),
         }
     }
 }
@@ -293,7 +293,7 @@ impl ElementContent {
         // build NFA and check if it is deterministic
         let nfa = NFA::assemble(Some(&ast)).unwrap();
         let is_deterministic = nfa.is_deterministic();
-        self.compiled = Some(ElementContentValidator::NFA(Arc::new(nfa)));
+        self.compiled = Some(ElementContentValidator::Nfa(Arc::new(nfa)));
         self.name_ids = Some(Arc::new(memo));
         Ok(!is_deterministic)
     }
@@ -354,12 +354,12 @@ impl ElementContent {
 
     fn new_validator(&mut self) -> ElementContentValidator {
         match &self.compiled {
-            Some(ElementContentValidator::NFA(nfa)) => {
+            Some(ElementContentValidator::Nfa(nfa)) => {
                 let dfa = Arc::new(nfa.build_dfa());
-                self.compiled = Some(ElementContentValidator::DFA(dfa.clone()));
-                ElementContentValidator::DFA(dfa.clone())
+                self.compiled = Some(ElementContentValidator::Dfa(dfa.clone()));
+                ElementContentValidator::Dfa(dfa.clone())
             }
-            Some(ElementContentValidator::DFA(dfa)) => ElementContentValidator::DFA(dfa.clone()),
+            Some(ElementContentValidator::Dfa(dfa)) => ElementContentValidator::Dfa(dfa.clone()),
             None => {
                 self.compile().ok();
                 if self.compiled.is_none() {
@@ -527,9 +527,9 @@ impl ContentSpecValidationContext {
 }
 
 #[derive(Debug)]
-pub enum ContentSpecValidator {
-    EMPTY,
-    ANY,
+pub(crate) enum ContentSpecValidator {
+    Empty,
+    Any,
     Mixed(Arc<HashSet<Box<str>>>),
     Children {
         unrecoverable: bool,
@@ -542,8 +542,8 @@ pub enum ContentSpecValidator {
 impl ContentSpecValidator {
     pub fn push_name(&mut self, name: &str) -> Result<(), ContentSpecValidationError> {
         match self {
-            ContentSpecValidator::EMPTY => Err(ContentSpecValidationError::UnacceptableElement),
-            ContentSpecValidator::ANY => Ok(()),
+            ContentSpecValidator::Empty => Err(ContentSpecValidationError::UnacceptableElement),
+            ContentSpecValidator::Any => Ok(()),
             ContentSpecValidator::Mixed(allowed) => {
                 if allowed.contains(name) {
                     Ok(())
@@ -567,7 +567,7 @@ impl ContentSpecValidator {
                     return Err(ContentSpecValidationError::UnacceptableElement);
                 };
                 match validator {
-                    ElementContentValidator::NFA(nfa) => {
+                    ElementContentValidator::Nfa(nfa) => {
                         if let Ok(new) = nfa.transition(state.iter().copied(), once(name_id)) {
                             *state = new;
                             Ok(())
@@ -576,7 +576,7 @@ impl ContentSpecValidator {
                             Err(ContentSpecValidationError::UnacceptableElement)
                         }
                     }
-                    ElementContentValidator::DFA(dfa) => {
+                    ElementContentValidator::Dfa(dfa) => {
                         if let Ok(new) = dfa.transition(state.pop().unwrap(), once(name_id)) {
                             state.push(new);
                             Ok(())
@@ -592,8 +592,8 @@ impl ContentSpecValidator {
 
     pub fn push_pcdata(&self) -> Result<(), ContentSpecValidationError> {
         match self {
-            ContentSpecValidator::ANY | ContentSpecValidator::Mixed(_) => Ok(()),
-            ContentSpecValidator::EMPTY | ContentSpecValidator::Children { .. } => {
+            ContentSpecValidator::Any | ContentSpecValidator::Mixed(_) => Ok(()),
+            ContentSpecValidator::Empty | ContentSpecValidator::Children { .. } => {
                 Err(ContentSpecValidationError::UnacceptablePCDATA)
             }
         }
@@ -601,7 +601,7 @@ impl ContentSpecValidator {
 
     pub fn push_whitespaces(&self) -> Result<(), ContentSpecValidationError> {
         match self {
-            ContentSpecValidator::EMPTY => Err(ContentSpecValidationError::UnacceptablePCDATA),
+            ContentSpecValidator::Empty => Err(ContentSpecValidationError::UnacceptablePCDATA),
             _ => Ok(()),
         }
     }
@@ -618,14 +618,14 @@ impl ContentSpecValidator {
                     Ok(())
                 } else {
                     match validator {
-                        ElementContentValidator::NFA(nfa) => {
+                        ElementContentValidator::Nfa(nfa) => {
                             if state.iter().any(|&state| nfa.is_accepted(state)) {
                                 Ok(())
                             } else {
                                 Err(ContentSpecValidationError::NotReachedAcceptedState)
                             }
                         }
-                        ElementContentValidator::DFA(dfa) => {
+                        ElementContentValidator::Dfa(dfa) => {
                             if dfa.is_accepted(state[0]) {
                                 Ok(())
                             } else {

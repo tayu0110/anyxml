@@ -29,7 +29,7 @@ fn well_formed_tests() {
                         write!(
                             buffer,
                             "startElement({}, {}, {}, {}",
-                            start.namespace_uri().unwrap_or("None"),
+                            start.namespace_name().unwrap_or("None"),
                             start.prefix().unwrap_or("None"),
                             start.local_name().unwrap_or("None"),
                             start.name()
@@ -53,7 +53,7 @@ fn well_formed_tests() {
                         writeln!(
                             buffer,
                             "endElement({}, {}, {}, {})",
-                            end.namespace_uri().unwrap_or("None"),
+                            end.namespace_name().unwrap_or("None"),
                             end.prefix().unwrap_or("None"),
                             end.local_name().unwrap_or("None"),
                             end.name()

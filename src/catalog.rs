@@ -21,14 +21,16 @@ const PUBLICID_URN_NAMESPACE: &str = "urn:publicid:";
 pub const XML_CATALOG_NAMESPACE: &str = "urn:oasis:names:tc:entity:xmlns:xml:catalog";
 pub const XML_CATALOG_PUBLICID: &str = "-//OASIS//DTD XML Catalogs V1.1//EN";
 
+/// Prefer mode (public or system)
+///
 /// # Reference
 /// [4.1.1 The `prefer` attribute](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
 pub enum PreferMode {
-    /// Represent that `prefer="public"` is specified on `catalog` or `group`
+    /// `prefer="public"`
     #[default]
     Public,
-    /// Represent that `prefer="system"` is specified on `catalog` or `group`
+    /// `prefer="system"`
     System,
 }
 

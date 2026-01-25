@@ -137,6 +137,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
         Ok(())
     }
 
+    /// Reset parser.
     pub fn reset(&mut self) -> Result<(), XMLError> {
         self.source = Box::new(std::io::empty());
         self.buffer.clear();
@@ -146,6 +147,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
         Ok(())
     }
 
+    /// Advance the event until next markup or text data.
     pub fn next_event<'b>(&'b mut self) -> Result<XMLEvent<'b>, XMLError> {
         (|| {
             if self.reader.handler.event == XMLEventType::Finished {
@@ -235,6 +237,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
         }
     }
 
+    /// Advance the event until the tag-related event appears.
     pub fn next_tag<'b>(&'b mut self) -> Result<XMLEvent<'b>, XMLError> {
         (|| {
             if self.reader.handler.event == XMLEventType::Finished {
@@ -279,6 +282,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
         Ok(self.create_event())
     }
 
+    /// Current namespace stack.
     pub fn namespaces(&self) -> &NamespaceStack {
         &self.reader.namespaces
     }
