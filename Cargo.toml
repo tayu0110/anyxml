@@ -4,6 +4,7 @@ members = [
     "anyxml-base64",
     "anyxml-cli",
     "anyxml-datetime",
+    "anyxml-encoding",
     "anyxml-uri",
 ]
 package.edition = "2024"
@@ -24,8 +25,9 @@ keywords = ["xml", "dtd", "xpath", "catalog", "relaxng"]
 rust-version.workspace = true
 
 [dependencies]
-anyxml-uri = { path = "./anyxml-uri", version = "0.1.7" }
-anyxml-automata = { path = "./anyxml-automata", version = "0.1.1" }
+anyxml-uri = { path = "./anyxml-uri", version = "^0.1" }
+anyxml-automata = { path = "./anyxml-automata", version = "^0.1" }
+anyxml-encoding = { path = "./anyxml-encoding", version = "^0.1" }
 
 
 [[test]]

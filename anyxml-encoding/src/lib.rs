@@ -17,37 +17,20 @@ mod shift_jis;
 mod ucs4;
 mod us_ascii;
 mod utf16;
+mod utf8;
 
 use std::{
     borrow::Cow,
     collections::BTreeMap,
-    str::{from_utf8, from_utf8_unchecked},
     sync::{LazyLock, RwLock},
 };
 
-pub use crate::encoding::{iso_8859::*, shift_jis::*, ucs4::*, us_ascii::*, utf16::*};
-
-pub trait Encoder {
-    fn name(&self) -> &'static str;
-    /// If no error occurs, return `Ok((read_bytes, write_bytes))`.
-    fn encode(
-        &mut self,
-        src: &str,
-        dst: &mut [u8],
-        finish: bool,
-    ) -> Result<(usize, usize), EncodeError>;
-}
-
-pub trait Decoder {
-    fn name(&self) -> &'static str;
-    /// If no error occurs, return `Ok((read_bytes, write_bytes))`.
-    fn decode(
-        &mut self,
-        src: &[u8],
-        dst: &mut String,
-        finish: bool,
-    ) -> Result<(usize, usize), DecodeError>;
-}
+pub use iso_8859::*;
+pub use shift_jis::*;
+pub use ucs4::*;
+pub use us_ascii::*;
+pub use utf8::*;
+pub use utf16::*;
 
 #[derive(Debug, Clone)]
 pub enum EncodeError {
@@ -73,6 +56,17 @@ impl std::fmt::Display for EncodeError {
 }
 
 impl std::error::Error for EncodeError {}
+
+pub trait Encoder {
+    fn name(&self) -> &'static str;
+    /// If no error occurs, return `Ok((read_bytes, write_bytes))`.
+    fn encode(
+        &mut self,
+        src: &str,
+        dst: &mut [u8],
+        finish: bool,
+    ) -> Result<(usize, usize), EncodeError>;
+}
 
 #[derive(Debug, Clone)]
 pub enum DecodeError {
@@ -103,94 +97,15 @@ impl std::fmt::Display for DecodeError {
 
 impl std::error::Error for DecodeError {}
 
-pub const UTF8_NAME: &str = "UTF-8";
-
-pub struct UTF8Encoder;
-impl Encoder for UTF8Encoder {
-    fn name(&self) -> &'static str {
-        UTF8_NAME
-    }
-
-    fn encode(
-        &mut self,
-        src: &str,
-        dst: &mut [u8],
-        finish: bool,
-    ) -> Result<(usize, usize), EncodeError> {
-        if src.is_empty() {
-            return if finish {
-                Ok((0, 0))
-            } else {
-                Err(EncodeError::InputIsEmpty)
-            };
-        }
-
-        if finish && src.len() > dst.len() {
-            return Err(EncodeError::OutputTooShort);
-        }
-
-        let len = src.len().min(dst.len());
-        dst[..len].copy_from_slice(&src.as_bytes()[..len]);
-        Ok((len, len))
-    }
-}
-
-pub struct UTF8Decoder;
-impl Decoder for UTF8Decoder {
-    fn name(&self) -> &'static str {
-        UTF8_NAME
-    }
-
+pub trait Decoder {
+    fn name(&self) -> &'static str;
+    /// If no error occurs, return `Ok((read_bytes, write_bytes))`.
     fn decode(
         &mut self,
         src: &[u8],
         dst: &mut String,
         finish: bool,
-    ) -> Result<(usize, usize), DecodeError> {
-        if src.is_empty() {
-            return Err(DecodeError::InputIsEmpty);
-        }
-        let len = dst.capacity() - dst.len();
-        if len < 4 {
-            return Err(DecodeError::OutputTooShort);
-        }
-
-        let len = len.min(src.len());
-        match from_utf8(&src[..len]) {
-            Ok(s) => {
-                dst.push_str(s);
-                Ok((len, len))
-            }
-            Err(err) => {
-                let up_to = err.valid_up_to();
-                dst.push_str(unsafe {
-                    // # Safety
-                    // This operation is safe due to the `Utf8Error` constraint.
-                    from_utf8_unchecked(&src[..up_to])
-                });
-                match err.error_len() {
-                    Some(len) => Err(DecodeError::Malformed {
-                        read: up_to + len,
-                        write: up_to,
-                        length: len,
-                        offset: 0,
-                    }),
-                    None => {
-                        if finish {
-                            Err(DecodeError::Malformed {
-                                read: len,
-                                write: up_to,
-                                length: len - up_to,
-                                offset: 0,
-                            })
-                        } else {
-                            Ok((up_to, up_to))
-                        }
-                    }
-                }
-            }
-        }
-    }
+    ) -> Result<(usize, usize), DecodeError>;
 }
 
 /// Supported encodings.  

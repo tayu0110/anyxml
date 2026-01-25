@@ -1,6 +1,6 @@
 use std::iter::once;
 
-use crate::encoding::{DecodeError, Decoder, EncodeError, Encoder};
+use crate::{DecodeError, Decoder, EncodeError, Encoder};
 
 pub const UTF16_NAME: &str = "UTF-16";
 

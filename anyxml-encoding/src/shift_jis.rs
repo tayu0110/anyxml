@@ -1,6 +1,6 @@
-use crate::encoding::{DecodeError, Decoder, EncodeError, Encoder};
+use crate::{DecodeError, Decoder, EncodeError, Encoder};
 
-pub const SHIFT_JIS_NAME: &str = "Shift_JIS";
+pub const SHIFT_JIS_NAME: &str = "SHIFT_JIS";
 
 pub struct ShiftJISEncoder;
 impl Encoder for ShiftJISEncoder {

@@ -1,4 +1,4 @@
-use crate::encoding::{DecodeError, Decoder, EncodeError, Encoder};
+use crate::{DecodeError, Decoder, EncodeError, Encoder};
 
 pub const ISO_8859_1_NAME: &str = "ISO_8859-1:1987";
 

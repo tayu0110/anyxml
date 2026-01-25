@@ -1,4 +1,4 @@
-use crate::encoding::{DecodeError, Decoder, EncodeError, Encoder};
+use crate::{DecodeError, Decoder, EncodeError, Encoder};
 
 pub const UTF32_NAME: &str = "UTF-32";
 

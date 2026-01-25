@@ -1,0 +1,12 @@
+[package]
+name = "anyxml-encoding"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "simple character encoding and decoding library for XML"
+keywords = ["encoding", "xml"]
+rust-version.workspace = true
+
+[dependencies]
