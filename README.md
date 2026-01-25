@@ -11,7 +11,7 @@ The current implementation supports the following features:
     - [x] Character reference substitution
     - [x] Attribute value normalization
     - [x] Default attribute value handling
-- validate XML 1.0 document using DTD and RELAX NG
+- validate XML 1.0 document
     - [x] DTD (parser embeded)
     - [x] RELAX NG (for document tree, XML Syntax only)
     - [ ] XML Schema
