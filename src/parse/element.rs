@@ -244,11 +244,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         // According to the namespace specification, attribute names without prefixes
                         // do not belong to the default namespace, but rather belong to no namespace.
                         // Therefore, we need to do nothing.
-                        att.uri = None;
+                        att.namespace_name = None;
                     } else {
                         let prefix_len = att.qname.len() - local_name.len() - 1;
                         let prefix = &att.qname[..prefix_len];
-                        att.uri = if let Some(namespace) = self.namespaces.get(prefix) {
+                        att.namespace_name = if let Some(namespace) = self.namespaces.get(prefix) {
                             Some(namespace.namespace_name.clone())
                         } else {
                             // It is unclear what to do when the corresponding namespace cannot be found,
@@ -271,7 +271,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                             self,
                             ParserDuplicateAttributes,
                             "The attribute '{{{}}}{}' is duplicated",
-                            att.uri.as_deref().unwrap_or("(null)"),
+                            att.namespace_name.as_deref().unwrap_or("(null)"),
                             att.local_name.as_deref().unwrap()
                         );
                     } else {
@@ -884,7 +884,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             // so set it to `None` at this point.
             // Check after reading all attributes of this tag.
             let mut att = Attribute {
-                uri,
+                namespace_name: uri,
                 local_name: if prefix_length > 0 {
                     Some(att_name[prefix_length + 1..].into())
                 } else {
@@ -894,13 +894,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 value: att_value.into(),
                 flag: 0,
             };
-            if att.uri.is_some() {
+            if att.namespace_name.is_some() {
                 att.set_nsdecl();
             }
             att
         } else {
             Attribute {
-                uri: None,
+                namespace_name: None,
                 local_name: None,
                 qname: att_name.into(),
                 value: att_value.into(),

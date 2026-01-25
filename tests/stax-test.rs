@@ -39,7 +39,7 @@ fn well_formed_tests() {
                         for att in start.attributes() {
                             write!(buffer, ", ").ok();
                             if let Some(local_name) = att.local_name.as_deref() {
-                                if let Some(uri) = att.uri.as_deref() {
+                                if let Some(uri) = att.namespace_name.as_deref() {
                                     write!(buffer, "{{{uri}}}").ok();
                                 }
                                 write!(buffer, "{local_name}='{}'", att.value).ok();

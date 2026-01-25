@@ -515,7 +515,7 @@ impl<Child: SAXHandler> SAXHandler for DebugHandler<Child> {
         for att in atts {
             write!(self.buffer, ", ").ok();
             if let Some(local_name) = att.local_name.as_deref() {
-                if let Some(uri) = att.uri.as_deref() {
+                if let Some(uri) = att.namespace_name.as_deref() {
                     write!(self.buffer, "{{{uri}}}").ok();
                 }
                 write!(self.buffer, "{local_name}='{}'", att.value).ok();

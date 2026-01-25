@@ -49,6 +49,11 @@ pub struct InputSource<'a> {
 }
 
 impl<'a> InputSource<'a> {
+    /// Construct an [`InputSource`] from the XML document resource `reader`.
+    ///
+    /// If the resource encoding is known, it can be specified using `encoding`.
+    /// If not specified, the encoding is automatically inferred using the characteristics
+    /// of the XML document.
     pub fn from_reader(reader: impl Read + 'a, encoding: Option<&str>) -> Result<Self, XMLError> {
         let mut ret = Self::default();
         ret.buffer.resize(INPUT_CHUNK, 0);
@@ -83,16 +88,20 @@ impl<'a> InputSource<'a> {
         Ok(ret)
     }
 
-    pub fn from_content(str: &str) -> Self {
+    /// Construct an [`InputSource`] from the XML document resource `xml`.
+    ///
+    /// Resource encoding is always treated as UTF-8, and any encoding specified
+    /// in the XML declaration is ignored.
+    pub fn from_content(xml: &str) -> Self {
         Self {
             source: Box::new(std::io::empty()),
             buffer: vec![],
             decoder: Box::new(UTF8Decoder),
-            decoded: str.to_owned(),
+            decoded: xml.to_owned(),
             buffer_next: 0,
             buffer_end: 0,
             decoded_next: 0,
-            total_read: str.len(),
+            total_read: xml.len(),
             eof: true,
             compact: true,
             progressive: false,
@@ -102,7 +111,7 @@ impl<'a> InputSource<'a> {
         }
     }
 
-    pub fn grow(&mut self) -> Result<(), XMLError> {
+    pub(crate) fn grow(&mut self) -> Result<(), XMLError> {
         if self.progressive {
             // ignore if this source is progressive mode.
             return Ok(());
@@ -193,20 +202,23 @@ impl<'a> InputSource<'a> {
         self.total_read
     }
 
-    pub fn next_char(&mut self) -> Result<Option<char>, XMLError> {
+    pub(crate) fn next_char(&mut self) -> Result<Option<char>, XMLError> {
         Ok(self
             .peek_char()?
             .inspect(|c| self.decoded_next += c.len_utf8()))
     }
 
-    pub fn next_char_if(&mut self, f: impl Fn(char) -> bool) -> Result<Option<char>, XMLError> {
+    pub(crate) fn next_char_if(
+        &mut self,
+        f: impl Fn(char) -> bool,
+    ) -> Result<Option<char>, XMLError> {
         Ok(self
             .peek_char()?
             .filter(|c| f(*c))
             .inspect(|c| self.decoded_next += c.len_utf8()))
     }
 
-    pub fn peek_char(&mut self) -> Result<Option<char>, XMLError> {
+    pub(crate) fn peek_char(&mut self) -> Result<Option<char>, XMLError> {
         if let Some(c) = self.decoded[self.decoded_next..].chars().next() {
             return Ok(Some(c));
         }
@@ -214,7 +226,7 @@ impl<'a> InputSource<'a> {
         Ok(self.decoded[self.decoded_next..].chars().next())
     }
 
-    pub fn advance(&mut self, mut len: usize) -> Result<(), XMLError> {
+    pub(crate) fn advance(&mut self, mut len: usize) -> Result<(), XMLError> {
         while len > 0 {
             let l = len.min(self.decoded.len() - self.decoded_next);
             assert!(l > 0);
@@ -417,18 +429,22 @@ impl<'a> InputSource<'a> {
         self.compact = true;
     }
 
+    /// System identifier of the this source.
     pub fn system_id(&self) -> Option<&URIStr> {
         self.system_id.as_deref()
     }
 
+    /// Public identifier of the this source.
     pub fn public_id(&self) -> Option<&str> {
         self.public_id.as_deref()
     }
 
+    /// Set `system_id` as system identifier of this source.
     pub fn set_system_id(&mut self, system_id: impl Into<URIString>) {
         self.system_id = Some(system_id.into().into());
     }
 
+    /// Set `public_id` as public identifier of this source.
     pub fn set_public_id(&mut self, public_id: impl Into<String>) {
         self.public_id = Some(public_id.into().into_boxed_str());
     }

@@ -49,6 +49,8 @@ use crate::{
     uri::{URIStr, URIString},
 };
 
+/// Attribute type of attlist declarations.
+///
 /// # Reference
 /// - [3.3.1 Attribute Types](https://www.w3.org/TR/xml/#sec-attribute-types)
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -107,6 +109,8 @@ impl std::fmt::Display for AttributeType {
     }
 }
 
+/// Default declaration of attlist declarations.
+///
 /// # Reference
 /// - [3.3.2 Attribute Defaults](https://www.w3.org/TR/xml/#sec-attr-defaults)
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -133,7 +137,7 @@ impl std::fmt::Display for DefaultDecl {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct AttlistDeclMap(
+pub(crate) struct AttlistDeclMap(
     // (attribute type, default value declaration, is external markup declaration)
     HashMap<Box<str>, HashMap<Box<str>, (AttributeType, DefaultDecl, bool)>>,
 );
@@ -145,7 +149,7 @@ static XML_ID_ATTRIBUTE_DECL: (AttributeType, DefaultDecl, bool) =
 impl AttlistDeclMap {
     /// Returns `true` if newly inserted, and `false` if an element or attribute with
     /// the same name is already registered.
-    pub fn insert(
+    pub(crate) fn insert(
         &mut self,
         elem_name: impl Into<Box<str>>,
         attr_name: impl Into<Box<str>>,
@@ -176,7 +180,7 @@ impl AttlistDeclMap {
         true
     }
 
-    pub fn get(
+    pub(crate) fn get(
         &self,
         elem_name: &str,
         attr_name: &str,
@@ -193,15 +197,15 @@ impl AttlistDeclMap {
         None
     }
 
-    pub fn contains(&self, elem_name: &str, attr_name: &str) -> bool {
-        self.get(elem_name, attr_name).is_some()
-    }
+    // pub fn contains(&self, elem_name: &str, attr_name: &str) -> bool {
+    //     self.get(elem_name, attr_name).is_some()
+    // }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.0.clear();
     }
 
-    pub fn attlist(
+    pub(crate) fn attlist(
         &self,
         elem_name: &str,
     ) -> Option<impl Iterator<Item = (&str, &(AttributeType, DefaultDecl, bool))>> {
@@ -210,7 +214,7 @@ impl AttlistDeclMap {
             .map(|map| map.iter().map(|(attr, value)| (attr.as_ref(), value)))
     }
 
-    pub fn iter_all(
+    pub(crate) fn iter_all(
         &self,
     ) -> impl Iterator<Item = (&str, &str, &(AttributeType, DefaultDecl, bool))> {
         self.0.iter().flat_map(|(elem, map)| {
@@ -221,10 +225,10 @@ impl AttlistDeclMap {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ElementDeclMap(HashMap<Box<str>, ContentSpec>);
+pub(crate) struct ElementDeclMap(HashMap<Box<str>, ContentSpec>);
 
 impl ElementDeclMap {
-    pub fn insert(
+    pub(crate) fn insert(
         &mut self,
         name: impl Into<Box<str>>,
         contentspec: ContentSpec,
@@ -240,25 +244,25 @@ impl ElementDeclMap {
         }
     }
 
-    pub fn get(&self, name: &str) -> Option<&ContentSpec> {
+    pub(crate) fn get(&self, name: &str) -> Option<&ContentSpec> {
         self.0.get(name)
     }
 
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut ContentSpec> {
+    pub(crate) fn get_mut(&mut self, name: &str) -> Option<&mut ContentSpec> {
         self.0.get_mut(name)
     }
 
-    pub fn contains(&self, name: &str) -> bool {
-        self.0.contains_key(name)
-    }
+    // pub fn contains(&self, name: &str) -> bool {
+    //     self.0.contains_key(name)
+    // }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.0.clear();
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum EntityDecl {
+pub(crate) enum EntityDecl {
     InternalGeneralEntity {
         base_uri: Arc<URIStr>,
         replacement_text: Box<str>,
@@ -319,10 +323,14 @@ static PREDEFINED_ENTITY_QUOT: LazyLock<EntityDecl> =
     });
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct EntityMap(HashMap<Box<str>, EntityDecl>);
+pub(crate) struct EntityMap(HashMap<Box<str>, EntityDecl>);
 
 impl EntityMap {
-    pub fn insert(&mut self, name: impl Into<Box<str>>, decl: EntityDecl) -> Result<(), XMLError> {
+    pub(crate) fn insert(
+        &mut self,
+        name: impl Into<Box<str>>,
+        decl: EntityDecl,
+    ) -> Result<(), XMLError> {
         use std::collections::hash_map::Entry::*;
         let name: Box<str> = name.into();
         match self.0.entry(name) {
@@ -334,7 +342,7 @@ impl EntityMap {
         }
     }
 
-    pub fn get(&self, name: &str) -> Option<&EntityDecl> {
+    pub(crate) fn get(&self, name: &str) -> Option<&EntityDecl> {
         if let Some(decl) = self.0.get(name) {
             return Some(decl);
         }
@@ -349,11 +357,11 @@ impl EntityMap {
         }
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.0.clear();
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&str, &EntityDecl)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&str, &EntityDecl)> {
         self.0.iter().map(|(name, decl)| (name.as_ref(), decl))
     }
 }
@@ -363,7 +371,9 @@ static ARC_XML_XML_NAMESPACE: LazyLock<Arc<str>> = LazyLock::new(|| XML_XML_NAME
 
 #[derive(Debug, Clone)]
 pub struct Namespace {
+    /// Namespace prefix. If no prefix is bound, set `""`.
     pub prefix: Arc<str>,
+    /// Namespace name.
     pub namespace_name: Arc<str>,
 }
 
@@ -378,24 +388,29 @@ pub struct NamespaceStack {
 }
 
 impl NamespaceStack {
+    /// Check if `prefix` is declared in this stack.
     pub fn is_declared(&self, prefix: &str) -> bool {
         self.prefix_map.contains_key(prefix)
     }
 
+    /// The depth of this stack.
     pub fn len(&self) -> usize {
         self.namespaces.len()
     }
 
+    /// Check if no namespaces are declared.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// If `prefix` is declared, return declared namespace,
+    /// otherwise return [`None`].
     pub fn get(&self, prefix: &str) -> Option<Namespace> {
         let &index = self.prefix_map.get(prefix)?;
         Some(self.namespaces[index].0.clone())
     }
 
-    pub fn push(&mut self, prefix: &str, namespace_name: &str) {
+    pub(crate) fn push(&mut self, prefix: &str, namespace_name: &str) {
         if let Some(index) = self.prefix_map.get_mut(prefix) {
             let previous = *index;
             *index = self.namespaces.len();
@@ -417,7 +432,7 @@ impl NamespaceStack {
         }
     }
 
-    pub fn pop(&mut self) -> Option<Namespace> {
+    pub(crate) fn pop(&mut self) -> Option<Namespace> {
         if self.len() == 1 {
             return None;
         }
@@ -430,13 +445,13 @@ impl NamespaceStack {
         Some(namespace)
     }
 
-    pub fn truncate(&mut self, depth: usize) {
+    pub(crate) fn truncate(&mut self, depth: usize) {
         while self.namespaces.len() > depth {
             self.pop();
         }
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.truncate(1);
     }
 }
@@ -456,10 +471,14 @@ impl Default for NamespaceStack {
     }
 }
 
+/// Notation.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
 pub struct Notation {
+    /// Notation name.
     pub name: Box<str>,
+    /// System identifier of this notation.
     pub system_id: Option<Box<str>>,
+    /// Public identifier of this notation.
     pub public_id: Option<Box<str>>,
 }
 

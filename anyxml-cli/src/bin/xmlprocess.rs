@@ -181,7 +181,7 @@ fn do_inspect_command(mode: InspectMode, document: Option<String>) -> Result<(),
                         for att in start.attributes() {
                             print!(", ");
                             if let Some(local_name) = att.local_name.as_deref() {
-                                if let Some(uri) = att.uri.as_deref() {
+                                if let Some(uri) = att.namespace_name.as_deref() {
                                     print!("{{{uri}}}");
                                 }
                                 print!("{local_name}='{}'", att.value);

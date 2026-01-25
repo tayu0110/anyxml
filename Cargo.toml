@@ -67,3 +67,4 @@ path = "tests/c14n-test.rs"
 [lints.clippy]
 type_complexity = "allow"
 too_many_arguments = "allow"
+enum_variant_names = "allow"

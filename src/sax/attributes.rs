@@ -4,7 +4,7 @@ use crate::error::XMLError;
 
 #[derive(Debug, Clone)]
 pub struct Attribute {
-    pub uri: Option<Arc<str>>,
+    pub namespace_name: Option<Arc<str>>,
     pub local_name: Option<Arc<str>>,
     pub qname: Arc<str>,
     pub value: Box<str>,
@@ -120,7 +120,7 @@ impl Attributes {
 
     /// Get the namespace name of `index`-th attribute in this list.
     pub fn get_namespace_uri(&self, index: usize) -> Option<&str> {
-        self.attributes.get(index)?.uri.as_deref()
+        self.attributes.get(index)?.namespace_name.as_deref()
     }
 
     /// Get the value of `index`-th attribute in this list.
@@ -161,13 +161,13 @@ impl Attributes {
         if let Some(local_name) = attribute.local_name.clone() {
             match self.index_by_expanded_name.entry(local_name) {
                 Vacant(entry) => {
-                    let namespace_name = attribute.uri.clone().unwrap_or_default();
+                    let namespace_name = attribute.namespace_name.clone().unwrap_or_default();
                     let new = HashMap::from([(namespace_name, index)]);
                     entry.insert(new);
                 }
                 Occupied(mut entry) => {
                     let map = entry.get_mut();
-                    let namespace_name = attribute.uri.clone().unwrap_or_default();
+                    let namespace_name = attribute.namespace_name.clone().unwrap_or_default();
                     match map.entry(namespace_name) {
                         Vacant(entry) => {
                             entry.insert(index);

@@ -207,7 +207,8 @@ impl<H: SAXHandler> SAXHandler for CanonicalizeHandler<H> {
             }
         }
 
-        general_atts.sort_unstable_by_key(|att| (att.uri.as_deref(), att.local_name.as_deref()));
+        general_atts
+            .sort_unstable_by_key(|att| (att.namespace_name.as_deref(), att.local_name.as_deref()));
         ns_atts.sort_unstable_by_key(|att| att.local_name.as_deref().filter(|&l| l != "xmlns"));
 
         let mut retained_atts = Attributes::new();
