@@ -1,0 +1,37 @@
+&charset JIS_X0212-1990
+&rem source: ECMA registry
+&alias x0212
+&alias iso-ir-159
+&bits 16
+&g0esc x2444 &g1esc x242944 &g2esc x242a44 &g3esc x242b44
+&code2 2 15
+'( '< ', '. '" '- '; '0 '?
+'' '%
+&code2 2 34
+!I BB ?I TM Cu N0
+&code2 2 75
+-o -a Co Rg
+&code2 6 65
+A% E% Y% I% J* ?? O% ?? U% V* ?? W%
+&code2 6 81
+a% e% y% i% j* i3 o% *s u% v* u3 w%
+&code2 7 34
+D% G% IE DS II YI J% LJ NJ Ts KJ V% DZ
+&code2 7 82
+d% g% ie ds ii yi j% lj nj ts kj v% dz
+&code2 9 1
+AE D/ ?? H/ ?? IJ ?? L/ L. ?? NG O/ OE ?? T/ TH
+&code2 9 33
+ae d/ d- h/ i. ij kk l/ l. 'n ng o/ oe ss t/ th
+&code2 10 1
+A' A! A: A> A( A< A; AA A? C' C> C< C, C. D< E' E! E: E> E( E. E-
+E; ?? G> G( G, G. H> I' I! I: I> I< I. I- I; I? J> K, L' L, N' N< N,
+N? O' O! O: O> O< O" O- O? R' R< R, S' S> S< S, T< T, U' U! U: U( U<
+U" U- U; U0 U:' U:! U:< U:- W. Y' Y: Y> Z' Z< Z.
+&code2 11 1
+a' a! a: a> a( a< a; aa a? c' c> c< c, c. d< e' e! e: e> e( e. e-
+e; g' g> g( ?? g. h> i' i! i: i> i< ?? i- i; i? j> k, l' l, n' n< n,
+n? o' o! o: o> o< o" o- o? r' r< r, s' s> s< s, t< t, u' u! u: u( u<
+u" u- u; u0 u:' u:! u:< u:- w. y' y: y> z' z< z.
+&codex J 16 76 1 94
+&codex J 77 77 1 67

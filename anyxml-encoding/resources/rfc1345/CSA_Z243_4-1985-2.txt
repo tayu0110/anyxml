@@ -1,0 +1,12 @@
+&charset CSA_Z243.4-1985-2
+&rem source: ECMA registry
+&alias iso-ir-122
+&alias ISO646-CA2
+&g0esc x2878 &g1esc x2978 &g2esc x2a78 &g3esc x2b78
+&alias csa7-2
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+a! A B C D E F G H I J K L M N O P Q R S T U V W X Y Z a> c, e> E' _
+o> a b c d e f g h i j k l m n o p q r s t u v w x y z e' u! e! u> DT

@@ -1,0 +1,24 @@
+&charset IBM037
+&rem source: IBM NLS RM Vol2 SE09-8002-01, March 1990
+&alias cp037
+&alias ebcdic-cp-us
+&alias ebcdic-cp-ca
+&alias ebcdic-cp-wt
+&alias ebcdic-cp-nl
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+SP NS a> a: a! a' a? aa c, n? Ct .  <  (  +  !!
+&  e' e> e: e! i' i> i: i! ss !  DO *  )  ;  NO
+-  /  A> A: A! A' A? AA C, N? BB ,  %  _  >  ?
+o/ E' E> E: E! I' I> I: I! '! :  Nb At '  =  "
+O/ a  b  c  d  e  f  g  h  i  << >> d- y' th +-
+DG j  k  l  m  n  o  p  q  r  -a -o ae ', AE Cu
+My '? s  t  u  v  w  x  y  z  !I ?I D- Y' TH Rg
+'> Pd Ye .M Co SE PI 14 12 34 <( )> '- ': '' *X
+(! A  B  C  D  E  F  G  H  I  -- o> o: o! o' o?
+!) J  K  L  M  N  O  P  Q  R  1S u> u: u! u' y:
+// -: S  T  U  V  W  X  Y  Z  2S O> O: O! O' O?
+0  1  2  3  4  5  6  7  8  9  3S U> U: U! U' DT

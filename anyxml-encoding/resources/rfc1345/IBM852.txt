@@ -1,0 +1,18 @@
+&charset IBM852
+&rem source: IBM NLS RM Vol2 SE09-8002-01, March 1990
+&alias cp852
+&alias 852
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+At A B C D E F G H I J K L M N O P Q R S T U V W X Y Z <( // )> '> _
+'! a b c d e f g h i j k l m n o p q r s t u v w x y z (! !! !) '? DT
+C, u: e' a> a: u0 c' c, l/ e: O" o" i> Z' A: C'
+E' L' l' o> o: L< l< S' s' O: U: T< t< L/ *X c<
+a' i' o' u' A; a; Z< z< E; e; ?? z' C< s, << >>
+.S :S ?S vv vl A' A> E< S, VL VV LD UL Z. z. dl
+ur uh dh vr hh vh A( a( UR DR UH DH VR HH VH Cu
+d/ D/ D< E: d< N< I' U> e< ul dr FB LB T, U0 TB
+O' ss O> N' n' n< S< s< R' U' r' U" y' Y' t, ''
+-- '" ', '< '( SE -: '; DG ': '. u" R< r< fS NS

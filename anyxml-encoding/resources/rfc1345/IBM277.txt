@@ -1,0 +1,21 @@
+&charset IBM277
+&rem source: IBM NLS RM Vol2 SE09-8002-01, March 1990
+&alias EBCDIC-CP-DK
+&alias EBCDIC-CP-NO
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+SP NS a> a: a! a' a? !) c, n? Nb .  <  (  +  !
+&  e' e> e: e! i' i> i: i! ss Cu AA *  )  ;  '>
+-  /  A> A: A! A' A? DO C, N? o/ ,  %  _  >  ?
+BB E' E> E: E! I' I> I: I! '! :  AE O/ '  =  "
+At a  b  c  d  e  f  g  h  i  << >> d- y' th +-
+DG j  k  l  m  n  o  p  q  r  -a -o (! ', <( )>
+My u: s  t  u  v  w  x  y  z  !I ?I D- Y' TH Rg
+Ct Pd Ye .M Co SE PI 14 12 34 NO !! '- ': '' *X
+ae A  B  C  D  E  F  G  H  I  -- o> o: o! o' o?
+aa J  K  L  M  N  O  P  Q  R  1S u> '? u! u' y:
+// -: S  T  U  V  W  X  Y  Z  2S O> O: O! O' O?
+0  1  2  3  4  5  6  7  8  9  3S U> U: U! U' DT

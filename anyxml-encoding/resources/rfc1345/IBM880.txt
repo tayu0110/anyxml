@@ -1,0 +1,21 @@
+&charset IBM880
+&rem source: IBM NLS RM Vol2 SE09-8002-01, March 1990
+&alias cp880
+&alias EBCDIC-Cyrillic
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+SP ?? d% g% io ?? ds ii yi j% <( .  <  (  +  !
+&  lj nj ts kj ?? dz =" N0 D% )> DO *  )  ;  '>
+-  /  G% IO ?? DS II YI J% LJ BB ,  %  _  >  ?
+NJ Ts KJ ?? ?? DZ ju a= b= ?? :  Nb At '  =  "
+c= a  b  c  d  e  f  g  h  i  d= e= f= g= h= i=
+j= j  k  l  m  n  o  p  q  r  k= l= m= n= o= p=
+ja ?? s  t  u  v  w  x  y  z  r= s= t= u= z% v=
+%' y= z= s% je sc c% =' JU A= B= C= D= E= F= G=
+?? A  B  C  D  E  F  G  H  I  H= I= J= K= L= M=
+?? J  K  L  M  N  O  P  Q  R  N= O= P= JA R= S=
+// Cu S  T  U  V  W  X  Y  Z  T= U= Z% V= %" Y=
+0  1  2  3  4  5  6  7  8  9  Z= S% JE Sc C% DT

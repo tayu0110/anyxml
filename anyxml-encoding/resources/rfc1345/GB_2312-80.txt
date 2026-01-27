@@ -1,0 +1,69 @@
+&charset GB_2312-80
+&rem source: ECMA registry
+&alias iso-ir-58
+&g0esc x2441 &g1esc x242941 &g2esc x242a41 &g3esc x242b41
+&bits 16
+&alias chinese
+&code2 1 1
+SP ,_ .6 .M 'm '< ': +" *_ -6 ?1
+!2 .3 '6 '9 "6 "9 (' )'
+<1 >1 << >> <+ >+ <7 7> (I )I (" )" +- *X -: :R AN OR +Z *P (U )U (-
+:: RT -T PP -L
+(A 0. In Io =3 =? ?2 CG 0( != !< !> =< >= 00
+:. .: Ml Fm DG 1' 2' oC DO
+Cu Ct Pd %0 SE NB *1 *2 0m 0M 0o Dw Db OS fS uT UT :X -> <- -! -v =_
+&code2 2 17
+1. 2. 3. 4. 5. 6. 7. 8. 9. 10. 11. 12. 13. 14. 15. 16. 17. 18. 19. 20.
+(1) (2) (3) (4) (5) (6) (7) (8) (9) (10) (11) (12) (13) (14)
+(15) (16) (17) (18) (19) (20) 1-o 2-o 3-o 4-o 5-o 6-o 7-o 8-o 9-o
+&code2 2 69
+1c 2c 3c 4c 5c 6c 7c 8c 9c 10c
+&code2 2 81
+1R 2R 3R 4R 5R 6R 7R 8R 9R aR bR cR
+&code2 3 1
+! " Nb Ye % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7
+8 9 : ; < = > ? At A B C D E F G H I J K L M N O
+P Q R S T U V W X Y Z <( // )> '> _ a b c d e f g
+h i j k l m n o p q r s t u v w x y z (! !! !) '-
+&code2 4 1
+   A5 a5 I5 i5 U5 u5 E5 e5 O5 o5 ka ga ki gi ku
+gu ke ge ko go sa za si zi su zu se ze so zo ta
+da ti di tU tu du te de to do na ni nu ne no ha
+ba pa hi bi pi hu bu pu he be pe ho bo po ma mi
+mu me mo yA ya yU yu yO yo ra ri ru re ro wA wa
+wi we wo n5
+&code2 5 1
+   a6 A6 i6 I6 u6 U6 e6 E6 o6 O6 Ka Ga Ki Gi Ku
+Gu Ke Ge Ko Go Sa Za Si Zi Su Zu Se Ze So Zo Ta
+Da Ti Di TU Tu Du Te De To Do Na Ni Nu Ne No Ha
+Ba Pa Hi Bi Pi Hu Bu Pu He Be Pe Ho Bo Po Ma Mi
+Mu Me Mo YA Ya YU Yu YO Yo Ra Ri Ru Re Ro WA Wa
+Wi We Wo N6 Vi KA KE
+&code2 6 1
+A* B* G* D* E* Z* Y* H* I* K* L* M* N* C* O*
+P* R* S* T* U* F* X* Q* W*
+&code2 6 33
+a* b* g* d* e* z* y* h* i* k* l* m* n* c* o*
+p* r* s* t* u* f* x* q* w*
+&code2 7 1
+A= B= V= G= D= E= IO Z% Z= I= J= K= L= M= N= O= P=
+R= S= T= U= F= H= C= C% S% Sc =" Y= %" JE JU JA
+&code2 7 49
+a= b= v= g= d= e= io z% z= i= j= k= l= m= n= o= p=
+r= s= t= u= f= h= c= c% s% sc =' y= %' je ju ja
+&code2 8 1
+a- a' a< a! e- e' e< e! i- i' i< i! o- o' o< o! u- u' u< u! u:- u:<
+u:! u: e>
+&code2 8 37
+b4 p4 m4 f4 d4 t4 n4 l4 g4 k4 h4 j4 q4 x4 zh ch sh r4 z4 c4
+s4 a4 o4 e4 eh4 ai ei au ou an en aN eN er i4 u4 iu
+&code2 9 4
+hh HH vv VV 3- 3_ 3! 3/ 4- 4_ 4! 4/ dr dR Dr DR dl dL Dl LD
+ur uR Ur UR ul uL Ul UL vr vR Udr uDr Vr UdR uDR VR
+vl vL Udl uDl Vl UdL uDL VL
+dh dLr dlR dH Dh DLr DlR DH
+vh vLr vlR vH Udh uDh Vh UdLr
+UdlR uDLr uDlR UdH uDH VLr VlR VH
+&codex c 16 54 1 94
+&codex c 55 55 1 89
+&codex c 56 87 1 94

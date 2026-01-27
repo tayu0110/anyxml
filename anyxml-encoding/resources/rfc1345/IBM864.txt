@@ -1,0 +1,17 @@
+&charset IBM864
+&rem source: IBM Keyboard layouts and code pages, PN 07G4586 June 1991
+&alias cp864
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+At A B C D E F G H I J K L M N O P Q R S T U V W X Y Z <( // )> '> _
+'! a b c d e f g h i j k l m n o p q r s t u v w x y z (! !! !) '? DT
+DG  .M  Ob  RT  :S  hh  vv  vh  vl  dh  vr  uh  dl  dr  ur  ul
+ss  00  o/  +-  12  14  ?2  <<  >>  lH- lH. ??  ??  la- la. a+:
+??  --  aM. Pd  Cu  aH. ??  ??  a+. b+  t+  tk  ,+  g+  hk  x+
+0a  1a  2a  3a  4a  5a  6a  7a  8a  9a  v+  ;+  s+  sn  c+  ?+
+Ct  H'  aM  aH  wH  e+. yH  a+  b+, tm  t+, tk, g+, hk, x+, d+
+dk  r+  z+  s+, sn, c+, dd, tj  zH  e+, i+, BB  NO  -:  *X  e+
+++  f+. q+. k+, l+. m+, n+. h+, w+  j+  y+, dd  m+. i+. i+  m+
+3+; 3+  n+  h+  h+; j+. y+. f+  q+  lM- lM. l+  k+  y+  fS  NS

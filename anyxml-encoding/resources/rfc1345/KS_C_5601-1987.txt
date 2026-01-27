@@ -1,0 +1,83 @@
+&charset KS_C_5601-1987
+&rem source: ECMA registry
+&alias iso-ir-149
+&alias KS_C_5601-1989
+&alias KSC_5601
+&bits 16
+&g0esc x2443 &g1esc x242943 &g2esc x242a43 &g3esc x242b43
+&alias korean
+&code2 1 1
+SP ,_ .6 .M .. .3 ': +" -N -M PP // ?1 '6 '9 "6 "9 (' )' <1 >1 <+ >+
+<' >' <" >" (" )" +- *X -: != =< >= 00
+.: DG 1' 2' oC Ye AA Ct Pd Ml Fm
+-V -T (A dP NB =3 HI SE :X *1 *2
+0m 0M 0o Dw Db OS fS uT UT dT DT -> <-
+-! -v <> =2 <* *> RT CG 0( :. In DI
+&code2 2 1
+=> == FA TE '' '? '< '( '" '0 '. ', '; !I ?I :R Io +Z *P Cu oF %0 Tl
+PL Tr PR cS- cS cH cH- cC- cC 0. cD-
+Rr 0L 0R .S RF RY RK RZ RH RX =T:) tel TEL
+<H >H PI /- /= UD //> <// <!! !!>
+Mb Md M8 M16 KSC (JU) N0 Co TM am pm Tel
+&code2 3 1
+! " Nb DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7
+8 9 : ; < = > ? At A B C D E F G H I J K L M N O
+P Q R S T U V W X Y Z <( W= )> '> _ a b c d e f g
+h i j k l m n o p q r s t u v w x y z (! !! !) '-
+&codex k 4 4 1 94
+&code2 5 1
+1r 2r 3r 4r 5r 6r 7r 8r 9r ar br cr
+&code2 5 16
+1R 2R 3R 4R 5R 6R 7R 8R 9R aR bR cR
+&code2 5 33
+A* B* G* D* E* Z* Y* H* I* K* L* M* N* C* O*
+P* R* S* T* U* F* X* Q* W*
+&code2 5 65
+a* b* g* d* e* z* y* h* i* k* l* m* n* c* o*
+p* r* s* t* u* f* x* q* w*
+&code2 6 1
+hh vv dr dl ul ur vr dh vl uh vh
+HH VV DR LD UL UR VR DH VL UH VH Vr
+dH Vl uH vH vR Dh vL Uh Vh Dl dL Ul uL Ur uR Dr dR
+Udr uDr UdR uDR Udl uDl UdL
+uDL dLr dlR DLr DlR uLr ulR UlR vLr vlR Udh uDh
+UdLr UdlR uDLr uDlR UdH uDH VLr VlR
+&codex k 7 7 1 79
+&code2 8 1
+AE D- -a H/ ?? IJ ?? L. L/ O/ OE -o TH T/ NG
+&codex k 8 8 17 44
+&code2 8 45
+a-o b-o c-o d-o e-o f-o g-o h-o i-o j-o k-o l-o m-o n-o o-o
+p-o q-o r-o s-o t-o u-o v-o w-o x-o y-o z-o
+1-o 2-o 3-o 4-o 5-o 6-o 7-o 8-o 9-o 10-o 11-o 12-o 13-o 14-o 15-o
+12 13 23 14 34 18 38 58 78
+&code2 9 1
+ae d/ d- h/ i. ij kk l. l/ o/ oe ss th t/ ng 'n
+&codex k 9 9 17 44
+&code2 9 45
+(a) (b) (c) (d) (e) (f) (g) (h) (i) (j) (k) (l) (m) (n) (o)
+(p) (q) (r) (s) (t) (u) (v) (w) (x) (y) (z)
+(1) (2) (3) (4) (5) (6) (7) (8) (9) (10) (11) (12) (13) (14) (15)
+1S 2S 3S 4S nS 1s 2s 3s 4s
+&code2 10 1
+   A5 a5 I5 i5 U5 u5 E5 e5 O5 o5 ka ga ki gi ku
+gu ke ge ko go sa za si zi su zu se ze so zo ta
+da ti di tU tu du te de to do na ni nu ne no ha
+ba pa hi bi pi hu bu pu he be pe ho bo po ma mi
+mu me mo yA ya yU yu yO yo ra ri ru re ro wA wa
+wi we wo n5
+&code2 11 1
+   a6 A6 i6 I6 u6 U6 e6 E6 o6 O6 Ka Ga Ki Gi Ku
+Gu Ke Ge Ko Go Sa Za Si Zi Su Zu Se Ze So Zo Ta
+Da Ti Di TU Tu Du Te De To Do Na Ni Nu Ne No Ha
+Ba Pa Hi Bi Pi Hu Bu Pu He Be Pe Ho Bo Po Ma Mi
+Mu Me Mo YA Ya YU Yu YO Yo Ra Ri Ru Re Ro WA Wa
+Wi We Wo N6 Vi KA KE
+&code2 12 1
+A= B= V= G= D= E= IO Z% Z= I= J= K= L= M= N= O= P=
+R= S= T= U= F= H= C= C% S% Sc =" Y= %" JE JU JA
+&code2 12 49
+a= b= v= g= d= e= io z% z= i= j= k= l= m= n= o= p=
+r= s= t= u= f= h= c= c% s% sc =' y= %' je ju ja
+&codex k 16 40 1 94
+&codex k 42 93 1 94

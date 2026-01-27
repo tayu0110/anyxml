@@ -1,0 +1,12 @@
+&charset greek7-old
+&rem source: ECMA registry
+&alias iso-ir-18
+&g0esc x285b &g1esc x295b &g2esc x2a5b &g3esc x2b5b
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Pd DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+'' a* b* q* d* e* f* g* y* i* c* k* l* m* n* o*
+p* j3 r* s* t* h* w* *s x* u* z* ?, ,, ,' '? _
+'! A* B* Q* D* E* F* G* Y* I* C* K* L* M* N* O*
+P* ?? R* S* T* H* W* .M X* U* Z* ?; ;; ;' ': DT

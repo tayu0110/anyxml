@@ -1,0 +1,14 @@
+&charset ASMO_449
+&rem source: ECMA registry
+&alias ISO_9036
+&alias arabic7
+&alias iso-ir-89
+&g0esc x286b &g1esc x296b &g2esc x2a6b &g3esc x2b6b
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb Cu % & ' ( ) * + ,+ - . / 0 1 2 3 4 5 6 7 8 9 : ;+ < = > ?+
+At H' aM aH wH ah yH a+ b+ tm t+ tk g+ hk x+ d+
+dk r+ z+ s+ sn c+ dd tj zH e+ i+ <( // )> '> _
+++ f+ q+ k+ l+ m+ n+ h+ w+ j+ y+ :+ "+ =+ /+ '+
+1+ 3+ 0+ ?? ?? ?? ?? ?? ?? ?? ?? (! !! !) '- DT

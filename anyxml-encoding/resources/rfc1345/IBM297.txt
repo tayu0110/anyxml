@@ -1,0 +1,21 @@
+&charset IBM297
+&rem source: IBM NLS RM Vol2 SE09-8002-01, March 1990
+&alias cp297
+&alias ebcdic-cp-fr
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+SP NS a> a: At a' a? aa // n? DG .  <  (  +  !
+&  (! e> e: !) i' i> i: i! ss SE DO *  )  ;  '>
+-  /  A> A: A! A' A? AA C, N? u! ,  %  _  >  ?
+o/ E' E> E: E! I' I> I: I! My :  Pd a! '  =  "
+O/ a  b  c  d  e  f  g  h  i  << >> d- y' th +-
+<( j  k  l  m  n  o  p  q  r  -a -o ae ', AE Cu
+'! ': s  t  u  v  w  x  y  z  !I ?I D- Y' TH Rg
+Ct Nb Ye .M Co )> PI 14 12 34 NO !! '- '? '' *X
+e' A  B  C  D  E  F  G  H  I  -- o> o: o! o' o?
+e! J  K  L  M  N  O  P  Q  R  1S u> u: BB u' y:
+c, -: S  T  U  V  W  X  Y  Z  2S O> O: O! O' O?
+0  1  2  3  4  5  6  7  8  9  3S U> U: U! U' DT

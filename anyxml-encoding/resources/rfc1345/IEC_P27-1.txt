@@ -1,0 +1,18 @@
+&charset IEC_P27-1
+&rem source: ECMA registry
+&alias iso-ir-143
+&g1esc x2d4b &g2esc x2e4b &g3esc x2f4b
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+At A B C D E F G H I J K L M N O P Q R S T U V W X Y Z <( // )> '> _
+'! a b c d e f g h i j k l m n o p q r s t u v w x y z (! !! !) '? DT
+PA HO BH NH IN NL SA ES HS HJ VS PD PU RI S2 S3
+DC P1 P2 TS CC MW SG EG SS GC SC CI ST OC PM AC
+'< =3 AN OR (U )U (C )C <= => .: :. (- -) (_ )_
+In Io 00 NB dP ?1 ?2 ?- ?= =< != >= <> NO FA TE
+A+ OS PP G* D* -T -V -L H* </ /> L* 1' 2' C* -+
+P* 2S S* *X 3S U* F* .M Q* W* /0 >V RT f( 0( +-
+DG a* b* g* d* e* z* y* h* i* k* l* m* n* c* %0
+p* r* s* -: t* u* f* x* q* w* /- <- -! -> -v '-

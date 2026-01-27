@@ -1,0 +1,12 @@
+&charset NS_4551-2
+&rem source: ECMA registry
+&alias ISO646-NO2
+&alias iso-ir-61
+&g0esc x2861 &g1esc x2961 &g2esc x2a61 &g3esc x2b61
+&alias no2
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " PI DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+At A B C D E F G H I J K L M N O P Q R S T U V W X Y Z AE O/ AA '> _
+'! a b c d e f g h i j k l m n o p q r s t u v w x y z ae o/ aa !! DT

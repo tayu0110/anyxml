@@ -1,0 +1,18 @@
+&charset IBM868
+&rem source: IBM NLS RM Vol2 SE09-8002-01, March 1990
+&alias CP868
+&alias cp-ar
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+At A B C D E F G H I J K L M N O P Q R S T U V W X Y Z <( // )> '> _
+'! a b c d e f g h i j k l m n o p q r s t u v w x y z (! !! !) '? DT
+0a  1a  2a  3a  4a  5a  6a  7a  8a  9a  ,+  ;+  ?+  aM  a+  a+.
+a+: b+  b+, p+  ??  tm  t+  t+, ??  ??  tk  tk, g+  g+, ??  ??
+hk  hk, x+  x+, d+  ??  dk  r+  ??  z+  ??  s+  s+, sn  <<  >>
+sn, c+  .S  :S  ?S  vv  vl  c+, dd  dd, tj  VL  VV  LD  UL  zH
+e+  dl  ur  uh  dh  vr  hh  vh  e+. e+, UR  DR  UH  DH  VR  HH
+VH  e+; i+  i+. i+, i+; f+  f+, q+  q+, k+. ul  dr  FB  TB  k+,
+??  LB  ??  l+  l+. l+; m+  m+, ??  n+  n+, ??  w+  ??  ??  ??
+??  H'  --  ??  ??  ??  ??  ??  ??  ??  ??  3+  3+; ??  fS  NS

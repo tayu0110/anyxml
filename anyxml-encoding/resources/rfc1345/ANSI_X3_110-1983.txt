@@ -1,0 +1,40 @@
+&charset ANSI_X3.110-1983
+&rem source: ECMA registry
+&alias iso-ir-99
+&alias CSA_T500-1983
+&alias NAPLPS
+&g0esc x2874 &g1esc x2974 &g2esc x2a74 &g3esc x2b74
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " ?? ?? % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+At A B C D E F G H I J K L M N O P Q R S T U V W X Y Z <( // )> '> _
+'! a b c d e f g h i j k l m n o p q r s t u v w x y z (! !! !) '? DT
+PA HO BH NH IN NL SA ES HS HJ VS PD PU RI S2 S3
+DC P1 P2 TS CC MW SG EG SS GC SC CI ST OC PM AC
+NS !I Ct Pd DO Ye Nb SE Cu '6 "6 << <- -! -> -v
+DG +- 2S 3S *X My PI .M -: '9 "9 >> 14 12 34 ?I
+?? "! "' "> "? "- "( ". ": "/ "0 ", "_ "" "; "<
+-M 1S Rg Co TM Md HH VV FD BD Fd Bd 18 38 58 78
+Om AE D- -a H/ VH IJ L. L/ O/ OE -o TH T/ NG 'n
+kk ae d/ d- h/ i. ij l. l/ o/ oe ss th t/ ng ??
+&comb2 "' SP '' a a' A A' e e' E E' i i' I I' o o' O O' u u' U U'
+                y y' Y Y' c c' C C' l l' L L' n n' N N' r r' R R'
+                s s' S S' z z' Z Z'
+&comb2 "( SP '( a a( A A( g g( G G(                     u u( U U(
+&comb2 "< SP '< c c< C C< d d< D D< e e< E E< l l< L L< n n< N N<
+                r r< R R< s s< S S< t t< T T< z z< Z Z<
+&comb2 ", SP ', c c, C C, g g, G G, k k, K K, l l, L L, n n, N N,
+                r r, R R, s s, S S, t t, T T,
+&comb2 ">       a a> A A> e e> E E> i i> I I> o o> O O> u u> U U>
+                y y> Y Y> c c> C C> g g> G G> h h> H H> j j> J J>
+                s s> S S> w w> W W>
+&comb2 ": SP ': a a: A A: e e: E E: i i: I I: o o: O O: u u: U U:
+                y y: Y Y:
+&comb2 ". SP '. c c. C C. e e. E E. g g. G G.      I I. z z. Z Z.
+&comb2 "" SP '"                               o o" O O" u u" U U"
+&comb2 "!       a a! A A! e e! E E! i i! I I! o o! O O! u u! U U!
+&comb2 "- SP '- a a- A A- e e- E E- i i- I I- o o- O O- u u- U U-
+&comb2 "; SP '; a a; A A; e e; E E; i i; I I; u u; U U;
+&comb2 "0 SP '0 a aa A AA                               u u0 U U0
+&comb2 "?       a a? A A? n n? N N? i i? I I? o o? O O? u u? U U?

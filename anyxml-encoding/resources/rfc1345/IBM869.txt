@@ -1,0 +1,19 @@
+&charset IBM869
+&rem source: IBM Keyboard layouts and code pages, PN 07G4586 June 1991
+&alias cp869
+&alias 869
+&alias cp-gr
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+At A B C D E F G H I J K L M N O P Q R S T U V W X Y Z <( // )> '> _
+'! a b c d e f g h i j k l m n o p q r s t u v w x y z (! !! !) '? DT
+?? ?? ?? ?? ?? ?? A% ?? .M NO BB 9' '9 E% -M Y%
+I% J* O% ?? ?? U% V* Co W% 2S 3S a% Pd e% y% i%
+j* i3 o% u% A* B* G* D* E* Z* Y* 12 H* I* << >>
+.S :S ?S vv vl K* L* M* N* VL VV LD UL C* O* dl
+ur uh dh vr hh vh P* R* UR DR UH DH VR HH VH S*
+T* U* F* X* Q* W* a* b* g* ul dr FB LB d* e* TB
+z* y* h* i* k* l* m* n* c* o* p* r* s* *s t* ''
+-- +- u* f* x* SE q* '% DG ': w* v* u3 w% fS NS

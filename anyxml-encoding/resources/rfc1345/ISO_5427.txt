@@ -1,0 +1,12 @@
+&charset ISO_5427
+&rem source: ECMA registry
+&alias iso-ir-37
+&g0esc x284e &g1esc x294e &g2esc x2a4e &g3esc x2b4e
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb Cu % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+ju a= b= c= d= e= f= g= h= i= j= k= l= m= n= o=
+p= ja r= s= t= u= z% v= %' y= z= s% je sc c% ='
+JU A= B= C= D= E= F= G= H= I= J= K= L= M= N= O=
+P= JA R= S= T= U= Z% V= %" Y= Z= S% JE Sc C% DT

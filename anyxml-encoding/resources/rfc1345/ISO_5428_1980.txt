@@ -1,0 +1,13 @@
+&charset ISO_5428:1980
+&rem source: ECMA registry
+&alias iso-ir-55
+&g0esc x2853 &g1esc x2953 &g2esc x2a53 &g3esc x2b53
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP "! "' ": "? "p "d "i ?? ?? ?? ?? ?? ?? ?? ??
+<< >> "9 "6 'G ,G ?? ?? ?? ?? ?? .M ?? ?? ?? ;
+?? A* B* ?? G* D* E* T3 M3 Z* Y* H* I* K* L* M*
+N* C* O* P* K3 R* S* ?? T* U* F* X* Q* W* P3 ??
+?? a* b* b3 g* d* e* t3 m3 z* y* h* i* k* l* m*
+n* c* o* p* k3 r* s* *s t* u* f* x* q* w* p3 DT

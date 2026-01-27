@@ -1,0 +1,21 @@
+&charset IBM423
+&rem source: IBM NLS RM Vol2 SE09-8002-01, March 1990
+&alias cp423
+&alias ebcdic-cp-gr
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+SP A* B* G* D* E* Z* Y* H* I* <( .  <  (  +  !
+&  K* L* M* N* C* O* P* R* S* )> DO *  )  ;  '>
+-  /  T* U* F* X* Q* W* ?? ?? ?? ,  %  _  >  ?
+?? A% E% Y% ?? I% O% U% W% '! :  Pd SE '  =  "
+A: a  b  c  d  e  f  g  h  i  a* b* g* d* e* z*
+O: j  k  l  m  n  o  p  q  r  y* h* i* k* l* m*
+U: ': s  t  u  v  w  x  y  z  n* c* o* p* r* *s
+?? a% e% y% j* i% o% u% v* w% s* t* u* f* x* q*
+', A  B  C  D  E  F  G  H  I  ?? w* A> a! a: e>
+'' J  K  L  M  N  O  P  Q  R  +- e' e! e: i> i:
+DG ?? S  T  U  V  W  X  Y  Z  12 o: o> u> u! u:
+0  1  2  3  4  5  6  7  8  9  y: c, C, ?? ?? DT

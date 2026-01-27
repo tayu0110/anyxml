@@ -1,0 +1,12 @@
+&charset DIN_66003
+&rem source: ECMA registry
+&alias iso-ir-21
+&g0esc x284b &g1esc x294b &g2esc x2a4b &g3esc x2b4b
+&alias de
+&alias ISO646-DE
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+SE A B C D E F G H I J K L M N O P Q R S T U V W X Y Z A: O: U: '> _
+'! a b c d e f g h i j k l m n o p q r s t u v w x y z a: o: u: ss DT

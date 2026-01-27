@@ -1,0 +1,18 @@
+&charset IBM851
+&rem source: IBM NLS RM Vol2 SE09-8002-01, March 1990
+&alias cp851
+&alias 851
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+At A B C D E F G H I J K L M N O P Q R S T U V W X Y Z <( // )> '> _
+'! a b c d e f g h i j k l m n o p q r s t u v w x y z (! !! !) '? DT
+C, u: e' a> a: a! A% c, e> e: e! i: i> E% A: Y%
+I% ?? O% o> o: U% u> u! W% O: U: a% Pd e% y% i%
+j* i3 o% u% A* B* G* D* E* Z* Y* 12 H* I* << >>
+.S :S ?S vv vl K* L* N* M* VL VV LD UL C* O* dl
+ur uh dh vr hh vh P* R* UR DR UH DH VR HH VH S*
+T* U* F* X* Q* W* a* b* g* ul dr FB LB d* e* TB
+z* y* h* i* k* l* m* n* c* o* p* r* s* *s t* ''
+-- +- u* f* x* SE q* '; DG ': w* v* u3 w% fS NS

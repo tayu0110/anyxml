@@ -1,0 +1,12 @@
+&charset greek-ccitt
+&rem source: ECMA registry
+&alias iso-ir-150
+&g0esc x282140 &g1esc x292140 &g2esc x2a2140 &g3esc x2b2140
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb Cu % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+At A* B* G* D* E* Z* Y* H* I* K* L* M* N* C* O*
+P* R* ?? S* T* U* F* X* Q* W* ?? <( // )> '> _
+?? a* b* g* d* e* z* y* h* i* k* l* m* n* c* o*
+p* r* *s s* t* u* f* x* q* w* ?? (! !! !) '- DT

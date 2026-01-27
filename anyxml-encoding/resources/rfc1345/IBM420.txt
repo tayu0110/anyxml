@@ -1,0 +1,22 @@
+&charset IBM420
+&rem source: IBM NLS RM Vol2 SE09-8002-01, March 1990
+&rem IBM NLS RM p 11-11
+&alias cp420
+&alias ebcdic-cp-ar1
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+SP  NS  3+  3+; ++  ??  H'  aM  aM. aH  Ct  .   <   (   +   !!
+&   aH. wH  ??  ??  yH  a+  a+. b+  b+, !   DO  *   )   ;   NO
+-   /   tm  t+  t+, tk  tk, g+  g+, hk  BB  ,   %   _   >   ?
+hk, x+  x+, d+  dk  r+  z+  s+  s+, ,+  :   Nb  At  '   =   "
+sn  a   b   c   d   e   f   g   h   i   sn, c+  c+, dd  dd, tj
+zH  j   k   l   m   n   o   p   q   r   e+  e+. e+, e+; i+  i+.
+i+, -:  s   t   u   v   w   x   y   z   i+; f+  f+, q+  q+, k+
+k+, l+  lM- lM. lH- lH. ??  ??  la- la. l+, m+  m+, n+  n+, h+
+;+  A   B   C   D   E   F   G   H   I   --  h+, ??  h+; ??  w+
+?+  J   K   L   M   N   O   P   Q   R   j+  j+. y+  y+. y+, 0a
+*X  ??  S   T   U   V   W   X   Y   Z   1a  2a  ??  3a  4a  5a
+0   1   2   3   4   5   6   7   8   9   ??  6a  7a  8a  9a  DT

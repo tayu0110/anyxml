@@ -1,0 +1,22 @@
+&charset IBM870
+&rem source: IBM NLS RM Vol2 SE09-8002-01, March 1990
+&alias CP870
+&alias ebcdic-cp-roece
+&alias ebcdic-cp-yu
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+SP NS ?? a: ?? a' a( c< c, c' <( .  <  (  +  !
+&  e' ?? e: u0 i' ?? l< l' ss )> DO *  )  ;  '>
+-  /  ?? A: '" A' ?? C< C, C' !! ,  %  _  >  ?
+'< E' ?? E: U0 I' ?? L< L' '! :  Nb At '  =  "
+'( a  b  c  d  e  f  g  h  i  s' n< d/ y' r< ??
+DG j  k  l  m  n  o  p  q  r  l/ n' s< ', '; Cu
+a; '? s  t  u  v  w  x  y  z  S' N< D/ Y' R< ??
+.M A; z. ?? Z. SE PI z< z' Z< Z' N' S< ': '' *X
+(! A  B  C  D  E  F  G  H  I  -- o> o: r' o' o"
+!) J  K  L  M  N  O  P  Q  R  E< u" u: t< u' e<
+// -: S  T  U  V  W  X  Y  Z  d< O> O: R' O' O"
+0  1  2  3  4  5  6  7  8  9  D< U" U: T< U' DT

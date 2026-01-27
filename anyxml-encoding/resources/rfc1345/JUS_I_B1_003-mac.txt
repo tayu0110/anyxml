@@ -1,0 +1,13 @@
+&charset JUS_I.B1.003-mac
+&rem source: ECMA registry
+&alias macedonian
+&alias iso-ir-147
+&g0esc x287d &g1esc x297d &g2esc x2a7d &g3esc x2b7d
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+Z% A= B= C= D= E= F= G= H= I= J% K= L= M= N= O=
+P= LJ R= S= T= U= V= NJ DZ DS Z= S% G% KJ C% _
+z% a= b= c= d= e= f= g= h= i= j% k= l= m= n= o=
+p= lj r= s= t= u= v= nj dz ds z= s% g% kj c% DT

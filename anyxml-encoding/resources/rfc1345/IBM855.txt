@@ -1,0 +1,18 @@
+&charset IBM855
+&rem source: IBM NLS RM Vol2 SE09-8002-01, March 1990
+&alias cp855
+&alias 855
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+SP ! " Nb DO % & ' ( ) * + , - . / 0 1 2 3 4 5 6 7 8 9 : ; < = > ?
+At A B C D E F G H I J K L M N O P Q R S T U V W X Y Z <( // )> '> _
+'! a b c d e f g h i j k l m n o p q r s t u v w x y z (! !! !) '? DT
+d% D% g% G% io IO ie IE ds DS ii II yi YI j% J%
+lj LJ nj NJ ts TS kj KJ v% V% dz DZ ju JU =' ="
+a= A= b= B= c= C= d= D= e= E= f= F= g= G= << >>
+.S :S ?S vv vl h= H= i= I= VL VV LD UL j= J= dl
+ur uh dh vr hh vh k= K= UR DR UH DH VR HH VH Cu
+l= L= m= M= n= N= o= O= p= ul dr FB LB P= ja TB
+JA r= R= s= S= t= T= u= U= z% Z% v= V= %' %" ''
+-- y= Y= z= Z= s% S% je JE sc Sc c% C% ?? fS NS

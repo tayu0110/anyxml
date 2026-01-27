@@ -1,0 +1,21 @@
+&charset IBM905
+&rem source: IBM 3174 Character Set Ref, GA27-3831-02, March 1990
+&alias CP905
+&alias ebcdic-cp-tr
+&code 0
+NU SH SX EX ET EQ AK BL BS HT LF VT FF CR SO SI
+DL D1 D2 D3 D4 NK SY EB CN EM SB EC FS GS RS US
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??
+SP ?? a> a: a! a' ?? c. (! n? C, .  <  (  +  !
+&  e' e> e: e! i' i> i: i! ss G( I. *  )  ;  '>
+-  /  A> A: A! A' ?? C. <( N? s, ,  %  _  >  ?
+?? E' E> E: E! I' I> I: I! i. :  O: S, '  =  U:
+'( a  b  c  d  e  f  g  h  i  h/ c> s> u( ?? !!
+DG j  k  l  m  n  o  p  q  r  h> g> j> '; ?? Cu
+My o: s  t  u  v  w  x  y  z  H/ C> S> U( ?? At
+.M Pd z. !) Z. SE )> ?? 12 DO H> G> J> ': '' *X
+c, A  B  C  D  E  F  G  H  I  -- o> '? o! o' g.
+g( J  K  L  M  N  O  P  Q  R  '! u> // u! u' ??
+u: -: S  T  U  V  W  X  Y  Z  2S O> Nb O! O' G.
+0  1  2  3  4  5  6  7  8  9  3S U> "  U! U' DT

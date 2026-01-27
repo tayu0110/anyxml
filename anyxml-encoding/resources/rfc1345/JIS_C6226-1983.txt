@@ -1,0 +1,66 @@
+&charset JIS_C6226-1983
+&rem source: ECMA registry
+&alias iso-ir-87
+&bits 16
+&g0esc x2442 &g1esc x242942 &g2esc x242a42 &g3esc x242b42
+&alias x0208
+&alias JIS_X0208-1983
+&code2 1 1
+SP ,_ ._ , . .6 : ; ! "5 05 '' '! ': '> '- _ *6 +6 *5 +5 +"
++_ *_ ;_ 0_ -6 -? -N
+&code2 1 31
+FD BD ?1 PP !! .3 .. '6 '9 "6 "9 ( ) (' )' <( )>
+(! !) <1 >1 </ /> <' >' <" >" (" )" + - +- *X -: = != < > =< >= 00
+.: Ml Fm DG 1' 2' oC Ye DO Ct Pd % Nb & * At SE *1 *2 0m 0M 0o LZ
+&code2 2 1
+Db OS fS uT UT dT DT :X =T -> <- -! -v =_
+&code2 2 26
+(- -) (_ )_ (C )C (U )U
+&code2 2 42
+AN OR NO => <= FA TE
+&code2 2 60
+-V -T (A dP NB =3 HI <* *> RT CG 0( :. In DI
+&code2 2 82
+AA %0 MX Mb Md /- /= PI
+&code2 2 94
+Ci
+&code2 3 16
+0 1 2 3 4 5 6 7 8 9
+&code2 3 33
+A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
+&code2 3 65
+a b c d e f g h i j k l m n o p q r s t u v w x y z
+&code2 4 1
+   A5 a5 I5 i5 U5 u5 E5 e5 O5 o5 ka ga ki gi ku
+gu ke ge ko go sa za si zi su zu se ze so zo ta
+da ti di tU tu du te de to do na ni nu ne no ha
+ba pa hi bi pi hu bu pu he be pe ho bo po ma mi
+mu me mo yA ya yU yu yO yo ra ri ru re ro wA wa
+wi we wo n5
+&code2 5 1
+   a6 A6 i6 I6 u6 U6 e6 E6 o6 O6 Ka Ga Ki Gi Ku
+Gu Ke Ge Ko Go Sa Za Si Zi Su Zu Se Ze So Zo Ta
+Da Ti Di TU Tu Du Te De To Do Na Ni Nu Ne No Ha
+Ba Pa Hi Bi Pi Hu Bu Pu He Be Pe Ho Bo Po Ma Mi
+Mu Me Mo YA Ya YU Yu YO Yo Ra Ri Ru Re Ro WA Wa
+Wi We Wo N6 Vi KA KE
+&code2 6 1
+A* B* G* D* E* Z* Y* H* I* K* L* M* N* C* O*
+P* R* S* T* U* F* X* Q* W*
+&code2 6 33
+a* b* g* d* e* z* y* h* i* k* l* m* n* c* o*
+p* r* s* t* u* f* x* q* w*
+&code2 7 1
+A= B= V= G= D= E= IO Z% Z= I= J= K= L= M= N= O= P=
+R= S= T= U= F= H= C= C% S% Sc =" Y= %" JE JU JA
+&code2 7 49
+a= b= v= g= d= e= io z% z= i= j= k= l= m= n= o= p=
+r= s= t= u= f= h= c= c% s% sc =' y= %' je ju ja
+&code2 8 1
+hh vv dr dl ul ur vr dh vl uh vh
+HH VV DR LD UL UR VR DH VL UH VH
+Vr dH Vl uH vH vR Dh vL Uh Vh
+&codex j 16 46 1 94
+&codex j 47 47 1 51
+&codex j 48 83 1 94
+&codex j 84 84 1 4
