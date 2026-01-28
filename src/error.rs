@@ -109,6 +109,7 @@ pub enum XMLError {
     ParserNotationAttlistDeclOnEmptyElement,
     ParserSyntaxticallyIncorrectAttributeDefault,
     ParserInvalidEntityDecl,
+    ParserIncorrectPredefinedEntityDecl,
     ParserDuplicateEntityDecl,
     ParserInvalidNotationDecl,
     ParserDuplicateNotationDecl,

@@ -5,7 +5,7 @@ use crate::{
     error::XMLError,
     sax::{
         EntityDecl,
-        error::{fatal_error, validity_error},
+        error::{error, fatal_error, validity_error},
         handler::SAXHandler,
         parser::{ParserOption, XMLReader},
         source::InputSource,
@@ -234,7 +234,16 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         // > If the same entity is declared more than once, the first declaration
         // > encountered is binding; at user option, an XML processor MAY issue a
         // > warning if entities are declared multiple times.
-        self.entities.insert(name, decl).ok();
+        if let Err(XMLError::ParserIncorrectPredefinedEntityDecl) =
+            self.entities.insert(name.as_ref(), decl)
+        {
+            error!(
+                self,
+                ParserIncorrectPredefinedEntityDecl,
+                "Predefined entity '{}' is redefined incorrectly.",
+                name
+            );
+        }
         self.has_parameter_entity |= pe;
 
         Ok(())

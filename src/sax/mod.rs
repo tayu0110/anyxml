@@ -333,6 +333,56 @@ impl EntityMap {
     ) -> Result<(), XMLError> {
         use std::collections::hash_map::Entry::*;
         let name: Box<str> = name.into();
+
+        // Report an error for entity value literals of predefined entities with incorrect formats.
+        //
+        // # Reference
+        // [4.6 Predefined Entities](https://www.w3.org/TR/xml/#sec-predefined-ent)
+        if matches!(name.as_ref(), "lt" | "gt" | "amp" | "apos" | "quot") {
+            let EntityDecl::InternalGeneralEntity {
+                replacement_text, ..
+            } = &decl
+            else {
+                return Err(XMLError::ParserIncorrectPredefinedEntityDecl);
+            };
+
+            let c = if let Some(code) = replacement_text
+                .strip_prefix("&#x")
+                .and_then(|t| t.strip_suffix(";"))
+            {
+                u32::from_str_radix(code, 16)
+                    .ok()
+                    .and_then(char::from_u32)
+                    .ok_or(XMLError::ParserIncorrectPredefinedEntityDecl)?
+            } else if let Some(code) = replacement_text
+                .strip_prefix("&#")
+                .and_then(|t| t.strip_suffix(";"))
+            {
+                code.parse::<u32>()
+                    .ok()
+                    .and_then(char::from_u32)
+                    .ok_or(XMLError::ParserIncorrectPredefinedEntityDecl)?
+            } else {
+                if replacement_text.len() != 1 || matches!(name.as_ref(), "lt" | "amp") {
+                    return Err(XMLError::ParserIncorrectPredefinedEntityDecl);
+                }
+                replacement_text.chars().next().unwrap()
+            };
+
+            let ret = match name.as_ref() {
+                "lt" => c == '<',
+                "gt" => c == '>',
+                "amp" => c == '&',
+                "apos" => c == '\'',
+                "quot" => c == '"',
+                _ => unreachable!(),
+            };
+
+            if !ret {
+                return Err(XMLError::ParserIncorrectPredefinedEntityDecl);
+            }
+        }
+
         match self.0.entry(name) {
             Occupied(_) => Err(XMLError::ParserDuplicateEntityDecl),
             Vacant(entry) => {
@@ -343,17 +393,13 @@ impl EntityMap {
     }
 
     pub(crate) fn get(&self, name: &str) -> Option<&EntityDecl> {
-        if let Some(decl) = self.0.get(name) {
-            return Some(decl);
-        }
-
         match name {
             "lt" => Some(&PREDEFINED_ENTITY_LT),
             "gt" => Some(&PREDEFINED_ENTITY_GT),
             "amp" => Some(&PREDEFINED_ENTITY_AMP),
             "apos" => Some(&PREDEFINED_ENTITY_APOS),
             "quot" => Some(&PREDEFINED_ENTITY_QUOT),
-            _ => None,
+            _ => self.0.get(name),
         }
     }
 

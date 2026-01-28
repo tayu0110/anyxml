@@ -7,7 +7,7 @@ use crate::{
         EntityDecl,
         error::{error, fatal_error, validity_error},
         handler::SAXHandler,
-        parser::{ParserOption, XMLReader},
+        parser::{ParserOption, ParserState, XMLReader},
         source::InputSource,
     },
     uri::URIString,
@@ -404,6 +404,16 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             self.grow()?;
             match self.source.content_bytes() {
                 [b'%', ..] => {
+                    if matches!(self.state, ParserState::InInternalSubset) {
+                        // [WFC: PEs in Internal Subset]
+                        fatal_error!(
+                            self,
+                            ParserInvalidEntityReference,
+                            "A parameter entity appears in the markup declaration in an internal subset."
+                        );
+                        return Err(XMLError::ParserInvalidEntityReference);
+                    }
+
                     // skip '%'
                     self.source.advance(1)?;
                     self.locator.update_column(|c| c + 1);
@@ -647,6 +657,9 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     _ => unreachable!(),
                 },
                 [] => {
+                    if in_entity {
+                        break Ok(());
+                    }
                     fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
                     break Err(XMLError::ParserUnexpectedEOF);
                 }

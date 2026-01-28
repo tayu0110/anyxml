@@ -178,10 +178,9 @@ fn progressive_well_formed_tests() {
 const SKIP_TESTS: &[&str] = &[
     "pr-xml-euc-jp",               // unsupported encoding
     "pr-xml-iso-2022-jp",          // unsupported encoding
-    "pr-xml-shift_jis",            // unsupported encoding
     "weekly-euc-jp",               // unsupported encoding
     "weekly-iso-2022-jp",          // unsupported encoding
-    "weekly-shift_jis",            // unsupported encoding
+    "weekly-shift_jis",            // error type, but it is unknown what error should be reported.
     "ibm-not-wf-P69-ibm69n05.xml", // error type, but requires VC validation
     "invalid-bo-7",                // error type, but a Fatal Error occurs (Illegal XML character)
     "invalid-bo-8",                // error type, but a Fatal Error occurs (Illegal XML character)
