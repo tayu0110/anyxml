@@ -11,7 +11,7 @@ use anyxml::{
 const SUPPORTED_FEATURES: &[&str] = &["unexpanded-entities", "unparsed-entities", "lang-fixup"];
 const IGNORED_TESTCASE: &[&str] = &[
     // EBCDIC encodings are not supported yet
-    "harold-79",
+    // "harold-79",
     // HTTP resource fetching is necessary
     "harold-87",
     // HTTP resource fetching is necessary

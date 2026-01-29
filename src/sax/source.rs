@@ -1,5 +1,7 @@
 use std::{io::Read, sync::atomic::AtomicUsize};
 
+use anyxml_encoding::IBM037Decoder;
+
 use crate::{
     encoding::{
         DecodeError, Decoder, UCS4Unusual2143Decoder, UCS4Unusual3412Decoder, UTF8Decoder,
@@ -328,7 +330,7 @@ impl<'a> InputSource<'a> {
             [0x3C, 0x3F, 0x78, 0x6D] => self.decoder = Box::new(UTF8Decoder),
             // EBCDIC (in some flavor; the full encoding declaration must be read to tell
             // which code page is in use)
-            [0x4C, 0x6F, 0xA7, 0x94] => return Err(XMLError::ParserUnsupportedEncoding),
+            [0x4C, 0x6F, 0xA7, 0x94] => self.decoder = Box::new(IBM037Decoder),
             // cannot detect the specific encoding from the head of the content.
             // In this case, it is assumed that it is a UTF-8 document without an XML declaration.
             _ => {
