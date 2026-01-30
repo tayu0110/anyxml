@@ -1,0 +1,8 @@
+startDocument()
+declaration(1.0, None, None)
+documentType()
+startElement(None, None, root, root)
+startEntity(ent)
+endEntity()
+endElement(None, None, root, root)
+endDocument()

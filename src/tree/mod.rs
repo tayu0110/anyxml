@@ -344,7 +344,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
             // so we should use `EntityReference::new`, not but `self.document.create_entity_reference`.
             self.node
                 .append_child(EntityReference::new(name.into(), self.document.clone()))
-                .unwrap();
+                .ok();
         }
         self.handler.skipped_entity(name);
     }

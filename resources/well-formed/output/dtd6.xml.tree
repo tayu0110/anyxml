@@ -1,0 +1,5 @@
+Document(Document, '1.0', 'None', None)
+  DocumentType(DocumentType, root, None, None)
+    EntityDecl(EntityDecl, ent, None, None, None, '')
+  Element(Element, root, root, None, None)
+    EntityReference(EntityReference, ent)

@@ -66,16 +66,31 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
         if let Some(encoding) = encoding {
             self.reader.set_encoding(encoding);
         }
-        let mut base_uri = self.reader.default_base_uri()?.resolve(uri.as_ref());
-        base_uri.normalize();
-        self.reader.base_uri = base_uri.into();
-        self.reader.locator = Arc::new(Locator::new(self.reader.base_uri.clone(), None, 1, 1));
-        let source = Box::new(self.reader.handler.resolve_entity(
-            "[document]",
-            None,
-            &self.reader.base_uri,
-            uri.as_ref(),
-        )?);
+        self.reader.base_uri = self.reader.default_base_uri()?;
+        let source = if self.reader.config.is_enable(ParserOption::Catalogs)
+            && let Some(uri) = self
+                .reader
+                .catalog_resolve_uri(Some(&self.reader.base_uri.clone()), uri.as_ref())
+        {
+            Box::new(self.reader.handler.resolve_entity(
+                "[document]",
+                None,
+                &self.reader.base_uri,
+                &uri,
+            )?)
+        } else {
+            Box::new(self.reader.handler.resolve_entity(
+                "[document]",
+                None,
+                &self.reader.base_uri,
+                uri.as_ref(),
+            )?)
+        };
+        if let Some(system_id) = source.system_id() {
+            let mut base_uri = self.reader.base_uri.resolve(system_id);
+            base_uri.normalize();
+            self.reader.base_uri = base_uri.into();
+        }
         let (source, buffer) = source.decompose();
         if !buffer.is_empty() {
             self.reader.source.push_bytes(buffer, false)?;
