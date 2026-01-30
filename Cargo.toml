@@ -15,7 +15,7 @@ package.rust-version = "1.89.0"
 
 [package]
 name = "anyxml"
-version = "0.10.0"
+version = "0.10.1"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
