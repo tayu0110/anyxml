@@ -13,6 +13,7 @@
 //! [IANA registrations](https://www.iana.org/assignments/character-sets/character-sets.xhtml).
 
 mod ebcdic;
+mod euc;
 mod iso_8859;
 mod jisx;
 mod shift_jis;
@@ -28,6 +29,7 @@ use std::{
 };
 
 pub use ebcdic::*;
+pub use euc::*;
 pub use iso_8859::*;
 pub use shift_jis::*;
 pub use ucs4::*;
@@ -116,6 +118,7 @@ pub trait Decoder {
 /// Encoding names are listed in lexical order.
 pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {
     const NAMES: &[&str] = &[
+        EUCJP_NAME,
         IBM037,
         IBM1026,
         IBM273,
@@ -385,6 +388,7 @@ pub static ENCODING_ALIASES: LazyLock<RwLock<BTreeMap<Cow<'static, str>, &'stati
             ("CP918".into(), IBM918),
             ("EBCDIC-CP-AR2".into(), IBM918),
             ("CP1026".into(), IBM1026),
+            ("EUCPKDFMTJAPANESE".into(), EUCJP_NAME),
         ]))
     });
 /// Register `alias` as an alias for the encoding name `real`.  \
@@ -455,6 +459,45 @@ pub static ENCODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, EncoderFactory>
         map.insert(UTF32LE_NAME, || Box::new(UTF32LEEncoder));
         map.insert(SHIFT_JIS_NAME, || Box::new(ShiftJISEncoder));
         map.insert(US_ASCII_NAME, || Box::new(USASCIIEncoder));
+        map.insert(IBM037, || Box::new(IBM037Encoder));
+        map.insert(IBM273, || Box::new(IBM273Encoder));
+        map.insert(IBM274, || Box::new(IBM274Encoder));
+        map.insert(IBM275, || Box::new(IBM275Encoder));
+        map.insert(IBM277, || Box::new(IBM277Encoder));
+        map.insert(IBM278, || Box::new(IBM278Encoder));
+        map.insert(IBM280, || Box::new(IBM280Encoder));
+        map.insert(IBM284, || Box::new(IBM284Encoder));
+        map.insert(IBM285, || Box::new(IBM285Encoder));
+        map.insert(IBM290, || Box::new(IBM290Encoder));
+        map.insert(IBM297, || Box::new(IBM297Encoder));
+        map.insert(IBM420, || Box::new(IBM420Encoder));
+        map.insert(IBM423, || Box::new(IBM423Encoder));
+        map.insert(IBM424, || Box::new(IBM424Encoder));
+        map.insert(IBM437, || Box::new(IBM437Encoder));
+        map.insert(IBM500, || Box::new(IBM500Encoder));
+        map.insert(IBM850, || Box::new(IBM850Encoder));
+        map.insert(IBM851, || Box::new(IBM851Encoder));
+        map.insert(IBM852, || Box::new(IBM852Encoder));
+        map.insert(IBM855, || Box::new(IBM855Encoder));
+        map.insert(IBM857, || Box::new(IBM857Encoder));
+        map.insert(IBM860, || Box::new(IBM860Encoder));
+        map.insert(IBM861, || Box::new(IBM861Encoder));
+        map.insert(IBM862, || Box::new(IBM862Encoder));
+        map.insert(IBM863, || Box::new(IBM863Encoder));
+        map.insert(IBM864, || Box::new(IBM864Encoder));
+        map.insert(IBM865, || Box::new(IBM865Encoder));
+        map.insert(IBM868, || Box::new(IBM868Encoder));
+        map.insert(IBM869, || Box::new(IBM869Encoder));
+        map.insert(IBM870, || Box::new(IBM870Encoder));
+        map.insert(IBM871, || Box::new(IBM871Encoder));
+        map.insert(IBM880, || Box::new(IBM880Encoder));
+        map.insert(IBM891, || Box::new(IBM891Encoder));
+        map.insert(IBM903, || Box::new(IBM903Encoder));
+        map.insert(IBM904, || Box::new(IBM904Encoder));
+        map.insert(IBM905, || Box::new(IBM905Encoder));
+        map.insert(IBM918, || Box::new(IBM918Encoder));
+        map.insert(IBM1026, || Box::new(IBM1026Encoder));
+        map.insert(EUCJP_NAME, eucjp_encoder_factory);
         RwLock::new(map)
     });
 pub fn find_encoder(encoding_name: &str) -> Option<Box<dyn Encoder>> {
@@ -510,6 +553,45 @@ pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>
         map.insert(UTF32LE_NAME, || Box::new(UTF32LEDecoder));
         map.insert(SHIFT_JIS_NAME, || Box::new(ShiftJISDecoder));
         map.insert(US_ASCII_NAME, || Box::new(USASCIIDecoder));
+        map.insert(IBM037, || Box::new(IBM037Decoder));
+        map.insert(IBM273, || Box::new(IBM273Decoder));
+        map.insert(IBM274, || Box::new(IBM274Decoder));
+        map.insert(IBM275, || Box::new(IBM275Decoder));
+        map.insert(IBM277, || Box::new(IBM277Decoder));
+        map.insert(IBM278, || Box::new(IBM278Decoder));
+        map.insert(IBM280, || Box::new(IBM280Decoder));
+        map.insert(IBM284, || Box::new(IBM284Decoder));
+        map.insert(IBM285, || Box::new(IBM285Decoder));
+        map.insert(IBM290, || Box::new(IBM290Decoder));
+        map.insert(IBM297, || Box::new(IBM297Decoder));
+        map.insert(IBM420, || Box::new(IBM420Decoder));
+        map.insert(IBM423, || Box::new(IBM423Decoder));
+        map.insert(IBM424, || Box::new(IBM424Decoder));
+        map.insert(IBM437, || Box::new(IBM437Decoder));
+        map.insert(IBM500, || Box::new(IBM500Decoder));
+        map.insert(IBM850, || Box::new(IBM850Decoder));
+        map.insert(IBM851, || Box::new(IBM851Decoder));
+        map.insert(IBM852, || Box::new(IBM852Decoder));
+        map.insert(IBM855, || Box::new(IBM855Decoder));
+        map.insert(IBM857, || Box::new(IBM857Decoder));
+        map.insert(IBM860, || Box::new(IBM860Decoder));
+        map.insert(IBM861, || Box::new(IBM861Decoder));
+        map.insert(IBM862, || Box::new(IBM862Decoder));
+        map.insert(IBM863, || Box::new(IBM863Decoder));
+        map.insert(IBM864, || Box::new(IBM864Decoder));
+        map.insert(IBM865, || Box::new(IBM865Decoder));
+        map.insert(IBM868, || Box::new(IBM868Decoder));
+        map.insert(IBM869, || Box::new(IBM869Decoder));
+        map.insert(IBM870, || Box::new(IBM870Decoder));
+        map.insert(IBM871, || Box::new(IBM871Decoder));
+        map.insert(IBM880, || Box::new(IBM880Decoder));
+        map.insert(IBM891, || Box::new(IBM891Decoder));
+        map.insert(IBM903, || Box::new(IBM903Decoder));
+        map.insert(IBM904, || Box::new(IBM904Decoder));
+        map.insert(IBM905, || Box::new(IBM905Decoder));
+        map.insert(IBM918, || Box::new(IBM918Decoder));
+        map.insert(IBM1026, || Box::new(IBM1026Decoder));
+        map.insert(EUCJP_NAME, eucjp_decoder_factory);
         RwLock::new(map)
     });
 pub fn find_decoder(encoding_name: &str) -> Option<Box<dyn Decoder>> {

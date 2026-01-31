@@ -1,4 +1,4 @@
-// deno run -A resources/get-character-names.ts
+// deno run -A resources/generate-jiscode-table.ts > src/jisx.rs && rustfmt src/jisx.rs
 import * as path from "jsr:@std/path@1.1.0";
 import { exists } from "jsr:@std/fs@1.0.18";
 
@@ -35,11 +35,11 @@ async function generateJISX0201Table(
         const [upper, pascal] of [["KATAKANA", "Katakana"], ["LATIN", "Latin"]]
     ) {
         ret +=
-            `\npub(crate) static JIS_X_0201_${upper}_DECODE_TABLE: [char; 94] = [`;
+            `\npub(crate) static JIS_X_0201_${upper}_DECODE_TABLE: &[char] = &[`;
         const katakana = await Deno.readTextFile(
             `resources/jis-code-tables/JIS_X_0201-${pascal}.txt`,
         );
-        const toUCS = Array<number>(94);
+        const toUCS = Array<number>(96);
         toUCS.fill(-1);
         const fromUCS = [];
         for (const line of katakana.split("\n").map((line) => line.trim())) {
@@ -61,7 +61,7 @@ async function generateJISX0201Table(
             toUCS[codepoint - 32] = ucscode;
             fromUCS.push([ucscode, codepoint]);
         }
-        for (let i = 0; i < 94; i++) {
+        for (let i = 0; i < 96; i++) {
             if (toUCS[i] < 0) {
                 ret += "char::REPLACEMENT_CHARACTER,";
             } else {
@@ -69,7 +69,7 @@ async function generateJISX0201Table(
             }
         }
         ret +=
-            `];\npub(crate) static JIS_X_0201_${upper}_ENCODE_TABLE: &[(u16, u8)] = &[`;
+            `];\n\npub(crate) static JIS_X_0201_${upper}_ENCODE_TABLE: &[(u16, u8)] = &[`;
         fromUCS.sort((l, r) => l[0] - r[0]);
         for (const [ucs, jis] of fromUCS) {
             ret += `(${ucs}, ${jis}),`;
@@ -85,13 +85,13 @@ async function generateJISX02xxTable(
     nameMap: Map<string, number>,
 ): Promise<string> {
     let ret =
-        `\npub(crate) static JIS_X_${spec}_DECODE_TABLE: [[char; 94]; 94] = [`;
+        `\npub(crate) static JIS_X_${spec}_DECODE_TABLE: [&[char]; 96] = [`;
     const katakana = await Deno.readTextFile(
         `resources/jis-code-tables/JIS_X_${spec}.txt`,
     );
     const toUCS: number[][] = [];
-    for (let i = 0; i < 94; i++) {
-        const arr = Array<number>(94);
+    for (let i = 0; i < 96; i++) {
+        const arr = Array<number>(96);
         arr.fill(-1);
         toUCS.push(arr);
     }
@@ -108,7 +108,7 @@ async function generateJISX02xxTable(
         const jiscode = (ku + 32) * 256 + (ten + 32);
         if (name.startsWith("CJK UNIFIED IDEOGRAPH-")) {
             const ucscode = parseInt(name.substring(22), 16);
-            toUCS[ku - 1][ten - 1] = ucscode;
+            toUCS[ku][ten] = ucscode;
             fromUCS.push([ucscode, jiscode]);
         } else {
             const ucscode = nameMap.get(name);
@@ -117,17 +117,17 @@ async function generateJISX02xxTable(
                 continue;
             }
 
-            toUCS[ku - 1][ten - 1] = ucscode;
+            toUCS[ku][ten] = ucscode;
             fromUCS.push([ucscode, jiscode]);
         }
     }
-    for (let i = 0; i < 94; i++) {
-        ret += "[";
+    for (let i = 0; i < 96; i++) {
         if (toUCS[i].every((value) => value < 0)) {
-            ret += "char::REPLACEMENT_CHARACTER; 94],";
+            ret += "&[],";
             continue;
         }
-        for (let j = 0; j < 94; j++) {
+        ret += "&[";
+        for (let j = 0; j < 96; j++) {
             if (toUCS[i][j] < 0) {
                 ret += "char::REPLACEMENT_CHARACTER,";
             } else {
@@ -137,7 +137,7 @@ async function generateJISX02xxTable(
         ret += "],";
     }
     ret +=
-        `];\npub(crate) static JIS_X_${spec}_ENCODE_TABLE: &[(u16, u16)] = &[`;
+        `];\n\npub(crate) static JIS_X_${spec}_ENCODE_TABLE: &[(u16, u16)] = &[`;
     fromUCS.sort((l, r) => l[0] - r[0]);
     for (const [ucs, jis] of fromUCS) {
         ret += `(${ucs}, ${jis}),`;
