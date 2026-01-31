@@ -14,6 +14,7 @@
 
 mod ebcdic;
 mod iso_8859;
+mod jisx;
 mod shift_jis;
 mod ucs4;
 mod us_ascii;
