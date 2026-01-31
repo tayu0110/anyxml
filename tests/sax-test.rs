@@ -176,9 +176,8 @@ fn progressive_well_formed_tests() {
 // Some tests require unsupported encodings or their types do not match the actual
 // error that occurs, making it difficult to pass all of them, so they are skipped.
 const SKIP_TESTS: &[&str] = &[
-    "pr-xml-euc-jp",               // unsupported encoding
     "pr-xml-iso-2022-jp",          // unsupported encoding
-    "weekly-euc-jp",               // unsupported encoding
+    "weekly-euc-jp",               // error type, but it is unknown what error should be reported.
     "weekly-iso-2022-jp",          // unsupported encoding
     "weekly-shift_jis",            // error type, but it is unknown what error should be reported.
     "ibm-not-wf-P69-ibm69n05.xml", // error type, but requires VC validation
