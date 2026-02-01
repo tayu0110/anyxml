@@ -16,6 +16,7 @@ mod ebcdic;
 mod euc;
 mod iso_8859;
 mod jisx;
+mod ksx;
 mod shift_jis;
 mod ucs4;
 mod us_ascii;
@@ -119,6 +120,7 @@ pub trait Decoder {
 pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {
     const NAMES: &[&str] = &[
         EUCJP_NAME,
+        EUCKR_NAME,
         IBM037,
         IBM1026,
         IBM273,
@@ -389,6 +391,7 @@ pub static ENCODING_ALIASES: LazyLock<RwLock<BTreeMap<Cow<'static, str>, &'stati
             ("EBCDIC-CP-AR2".into(), IBM918),
             ("CP1026".into(), IBM1026),
             ("EUCPKDFMTJAPANESE".into(), EUCJP_NAME),
+            ("EUCKR".into(), EUCKR_NAME),
         ]))
     });
 /// Register `alias` as an alias for the encoding name `real`.  \
@@ -498,6 +501,7 @@ pub static ENCODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, EncoderFactory>
         map.insert(IBM918, || Box::new(IBM918Encoder));
         map.insert(IBM1026, || Box::new(IBM1026Encoder));
         map.insert(EUCJP_NAME, eucjp_encoder_factory);
+        map.insert(EUCKR_NAME, euckr_encoder_factory);
         RwLock::new(map)
     });
 pub fn find_encoder(encoding_name: &str) -> Option<Box<dyn Encoder>> {
@@ -592,6 +596,7 @@ pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>
         map.insert(IBM918, || Box::new(IBM918Decoder));
         map.insert(IBM1026, || Box::new(IBM1026Decoder));
         map.insert(EUCJP_NAME, eucjp_decoder_factory);
+        map.insert(EUCKR_NAME, euckr_decoder_factory);
         RwLock::new(map)
     });
 pub fn find_decoder(encoding_name: &str) -> Option<Box<dyn Decoder>> {
