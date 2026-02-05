@@ -97,8 +97,8 @@ macro_rules! impl_ebcdic_encoder_and_decoder {
 
 // The IBMxxx table is based on information from the CDRA Repository published by IBM.
 // According to RFC1345, there is supposed to be a character set named EBCDIC-xxx, but
-// it appears to be somewhat lacking in control characters. Since we cannot reach the
-// source presented in RFC1345, we only support IBMxxx, which has a reliable source of
+// it appears to be somewhat lacking in control characters. Since I cannot reach the
+// source presented in RFC1345, I only support IBMxxx, which has a reliable source of
 // information.
 
 impl_ebcdic_encoder_and_decoder!(

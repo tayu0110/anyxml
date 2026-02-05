@@ -5,7 +5,7 @@ use crate::{
     uri::URIStr,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SAXParseError {
     pub error: XMLError,
     pub level: XMLErrorLevel,

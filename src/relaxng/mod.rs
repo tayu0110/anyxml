@@ -5,10 +5,11 @@
 //! that can be inserted into SAX handlers are not supported at this time.
 //!
 //! # Reference
-//! - [XML Catalogs (OASIS Standard V1.1, 7 October 2005)](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
+//! - [ISO/IEC 19757-2:2008 Information technology — Document Schema Definition Language (DSDL)Part 2: Regular-grammar-based validation — RELAX NG](https://www.iso.org/standard/52348.html)
 
 mod datatype_library;
 mod grammar;
+mod parse;
 mod validate;
 
 use std::{
