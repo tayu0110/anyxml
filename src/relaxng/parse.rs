@@ -1,13 +1,11 @@
-use std::sync::Arc;
-
-use anyxml_uri::{rfc2396::validate_rfc2396_absolute_uri, uri::URIString};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     XMLVersion,
     error::XMLError,
     relaxng::XML_RELAX_NG_NAMESPACE,
     sax::{
-        AttributeType, DefaultDecl, Locator,
+        AttributeType, DefaultDecl, Locator, NamespaceStack,
         attributes::{Attribute, Attributes},
         contentspec::ContentSpec,
         error::SAXParseError,
@@ -15,7 +13,7 @@ use crate::{
         parser::XMLReaderBuilder,
         source::InputSource,
     },
-    uri::URIStr,
+    uri::{URIStr, rfc2396::validate_rfc2396_absolute_uri, uri::URIString},
 };
 
 macro_rules! generic_error {
@@ -150,6 +148,10 @@ enum RelaxNGNodeType {
     Name(Box<str>),
     AnyName,
     NsName,
+
+    // helper patterns
+    ExternalRefRoot,
+    IncludeRoot,
 }
 
 impl RelaxNGNodeType {
@@ -185,6 +187,8 @@ impl RelaxNGNodeType {
             Name(_) => "name",
             AnyName => "anyName",
             NsName => "nsName",
+            ExternalRefRoot => "#externalRefRoot",
+            IncludeRoot => "#includeRoot",
         }
     }
 
@@ -254,12 +258,13 @@ impl RelaxNGNodeType {
 struct RelaxNGNode {
     base_uri: Option<Arc<URIStr>>,
     datatype_library: Option<Arc<str>>,
-    ns: Option<Box<str>>,
+    ns: Option<Arc<str>>,
+    xmlns: HashMap<Arc<str>, Box<str>>,
     r#type: RelaxNGNodeType,
     children: Vec<usize>,
 }
 
-struct RelaxNGParseHandler<H: SAXHandler = DefaultSAXHandler> {
+pub(super) struct RelaxNGParseHandler<H: SAXHandler = DefaultSAXHandler> {
     handler: H,
 
     /// When set to `true`, the context is initialized at the start of parsing.
@@ -281,6 +286,27 @@ struct RelaxNGParseHandler<H: SAXHandler = DefaultSAXHandler> {
 }
 
 impl<H: SAXHandler> RelaxNGParseHandler<H> {
+    fn with_handler(handler: H) -> Self {
+        Self {
+            handler,
+            init: true,
+            ignore_depth: 0,
+            locator: Arc::new(Locator::new(
+                URIString::parse("").unwrap().into(),
+                None,
+                1,
+                1,
+            )),
+            locator_stack: vec![],
+            last_error: Ok(()),
+            unrecoverable: false,
+            cur: 0,
+            tree: vec![],
+            node_stack: vec![],
+            text: String::new(),
+        }
+    }
+
     /// Create a RELAX NG element that does not permit attributes other than `xml:base`,
     /// `ns` and `datatypeLibrary`.
     ///
@@ -294,7 +320,19 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         let mut base_uri = None;
         let mut datatype_library = None;
         let mut ns = None;
+        let mut xmlns = HashMap::new();
         for att in atts {
+            if att.is_nsdecl() {
+                if att.qname.as_ref() == "xmlns" {
+                    xmlns.insert("".into(), att.value.clone());
+                } else {
+                    xmlns.insert(
+                        att.local_name.clone().unwrap_or_default(),
+                        att.value.clone(),
+                    );
+                }
+                continue;
+            }
             let value = att
                 .value
                 .trim_matches(|c| XMLVersion::default().is_whitespace(c));
@@ -365,6 +403,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             base_uri,
             datatype_library,
             ns,
+            xmlns,
             r#type,
             children: vec![],
         }
@@ -387,6 +426,8 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         if self.tree.is_empty() {
             if node.base_uri.is_none() {
                 node.base_uri = Some(self.locator.system_id());
+            } else if let Some(base_uri) = node.base_uri.as_mut().filter(|uri| !uri.is_absolute()) {
+                *base_uri = self.locator.system_id().resolve(base_uri).into();
             }
 
             return if node.r#type.is_pattern() {
@@ -400,7 +441,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     "'{}' cannot be a root pattern element.",
                     node.r#type.typename()
                 );
-                self.ignore_depth += 1;
                 false
             };
         }
@@ -418,7 +458,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         "'except' cannot be a child of '{}'.",
                         self.tree[self.cur].r#type.typename()
                     );
-                    self.ignore_depth += 1;
                     return false;
                 }
             }
@@ -440,14 +479,13 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         "'div' cannot be a child of '{}'.",
                         ty.typename()
                     );
-                    self.ignore_depth += 1;
                     return false;
                 }
             },
             _ => {}
         }
 
-        match &self.tree[self.cur].r#type {
+        match self.tree[self.cur].r#type {
             RelaxNGNodeType::Element(None) if self.tree[self.cur].children.is_empty() => {
                 if !node.r#type.is_name_class() {
                     error!(
@@ -456,11 +494,10 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         "The element '{}' cannot be a first child of 'element' that does not have 'name' attribute.",
                         node.r#type.typename()
                     );
-                    self.ignore_depth += 1;
                     return false;
                 }
             }
-            ty @ (RelaxNGNodeType::Element(_)
+            ref ty @ (RelaxNGNodeType::Element(_)
             | RelaxNGNodeType::Group
             | RelaxNGNodeType::Interleave
             | RelaxNGNodeType::Choice(ChoiceType::Pattern)
@@ -479,11 +516,32 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         node.r#type.typename(),
                         ty.typename()
                     );
-                    self.ignore_depth += 1;
                     return false;
                 }
             }
-            ty @ (RelaxNGNodeType::Ref(_)
+            RelaxNGNodeType::ExternalRefRoot => {
+                if !node.r#type.is_pattern() {
+                    error!(
+                        self,
+                        RngParseExternalRefParseFailure,
+                        "The element '{}' cannot be the root element of the external resource referenced by 'externalRef'.",
+                        node.r#type.typename()
+                    );
+                    return false;
+                }
+            }
+            RelaxNGNodeType::IncludeRoot => {
+                if node.r#type.typename() != "grammar" {
+                    error!(
+                        self,
+                        RngParseIncludeParseFailure,
+                        "The element '{}' cannot be the root element of the external resource referenced by 'include'.",
+                        node.r#type.typename()
+                    );
+                    return false;
+                }
+            }
+            ref ty @ (RelaxNGNodeType::Ref(_)
             | RelaxNGNodeType::ParentRef(_)
             | RelaxNGNodeType::Empty
             | RelaxNGNodeType::Text
@@ -495,10 +553,9 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     "'{}' cannot have any children.",
                     ty.typename()
                 );
-                self.ignore_depth += 1;
                 return false;
             }
-            ty @ (RelaxNGNodeType::Value { .. }
+            ref ty @ (RelaxNGNodeType::Value { .. }
             | RelaxNGNodeType::Param { .. }
             | RelaxNGNodeType::Name(_)) => {
                 error!(
@@ -507,7 +564,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     "'{}' cannot have any element children.",
                     ty.typename()
                 );
-                self.ignore_depth += 1;
                 return false;
             }
             RelaxNGNodeType::Data(_) => {
@@ -522,7 +578,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                             RngParseUnacceptablePattern,
                             "The `param` child of `data` cannot be followed by `except`."
                         );
-                        self.ignore_depth += 1;
                         return false;
                     }
                 } else if node.r#type.is_except_pattern() {
@@ -536,7 +591,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                             RngParseUnacceptablePattern,
                             "The element 'data' cannot have more than one 'except' as its last child."
                         );
-                        self.ignore_depth += 1;
                         return false;
                     }
                 } else {
@@ -546,7 +600,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         "The element '{}' cannot be a child of 'data'",
                         node.r#type.typename()
                     );
-                    self.ignore_depth += 1;
                     return false;
                 }
             }
@@ -559,7 +612,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                             "The element '{}' cannot be a first child of 'attribute' that does not have 'name' attribute.",
                             node.r#type.typename()
                         );
-                        self.ignore_depth += 1;
                         return false;
                     }
                 } else if !node.r#type.is_pattern() {
@@ -569,7 +621,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         "The element '{}' cannot be a child of 'attribute'",
                         node.r#type.typename()
                     );
-                    self.ignore_depth += 1;
                     return false;
                 } else if self.tree[self.cur].children.len() == 1 {
                     error!(
@@ -577,11 +628,10 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         RngParseUnacceptablePattern,
                         "The element 'attribute' cannot have more than one pattern child.",
                     );
-                    self.ignore_depth += 1;
                     return false;
                 }
             }
-            ty @ (RelaxNGNodeType::Attribute(Some(_)) | RelaxNGNodeType::Start(_)) => {
+            ref ty @ (RelaxNGNodeType::Attribute(Some(_)) | RelaxNGNodeType::Start(_)) => {
                 // The `attribute` element has at most one child, while the `start` element
                 // has exactly one child, so their patterns differ.
                 // However, since all children must be scanned to distinguish them, they are
@@ -595,7 +645,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         node.r#type.typename(),
                         ty.typename()
                     );
-                    self.ignore_depth += 1;
                     return false;
                 } else if !self.tree[self.cur].children.is_empty() {
                     error!(
@@ -604,11 +653,10 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         "The element '{}' cannot have more than one pattern child.",
                         ty.typename()
                     );
-                    self.ignore_depth += 1;
                     return false;
                 }
             }
-            ty @ (RelaxNGNodeType::Grammar | RelaxNGNodeType::Div(DivContentType::Grammar)) => {
+            ref ty @ (RelaxNGNodeType::Grammar | RelaxNGNodeType::Div(DivContentType::Grammar)) => {
                 if !node.r#type.is_grammar_content() {
                     error!(
                         self,
@@ -617,11 +665,11 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         node.r#type.typename(),
                         ty.typename()
                     );
-                    self.ignore_depth += 1;
                     return false;
                 }
             }
-            ty @ (RelaxNGNodeType::Div(DivContentType::Include) | RelaxNGNodeType::Include(_)) => {
+            ref ty @ (RelaxNGNodeType::Div(DivContentType::Include)
+            | RelaxNGNodeType::Include(_)) => {
                 if !node.r#type.is_include_content() {
                     error!(
                         self,
@@ -630,11 +678,10 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         node.r#type.typename(),
                         ty.typename()
                     );
-                    self.ignore_depth += 1;
                     return false;
                 }
             }
-            ty @ (RelaxNGNodeType::AnyName | RelaxNGNodeType::NsName) => {
+            ref ty @ (RelaxNGNodeType::AnyName | RelaxNGNodeType::NsName) => {
                 if !matches!(node.r#type, RelaxNGNodeType::Except(ExceptType::NameClass)) {
                     error!(
                         self,
@@ -643,7 +690,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         node.r#type.typename(),
                         ty.typename()
                     );
-                    self.ignore_depth += 1;
                     return false;
                 } else if !self.tree[self.cur].children.is_empty() {
                     error!(
@@ -651,11 +697,10 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         RngParseUnacceptablePattern,
                         "The element 'start' cannot have more than one child."
                     );
-                    self.ignore_depth += 1;
                     return false;
                 }
             }
-            ty @ (RelaxNGNodeType::Choice(ChoiceType::NameClass)
+            ref ty @ (RelaxNGNodeType::Choice(ChoiceType::NameClass)
             | RelaxNGNodeType::Except(ExceptType::NameClass)) => {
                 if !node.r#type.is_name_class() {
                     error!(
@@ -665,14 +710,22 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         node.r#type.typename(),
                         ty.typename()
                     );
-                    self.ignore_depth += 1;
                     return false;
                 }
             }
         }
 
         // resolve base URI
-        if let Some(base_uri) = node.base_uri.as_mut() {
+        if matches!(
+            self.tree[self.cur].r#type,
+            RelaxNGNodeType::ExternalRefRoot | RelaxNGNodeType::IncludeRoot
+        ) {
+            if node.base_uri.is_none() {
+                node.base_uri = Some(self.locator.system_id());
+            } else if let Some(base_uri) = node.base_uri.as_mut().filter(|uri| !uri.is_absolute()) {
+                *base_uri = self.locator.system_id().resolve(base_uri).into();
+            }
+        } else if let Some(base_uri) = node.base_uri.as_mut() {
             if !base_uri.is_absolute() {
                 let new = self.tree[self.cur]
                     .base_uri
@@ -725,6 +778,354 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         if let Some(prev) = self.node_stack.pop() {
             self.cur = prev;
         }
+    }
+
+    /// Process simplification defined from ISO/IEC 19757-2:2008 7.9 to 7.22.
+    fn simplification(&mut self) -> Result<(), SAXParseError> {
+        if self.unrecoverable {
+            self.last_error.clone()?;
+        }
+        self.resolve_external_resource();
+        if self.unrecoverable {
+            self.last_error.clone()?;
+        }
+        self.normalize_names(0, &mut NamespaceStack::default());
+        Ok(())
+    }
+
+    /// process `externalRef` and `include`.
+    ///
+    /// This method assumes that the simplifications from 7.1 to 7.6 have been completed.  \
+    /// As an important assumption, `externalRef` and `include` hold URIs in their `href`
+    /// attributes that are absolutized and without fragment identifiers.
+    ///
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 7.7 `externalRef` element
+    /// - ISO/IEC 19757-2:2008 7.8 `include` element
+    fn resolve_external_resource(&mut self) {
+        self.init = false;
+        self.resolve_external_resource_recurse(usize::MAX, 0, 0);
+        self.init = true;
+    }
+    fn resolve_external_resource_recurse(&mut self, parent: usize, nth: usize, current: usize) {
+        match self.tree[current].r#type {
+            RelaxNGNodeType::ExternalRef(_) => {
+                // ISO/IEC 19757-2:2008 7.7 `externalRef` element
+
+                let RelaxNGNodeType::ExternalRef(href) = std::mem::replace(
+                    &mut self.tree[current].r#type,
+                    RelaxNGNodeType::ExternalRefRoot,
+                ) else {
+                    unreachable!();
+                };
+                self.cur = current;
+                self.init = false;
+                let old = self.locator_stack.len();
+
+                if self
+                    .locator_stack
+                    .iter()
+                    .any(|loc| *loc.system_id() == *href)
+                {
+                    error!(
+                        self,
+                        RngParseExternalRefLoop,
+                        "'externalRef' causes reference loop for '{}'.",
+                        href
+                    );
+                    self.unrecoverable = true;
+                    return;
+                }
+
+                let mut reader = XMLReaderBuilder::new().set_handler(&mut *self).build();
+                if reader.parse_uri(&href, None).is_err() || self.tree[current].children.is_empty()
+                {
+                    error!(
+                        self,
+                        RngParseExternalRefParseFailure,
+                        "Failed to parse '{}' for 'externalRef'.",
+                        href
+                    );
+                }
+
+                let new = self.tree[current].children[0];
+                // To remove `externalRef`, replace the child that referenced
+                // `externalRef` with the imported element.
+                self.tree[parent].children[nth] = new;
+
+                // If the imported element does not have an `ns` attribute,
+                // it inherits the `ns` attribute from the `externalRef` element.
+                if self.tree[new].ns.is_none() {
+                    self.tree[new].ns = self.tree[current].ns.take();
+                }
+
+                // Recursively expand the imported elements.
+                self.resolve_external_resource_recurse(parent, nth, new);
+
+                self.locator_stack.pop();
+                assert_eq!(old, self.locator_stack.len());
+                self.init = false;
+            }
+            RelaxNGNodeType::Include(_) => {
+                // ISO/IEC 19757-2:2008 7.8 `include` element
+                self.load_include(current);
+            }
+            _ => {
+                let len = self.tree[current].children.len();
+                for nth in 0..len {
+                    let next = self.tree[current].children[nth];
+                    self.resolve_external_resource_recurse(current, nth, next);
+                }
+            }
+        }
+    }
+    fn load_include(
+        &mut self,
+        current: usize,
+    ) -> Option<(Vec<(usize, usize)>, HashMap<Box<str>, Vec<(usize, usize)>>)> {
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Include(_) => {
+                let mut start = vec![];
+                let mut define = HashMap::new();
+                self.find_component(current, &mut start, &mut define);
+
+                let RelaxNGNodeType::Include(href) =
+                    std::mem::replace(&mut self.tree[current].r#type, RelaxNGNodeType::IncludeRoot)
+                else {
+                    unreachable!();
+                };
+                self.cur = current;
+                self.init = false;
+                let old_locator_stack_depth = self.locator_stack.len();
+                let old_num_children = self.tree[current].children.len();
+
+                if self
+                    .locator_stack
+                    .iter()
+                    .any(|loc| *loc.system_id() == *href)
+                {
+                    error!(
+                        self,
+                        RngParseIncludeLoop, "'include' causes reference loop for '{}'.", href
+                    );
+                    self.unrecoverable = true;
+                    return None;
+                }
+
+                let mut reader = XMLReaderBuilder::new().set_handler(&mut *self).build();
+                if reader.parse_uri(&href, None).is_err()
+                    || self.tree[current].children.len() == old_num_children
+                {
+                    error!(
+                        self,
+                        RngParseIncludeParseFailure, "Failed to parse '{}' for 'include'.", href
+                    );
+                }
+
+                let new = self.tree[current].children[old_num_children];
+                assert!(matches!(self.tree[new].r#type, RelaxNGNodeType::Grammar));
+                let mut gstart = vec![];
+                let mut gdefine = HashMap::new();
+                self.expand_grammr(new, &mut gstart, &mut gdefine);
+
+                if !start.is_empty() {
+                    if gstart.is_empty() {
+                        error!(
+                            self,
+                            RngParseInsufficientStartInInclude,
+                            "'include' contains 'start', but included grammar does not contain."
+                        );
+                    }
+                    // Remove the `start` component from the imported `grammar`.
+                    // Since actual removal is costly, fill it with invalid values instead.
+                    for (par, nth) in gstart.drain(..) {
+                        self.tree[par].children[nth] = usize::MAX;
+                    }
+                }
+                if start.len() < gstart.len() {
+                    std::mem::swap(&mut start, &mut gstart);
+                }
+                start.extend(gstart);
+
+                for name in define.keys() {
+                    match gdefine.remove(name) {
+                        Some(def) => {
+                            // If there is a `define` with the same name in the `include` component,
+                            // delete the `define` in the imported `grammar`.
+                            for (par, nth) in def {
+                                self.tree[par].children[nth] = usize::MAX;
+                            }
+                        }
+                        None => {
+                            error!(
+                                self,
+                                RngParseInsufficientDefineInInclude,
+                                "'include' contains 'define' whose 'name' is '{}', but included grammar does not contain.",
+                                name
+                            );
+                        }
+                    }
+                }
+                if define.len() < gdefine.len() {
+                    std::mem::swap(&mut define, &mut gdefine);
+                }
+                define.extend(gdefine);
+
+                self.locator_stack.pop();
+                assert_eq!(old_locator_stack_depth, self.locator_stack.len());
+                self.init = false;
+
+                // Replace `include` with `div`.
+                // The replaced `div` inherits both the children of the original `include`
+                // and the children of the imported `grammar`.
+                self.tree[current].r#type = RelaxNGNodeType::Div(DivContentType::Grammar);
+                self.tree[current].children.pop();
+                let gch = std::mem::take(&mut self.tree[new].children);
+                self.tree[current]
+                    .children
+                    .extend(gch.into_iter().filter(|&ch| ch != usize::MAX));
+
+                Some((start, define))
+            }
+            _ => unreachable!(),
+        }
+    }
+    fn expand_grammr(
+        &mut self,
+        current: usize,
+        start: &mut Vec<(usize, usize)>,
+        define: &mut HashMap<Box<str>, Vec<(usize, usize)>>,
+    ) {
+        let len = self.tree[current].children.len();
+        for i in 0..len {
+            let ch = self.tree[current].children[i];
+            match self.tree[ch].r#type {
+                RelaxNGNodeType::Start(_) => {
+                    start.push((current, i));
+                    self.resolve_external_resource_recurse(current, i, ch);
+                }
+                RelaxNGNodeType::Define { ref name, .. } => {
+                    define.entry(name.clone()).or_default().push((current, i));
+                    self.resolve_external_resource_recurse(current, i, ch);
+                }
+                RelaxNGNodeType::Div(_) => {
+                    self.find_component(ch, start, define);
+                }
+                RelaxNGNodeType::Include(_) => {
+                    if let Some((mut s, mut d)) = self.load_include(current) {
+                        if start.len() < s.len() {
+                            std::mem::swap(start, &mut s);
+                        }
+                        start.extend(s);
+                        if define.len() < d.len() {
+                            std::mem::swap(define, &mut d);
+                        }
+                        define.extend(d);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    fn find_component(
+        &mut self,
+        current: usize,
+        start: &mut Vec<(usize, usize)>,
+        define: &mut HashMap<Box<str>, Vec<(usize, usize)>>,
+    ) {
+        let len = self.tree[current].children.len();
+        for i in 0..len {
+            let ch = self.tree[current].children[i];
+            match self.tree[ch].r#type {
+                RelaxNGNodeType::Start(_) => {
+                    start.push((current, i));
+                    self.resolve_external_resource_recurse(current, i, ch);
+                }
+                RelaxNGNodeType::Define { ref name, .. } => {
+                    define.entry(name.clone()).or_default().push((current, i));
+                    self.resolve_external_resource_recurse(current, i, ch);
+                }
+                RelaxNGNodeType::Div(_) => {
+                    self.find_component(ch, start, define);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 7.9 `name` attribute of `element` and `attribute` elements
+    /// - ISO/IEC 19757-2:2008 7.10 `ns` attribute
+    /// - ISO/IEC 19757-2:2008 7.11 QNames
+    fn normalize_names(&mut self, current: usize, ns_stack: &mut NamespaceStack) {
+        let old_ns_stack_depth = ns_stack.len();
+        for (pre, nsname) in &self.tree[current].xmlns {
+            ns_stack.push(pre, nsname);
+        }
+
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Element(ref mut name) if name.is_some() => {
+                let name = name.take().unwrap();
+                let pos = self.tree.len();
+                let node = RelaxNGNode {
+                    base_uri: self.tree[current].base_uri.clone(),
+                    datatype_library: None,
+                    ns: self.tree[current].ns.clone(),
+                    xmlns: HashMap::new(),
+                    r#type: RelaxNGNodeType::Name(name),
+                    children: vec![],
+                };
+                self.tree.push(node);
+                self.tree[current].children.insert(0, pos);
+            }
+            RelaxNGNodeType::Attribute(ref mut name) if name.is_some() => {
+                let name = name.take().unwrap();
+                let pos = self.tree.len();
+                let node = RelaxNGNode {
+                    base_uri: self.tree[current].base_uri.clone(),
+                    datatype_library: None,
+                    // If an attribute element has a name attribute but no ns attribute,
+                    // then an ns="" attribute is added to the name child element.
+                    ns: Some(self.tree[current].ns.as_deref().unwrap_or_default().into()),
+                    xmlns: HashMap::new(),
+                    r#type: RelaxNGNodeType::Name(name),
+                    children: vec![],
+                };
+                self.tree.push(node);
+                self.tree[current].children.insert(0, pos);
+            }
+            RelaxNGNodeType::Name(ref mut name) => {
+                if let Some((prefix, local_name)) = name.split_once(':') {
+                    if let Some(namespace_name) = ns_stack.get(prefix) {
+                        *name = local_name.into();
+                        self.tree[current].ns = Some(namespace_name.namespace_name);
+                    } else {
+                        error!(
+                            self,
+                            RngParseUnresolvableNamespacePrefix,
+                            "The namespace prefix '{}' is unresolvable.",
+                            prefix
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        let len = self.tree[current].children.len();
+        for i in 0..len {
+            let ch = self.tree[current].children[i];
+            if ch == usize::MAX {
+                continue;
+            }
+            if self.tree[ch].ns.is_none() {
+                self.tree[ch].ns = self.tree[current].ns.clone();
+            }
+
+            self.normalize_names(ch, ns_stack);
+        }
+
+        ns_stack.truncate(old_ns_stack_depth);
     }
 }
 
@@ -1086,8 +1487,12 @@ impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
     }
     fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
         self.handler.end_element(namespace_name, local_name, qname);
-        if self.ignore_depth > 0 || !self.unrecoverable {
+        if self.unrecoverable {
+            return;
+        }
+        if self.ignore_depth > 0 {
             self.ignore_depth -= 1;
+            return;
         }
 
         if !self.text.is_empty() {
@@ -1336,5 +1741,29 @@ impl<H: SAXHandler> EntityResolver for RelaxNGParseHandler<H> {
         base_uri: Option<&URIStr>,
     ) -> Result<InputSource<'static>, XMLError> {
         self.handler.get_external_subset(name, base_uri)
+    }
+}
+
+impl Default for RelaxNGParseHandler {
+    fn default() -> Self {
+        Self::with_handler(DefaultSAXHandler)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn full_syntax_parsing_before_external_resource_including_tests() {
+        let mut reader = XMLReaderBuilder::new()
+            .set_handler(RelaxNGParseHandler::default())
+            .build();
+
+        reader.parse_str(r#"<element name="foo" xmlns="http://relaxng.org/ns/structure/1.0" ns=""><empty/></element>"#, None).unwrap();
+        reader.parse_str(r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="&#xE14;&#xE35;"/></start><define name="&#xE14;&#xE35;"><element name="foo"><empty/></element></define></grammar>"#, None).unwrap();
+        reader.parse_str(r#"<element xmlns="http://relaxng.org/ns/structure/1.0" name="foo"><empty><ext xmlns="http://www.example.com"><element xmlns="http://relaxng.org/ns/structure/1.0"/></ext></empty></element>"#, None).unwrap();
+        reader.parse_str(r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"  xmlns:eg="http://www.example.com" eg:comment=""><start eg:comment=""><element eg:comment=""><name eg:comment="">foo</name><data eg:comment="" type="string"/><empty eg:comment=""/></element></start></grammar>"#, None).unwrap();
+        reader.parse_str(r#"<externalRef xmlns="http://relaxng.org/ns/structure/1.0" xml:base="sub/y" href="x"/>"#, None).unwrap();
     }
 }
