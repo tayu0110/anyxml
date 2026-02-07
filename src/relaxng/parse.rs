@@ -1,9 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    XMLVersion,
+    XML_NS_NAMESPACE, XMLVersion,
     error::XMLError,
-    relaxng::XML_RELAX_NG_NAMESPACE,
+    relaxng::{XML_RELAX_NG_NAMESPACE, datatype_library::RelaxNGDatatypeLibraries},
     sax::{
         AttributeType, DefaultDecl, Locator, NamespaceStack,
         attributes::{Attribute, Attributes},
@@ -267,6 +267,7 @@ struct RelaxNGNode {
 
 pub(super) struct RelaxNGParseHandler<H: SAXHandler = DefaultSAXHandler> {
     handler: H,
+    datatype_libraries: RelaxNGDatatypeLibraries,
 
     /// When set to `true`, the context is initialized at the start of parsing.
     ///
@@ -290,6 +291,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
     fn with_handler(handler: H) -> Self {
         Self {
             handler,
+            datatype_libraries: RelaxNGDatatypeLibraries::default(),
             init: true,
             ignore_depth: 0,
             locator: Arc::new(Locator::new(
@@ -465,6 +467,20 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             RelaxNGNodeType::Choice(ref mut ty) => {
                 if self.tree[self.cur].r#type.is_name_class() {
                     *ty = ChoiceType::NameClass;
+                } else if matches!(
+                    self.tree[self.cur].r#type,
+                    RelaxNGNodeType::Element(_) | RelaxNGNodeType::Attribute(_)
+                ) {
+                    if !self.tree[self.cur].children.is_empty() {
+                        *ty = ChoiceType::Pattern;
+                    } else {
+                        match self.tree[self.cur].r#type {
+                            RelaxNGNodeType::Element(None) | RelaxNGNodeType::Attribute(None) => {
+                                *ty = ChoiceType::NameClass;
+                            }
+                            _ => *ty = ChoiceType::Pattern,
+                        }
+                    }
                 } else {
                     *ty = ChoiceType::Pattern;
                 }
@@ -781,22 +797,22 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         }
     }
 
-    /// Process simplification defined from ISO/IEC 19757-2:2008 7.9 to 7.22.
+    /// Process simplification defined from ISO/IEC 19757-2:2008 7.7 to 7.22.
     fn simplification(&mut self) -> Result<(), SAXParseError> {
-        if self.unrecoverable {
-            self.last_error.clone()?;
-        }
+        self.last_error.clone()?;
         self.resolve_external_resource();
-        if self.unrecoverable {
-            self.last_error.clone()?;
-        }
+        self.last_error.clone()?;
         self.normalize_names(0, &mut NamespaceStack::default());
-        if self.unrecoverable {
-            self.last_error.clone()?;
-        }
+        self.last_error.clone()?;
+
         // `flatten_div` does not report any errors.
         self.flatten_div(0);
+        // `simplification_13_to_16` also does not report any errors.
         self.simplification_13_to_16(0);
+
+        self.check_constraints(0, true, true, true);
+        self.last_error.clone()?;
+
         Ok(())
     }
 
@@ -1329,6 +1345,187 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 r#type,
                 children,
             });
+        }
+    }
+
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 7.17 Constraints
+    fn check_constraints(
+        &mut self,
+        current: usize,
+        allow_anyname: bool,
+        allow_nsname: bool,
+        allow_xmlns: bool,
+    ) {
+        match self.tree[current].r#type {
+            RelaxNGNodeType::AnyName => {
+                if !allow_anyname {
+                    error!(
+                        self,
+                        RngParseUnacceptablePattern,
+                        "An 'except' element that is a child of an 'anyName' element shall not have any 'anyName' descendant elements."
+                    );
+                    return;
+                }
+                if !self.tree[current].children.is_empty() {
+                    let ch = self.tree[current].children[0];
+                    self.check_constraints(ch, false, allow_nsname, allow_xmlns);
+                }
+            }
+            RelaxNGNodeType::NsName => {
+                if !allow_nsname {
+                    error!(
+                        self,
+                        RngParseUnacceptablePattern,
+                        "An 'except' element that is a child of an 'nsName' element shall not have any 'nsName' or 'anyName' descendant elements."
+                    );
+                    return;
+                }
+                if !allow_xmlns
+                    && self.tree[current].ns.as_deref().is_some_and(|ns| {
+                        XML_NS_NAMESPACE.starts_with(ns)
+                            && XML_NS_NAMESPACE.len().abs_diff(ns.len()) <= 1
+                    })
+                {
+                    // The specification targets `http://www.w3.org/2000/xmlns`
+                    // (without the trailing slash) as the constraint. However,
+                    // considering the intent, it should also generate an error
+                    // for `http://www.w3.org/2000/xmlns/`, which conforms to the
+                    // namespace specification.
+                    error!(
+                        self,
+                        RngParseUnacceptableAttribute,
+                        "A 'name' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
+                        XML_NS_NAMESPACE
+                    );
+                }
+                if !self.tree[current].children.is_empty() {
+                    let ch = self.tree[current].children[0];
+                    self.check_constraints(ch, false, false, allow_xmlns);
+                }
+            }
+            RelaxNGNodeType::Name(ref name) => {
+                if !allow_xmlns {
+                    if self.tree[current]
+                        .ns
+                        .as_deref()
+                        .is_none_or(|ns| ns.is_empty())
+                        && name.as_ref() == "xmlns"
+                    {
+                        error!(
+                            self,
+                            RngParseUnacceptableAttribute,
+                            "A 'name' element at the descendant of the first child of an 'attribute' element and that has an 'ns' attribute with empty value shall not have 'xmlns' as its content."
+                        );
+                    } else if self.tree[current].ns.as_deref().is_some_and(|ns| {
+                        XML_NS_NAMESPACE.starts_with(ns)
+                            && XML_NS_NAMESPACE.len().abs_diff(ns.len()) <= 1
+                    }) {
+                        // The specification targets `http://www.w3.org/2000/xmlns`
+                        // (without the trailing slash) as the constraint. However,
+                        // considering the intent, it should also generate an error
+                        // for `http://www.w3.org/2000/xmlns/`, which conforms to the
+                        // namespace specification.
+                        error!(
+                            self,
+                            RngParseUnacceptableAttribute,
+                            "A 'name' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
+                            XML_NS_NAMESPACE
+                        );
+                    }
+                }
+            }
+            RelaxNGNodeType::Attribute(_) => {
+                let nc = self.tree[current].children[0];
+                self.check_constraints(nc, allow_anyname, allow_nsname, false);
+                let pat = self.tree[current].children[1];
+                self.check_constraints(pat, allow_anyname, allow_nsname, allow_xmlns);
+            }
+            RelaxNGNodeType::Data(ref type_name) => {
+                if let Some(datatype_library) = self.tree[current]
+                    .datatype_library
+                    .as_deref()
+                    .and_then(|dl| URIString::parse(dl).ok())
+                {
+                    if let Some(library) = self.datatype_libraries.get(&datatype_library) {
+                        let mut params = HashMap::new();
+                        let len = self.tree[current].children.len();
+                        for i in 0..len {
+                            let ch = self.tree[current].children[i];
+                            if let RelaxNGNodeType::Param { name, value } = &self.tree[ch].r#type {
+                                params.insert(name.to_string(), value.to_string());
+                            }
+                        }
+                        if !library.contains(type_name) {
+                            error!(
+                                self,
+                                RngParseUnresolvableDatatypeLibrary,
+                                "The type '{}' of the datatype library '{}' is unresolvabale.",
+                                type_name,
+                                datatype_library
+                            );
+                        } else if library
+                            .validate_params(type_name, &params)
+                            .is_none_or(|b| !b)
+                        {
+                            error!(
+                                self,
+                                RngParseUnresolvableDatatypeLibrary,
+                                "The params for the type '{}' of the datatype library '{}' is invalid.",
+                                type_name,
+                                datatype_library
+                            );
+                        }
+                    } else {
+                        error!(
+                            self,
+                            RngParseUnresolvableDatatypeLibrary,
+                            "The datatype library '{}' is unresolvabale.",
+                            datatype_library
+                        );
+                    }
+
+                    if let Some(&ch) = self.tree[current].children.last()
+                        && matches!(self.tree[ch].r#type, RelaxNGNodeType::Except(_))
+                    {
+                        self.check_constraints(ch, allow_anyname, allow_nsname, allow_xmlns);
+                    }
+                }
+            }
+            RelaxNGNodeType::Value { ref r#type, .. } => {
+                if let Some(datatype_library) = self.tree[current]
+                    .datatype_library
+                    .as_deref()
+                    .and_then(|dl| URIString::parse(dl).ok())
+                {
+                    let type_name = r#type.as_deref().unwrap();
+                    if let Some(library) = self.datatype_libraries.get(&datatype_library) {
+                        if !library.contains(type_name) {
+                            error!(
+                                self,
+                                RngParseUnresolvableDatatypeLibrary,
+                                "The type '{}' of the datatype library '{}' is unresolvabale.",
+                                type_name,
+                                datatype_library
+                            );
+                        }
+                    } else {
+                        error!(
+                            self,
+                            RngParseUnresolvableDatatypeLibrary,
+                            "The datatype library '{}' is unresolvabale.",
+                            datatype_library
+                        );
+                    }
+                }
+            }
+            _ => {
+                let len = self.tree[current].children.len();
+                for i in 0..len {
+                    let ch = self.tree[current].children[i];
+                    self.check_constraints(ch, allow_anyname, allow_nsname, allow_xmlns);
+                }
+            }
         }
     }
 }
@@ -1965,9 +2162,28 @@ mod tests {
             .build();
 
         reader.parse_str(r#"<element name="foo" xmlns="http://relaxng.org/ns/structure/1.0" ns=""><empty/></element>"#, None).unwrap();
+        assert!(reader.handler.last_error.is_ok());
         reader.parse_str(r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="&#xE14;&#xE35;"/></start><define name="&#xE14;&#xE35;"><element name="foo"><empty/></element></define></grammar>"#, None).unwrap();
+        assert!(reader.handler.last_error.is_ok());
         reader.parse_str(r#"<element xmlns="http://relaxng.org/ns/structure/1.0" name="foo"><empty><ext xmlns="http://www.example.com"><element xmlns="http://relaxng.org/ns/structure/1.0"/></ext></empty></element>"#, None).unwrap();
+        assert!(reader.handler.last_error.is_ok());
         reader.parse_str(r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"  xmlns:eg="http://www.example.com" eg:comment=""><start eg:comment=""><element eg:comment=""><name eg:comment="">foo</name><data eg:comment="" type="string"/><empty eg:comment=""/></element></start></grammar>"#, None).unwrap();
+        assert!(reader.handler.last_error.is_ok());
         reader.parse_str(r#"<externalRef xmlns="http://relaxng.org/ns/structure/1.0" xml:base="sub/y" href="x"/>"#, None).unwrap();
+        assert!(reader.handler.last_error.is_ok());
+        reader
+            .parse_str(
+                r#"<attribute xmlns="http://relaxng.org/ns/structure/1.0"><choice><name>att1</name><name>att2</name></choice></attribute>"#,
+                None,
+            )
+            .unwrap();
+        assert!(reader.handler.last_error.is_ok());
+        reader
+            .parse_str(
+                r#"<element xmlns="http://relaxng.org/ns/structure/1.0"><choice><name>elem1</name><name>elem2</name></choice><empty/></element>"#,
+                None,
+            )
+            .unwrap();
+        assert!(reader.handler.last_error.is_ok());
     }
 }
