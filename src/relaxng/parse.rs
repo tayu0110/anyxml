@@ -110,6 +110,7 @@ enum ChoiceType {
     NameClass,
 }
 
+#[derive(Clone)]
 enum RelaxNGNodeType {
     Element(Option<Box<str>>),
     Attribute(Option<Box<str>>),
@@ -790,6 +791,12 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             self.last_error.clone()?;
         }
         self.normalize_names(0, &mut NamespaceStack::default());
+        if self.unrecoverable {
+            self.last_error.clone()?;
+        }
+        // `flatten_div` does not report any errors.
+        self.flatten_div(0);
+        self.simplification_13_to_16(0);
         Ok(())
     }
 
@@ -1126,6 +1133,203 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         }
 
         ns_stack.truncate(old_ns_stack_depth);
+    }
+
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 7.12 `div` element
+    fn flatten_div(&mut self, current: usize) {
+        let len = self.tree[current].children.len();
+        for i in 0..len {
+            let ch = self.tree[current].children[i];
+            if ch != usize::MAX {
+                self.flatten_div(ch);
+            }
+        }
+
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Grammar | RelaxNGNodeType::Div(_) => {
+                // In full syntax, `grammar`, `div`, and `include` can directly contain `div`,
+                // but since `include` is already fully expanded, only `grammar` and `div`
+                // should match.
+
+                let mut children = vec![];
+                let len = self.tree[current].children.len();
+                for i in 0..len {
+                    let ch = self.tree[current].children[i];
+                    if ch != usize::MAX {
+                        match self.tree[ch].r#type {
+                            RelaxNGNodeType::Div(_) => {
+                                children.append(&mut self.tree[ch].children);
+                            }
+                            _ => {
+                                children.push(ch);
+                            }
+                        }
+                    }
+                }
+
+                self.tree[current].children = children;
+            }
+            _ => {}
+        }
+    }
+
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 7.13 Number of child elements
+    /// - ISO/IEC 19757-2:2008 7.14 `mixed` element
+    /// - ISO/IEC 19757-2:2008 7.15 `optional` element
+    /// - ISO/IEC 19757-2:2008 7.16 `zeroOrMore` element
+    fn simplification_13_to_16(&mut self, current: usize) {
+        self.tree[current].children.retain(|&c| c != usize::MAX);
+
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Define { .. }
+            | RelaxNGNodeType::List
+            | RelaxNGNodeType::ZeroOrMore => {
+                self.bundle_children_with(current, RelaxNGNodeType::Group);
+            }
+            RelaxNGNodeType::OneOrMore => {
+                self.bundle_children_with(current, RelaxNGNodeType::Group);
+                // ISO/IEC 19757-2:2008 7.16 `zeroOrMore` element
+                // replace `zeroOrMore` to `choice`
+                self.tree[current].r#type = RelaxNGNodeType::Choice(ChoiceType::Pattern);
+                let new = self.tree.len();
+                let children =
+                    std::mem::replace(&mut self.tree[current].children, vec![new, new + 1]);
+                // append `oneOrMore` with `zeroOrMore`'s children
+                self.tree.push(RelaxNGNode {
+                    base_uri: None,
+                    datatype_library: None,
+                    ns: None,
+                    xmlns: HashMap::new(),
+                    r#type: RelaxNGNodeType::OneOrMore,
+                    children,
+                });
+                // append `empty`
+                self.tree.push(RelaxNGNode {
+                    base_uri: None,
+                    datatype_library: None,
+                    ns: None,
+                    xmlns: HashMap::new(),
+                    r#type: RelaxNGNodeType::Empty,
+                    children: vec![],
+                });
+            }
+            RelaxNGNodeType::Optional => {
+                self.bundle_children_with(current, RelaxNGNodeType::Group);
+                // ISO/IEC 19757-2:2008 7.15 `optional` element
+                // replace `optional` to `choice`
+                self.tree[current].r#type = RelaxNGNodeType::Choice(ChoiceType::Pattern);
+                // append `empty`
+                let new = self.tree.len();
+                self.tree[current].children.push(new);
+                self.tree.push(RelaxNGNode {
+                    base_uri: None,
+                    datatype_library: None,
+                    ns: None,
+                    xmlns: HashMap::new(),
+                    r#type: RelaxNGNodeType::Empty,
+                    children: vec![],
+                });
+            }
+            RelaxNGNodeType::Mixed => {
+                self.bundle_children_with(current, RelaxNGNodeType::Group);
+                // ISO/IEC 19757-2:2008 7.14 `mixed` element
+                // replace `mixed` to `interleave`
+                self.tree[current].r#type = RelaxNGNodeType::Interleave;
+                // append `text`
+                let new = self.tree.len();
+                self.tree[current].children.push(new);
+                self.tree.push(RelaxNGNode {
+                    base_uri: None,
+                    datatype_library: None,
+                    ns: None,
+                    xmlns: HashMap::new(),
+                    r#type: RelaxNGNodeType::Text,
+                    children: vec![],
+                });
+            }
+            RelaxNGNodeType::Element(_) => {
+                if self.tree[current].children.len() > 2 {
+                    let children = self.tree[current].children.split_off(1);
+                    let new = self.tree.len();
+                    self.tree[current].children.push(new);
+                    self.tree.push(RelaxNGNode {
+                        base_uri: None,
+                        datatype_library: None,
+                        ns: None,
+                        xmlns: HashMap::new(),
+                        r#type: RelaxNGNodeType::Group,
+                        children,
+                    });
+                }
+            }
+            RelaxNGNodeType::Attribute(_) => {
+                if self.tree[current].children.len() == 1 {
+                    let new = self.tree.len();
+                    self.tree[current].children.push(new);
+                    self.tree.push(RelaxNGNode {
+                        base_uri: None,
+                        datatype_library: None,
+                        ns: None,
+                        xmlns: HashMap::new(),
+                        r#type: RelaxNGNodeType::Text,
+                        children: vec![],
+                    });
+                }
+            }
+            RelaxNGNodeType::Except(ExceptType::NameClass) => {
+                self.bundle_children_with(current, RelaxNGNodeType::Choice(ChoiceType::NameClass));
+            }
+            RelaxNGNodeType::Except(ExceptType::Pattern) => {
+                self.bundle_children_with(current, RelaxNGNodeType::Choice(ChoiceType::Pattern));
+            }
+            RelaxNGNodeType::Choice(_) | RelaxNGNodeType::Group | RelaxNGNodeType::Interleave => {
+                if self.tree[current].children.len() == 1 {
+                    // Since they have only one child, they replace themselves with their child.
+                    let ch = self.tree[current].children[0];
+                    self.tree.swap(current, ch);
+                } else {
+                    while self.tree[current].children.len() > 2 {
+                        let second = self.tree[current].children.pop().unwrap();
+                        let first = self.tree[current].children.pop().unwrap();
+
+                        let new = self.tree.len();
+                        self.tree[current].children.push(new);
+
+                        self.tree.push(RelaxNGNode {
+                            base_uri: None,
+                            datatype_library: None,
+                            ns: None,
+                            xmlns: HashMap::new(),
+                            r#type: self.tree[current].r#type.clone(),
+                            children: vec![first, second],
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        let len = self.tree[current].children.len();
+        for i in 0..len {
+            let ch = self.tree[current].children[i];
+            self.simplification_13_to_16(ch);
+        }
+    }
+    fn bundle_children_with(&mut self, current: usize, r#type: RelaxNGNodeType) {
+        if self.tree[current].children.len() > 1 {
+            let new = self.tree.len();
+            let children = std::mem::replace(&mut self.tree[current].children, vec![new]);
+            self.tree.push(RelaxNGNode {
+                base_uri: None,
+                datatype_library: None,
+                ns: None,
+                xmlns: HashMap::new(),
+                r#type,
+                children,
+            });
+        }
     }
 }
 
