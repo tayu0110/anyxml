@@ -813,6 +813,8 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         self.check_constraints(0, true, true, true);
         self.last_error.clone()?;
 
+        // `simplification_21_to_22` also does not report any errors.
+        self.simplification_21_to_22(usize::MAX, 0);
         Ok(())
     }
 
@@ -1526,6 +1528,92 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     self.check_constraints(ch, allow_anyname, allow_nsname, allow_xmlns);
                 }
             }
+        }
+    }
+
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 7.21 `notAllowed` element
+    /// - ISO/IEC 19757-2:2008 7.22 `empty` element
+    fn simplification_21_to_22(&mut self, parent: usize, current: usize) {
+        let len = self.tree[current].children.len();
+        for i in 0..len {
+            let ch = self.tree[current].children[i];
+            self.simplification_21_to_22(current, ch);
+        }
+
+        if self.tree[current].children.is_empty() {
+            return;
+        }
+
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Attribute(_) => {
+                let ch = self.tree[current].children[1];
+                if matches!(self.tree[ch].r#type, RelaxNGNodeType::NotAllowed) {
+                    self.tree.swap(current, ch);
+                }
+            }
+            RelaxNGNodeType::List => {
+                let ch = self.tree[current].children[0];
+                if matches!(self.tree[ch].r#type, RelaxNGNodeType::NotAllowed) {
+                    self.tree.swap(current, ch);
+                }
+            }
+            RelaxNGNodeType::Group | RelaxNGNodeType::Interleave => {
+                let ch1 = self.tree[current].children[0];
+                let ch2 = self.tree[current].children[1];
+                match (&self.tree[ch1].r#type, &self.tree[ch2].r#type) {
+                    (RelaxNGNodeType::NotAllowed, _) => {
+                        self.tree.swap(current, ch1);
+                    }
+                    (_, RelaxNGNodeType::NotAllowed) => {
+                        self.tree.swap(current, ch2);
+                    }
+                    (RelaxNGNodeType::Empty, _) => {
+                        self.tree.swap(current, ch2);
+                    }
+                    (_, RelaxNGNodeType::Empty) => {
+                        self.tree.swap(current, ch1);
+                    }
+                    _ => {}
+                }
+            }
+            RelaxNGNodeType::OneOrMore => {
+                let ch = self.tree[current].children[0];
+                match self.tree[ch].r#type {
+                    RelaxNGNodeType::NotAllowed | RelaxNGNodeType::Empty => {
+                        self.tree.swap(current, ch)
+                    }
+                    _ => {}
+                }
+            }
+            RelaxNGNodeType::Choice(_) => {
+                let ch1 = self.tree[current].children[0];
+                let ch2 = self.tree[current].children[1];
+                match (&self.tree[ch1].r#type, &self.tree[ch2].r#type) {
+                    (RelaxNGNodeType::NotAllowed, _) => {
+                        self.tree.swap(current, ch2);
+                    }
+                    (_, RelaxNGNodeType::NotAllowed) => {
+                        self.tree.swap(current, ch1);
+                    }
+                    (RelaxNGNodeType::Empty, RelaxNGNodeType::Empty) => {
+                        self.tree.swap(current, ch1);
+                    }
+                    (_, RelaxNGNodeType::Empty) => {
+                        self.tree[current].children.swap(0, 1);
+                    }
+                    _ => {}
+                }
+            }
+            RelaxNGNodeType::Except(_) => {
+                let ch = self.tree[current].children[0];
+                if matches!(self.tree[ch].r#type, RelaxNGNodeType::NotAllowed) {
+                    // Since `except` only appears as the youngest sibling,
+                    // simply remove the last element from the parent's `children`.
+                    self.tree[parent].children.pop();
+                }
+            }
+            _ => {}
         }
     }
 }
