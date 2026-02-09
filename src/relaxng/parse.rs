@@ -285,6 +285,7 @@ pub(super) struct RelaxNGParseHandler<H: SAXHandler = DefaultSAXHandler> {
     tree: Vec<RelaxNGNode>,
     node_stack: Vec<usize>,
     text: String,
+    defines: HashMap<String, usize>,
 }
 
 impl<H: SAXHandler> RelaxNGParseHandler<H> {
@@ -307,6 +308,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             tree: vec![],
             node_stack: vec![],
             text: String::new(),
+            defines: HashMap::new(),
         }
     }
 
@@ -814,6 +816,30 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         self.last_error.clone()?;
 
         self.combine_start_and_define(0);
+        self.last_error.clone()?;
+
+        // Wrap the existing pattern P in the form `<grammar><start>P</start></grammar>`.
+        if !matches!(self.tree[0].r#type, RelaxNGNodeType::Grammar) {
+            let grammar = self.tree.len();
+            self.tree.push(RelaxNGNode {
+                base_uri: None,
+                datatype_library: None,
+                ns: None,
+                xmlns: HashMap::new(),
+                r#type: RelaxNGNodeType::Grammar,
+                children: vec![grammar + 1],
+            });
+            self.tree.push(RelaxNGNode {
+                base_uri: None,
+                datatype_library: None,
+                ns: None,
+                xmlns: HashMap::new(),
+                r#type: RelaxNGNodeType::Start(None),
+                children: vec![grammar],
+            });
+            self.tree.swap(0, grammar);
+        }
+        self.flatten_grammar(0, &HashMap::new(), &mut HashMap::new(), &mut 0);
         self.last_error.clone()?;
 
         // `simplification_21_to_22` also does not report any errors.
@@ -1706,6 +1732,75 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
 
             self.tree[current].children.drain(..len);
             self.tree[current].children.extend(others);
+        }
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 7.19 `grammar` element
+    fn flatten_grammar(
+        &mut self,
+        current: usize,
+        parent_define: &HashMap<Box<str>, (String, usize)>,
+        in_scope_define: &mut HashMap<Box<str>, (String, usize)>,
+        num_define: &mut usize,
+    ) {
+        let len = self.tree[current].children.len();
+        for i in 0..len {
+            let ch = self.tree[current].children[i];
+            if let RelaxNGNodeType::Define { ref mut name, .. } = self.tree[ch].r#type {
+                let alias = format!("{}", num_define);
+                in_scope_define.insert(name.clone(), (alias.clone(), ch));
+                *num_define += 1;
+                *name = alias.into();
+            }
+        }
+
+        for i in 0..len {
+            let ch = self.tree[current].children[i];
+            match self.tree[ch].r#type {
+                RelaxNGNodeType::Grammar => {
+                    self.flatten_grammar(ch, in_scope_define, &mut HashMap::new(), num_define);
+                }
+                RelaxNGNodeType::Ref(ref mut name) => {
+                    if let Some(define) = in_scope_define.get(name) {
+                        *name = define.0.as_str().into();
+                    } else {
+                        error!(
+                            self,
+                            RngParseUnresolvableRefName,
+                            "The 'name' attribute of 'ref' has a value '{}', but it is unresolvable.",
+                            name
+                        );
+                    }
+                }
+                RelaxNGNodeType::ParentRef(ref name) => {
+                    if let Some(define) = parent_define.get(name) {
+                        // replace 'parentRef' to 'ref'
+                        self.tree[ch].r#type = RelaxNGNodeType::Ref(define.0.as_str().into());
+                    } else {
+                        error!(
+                            self,
+                            RngParseUnresolvableRefName,
+                            "The 'name' attribute of 'parentRef' has a value '{}', but it is unresolvable.",
+                            name
+                        );
+                    }
+                }
+                _ => {
+                    self.flatten_grammar(ch, parent_define, in_scope_define, num_define);
+                }
+            }
+        }
+
+        if current != 0 && matches!(self.tree[current].r#type, RelaxNGNodeType::Grammar) {
+            for (_, (alias, define)) in in_scope_define.drain() {
+                self.tree[0].children.push(define);
+                self.defines.insert(alias, define);
+            }
+
+            let start = self.tree[current].children[0];
+            let children = self.tree[start].children[0];
+            self.tree.swap(current, children);
         }
     }
 
