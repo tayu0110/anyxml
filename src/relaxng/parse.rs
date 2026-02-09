@@ -813,6 +813,9 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         self.check_constraints(0, true, true, true);
         self.last_error.clone()?;
 
+        self.combine_start_and_define(0);
+        self.last_error.clone()?;
+
         // `simplification_21_to_22` also does not report any errors.
         self.simplification_21_to_22(usize::MAX, 0);
         Ok(())
@@ -871,6 +874,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         "Failed to parse '{}' for 'externalRef'.",
                         href
                     );
+                    return;
                 }
 
                 let new = self.tree[current].children[0];
@@ -945,6 +949,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         self,
                         RngParseIncludeParseFailure, "Failed to parse '{}' for 'include'.", href
                     );
+                    return None;
                 }
 
                 let new = self.tree[current].children[old_num_children];
@@ -1528,6 +1533,179 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     self.check_constraints(ch, allow_anyname, allow_nsname, allow_xmlns);
                 }
             }
+        }
+    }
+
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 7.18 `combine` attribute
+    fn combine_start_and_define(&mut self, current: usize) {
+        let len = self.tree[current].children.len();
+        for i in 0..len {
+            let ch = self.tree[current].children[i];
+            self.combine_start_and_define(ch);
+        }
+
+        if matches!(self.tree[current].r#type, RelaxNGNodeType::Grammar) {
+            let mut combine_start = None;
+            let mut starts = vec![];
+            let mut num_start_without_combine = 0;
+
+            // for 'define'
+            // key  : 'name' of 'define'
+            // value: (num_define_without_combine, combine, defines)
+            let mut define_mapping = HashMap::new();
+
+            let mut others = vec![];
+
+            let len = self.tree[current].children.len();
+            for i in 0..len {
+                let ch = self.tree[current].children[i];
+                match &self.tree[ch].r#type {
+                    RelaxNGNodeType::Start(com) => {
+                        if let Some(com) = com.as_deref() {
+                            if let Some(coms) = combine_start {
+                                if coms != com {
+                                    error!(
+                                        self,
+                                        RngParseUnacceptableCombine,
+                                        "The 'combine' attribute values of multiple 'start' elements within the 'grammar' element are inconsistent."
+                                    );
+                                }
+                            } else {
+                                combine_start = Some(com);
+                            }
+                        } else {
+                            num_start_without_combine += 1;
+                            if num_start_without_combine == 2 {
+                                error!(
+                                    self,
+                                    RngParseMultipleStartWithoutCombine,
+                                    "Multiple 'start' element without 'combine' attribute appear."
+                                );
+                            }
+                        }
+                        starts.push(ch);
+                    }
+                    RelaxNGNodeType::Define { name, combine } => {
+                        let (num_define_without_combine, combine_define, defines) = define_mapping
+                            .entry(name.clone())
+                            .or_insert_with(|| (0, None, vec![]));
+                        if let Some(combine) = combine.as_deref() {
+                            if let Some(other) = combine_define.as_deref()
+                                && other != combine
+                            {
+                                error!(
+                                    self,
+                                    RngParseUnacceptableCombine,
+                                    "The 'combine' attribute values of multiple 'define' elements within the 'grammar' element are inconsistent."
+                                );
+                            } else {
+                                *combine_define = Some(combine.to_owned());
+                            }
+                        } else {
+                            *num_define_without_combine += 1;
+                            if *num_define_without_combine == 2 {
+                                error!(
+                                    self,
+                                    RngParseMultipleStartWithoutCombine,
+                                    "Multiple 'define' element without 'combine' attribute appear."
+                                );
+                            }
+                        }
+                        defines.push(ch);
+                    }
+                    _ => others.push(ch),
+                }
+            }
+
+            // reconstruct 'start'
+            if starts.len() == 1 {
+                self.tree[current].children.push(starts[0]);
+            } else if let Some(combine) = combine_start {
+                let mut second = self.tree[starts.pop().unwrap()].children[0];
+
+                let ty = if combine == "choice" {
+                    RelaxNGNodeType::Choice(ChoiceType::Pattern)
+                } else {
+                    RelaxNGNodeType::Interleave
+                };
+
+                while let Some(next) = starts.pop() {
+                    let next = self.tree[next].children[0];
+                    let node = RelaxNGNode {
+                        base_uri: None,
+                        datatype_library: None,
+                        ns: None,
+                        xmlns: HashMap::new(),
+                        r#type: ty.clone(),
+                        children: vec![next, second],
+                    };
+                    second = self.tree.len();
+                    self.tree.push(node);
+                }
+
+                let new = self.tree.len();
+                self.tree[current].children.push(new);
+                self.tree.push(RelaxNGNode {
+                    base_uri: None,
+                    datatype_library: None,
+                    ns: None,
+                    xmlns: HashMap::new(),
+                    r#type: RelaxNGNodeType::Start(None),
+                    children: vec![second],
+                });
+            } else if starts.is_empty() {
+                error!(
+                    self,
+                    RngParseStartNotFoundInGrammar, "'start' is not found in 'grammar'"
+                );
+            }
+
+            // reconstruct 'define'
+            for (name, (_, combine, mut defines)) in define_mapping {
+                if defines.len() == 1 {
+                    self.tree[current].children.push(defines[0]);
+                } else if let Some(combine) = combine {
+                    let mut second = self.tree[defines.pop().unwrap()].children[0];
+
+                    let ty = if combine == "choice" {
+                        RelaxNGNodeType::Choice(ChoiceType::Pattern)
+                    } else {
+                        RelaxNGNodeType::Interleave
+                    };
+
+                    while let Some(next) = defines.pop() {
+                        let next = self.tree[next].children[0];
+                        let node = RelaxNGNode {
+                            base_uri: None,
+                            datatype_library: None,
+                            ns: None,
+                            xmlns: HashMap::new(),
+                            r#type: ty.clone(),
+                            children: vec![next, second],
+                        };
+                        second = self.tree.len();
+                        self.tree.push(node);
+                    }
+
+                    let new = self.tree.len();
+                    self.tree[current].children.push(new);
+                    self.tree.push(RelaxNGNode {
+                        base_uri: None,
+                        datatype_library: None,
+                        ns: None,
+                        xmlns: HashMap::new(),
+                        r#type: RelaxNGNodeType::Define {
+                            name,
+                            combine: None,
+                        },
+                        children: vec![second],
+                    });
+                }
+            }
+
+            self.tree[current].children.drain(..len);
+            self.tree[current].children.extend(others);
         }
     }
 
@@ -2244,21 +2422,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn full_syntax_parsing_before_external_resource_including_tests() {
+    fn full_syntax_parsing_tests() {
         let mut reader = XMLReaderBuilder::new()
             .set_handler(RelaxNGParseHandler::default())
             .build();
 
         reader.parse_str(r#"<element name="foo" xmlns="http://relaxng.org/ns/structure/1.0" ns=""><empty/></element>"#, None).unwrap();
         assert!(reader.handler.last_error.is_ok());
+        assert!(reader.handler.simplification().is_ok());
         reader.parse_str(r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="&#xE14;&#xE35;"/></start><define name="&#xE14;&#xE35;"><element name="foo"><empty/></element></define></grammar>"#, None).unwrap();
         assert!(reader.handler.last_error.is_ok());
+        assert!(reader.handler.simplification().is_ok());
         reader.parse_str(r#"<element xmlns="http://relaxng.org/ns/structure/1.0" name="foo"><empty><ext xmlns="http://www.example.com"><element xmlns="http://relaxng.org/ns/structure/1.0"/></ext></empty></element>"#, None).unwrap();
         assert!(reader.handler.last_error.is_ok());
+        assert!(reader.handler.simplification().is_ok());
         reader.parse_str(r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"  xmlns:eg="http://www.example.com" eg:comment=""><start eg:comment=""><element eg:comment=""><name eg:comment="">foo</name><data eg:comment="" type="string"/><empty eg:comment=""/></element></start></grammar>"#, None).unwrap();
         assert!(reader.handler.last_error.is_ok());
-        reader.parse_str(r#"<externalRef xmlns="http://relaxng.org/ns/structure/1.0" xml:base="sub/y" href="x"/>"#, None).unwrap();
-        assert!(reader.handler.last_error.is_ok());
+        assert!(reader.handler.simplification().is_ok());
         reader
             .parse_str(
                 r#"<attribute xmlns="http://relaxng.org/ns/structure/1.0"><choice><name>att1</name><name>att2</name></choice></attribute>"#,
@@ -2266,6 +2446,7 @@ mod tests {
             )
             .unwrap();
         assert!(reader.handler.last_error.is_ok());
+        assert!(reader.handler.simplification().is_ok());
         reader
             .parse_str(
                 r#"<element xmlns="http://relaxng.org/ns/structure/1.0"><choice><name>elem1</name><name>elem2</name></choice><empty/></element>"#,
@@ -2273,5 +2454,6 @@ mod tests {
             )
             .unwrap();
         assert!(reader.handler.last_error.is_ok());
+        assert!(reader.handler.simplification().is_ok());
     }
 }
