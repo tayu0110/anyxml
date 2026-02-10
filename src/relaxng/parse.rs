@@ -859,7 +859,9 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
 
         // `simplification_21_to_22` also does not report any errors.
         self.simplification_21_to_22(usize::MAX, 0);
-        Ok(())
+
+        self.check_prohibited_paths(0, false, false, false, false, false, false, false);
+        self.last_error.clone()
     }
 
     /// process `externalRef` and `include`.
@@ -2023,6 +2025,107 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             _ => {}
         }
     }
+
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 10.2 Prohibited paths
+    fn check_prohibited_paths(
+        &mut self,
+        current: usize,
+        mut attr: bool,
+        mut one_or_more: bool,
+        mut ogroup: bool,
+        mut ointerleave: bool,
+        mut list: bool,
+        mut except: bool,
+        mut start: bool,
+    ) {
+        macro_rules! report_prohibited_path {
+            ($cond:expr, $path:literal) => {
+                if $cond {
+                    error!(
+                        self,
+                        RngParseProhibitedPath, "'{}' path is not allowed.", $path
+                    );
+                }
+            };
+        }
+
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Attribute(_) => {
+                report_prohibited_path!(attr, "attribute//attribute");
+                report_prohibited_path!(ogroup, "oneOrMore//group//attribute");
+                report_prohibited_path!(ointerleave, "oneOrMore//interleave//attribute");
+                report_prohibited_path!(list, "list//attribute");
+                report_prohibited_path!(except, "data/except//attribute");
+                report_prohibited_path!(start, "start//attribute");
+                attr = true;
+            }
+            RelaxNGNodeType::Data(_) => {
+                report_prohibited_path!(start, "start//data");
+            }
+            RelaxNGNodeType::Empty => {
+                report_prohibited_path!(except, "data/except//empty");
+                report_prohibited_path!(start, "start//empty");
+            }
+            RelaxNGNodeType::Except(ExceptType::Pattern) => except = true,
+            RelaxNGNodeType::Group => {
+                report_prohibited_path!(except, "data/except//group");
+                report_prohibited_path!(start, "start//group");
+                if one_or_more {
+                    ogroup = true;
+                }
+            }
+            RelaxNGNodeType::Interleave => {
+                report_prohibited_path!(list, "list//interleave");
+                report_prohibited_path!(except, "data/except//interleave");
+                report_prohibited_path!(start, "start//interleave");
+                if one_or_more {
+                    ointerleave = true;
+                }
+            }
+            RelaxNGNodeType::List => {
+                report_prohibited_path!(list, "list//list");
+                report_prohibited_path!(except, "data/except//list");
+                report_prohibited_path!(start, "start//list");
+                list = true;
+            }
+            RelaxNGNodeType::OneOrMore => {
+                report_prohibited_path!(except, "data/except//oneOrMore");
+                report_prohibited_path!(start, "start//oneOrMore");
+                one_or_more = true;
+            }
+            RelaxNGNodeType::Ref(_) => {
+                report_prohibited_path!(attr, "attribute//ref");
+                report_prohibited_path!(list, "list//ref");
+                report_prohibited_path!(except, "data/except//ref");
+            }
+            RelaxNGNodeType::Start(_) => start = true,
+            RelaxNGNodeType::Text => {
+                report_prohibited_path!(list, "list//text");
+                report_prohibited_path!(except, "data/except//text");
+                report_prohibited_path!(start, "start//text");
+            }
+            RelaxNGNodeType::Value { .. } => {
+                report_prohibited_path!(start, "start//value");
+            }
+            _ => {}
+        }
+
+        let len = self.tree[current].children.len();
+        for i in 0..len {
+            let ch = self.tree[current].children[i];
+            self.check_prohibited_paths(
+                ch,
+                attr,
+                one_or_more,
+                ogroup,
+                ointerleave,
+                list,
+                except,
+                start,
+            );
+        }
+    }
 }
 
 impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
@@ -2040,6 +2143,7 @@ impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
             self.tree.clear();
             self.node_stack.clear();
             self.text.clear();
+            self.defines.clear();
         } else {
             self.locator_stack.push(self.locator.clone());
             self.locator = locator;
@@ -2673,7 +2777,7 @@ mod tests {
         assert!(reader.handler.simplification().is_ok());
         reader
             .parse_str(
-                r#"<attribute xmlns="http://relaxng.org/ns/structure/1.0"><choice><name>att1</name><name>att2</name></choice></attribute>"#,
+                r#"<element xmlns="http://relaxng.org/ns/structure/1.0" name="elem1"><attribute><choice><name>att1</name><name>att2</name></choice></attribute></element>"#,
                 None,
             )
             .unwrap();
