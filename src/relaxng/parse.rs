@@ -96,25 +96,25 @@ macro_rules! error {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DivContentType {
+pub(super) enum DivContentType {
     Grammar,
     Include,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ExceptType {
+pub(super) enum ExceptType {
     Pattern,
     NameClass,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ChoiceType {
+pub(super) enum ChoiceType {
     Pattern,
     NameClass,
 }
 
 #[derive(Clone)]
-enum RelaxNGNodeType {
+pub(super) enum RelaxNGNodeType {
     Element(Option<Box<str>>),
     Attribute(Option<Box<str>>),
     Group,
@@ -159,7 +159,7 @@ enum RelaxNGNodeType {
 }
 
 impl RelaxNGNodeType {
-    fn typename(&self) -> &'static str {
+    pub(super) fn typename(&self) -> &'static str {
         use RelaxNGNodeType::*;
 
         match self {
@@ -260,18 +260,18 @@ impl RelaxNGNodeType {
 }
 
 #[derive(Clone)]
-struct RelaxNGNode {
+pub(super) struct RelaxNGNode {
     base_uri: Option<Arc<URIStr>>,
-    datatype_library: Option<Arc<str>>,
-    ns: Option<Arc<str>>,
+    pub(super) datatype_library: Option<Arc<str>>,
+    pub(super) ns: Option<Arc<str>>,
     xmlns: HashMap<Arc<str>, Box<str>>,
-    r#type: RelaxNGNodeType,
-    children: Vec<usize>,
+    pub(super) r#type: RelaxNGNodeType,
+    pub(super) children: Vec<usize>,
 }
 
 pub(super) struct RelaxNGParseHandler<H: SAXHandler = DefaultSAXHandler> {
     handler: H,
-    datatype_libraries: RelaxNGDatatypeLibraries,
+    pub(super) datatype_libraries: RelaxNGDatatypeLibraries,
 
     /// When set to `true`, the context is initialized at the start of parsing.
     ///
@@ -286,7 +286,7 @@ pub(super) struct RelaxNGParseHandler<H: SAXHandler = DefaultSAXHandler> {
     unrecoverable: bool,
 
     cur: usize,
-    tree: Vec<RelaxNGNode>,
+    pub(super) tree: Vec<RelaxNGNode>,
     node_stack: Vec<usize>,
     text: String,
     defines: HashMap<String, usize>,
@@ -1167,9 +1167,9 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             }
             RelaxNGNodeType::Name(ref mut name) => {
                 if let Some((prefix, local_name)) = name.split_once(':') {
-                    if let Some(namespace_name) = ns_stack.get(prefix) {
+                    if let Some(namespace) = ns_stack.get(prefix) {
                         *name = local_name.into();
-                        self.tree[current].ns = Some(namespace_name.namespace_name);
+                        self.tree[current].ns = Some(namespace.namespace_name);
                     } else {
                         error!(
                             self,
@@ -1903,7 +1903,13 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 self.tree[0].children.push(newdef);
                 self.tree.swap(current, newdef + 1);
             }
-            _ => {}
+            _ => {
+                let len = self.tree[current].children.len();
+                for i in 0..len {
+                    let ch = self.tree[current].children[i];
+                    self.simplification_20(ch, num_define, used_define);
+                }
+            }
         }
     }
     /// Return `true` if `ref` is successfully expanded, otherwise return `false`.
@@ -2491,6 +2497,9 @@ impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
 
     fn characters(&mut self, data: &str) {
         self.handler.characters(data);
+        if self.ignore_depth > 0 {
+            return;
+        }
         let old = self.text.len();
         // ISO/IEC 19757-2:2008 7.3 Whitespace
         // Do not remove whitespace from `value` or `param`.
@@ -2678,5 +2687,28 @@ mod tests {
             .unwrap();
         assert!(reader.handler.last_error.is_ok());
         assert!(reader.handler.simplification().is_ok());
+    }
+
+    #[test]
+    fn simplification_tests() {
+        let base_uri = URIString::parse_file_path(env!("CARGO_MANIFEST_DIR")).unwrap();
+
+        let path =
+            base_uri.resolve(&URIString::parse("resources/relaxng/spec-example.rng").unwrap());
+        eprintln!("{}", path);
+        let mut reader = XMLReaderBuilder::new()
+            .set_handler(RelaxNGParseHandler::default())
+            .build();
+        reader.parse_uri(path, None).unwrap();
+        assert!(reader.handler.last_error.is_ok());
+        reader.handler.simplification().unwrap();
+        assert!(reader.handler.last_error.is_ok());
+        let grammar = reader.handler.build_grammar().unwrap();
+
+        let schema = format!("{}", grammar);
+        assert_eq!(
+            schema,
+            r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="2"/></start><define name="0"><element><name ns="http://www.example.com/n1">bar1</name><empty/></element></define><define name="1"><element><name ns="http://www.example.com/n2">bar2</name><empty/></element></define><define name="2"><element><name ns="">foo</name><group><ref name="0"/><ref name="1"/></group></element></define></grammar>"#
+        );
     }
 }

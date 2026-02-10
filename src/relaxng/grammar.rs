@@ -2,7 +2,10 @@ use std::collections::{BTreeMap, HashSet};
 
 use crate::{
     error::XMLError,
-    relaxng::datatype_library::RelaxNGDatatypeLibraries,
+    relaxng::{
+        datatype_library::RelaxNGDatatypeLibraries,
+        parse::{RelaxNGNodeType, RelaxNGParseHandler},
+    },
     tree::Element,
     uri::{URIStr, URIString},
 };
@@ -1078,5 +1081,251 @@ impl TryFrom<Element> for RelaxNGExceptNameClass {
 impl std::fmt::Display for RelaxNGExceptNameClass {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<except>{}</except>", self.name_class)
+    }
+}
+
+impl RelaxNGParseHandler {
+    pub(super) fn build_grammar(&self) -> Result<RelaxNGGrammar, XMLError> {
+        self.do_build_grammar(0)
+    }
+    fn do_build_grammar(&self, current: usize) -> Result<RelaxNGGrammar, XMLError> {
+        assert!(matches!(
+            self.tree[current].r#type,
+            RelaxNGNodeType::Grammar
+        ));
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Grammar => {
+                let mut start = None;
+                let mut define = BTreeMap::new();
+                for &ch in &self.tree[current].children {
+                    match self.tree[ch].r#type {
+                        RelaxNGNodeType::Start(_) => {
+                            let gch = self.tree[ch].children[0];
+                            if !matches!(self.tree[gch].r#type, RelaxNGNodeType::NotAllowed) {
+                                start = Some(self.build_pattern(gch)?);
+                            }
+                        }
+                        RelaxNGNodeType::Define { ref name, .. } => {
+                            define.insert(name.to_string(), self.build_define(ch)?);
+                        }
+                        _ => return Err(XMLError::RngParseUnknownError),
+                    }
+                }
+
+                let grammar = RelaxNGGrammar {
+                    start,
+                    define,
+                    libraries: self.datatype_libraries.clone(),
+                };
+                grammar.verify_content_type()?;
+                grammar.verify_attribute_uniqueness()?;
+                grammar.verify_attribute_repeat()?;
+                grammar.verify_element_name_uniqueness()?;
+
+                Ok(grammar)
+            }
+            _ => Err(XMLError::RngParseUnknownError),
+        }
+    }
+
+    fn build_pattern(&self, current: usize) -> Result<RelaxNGPattern, XMLError> {
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Empty => Ok(RelaxNGPattern { pattern: None }),
+            _ => Ok(RelaxNGPattern {
+                pattern: Some(self.build_non_empty_pattern(current)?),
+            }),
+        }
+    }
+
+    fn build_define(&self, current: usize) -> Result<RelaxNGDefine, XMLError> {
+        assert!(matches!(
+            self.tree[current].r#type,
+            RelaxNGNodeType::Define { .. }
+        ));
+        let element = self.tree[current].children[0];
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Define { ref name, .. } => {
+                let name_class = self.tree[element].children[0];
+                let top = self.tree[element].children[1];
+                match self.tree[top].r#type {
+                    RelaxNGNodeType::NotAllowed => Ok(RelaxNGDefine {
+                        name: name.clone(),
+                        name_class: self.build_name_class(name_class)?,
+                        top: None,
+                    }),
+                    _ => Ok(RelaxNGDefine {
+                        name: name.clone(),
+                        name_class: self.build_name_class(name_class)?,
+                        top: Some(self.build_pattern(top)?),
+                    }),
+                }
+            }
+            _ => Err(XMLError::RngParseUnknownError),
+        }
+    }
+
+    fn build_non_empty_pattern(&self, current: usize) -> Result<RelaxNGNonEmptyPattern, XMLError> {
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Text => Ok(RelaxNGNonEmptyPattern::Text),
+            RelaxNGNodeType::Data(ref r#type) => {
+                let mut param = vec![];
+                let mut except_pattern = None;
+                for &ch in &self.tree[current].children {
+                    match &self.tree[ch].r#type {
+                        RelaxNGNodeType::Param { name, value } => {
+                            param.push(RelaxNGParam {
+                                name: name.clone(),
+                                value: value.clone(),
+                            });
+                        }
+                        RelaxNGNodeType::Except(_) => {
+                            except_pattern = Some(Box::new(self.build_except_pattern(ch)?))
+                        }
+                        _ => return Err(XMLError::RngParseUnknownError),
+                    }
+                }
+
+                Ok(RelaxNGNonEmptyPattern::Data {
+                    type_name: r#type.clone(),
+                    datatype_library: URIString::parse(
+                        self.tree[current].datatype_library.as_deref().unwrap(),
+                    )?
+                    .into(),
+                    param,
+                    except_pattern,
+                })
+            }
+            RelaxNGNodeType::Value {
+                ref r#type,
+                ref value,
+            } => Ok(RelaxNGNonEmptyPattern::Value {
+                type_name: r#type.clone().unwrap(),
+                datatype_library: URIString::parse(
+                    self.tree[current].datatype_library.as_deref().unwrap(),
+                )?
+                .into(),
+                ns: self.tree[current].ns.as_deref().unwrap().into(),
+                value: value.clone(),
+            }),
+            RelaxNGNodeType::List => {
+                let ch = self.tree[current].children[0];
+                Ok(RelaxNGNonEmptyPattern::List {
+                    pattern: Box::new(self.build_pattern(ch)?),
+                })
+            }
+            RelaxNGNodeType::Attribute(_) => {
+                let name_class = self.tree[current].children[0];
+                let pattern = self.tree[current].children[1];
+                Ok(RelaxNGNonEmptyPattern::Attribute {
+                    name_class: self.build_name_class(name_class)?,
+                    pattern: Box::new(self.build_pattern(pattern)?),
+                })
+            }
+            RelaxNGNodeType::Ref(ref name) => {
+                Ok(RelaxNGNonEmptyPattern::Ref { name: name.clone() })
+            }
+            RelaxNGNodeType::OneOrMore => {
+                let ch = self.tree[current].children[0];
+                Ok(RelaxNGNonEmptyPattern::OneOrMore {
+                    pattern: Box::new(self.build_non_empty_pattern(ch)?),
+                })
+            }
+            RelaxNGNodeType::Choice(_) => {
+                let ch1 = self.tree[current].children[0];
+                let ch2 = self.tree[current].children[1];
+                Ok(RelaxNGNonEmptyPattern::Choice {
+                    left: Box::new(self.build_pattern(ch1)?),
+                    right: Box::new(self.build_non_empty_pattern(ch2)?),
+                })
+            }
+            RelaxNGNodeType::Group => {
+                let ch1 = self.tree[current].children[0];
+                let ch2 = self.tree[current].children[1];
+                Ok(RelaxNGNonEmptyPattern::Group {
+                    pattern: [
+                        Box::new(self.build_non_empty_pattern(ch1)?),
+                        Box::new(self.build_non_empty_pattern(ch2)?),
+                    ],
+                })
+            }
+            RelaxNGNodeType::Interleave => {
+                let ch1 = self.tree[current].children[0];
+                let ch2 = self.tree[current].children[1];
+                Ok(RelaxNGNonEmptyPattern::Interleave {
+                    pattern: [
+                        Box::new(self.build_non_empty_pattern(ch1)?),
+                        Box::new(self.build_non_empty_pattern(ch2)?),
+                    ],
+                })
+            }
+            _ => Err(XMLError::RngParseUnknownError),
+        }
+    }
+
+    fn build_name_class(&self, current: usize) -> Result<RelaxNGNameClass, XMLError> {
+        match self.tree[current].r#type {
+            RelaxNGNodeType::AnyName => Ok(RelaxNGNameClass::AnyName {
+                except: self.tree[current]
+                    .children
+                    .first()
+                    .map(|&ch| self.build_except_name_class(ch))
+                    .transpose()?,
+            }),
+            RelaxNGNodeType::NsName => Ok(RelaxNGNameClass::NsName {
+                ns: self.tree[current].ns.as_deref().unwrap_or_default().into(),
+                except: self.tree[current]
+                    .children
+                    .first()
+                    .map(|&ch| self.build_except_name_class(ch))
+                    .transpose()?,
+            }),
+            RelaxNGNodeType::Name(ref name) => Ok(RelaxNGNameClass::Name {
+                ns: self.tree[current].ns.as_deref().unwrap_or_default().into(),
+                value: name.clone(),
+            }),
+            RelaxNGNodeType::Choice(_) => {
+                let ch1 = self.tree[current].children[0];
+                let ch2 = self.tree[current].children[1];
+                Ok(RelaxNGNameClass::Choice {
+                    name_class: [
+                        Box::new(self.build_name_class(ch1)?),
+                        Box::new(self.build_name_class(ch2)?),
+                    ],
+                })
+            }
+            _ => Err(XMLError::RngParseUnknownError),
+        }
+    }
+
+    fn build_except_pattern(&self, current: usize) -> Result<RelaxNGExceptPattern, XMLError> {
+        assert!(matches!(
+            self.tree[current].r#type,
+            RelaxNGNodeType::Except(_)
+        ));
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Except(_) => {
+                let ch = self.tree[current].children[0];
+                Ok(RelaxNGExceptPattern {
+                    pattern: self.build_pattern(ch)?,
+                })
+            }
+            _ => Err(XMLError::RngParseUnknownError),
+        }
+    }
+
+    fn build_except_name_class(&self, current: usize) -> Result<RelaxNGExceptNameClass, XMLError> {
+        assert!(matches!(
+            self.tree[current].r#type,
+            RelaxNGNodeType::Except(_)
+        ));
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Except(_) => {
+                let ch = self.tree[current].children[0];
+                Ok(RelaxNGExceptNameClass {
+                    name_class: Box::new(self.build_name_class(ch)?),
+                })
+            }
+            _ => Err(XMLError::RngParseUnknownError),
+        }
     }
 }
