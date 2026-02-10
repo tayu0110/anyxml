@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use crate::{
     XML_NS_NAMESPACE, XMLVersion,
@@ -256,6 +259,7 @@ impl RelaxNGNodeType {
     }
 }
 
+#[derive(Clone)]
 struct RelaxNGNode {
     base_uri: Option<Arc<URIStr>>,
     datatype_library: Option<Arc<str>>,
@@ -839,8 +843,19 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             });
             self.tree.swap(0, grammar);
         }
-        self.flatten_grammar(0, &HashMap::new(), &mut HashMap::new(), &mut 0);
+        let mut num_define = 0;
+        self.flatten_grammar(0, &HashMap::new(), &mut HashMap::new(), &mut num_define);
         self.last_error.clone()?;
+
+        let mut used_define = HashSet::new();
+        self.simplification_20(0, &mut num_define, &mut used_define);
+        self.last_error.clone()?;
+
+        // remove unreachable `define`
+        let start = self.tree[0].children[0];
+        self.tree[0]
+            .children
+            .retain(|&ch| ch == start || used_define.contains(&ch));
 
         // `simplification_21_to_22` also does not report any errors.
         self.simplification_21_to_22(usize::MAX, 0);
@@ -1792,16 +1807,129 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             }
         }
 
-        if current != 0 && matches!(self.tree[current].r#type, RelaxNGNodeType::Grammar) {
+        if matches!(self.tree[current].r#type, RelaxNGNodeType::Grammar) {
             for (_, (alias, define)) in in_scope_define.drain() {
-                self.tree[0].children.push(define);
+                if current != 0 {
+                    self.tree[0].children.push(define);
+                }
                 self.defines.insert(alias, define);
             }
 
-            let start = self.tree[current].children[0];
-            let children = self.tree[start].children[0];
-            self.tree.swap(current, children);
+            if current != 0 {
+                let start = self.tree[current].children[0];
+                let children = self.tree[start].children[0];
+                self.tree.swap(current, children);
+            }
         }
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 7.20 define and ref elements
+    fn simplification_20(
+        &mut self,
+        current: usize,
+        num_define: &mut usize,
+        used_define: &mut HashSet<usize>,
+    ) {
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Grammar => {
+                let start = self.tree[current].children[0];
+                self.simplification_20(start, num_define, used_define);
+            }
+            RelaxNGNodeType::Start(_) => {
+                let ch = self.tree[current].children[0];
+                self.simplification_20(ch, num_define, used_define);
+            }
+            RelaxNGNodeType::Define { .. } => {
+                let ch = self.tree[current].children[0];
+                if matches!(self.tree[ch].r#type, RelaxNGNodeType::Element(_)) {
+                    // Since there's no need to process the `element`, which is a child of `define`,
+                    // I will skip straight to processing the grandchild.
+                    let gch = self.tree[ch].children[1];
+                    self.simplification_20(gch, num_define, used_define);
+                } else {
+                    self.simplification_20(ch, num_define, used_define);
+                }
+            }
+            RelaxNGNodeType::Ref(ref name) => {
+                let &define = self.defines.get(name.as_ref()).unwrap();
+                if used_define.insert(define) {
+                    self.simplification_20(define, num_define, used_define);
+                }
+
+                let chdef = self.tree[define].children[0];
+                if !matches!(self.tree[chdef].r#type, RelaxNGNodeType::Element(_)) {
+                    // expand `ref`
+                    self.tree[current] = self.tree[chdef].clone();
+                    self.tree[current].children.clear();
+                    if !self.expand_ref(current, chdef) {
+                        error!(self, RngParseRefLoop, "A reference loop is detected.",);
+                    }
+                }
+            }
+            RelaxNGNodeType::Element(_) => {
+                // Since the first child is a name class, only the second child needs to be processed.
+                let ch = self.tree[current].children[1];
+                self.simplification_20(ch, num_define, used_define);
+
+                // The processing of `define` skips its child `element`, so when reaching this point,
+                // only `element` that is not a child of `define` needs to be considered.
+                let alias = format!("{}", num_define);
+                *num_define += 1;
+                let newdef = self.tree.len();
+                self.defines.insert(alias.clone(), newdef);
+                used_define.insert(newdef);
+                // new `define` with `element` child
+                self.tree.push(RelaxNGNode {
+                    base_uri: None,
+                    datatype_library: None,
+                    ns: None,
+                    xmlns: HashMap::new(),
+                    r#type: RelaxNGNodeType::Define {
+                        name: alias.as_str().into(),
+                        combine: None,
+                    },
+                    children: vec![newdef + 1],
+                });
+                // new `ref`
+                self.tree.push(RelaxNGNode {
+                    base_uri: None,
+                    datatype_library: None,
+                    ns: None,
+                    xmlns: HashMap::new(),
+                    r#type: RelaxNGNodeType::Ref(alias.into()),
+                    children: vec![],
+                });
+                self.tree[0].children.push(newdef);
+                self.tree.swap(current, newdef + 1);
+            }
+            _ => {}
+        }
+    }
+    /// Return `true` if `ref` is successfully expanded, otherwise return `false`.
+    fn expand_ref(&mut self, dest: usize, src: usize) -> bool {
+        let len = self.tree[src].children.len();
+        for i in 0..len {
+            let ch = self.tree[src].children[i];
+            if let RelaxNGNodeType::Ref(name) = &self.tree[ch].r#type {
+                let &define = self.defines.get(name.as_ref()).unwrap();
+                let chdef = self.tree[define].children[0];
+                if !matches!(self.tree[chdef].r#type, RelaxNGNodeType::Element(_)) {
+                    // If the reference graph is a DAG, then `ref` pointing to a `define`
+                    // that is not an `element` should be already expanded.
+                    // If such a `ref` is found, report a reference loop.
+                    return false;
+                }
+            }
+            let node = self.tree[ch].clone();
+            let new = self.tree.len();
+            self.tree.push(node);
+            self.tree[dest].children.push(new);
+            if !self.expand_ref(new, ch) {
+                return false;
+            }
+        }
+        true
     }
 
     /// # Reference
