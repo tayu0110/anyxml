@@ -6,6 +6,7 @@ use crate::{
         datatype_library::RelaxNGDatatypeLibraries,
         parse::{RelaxNGNodeType, RelaxNGParseHandler},
     },
+    sax::handler::SAXHandler,
     tree::Element,
     uri::{URIStr, URIString},
 };
@@ -1084,7 +1085,7 @@ impl std::fmt::Display for RelaxNGExceptNameClass {
     }
 }
 
-impl RelaxNGParseHandler {
+impl<H: SAXHandler> RelaxNGParseHandler<H> {
     pub(super) fn build_grammar(&self) -> Result<RelaxNGGrammar, XMLError> {
         self.do_build_grammar(0)
     }
@@ -1188,7 +1189,10 @@ impl RelaxNGParseHandler {
                 Ok(RelaxNGNonEmptyPattern::Data {
                     type_name: r#type.clone(),
                     datatype_library: URIString::parse(
-                        self.tree[current].datatype_library.as_deref().unwrap(),
+                        self.tree[current]
+                            .datatype_library
+                            .as_deref()
+                            .unwrap_or_default(),
                     )?
                     .into(),
                     param,
@@ -1201,10 +1205,13 @@ impl RelaxNGParseHandler {
             } => Ok(RelaxNGNonEmptyPattern::Value {
                 type_name: r#type.clone().unwrap(),
                 datatype_library: URIString::parse(
-                    self.tree[current].datatype_library.as_deref().unwrap(),
+                    self.tree[current]
+                        .datatype_library
+                        .as_deref()
+                        .unwrap_or_default(),
                 )?
                 .into(),
-                ns: self.tree[current].ns.as_deref().unwrap().into(),
+                ns: self.tree[current].ns.as_deref().unwrap_or_default().into(),
                 value: value.clone(),
             }),
             RelaxNGNodeType::List => {

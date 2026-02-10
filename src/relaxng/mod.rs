@@ -21,7 +21,10 @@ use std::{
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
-    relaxng::{datatype_library::RelaxNGDatatypeLibraries, grammar::RelaxNGGrammar},
+    relaxng::{
+        datatype_library::RelaxNGDatatypeLibraries, grammar::RelaxNGGrammar,
+        parse::RelaxNGParseHandler,
+    },
     sax::{
         handler::{ErrorHandler, SAXHandler},
         parser::XMLReaderBuilder,
@@ -217,16 +220,30 @@ impl RelaxNGSchema {
     ) -> Result<Self, XMLError> {
         if let Some(handler) = handler {
             let mut parser = XMLReaderBuilder::new()
-                .set_handler(TreeBuildHandler::with_handler(handler))
+                .set_handler(RelaxNGParseHandler::with_handler(handler))
                 .build();
+            // let mut parser = XMLReaderBuilder::new()
+            //     .set_handler(TreeBuildHandler::with_handler(handler))
+            //     .build();
             parser.parse_str(schema, Some(uri.as_ref()))?;
-            Self::do_parse_relaxng(parser.handler)
+            // Self::do_parse_relaxng(parser.handler)
+            parser.handler.simplification().map_err(|err| err.error)?;
+            Ok(Self {
+                grammar: parser.handler.build_grammar()?,
+            })
         } else {
             let mut parser = XMLReaderBuilder::new()
-                .set_handler(TreeBuildHandler::default())
+                .set_handler(RelaxNGParseHandler::default())
                 .build();
+            // let mut parser = XMLReaderBuilder::new()
+            //     .set_handler(TreeBuildHandler::default())
+            //     .build();
             parser.parse_str(schema, Some(uri.as_ref()))?;
-            Self::do_parse_relaxng(parser.handler)
+            // Self::do_parse_relaxng(parser.handler)
+            parser.handler.simplification().map_err(|err| err.error)?;
+            Ok(Self {
+                grammar: parser.handler.build_grammar()?,
+            })
         }
     }
 

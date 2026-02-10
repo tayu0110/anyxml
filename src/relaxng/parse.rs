@@ -293,7 +293,7 @@ pub(super) struct RelaxNGParseHandler<H: SAXHandler = DefaultSAXHandler> {
 }
 
 impl<H: SAXHandler> RelaxNGParseHandler<H> {
-    fn with_handler(handler: H) -> Self {
+    pub(super) fn with_handler(handler: H) -> Self {
         Self {
             handler,
             datatype_libraries: RelaxNGDatatypeLibraries::default(),
@@ -437,6 +437,27 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 node.base_uri = Some(self.locator.system_id());
             } else if let Some(base_uri) = node.base_uri.as_mut().filter(|uri| !uri.is_absolute()) {
                 *base_uri = self.locator.system_id().resolve(base_uri).into();
+            }
+
+            // ISO/IEC 19757-2:2008 7.6 `href` attribute
+            match &mut node.r#type {
+                RelaxNGNodeType::ExternalRef(href) | RelaxNGNodeType::Include(href) => {
+                    if !href.is_absolute() {
+                        let abs = node.base_uri.as_deref().unwrap().resolve(href);
+                        *href = abs.into();
+                    }
+
+                    if href.fragment().is_some() {
+                        error!(
+                            self,
+                            RngParseHRefIncludeFragment,
+                            "The URI that refers to an XML external resource must not contain a fragment identifier."
+                        );
+                        // Recover by removing the fragment identifier.
+                        *href = href.resolve(&URIString::parse("").unwrap()).into();
+                    }
+                }
+                _ => {}
             }
 
             return if node.r#type.is_pattern() {
@@ -765,7 +786,10 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         if node.datatype_library.is_none() {
             // Although only `data` and `value` are required,
             // adding it to all elements is acceptable.
-            node.datatype_library = self.tree[self.cur].datatype_library.clone();
+            node.datatype_library = self.tree[self.cur]
+                .datatype_library
+                .clone()
+                .or_else(|| Some("".into()));
         }
 
         // ISO/IEC 19757-2:2008 7.6 `href` attribute
@@ -804,7 +828,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
     }
 
     /// Process simplification defined from ISO/IEC 19757-2:2008 7.7 to 7.22.
-    fn simplification(&mut self) -> Result<(), SAXParseError> {
+    pub(super) fn simplification(&mut self) -> Result<(), SAXParseError> {
         self.last_error.clone()?;
         self.resolve_external_resource();
         self.last_error.clone()?;
@@ -853,6 +877,10 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
 
         // remove unreachable `define`
         let start = self.tree[0].children[0];
+        used_define.retain(|&def| {
+            let ch = self.tree[def].children[0];
+            matches!(self.tree[ch].r#type, RelaxNGNodeType::Element(_))
+        });
         self.tree[0]
             .children
             .retain(|&ch| ch == start || used_define.contains(&ch));
@@ -909,8 +937,16 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 }
 
                 let mut reader = XMLReaderBuilder::new().set_handler(&mut *self).build();
-                if reader.parse_uri(&href, None).is_err() || self.tree[current].children.is_empty()
-                {
+                if let Err(err) = reader.parse_uri(&href, None) {
+                    error!(
+                        self,
+                        RngParseExternalRefParseFailure,
+                        "Failed to parse '{}' for 'externalRef' because of '{}'.",
+                        href,
+                        err
+                    );
+                    return;
+                } else if self.tree[current].children.is_empty() {
                     error!(
                         self,
                         RngParseExternalRefParseFailure,
@@ -921,10 +957,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 }
 
                 let new = self.tree[current].children[0];
-                // To remove `externalRef`, replace the child that referenced
-                // `externalRef` with the imported element.
-                self.tree[parent].children[nth] = new;
-
                 // If the imported element does not have an `ns` attribute,
                 // it inherits the `ns` attribute from the `externalRef` element.
                 if self.tree[new].ns.is_none() {
@@ -934,6 +966,14 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 // Recursively expand the imported elements.
                 self.resolve_external_resource_recurse(parent, nth, new);
 
+                if parent != usize::MAX {
+                    // To remove `externalRef`, replace the child that referenced
+                    // `externalRef` with the imported element.
+                    self.tree[parent].children[nth] = new;
+                } else {
+                    // If there is no parent, simply swap.
+                    self.tree.swap(0, new);
+                }
                 self.locator_stack.pop();
                 assert_eq!(old, self.locator_stack.len());
                 self.init = false;
@@ -1192,7 +1232,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 continue;
             }
             if self.tree[ch].ns.is_none() {
-                self.tree[ch].ns = self.tree[current].ns.clone();
+                self.tree[ch].ns = self.tree[current].ns.clone().or_else(|| Some("".into()));
             }
 
             self.normalize_names(ch, ns_stack);
@@ -1247,6 +1287,12 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
     /// - ISO/IEC 19757-2:2008 7.16 `zeroOrMore` element
     fn simplification_13_to_16(&mut self, current: usize) {
         self.tree[current].children.retain(|&c| c != usize::MAX);
+
+        let len = self.tree[current].children.len();
+        for i in 0..len {
+            let ch = self.tree[current].children[i];
+            self.simplification_13_to_16(ch);
+        }
 
         match self.tree[current].r#type {
             RelaxNGNodeType::Define { .. }
@@ -1375,12 +1421,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 }
             }
             _ => {}
-        }
-
-        let len = self.tree[current].children.len();
-        for i in 0..len {
-            let ch = self.tree[current].children[i];
-            self.simplification_13_to_16(ch);
         }
     }
     fn bundle_children_with(&mut self, current: usize, r#type: RelaxNGNodeType) {
@@ -2182,6 +2222,12 @@ impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
 
         // foreign element
         if namespace_name != Some(XML_RELAX_NG_NAMESPACE) {
+            if self.tree.is_empty() {
+                error!(
+                    self,
+                    RngParseUnacceptablePattern, "The schema root is not RELAX NG element."
+                );
+            }
             self.ignore_depth += 1;
             return;
         }
@@ -2389,7 +2435,7 @@ impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
                         .get_value(index)
                         .unwrap()
                         .trim_matches(|c| VERSION.is_whitespace(c));
-                    if value != "choice" || value != "interleave" {
+                    if value != "choice" && value != "interleave" {
                         error!(
                             self,
                             RngParseUnacceptableCombine,
@@ -2436,7 +2482,7 @@ impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
                         .get_value(ci)
                         .unwrap()
                         .trim_matches(|c| VERSION.is_whitespace(c));
-                    if combine != "choice" || combine != "interleave" {
+                    if combine != "choice" && combine != "interleave" {
                         error!(
                             self,
                             RngParseUnacceptableCombine,
@@ -2773,6 +2819,9 @@ mod tests {
         assert!(reader.handler.last_error.is_ok());
         assert!(reader.handler.simplification().is_ok());
         reader.parse_str(r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"  xmlns:eg="http://www.example.com" eg:comment=""><start eg:comment=""><element eg:comment=""><name eg:comment="">foo</name><data eg:comment="" type="string"/><empty eg:comment=""/></element></start></grammar>"#, None).unwrap();
+        assert!(reader.handler.last_error.is_ok());
+        assert!(reader.handler.simplification().is_ok());
+        reader.parse_str(r#"<element xmlns="http://relaxng.org/ns/structure/1.0" name="elem"><data type="string" /></element>"#, None).unwrap();
         assert!(reader.handler.last_error.is_ok());
         assert!(reader.handler.simplification().is_ok());
         reader
