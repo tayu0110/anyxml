@@ -872,7 +872,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         self.last_error.clone()?;
 
         let mut used_define = HashSet::new();
-        self.simplification_20(0, &mut num_define, &mut used_define);
+        self.simplification_20(0, usize::MAX, &mut num_define, &mut used_define);
         self.last_error.clone()?;
 
         // remove unreachable `define`
@@ -887,6 +887,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
 
         // `simplification_21_to_22` also does not report any errors.
         self.simplification_21_to_22(usize::MAX, 0);
+        self.remove_unreachable_define();
 
         self.check_prohibited_paths(0, false, false, false, false, false, false, false);
         self.last_error.clone()
@@ -1855,17 +1856,18 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
     fn simplification_20(
         &mut self,
         current: usize,
+        root_define: usize,
         num_define: &mut usize,
         used_define: &mut HashSet<usize>,
     ) {
         match self.tree[current].r#type {
             RelaxNGNodeType::Grammar => {
                 let start = self.tree[current].children[0];
-                self.simplification_20(start, num_define, used_define);
+                self.simplification_20(start, root_define, num_define, used_define);
             }
             RelaxNGNodeType::Start(_) => {
                 let ch = self.tree[current].children[0];
-                self.simplification_20(ch, num_define, used_define);
+                self.simplification_20(ch, root_define, num_define, used_define);
             }
             RelaxNGNodeType::Define { .. } => {
                 let ch = self.tree[current].children[0];
@@ -1873,19 +1875,26 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     // Since there's no need to process the `element`, which is a child of `define`,
                     // I will skip straight to processing the grandchild.
                     let gch = self.tree[ch].children[1];
-                    self.simplification_20(gch, num_define, used_define);
+                    self.simplification_20(gch, current, num_define, used_define);
                 } else {
-                    self.simplification_20(ch, num_define, used_define);
+                    self.simplification_20(ch, current, num_define, used_define);
                 }
             }
             RelaxNGNodeType::Ref(ref name) => {
                 let &define = self.defines.get(name.as_ref()).unwrap();
                 if used_define.insert(define) {
-                    self.simplification_20(define, num_define, used_define);
+                    self.simplification_20(define, root_define, num_define, used_define);
                 }
 
                 let chdef = self.tree[define].children[0];
                 if !matches!(self.tree[chdef].r#type, RelaxNGNodeType::Element(_)) {
+                    if define == root_define {
+                        error!(
+                            self,
+                            RngParseRefLoop, "A reference loop is detected at 'ref'.",
+                        );
+                        return;
+                    }
                     // expand `ref`
                     self.tree[current] = self.tree[chdef].clone();
                     self.tree[current].children.clear();
@@ -1897,7 +1906,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             RelaxNGNodeType::Element(_) => {
                 // Since the first child is a name class, only the second child needs to be processed.
                 let ch = self.tree[current].children[1];
-                self.simplification_20(ch, num_define, used_define);
+                self.simplification_20(ch, root_define, num_define, used_define);
 
                 // The processing of `define` skips its child `element`, so when reaching this point,
                 // only `element` that is not a child of `define` needs to be considered.
@@ -1934,7 +1943,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 let len = self.tree[current].children.len();
                 for i in 0..len {
                     let ch = self.tree[current].children[i];
-                    self.simplification_20(ch, num_define, used_define);
+                    self.simplification_20(ch, root_define, num_define, used_define);
                 }
             }
         }
@@ -2051,6 +2060,27 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         }
     }
 
+    fn remove_unreachable_define(&mut self) {
+        // start from `start`
+        let start = self.tree[0].children[0];
+        let mut stack = vec![start];
+        let mut used_define = HashSet::new();
+        while let Some(current) = stack.pop() {
+            stack.extend(self.tree[current].children.iter().cloned());
+            if let RelaxNGNodeType::Ref(name) = &self.tree[current].r#type
+                && let Some(&define) = self.defines.get(name.as_ref())
+                && used_define.insert(define)
+            {
+                stack.push(define);
+            }
+        }
+
+        self.defines.retain(|_, def| used_define.contains(def));
+        self.tree[0]
+            .children
+            .retain(|&ch| ch == start || used_define.contains(&ch));
+    }
+
     /// # Reference
     /// - ISO/IEC 19757-2:2008 10.2 Prohibited paths
     fn check_prohibited_paths(
@@ -2150,6 +2180,57 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 start,
             );
         }
+    }
+
+    fn display_to(&self, f: &mut std::fmt::Formatter<'_>, current: usize) -> std::fmt::Result {
+        write!(f, "<{}", self.tree[current].r#type.typename())?;
+        if let Some(datatype) = self.tree[current].datatype_library.as_deref() {
+            write!(f, " datatypeLibrary=\"{}\"", datatype)?;
+        }
+        if let Some(ns) = self.tree[current].ns.as_deref() {
+            write!(f, " ns=\"{}\"", ns)?;
+        }
+        match &self.tree[current].r#type {
+            RelaxNGNodeType::Attribute(Some(name))
+            | RelaxNGNodeType::Element(Some(name))
+            | RelaxNGNodeType::ParentRef(name)
+            | RelaxNGNodeType::Ref(name) => write!(f, " name=\"{}\">", name)?,
+            RelaxNGNodeType::Data(ty) => write!(f, " type=\"{}\">", ty)?,
+            RelaxNGNodeType::Define { name, combine } => {
+                if let Some(combine) = combine {
+                    write!(f, " combine=\"{}\"", combine)?;
+                }
+                write!(f, " name=\"{}\">", name)?;
+            }
+            RelaxNGNodeType::ExternalRef(href) | RelaxNGNodeType::Include(href) => {
+                write!(f, " href=\"{}\">", href)?
+            }
+            RelaxNGNodeType::Name(name) => write!(f, ">{}", name)?,
+            RelaxNGNodeType::Param { name, value } => {
+                write!(f, " name=\"{}\">", name)?;
+                write!(f, "{}", value)?;
+            }
+            RelaxNGNodeType::Start(Some(combine)) => write!(f, " combine=\"{}\">", combine)?,
+            RelaxNGNodeType::Value { r#type, value } => {
+                if let Some(ty) = r#type {
+                    write!(f, " type=\"{}\">", ty)?;
+                }
+                write!(f, "{}", value)?;
+            }
+            _ => write!(f, ">")?,
+        }
+
+        for &ch in &self.tree[current].children {
+            self.display_to(f, ch)?;
+        }
+
+        write!(f, "</{}>", self.tree[current].r#type.typename())
+    }
+}
+
+impl<H: SAXHandler> std::fmt::Display for RelaxNGParseHandler<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.display_to(f, 0)
     }
 }
 
@@ -2527,21 +2608,21 @@ impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
         }
 
         if !self.text.is_empty() {
-            let text = self
-                .text
-                .trim_matches(|c| XMLVersion::default().is_whitespace(c));
             match &mut self.tree[self.cur].r#type {
                 RelaxNGNodeType::Value { value, .. } | RelaxNGNodeType::Param { value, .. } => {
-                    *value = text.into()
+                    *value = self.text.as_str().into();
                 }
                 RelaxNGNodeType::Name(name) => {
-                    *name = text.into();
-                    if !XMLVersion::default().validate_qname(text) {
+                    let trimmed = self
+                        .text
+                        .trim_matches(|c| XMLVersion::default().is_whitespace(c));
+                    *name = trimmed.into();
+                    if !XMLVersion::default().validate_qname(trimmed) {
                         error!(
                             self,
                             RngParseInvalidQName,
                             "The text content '{}' of 'name' is not a QName.",
-                            text
+                            trimmed
                         );
                     }
                 }
@@ -2883,6 +2964,52 @@ mod tests {
         assert_eq!(
             schema,
             r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="4"/></start><define name="1"><element><name ns="">bar</name><empty/></element></define><define name="2"><element><name ns="">bar</name><empty/></element></define><define name="3"><element><name ns="">bar</name><empty/></element></define><define name="4"><element><name ns="">foo</name><group><ref name="1"/><group><ref name="2"/><ref name="3"/></group></group></element></define></grammar>"#
+        );
+
+        reader
+            .parse_str(
+                r#"
+                <element xmlns="http://relaxng.org/ns/structure/1.0" name="foo">
+                    <value type="string" datatypeLibrary=""> x</value>
+                </element>"#,
+                None,
+            )
+            .unwrap();
+        assert!(reader.handler.last_error.is_ok());
+        assert!(reader.handler.simplification().is_ok());
+        let grammar = reader.handler.build_grammar().unwrap();
+        let schema = format!("{}", grammar);
+        assert_eq!(
+            schema,
+            r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="0"/></start><define name="0"><element><name ns="">foo</name><value datatypeLibrary="" type="string" ns=""> x</value></element></define></grammar>"#
+        );
+
+        reader
+            .parse_str(
+                r#"
+                <choice xmlns="http://relaxng.org/ns/structure/1.0">
+                    <element name="foo"><empty /></element>
+                    <group>
+                        <notAllowed />
+                        <element name="bar">
+                            <group>
+                                <data type="token" />
+                                <data type="token" />
+                            </group>
+                        </element>
+                    </group>
+                </choice>"#,
+                None,
+            )
+            .unwrap();
+        assert!(reader.handler.last_error.is_ok());
+        assert!(reader.handler.simplification().is_ok());
+        eprintln!("{}", reader.handler);
+        let grammar = reader.handler.build_grammar().unwrap();
+        let schema = format!("{}", grammar);
+        assert_eq!(
+            schema,
+            r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="0"/></start><define name="0"><element><name ns="">foo</name><empty/></element></define></grammar>"#
         );
     }
 }
