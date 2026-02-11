@@ -228,9 +228,8 @@ impl RelaxNGSchema {
             parser.parse_str(schema, Some(uri.as_ref()))?;
             // Self::do_parse_relaxng(parser.handler)
             parser.handler.simplification().map_err(|err| err.error)?;
-            Ok(Self {
-                grammar: parser.handler.build_grammar()?,
-            })
+            let grammar = parser.handler.build_grammar()?;
+            Ok(Self { grammar })
         } else {
             let mut parser = XMLReaderBuilder::new()
                 .set_handler(RelaxNGParseHandler::default())
@@ -241,9 +240,8 @@ impl RelaxNGSchema {
             parser.parse_str(schema, Some(uri.as_ref()))?;
             // Self::do_parse_relaxng(parser.handler)
             parser.handler.simplification().map_err(|err| err.error)?;
-            Ok(Self {
-                grammar: parser.handler.build_grammar()?,
-            })
+            let grammar = parser.handler.build_grammar()?;
+            Ok(Self { grammar })
         }
     }
 

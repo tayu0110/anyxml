@@ -666,7 +666,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         node.r#type.typename()
                     );
                     return false;
-                } else if self.tree[self.cur].children.len() == 1 {
+                } else if self.tree[self.cur].children.len() == 2 {
                     error!(
                         self,
                         RngParseUnacceptablePattern,
@@ -964,8 +964,11 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 }
 
                 // Recursively expand the imported elements.
-                self.resolve_external_resource_recurse(parent, nth, new);
+                self.resolve_external_resource_recurse(current, 0, new);
 
+                // If the root of the expanded pattern is `externalRef`,
+                // `new` will be overwritten, so retrieve `new` again.
+                let new = self.tree[current].children[0];
                 if parent != usize::MAX {
                     // To remove `externalRef`, replace the child that referenced
                     // `externalRef` with the imported element.
@@ -1125,7 +1128,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     self.find_component(ch, start, define);
                 }
                 RelaxNGNodeType::Include(_) => {
-                    if let Some((mut s, mut d)) = self.load_include(current) {
+                    if let Some((mut s, mut d)) = self.load_include(ch) {
                         if start.len() < s.len() {
                             std::mem::swap(start, &mut s);
                         }
@@ -1231,10 +1234,19 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             if ch == usize::MAX {
                 continue;
             }
-            if self.tree[ch].ns.is_none() {
+
+            // ISO/IEC 19757-2:2008 7.9
+            // `attribute`s that have a `name` attribute but do not have an `ns` attribute
+            // must be treated as having no namespace and must not inherit `ns`.
+            // ```
+            // If an attribute element has a name attribute but no ns attribute,
+            // then an ns="" attribute is added to the name child element.
+            // ```
+            if self.tree[ch].ns.is_none()
+                && !matches!(self.tree[ch].r#type, RelaxNGNodeType::Attribute(ref name) if name.is_some())
+            {
                 self.tree[ch].ns = self.tree[current].ns.clone().or_else(|| Some("".into()));
             }
-
             self.normalize_names(ch, ns_stack);
         }
 
@@ -1295,13 +1307,11 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         }
 
         match self.tree[current].r#type {
-            RelaxNGNodeType::Define { .. }
-            | RelaxNGNodeType::List
-            | RelaxNGNodeType::ZeroOrMore => {
-                self.bundle_children_with(current, RelaxNGNodeType::Group);
+            RelaxNGNodeType::Define { .. } | RelaxNGNodeType::List | RelaxNGNodeType::OneOrMore => {
+                self.fold_children_with(current, RelaxNGNodeType::Group, 1);
             }
-            RelaxNGNodeType::OneOrMore => {
-                self.bundle_children_with(current, RelaxNGNodeType::Group);
+            RelaxNGNodeType::ZeroOrMore => {
+                self.fold_children_with(current, RelaxNGNodeType::Group, 1);
                 // ISO/IEC 19757-2:2008 7.16 `zeroOrMore` element
                 // replace `zeroOrMore` to `choice`
                 self.tree[current].r#type = RelaxNGNodeType::Choice(ChoiceType::Pattern);
@@ -1328,7 +1338,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 });
             }
             RelaxNGNodeType::Optional => {
-                self.bundle_children_with(current, RelaxNGNodeType::Group);
+                self.fold_children_with(current, RelaxNGNodeType::Group, 1);
                 // ISO/IEC 19757-2:2008 7.15 `optional` element
                 // replace `optional` to `choice`
                 self.tree[current].r#type = RelaxNGNodeType::Choice(ChoiceType::Pattern);
@@ -1345,7 +1355,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 });
             }
             RelaxNGNodeType::Mixed => {
-                self.bundle_children_with(current, RelaxNGNodeType::Group);
+                self.fold_children_with(current, RelaxNGNodeType::Group, 1);
                 // ISO/IEC 19757-2:2008 7.14 `mixed` element
                 // replace `mixed` to `interleave`
                 self.tree[current].r#type = RelaxNGNodeType::Interleave;
@@ -1362,19 +1372,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 });
             }
             RelaxNGNodeType::Element(_) => {
-                if self.tree[current].children.len() > 2 {
-                    let children = self.tree[current].children.split_off(1);
-                    let new = self.tree.len();
-                    self.tree[current].children.push(new);
-                    self.tree.push(RelaxNGNode {
-                        base_uri: None,
-                        datatype_library: None,
-                        ns: None,
-                        xmlns: HashMap::new(),
-                        r#type: RelaxNGNodeType::Group,
-                        children,
-                    });
-                }
+                self.fold_children_with(current, RelaxNGNodeType::Group, 2);
             }
             RelaxNGNodeType::Attribute(_) => {
                 if self.tree[current].children.len() == 1 {
@@ -1391,10 +1389,10 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 }
             }
             RelaxNGNodeType::Except(ExceptType::NameClass) => {
-                self.bundle_children_with(current, RelaxNGNodeType::Choice(ChoiceType::NameClass));
+                self.fold_children_with(current, RelaxNGNodeType::Choice(ChoiceType::NameClass), 1);
             }
             RelaxNGNodeType::Except(ExceptType::Pattern) => {
-                self.bundle_children_with(current, RelaxNGNodeType::Choice(ChoiceType::Pattern));
+                self.fold_children_with(current, RelaxNGNodeType::Choice(ChoiceType::Pattern), 1);
             }
             RelaxNGNodeType::Choice(_) | RelaxNGNodeType::Group | RelaxNGNodeType::Interleave => {
                 if self.tree[current].children.len() == 1 {
@@ -1402,38 +1400,25 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     let ch = self.tree[current].children[0];
                     self.tree.swap(current, ch);
                 } else {
-                    while self.tree[current].children.len() > 2 {
-                        let second = self.tree[current].children.pop().unwrap();
-                        let first = self.tree[current].children.pop().unwrap();
-
-                        let new = self.tree.len();
-                        self.tree[current].children.push(new);
-
-                        self.tree.push(RelaxNGNode {
-                            base_uri: None,
-                            datatype_library: None,
-                            ns: None,
-                            xmlns: HashMap::new(),
-                            r#type: self.tree[current].r#type.clone(),
-                            children: vec![first, second],
-                        });
-                    }
+                    self.fold_children_with(current, self.tree[current].r#type.clone(), 2);
                 }
             }
             _ => {}
         }
     }
-    fn bundle_children_with(&mut self, current: usize, r#type: RelaxNGNodeType) {
-        if self.tree[current].children.len() > 1 {
+    fn fold_children_with(&mut self, current: usize, r#type: RelaxNGNodeType, num_children: usize) {
+        while self.tree[current].children.len() > num_children {
+            let second = self.tree[current].children.pop().unwrap();
+            let first = self.tree[current].children.pop().unwrap();
             let new = self.tree.len();
-            let children = std::mem::replace(&mut self.tree[current].children, vec![new]);
+            self.tree[current].children.push(new);
             self.tree.push(RelaxNGNode {
                 base_uri: None,
                 datatype_library: None,
                 ns: None,
                 xmlns: HashMap::new(),
-                r#type,
-                children,
+                r#type: r#type.clone(),
+                children: vec![first, second],
             });
         }
     }
@@ -2862,6 +2847,42 @@ mod tests {
         assert_eq!(
             schema,
             r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="2"/></start><define name="0"><element><name ns="http://www.example.com/n1">bar1</name><empty/></element></define><define name="1"><element><name ns="http://www.example.com/n2">bar2</name><empty/></element></define><define name="2"><element><name ns="">foo</name><group><ref name="0"/><ref name="1"/></group></element></define></grammar>"#
+        );
+
+        reader.parse_str(r#"
+            <element xmlns="http://relaxng.org/ns/structure/1.0" ns="http://www.example.com" name="foo">
+                <attribute name="bar" />
+            </element>"#, None).unwrap();
+        assert!(reader.handler.last_error.is_ok());
+        assert!(reader.handler.simplification().is_ok());
+        let grammar = reader.handler.build_grammar().unwrap();
+        let schema = format!("{}", grammar);
+        assert_eq!(
+            schema,
+            r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="0"/></start><define name="0"><element><name ns="http://www.example.com">foo</name><attribute><name ns="">bar</name><text/></attribute></element></define></grammar>"#
+        );
+
+        reader
+            .parse_str(
+                r#"
+            <grammar xmlns="http://relaxng.org/ns/structure/1.0">
+                <start><element name="foo"><ref name="bars" /></element></start>
+                <define name="bars">
+                    <element name="bar"><empty /></element>
+                    <element name="bar"><empty /></element>
+                    <element name="bar"><empty /></element>
+                </define>
+            </grammar>"#,
+                None,
+            )
+            .unwrap();
+        assert!(reader.handler.last_error.is_ok());
+        assert!(reader.handler.simplification().is_ok());
+        let grammar = reader.handler.build_grammar().unwrap();
+        let schema = format!("{}", grammar);
+        assert_eq!(
+            schema,
+            r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="4"/></start><define name="1"><element><name ns="">bar</name><empty/></element></define><define name="2"><element><name ns="">bar</name><empty/></element></define><define name="3"><element><name ns="">bar</name><empty/></element></define><define name="4"><element><name ns="">foo</name><group><ref name="1"/><group><ref name="2"/><ref name="3"/></group></group></element></define></grammar>"#
         );
     }
 }
