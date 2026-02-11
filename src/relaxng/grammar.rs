@@ -10,27 +10,6 @@ use crate::{
     uri::{URIStr, URIString},
 };
 
-/// # Reference
-/// - ISO/IEC 19757-2:2008 4.2.3 Expressions
-///     - Define the relationship between the maximum and minimum values for content types
-/// - ISO/IEC 19757-2:2008 10.3 String sequences
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum ContentType {
-    Empty = 0,
-    Complex = 1,
-    Simple = 2,
-}
-
-impl ContentType {
-    fn groupable(&self, other: ContentType) -> bool {
-        match self {
-            ContentType::Empty => true,
-            ContentType::Complex => matches!(other, ContentType::Empty | ContentType::Complex),
-            ContentType::Simple => matches!(other, ContentType::Empty),
-        }
-    }
-}
-
 pub(super) struct RelaxNGGrammar {
     /// If the child of 'start' is 'notAllowed', this field is `None`, otherwise `Some`.
     pub(super) start: Option<RelaxNGPattern>,
@@ -39,15 +18,6 @@ pub(super) struct RelaxNGGrammar {
 }
 
 impl RelaxNGGrammar {
-    /// # Reference
-    /// ISO/IEC 19757-2:2008 10.3 String sequences
-    fn verify_content_type(&self) -> Result<(), XMLError> {
-        for define in self.define.values() {
-            define.verify_content_type()?;
-        }
-        Ok(())
-    }
-
     /// # Reference
     /// ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
     fn verify_attribute_uniqueness(&self) -> Result<(), XMLError> {
@@ -113,21 +83,6 @@ pub(super) struct RelaxNGDefine {
 
 impl RelaxNGDefine {
     /// # Reference
-    /// ISO/IEC 19757-2:2008 10.3 String sequences
-    fn verify_content_type(&self) -> Result<(), XMLError> {
-        let top = self
-            .top
-            .as_ref()
-            .ok_or(XMLError::RngParseUngroupablePattern)?;
-
-        if top.verify_content_type().is_some() {
-            Ok(())
-        } else {
-            Err(XMLError::RngParseUngroupablePattern)
-        }
-    }
-
-    /// # Reference
     /// ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
     fn verify_attribute_uniqueness(&self) -> Result<(), XMLError> {
         if let Some(top) = self.top.as_ref() {
@@ -180,16 +135,6 @@ pub(super) struct RelaxNGPattern {
 }
 
 impl RelaxNGPattern {
-    /// # Reference
-    /// ISO/IEC 19757-2:2008 10.3 String sequences
-    fn verify_content_type(&self) -> Option<ContentType> {
-        if let Some(pattern) = self.pattern.as_ref() {
-            pattern.verify_content_type()
-        } else {
-            Some(ContentType::Empty)
-        }
-    }
-
     /// # Reference
     /// ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
     fn verify_attribute_uniqueness<'a>(
@@ -279,43 +224,6 @@ pub(super) enum RelaxNGNonEmptyPattern {
 }
 
 impl RelaxNGNonEmptyPattern {
-    /// # Reference
-    /// ISO/IEC 19757-2:2008 10.3 String sequences
-    fn verify_content_type(&self) -> Option<ContentType> {
-        match self {
-            Self::Text => Some(ContentType::Complex),
-            Self::Data { except_pattern, .. } => {
-                if let Some(pattern) = except_pattern {
-                    pattern
-                        .pattern
-                        .verify_content_type()
-                        .map(|_| ContentType::Simple)
-                } else {
-                    Some(ContentType::Simple)
-                }
-            }
-            Self::Value { .. } => Some(ContentType::Simple),
-            Self::List { .. } => Some(ContentType::Simple),
-            Self::Attribute { pattern, .. } => {
-                pattern.verify_content_type().map(|_| ContentType::Empty)
-            }
-            Self::Ref { .. } => Some(ContentType::Complex),
-            Self::OneOrMore { pattern } => pattern
-                .verify_content_type()
-                .filter(|ct| !matches!(ct, ContentType::Simple)),
-            Self::Choice { left, right } => {
-                let ct1 = left.verify_content_type()?;
-                let ct2 = right.verify_content_type()?;
-                Some(ct1.max(ct2))
-            }
-            Self::Group { pattern } | Self::Interleave { pattern } => {
-                let ct1 = pattern[0].verify_content_type()?;
-                let ct2 = pattern[1].verify_content_type()?;
-                ct1.groupable(ct2).then(|| ct1.max(ct2))
-            }
-        }
-    }
-
     /// # Reference
     /// ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
     fn verify_attribute_uniqueness<'a>(
@@ -735,7 +643,6 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     define,
                     libraries: self.datatype_libraries.clone(),
                 };
-                grammar.verify_content_type()?;
                 grammar.verify_attribute_uniqueness()?;
                 grammar.verify_attribute_repeat()?;
                 grammar.verify_element_name_uniqueness()?;

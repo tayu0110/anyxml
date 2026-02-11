@@ -269,6 +269,27 @@ pub(super) struct RelaxNGNode {
     pub(super) children: Vec<usize>,
 }
 
+/// # Reference
+/// - ISO/IEC 19757-2:2008 4.2.3 Expressions
+///     - Define the relationship between the maximum and minimum values for content types
+/// - ISO/IEC 19757-2:2008 10.3 String sequences
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ContentType {
+    Empty = 0,
+    Complex = 1,
+    Simple = 2,
+}
+
+impl ContentType {
+    fn groupable(&self, other: ContentType) -> bool {
+        match self {
+            ContentType::Empty => true,
+            ContentType::Complex => matches!(other, ContentType::Empty | ContentType::Complex),
+            ContentType::Simple => matches!(other, ContentType::Empty),
+        }
+    }
+}
+
 pub(super) struct RelaxNGParseHandler<H: SAXHandler = DefaultSAXHandler> {
     handler: H,
     pub(super) datatype_libraries: RelaxNGDatatypeLibraries,
@@ -890,6 +911,9 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         self.remove_unreachable_define();
 
         self.check_prohibited_paths(0, false, false, false, false, false, false, false);
+        self.last_error.clone()?;
+
+        self.check_content_type(0);
         self.last_error.clone()
     }
 
@@ -2176,6 +2200,71 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 self,
                 RngParseProhibitedPath, "'{}' path is not allowed.", path
             );
+        }
+    }
+
+    /// # Reference
+    /// ISO/IEC 19757-2:2008 10.3 String sequences
+    fn check_content_type(&mut self, current: usize) -> Option<ContentType> {
+        match self.tree[current].r#type {
+            RelaxNGNodeType::Grammar => {
+                let len = self.tree[current].children.len();
+                // It is necessary to check only `define`.
+                for i in 1..len {
+                    let ch = self.tree[current].children[i];
+                    self.check_content_type(ch);
+                }
+                None
+            }
+            RelaxNGNodeType::Define { .. } => {
+                let element = self.tree[current].children[0];
+                let top = self.tree[element].children[1];
+                if self.check_content_type(top).is_none() {
+                    error!(
+                        self,
+                        RngParseUngroupablePattern, "Ungropuable pattern is found."
+                    );
+                }
+                None
+            }
+            RelaxNGNodeType::NotAllowed => None,
+            RelaxNGNodeType::Empty => Some(ContentType::Empty),
+            RelaxNGNodeType::Text | RelaxNGNodeType::Ref(_) => Some(ContentType::Complex),
+            RelaxNGNodeType::Value { .. } | RelaxNGNodeType::List => Some(ContentType::Simple),
+            RelaxNGNodeType::Data(_) => {
+                if let Some(&except) = self.tree[current].children.first() {
+                    let ch = self.tree[except].children[0];
+                    self.check_content_type(ch).map(|_| ContentType::Simple)
+                } else {
+                    Some(ContentType::Simple)
+                }
+            }
+            RelaxNGNodeType::Attribute(_) => {
+                let ch = self.tree[current].children[1];
+                self.check_content_type(ch).map(|_| ContentType::Empty)
+            }
+            RelaxNGNodeType::OneOrMore => {
+                let ch = self.tree[current].children[0];
+                self.check_content_type(ch)
+                    .filter(|ct| !matches!(ct, ContentType::Simple))
+            }
+            RelaxNGNodeType::Choice(_) => {
+                let ch1 = self.tree[current].children[0];
+                let ch2 = self.tree[current].children[1];
+
+                let ct1 = self.check_content_type(ch1)?;
+                let ct2 = self.check_content_type(ch2)?;
+                Some(ct1.max(ct2))
+            }
+            RelaxNGNodeType::Group | RelaxNGNodeType::Interleave => {
+                let ch1 = self.tree[current].children[0];
+                let ch2 = self.tree[current].children[1];
+
+                let ct1 = self.check_content_type(ch1)?;
+                let ct2 = self.check_content_type(ch2)?;
+                ct1.groupable(ct2).then(|| ct1.max(ct2))
+            }
+            _ => unreachable!("typename: {}", self.tree[current].r#type.typename()),
         }
     }
 
