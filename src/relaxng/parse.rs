@@ -2094,74 +2094,63 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         mut except: bool,
         mut start: bool,
     ) {
-        macro_rules! report_prohibited_path {
-            ($cond:expr, $path:literal) => {
-                if $cond {
-                    error!(
-                        self,
-                        RngParseProhibitedPath, "'{}' path is not allowed.", $path
-                    );
-                }
-            };
-        }
-
         match self.tree[current].r#type {
             RelaxNGNodeType::Attribute(_) => {
-                report_prohibited_path!(attr, "attribute//attribute");
-                report_prohibited_path!(ogroup, "oneOrMore//group//attribute");
-                report_prohibited_path!(ointerleave, "oneOrMore//interleave//attribute");
-                report_prohibited_path!(list, "list//attribute");
-                report_prohibited_path!(except, "data/except//attribute");
-                report_prohibited_path!(start, "start//attribute");
+                self.report_prohibited_path(attr, "attribute//attribute");
+                self.report_prohibited_path(ogroup, "oneOrMore//group//attribute");
+                self.report_prohibited_path(ointerleave, "oneOrMore//interleave//attribute");
+                self.report_prohibited_path(list, "list//attribute");
+                self.report_prohibited_path(except, "data/except//attribute");
+                self.report_prohibited_path(start, "start//attribute");
                 attr = true;
             }
             RelaxNGNodeType::Data(_) => {
-                report_prohibited_path!(start, "start//data");
+                self.report_prohibited_path(start, "start//data");
             }
             RelaxNGNodeType::Empty => {
-                report_prohibited_path!(except, "data/except//empty");
-                report_prohibited_path!(start, "start//empty");
+                self.report_prohibited_path(except, "data/except//empty");
+                self.report_prohibited_path(start, "start//empty");
             }
             RelaxNGNodeType::Except(ExceptType::Pattern) => except = true,
             RelaxNGNodeType::Group => {
-                report_prohibited_path!(except, "data/except//group");
-                report_prohibited_path!(start, "start//group");
+                self.report_prohibited_path(except, "data/except//group");
+                self.report_prohibited_path(start, "start//group");
                 if one_or_more {
                     ogroup = true;
                 }
             }
             RelaxNGNodeType::Interleave => {
-                report_prohibited_path!(list, "list//interleave");
-                report_prohibited_path!(except, "data/except//interleave");
-                report_prohibited_path!(start, "start//interleave");
+                self.report_prohibited_path(list, "list//interleave");
+                self.report_prohibited_path(except, "data/except//interleave");
+                self.report_prohibited_path(start, "start//interleave");
                 if one_or_more {
                     ointerleave = true;
                 }
             }
             RelaxNGNodeType::List => {
-                report_prohibited_path!(list, "list//list");
-                report_prohibited_path!(except, "data/except//list");
-                report_prohibited_path!(start, "start//list");
+                self.report_prohibited_path(list, "list//list");
+                self.report_prohibited_path(except, "data/except//list");
+                self.report_prohibited_path(start, "start//list");
                 list = true;
             }
             RelaxNGNodeType::OneOrMore => {
-                report_prohibited_path!(except, "data/except//oneOrMore");
-                report_prohibited_path!(start, "start//oneOrMore");
+                self.report_prohibited_path(except, "data/except//oneOrMore");
+                self.report_prohibited_path(start, "start//oneOrMore");
                 one_or_more = true;
             }
             RelaxNGNodeType::Ref(_) => {
-                report_prohibited_path!(attr, "attribute//ref");
-                report_prohibited_path!(list, "list//ref");
-                report_prohibited_path!(except, "data/except//ref");
+                self.report_prohibited_path(attr, "attribute//ref");
+                self.report_prohibited_path(list, "list//ref");
+                self.report_prohibited_path(except, "data/except//ref");
             }
             RelaxNGNodeType::Start(_) => start = true,
             RelaxNGNodeType::Text => {
-                report_prohibited_path!(list, "list//text");
-                report_prohibited_path!(except, "data/except//text");
-                report_prohibited_path!(start, "start//text");
+                self.report_prohibited_path(list, "list//text");
+                self.report_prohibited_path(except, "data/except//text");
+                self.report_prohibited_path(start, "start//text");
             }
             RelaxNGNodeType::Value { .. } => {
-                report_prohibited_path!(start, "start//value");
+                self.report_prohibited_path(start, "start//value");
             }
             _ => {}
         }
@@ -2178,6 +2167,14 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 list,
                 except,
                 start,
+            );
+        }
+    }
+    fn report_prohibited_path(&mut self, cond: bool, path: &'static str) {
+        if cond {
+            error!(
+                self,
+                RngParseProhibitedPath, "'{}' path is not allowed.", path
             );
         }
     }
