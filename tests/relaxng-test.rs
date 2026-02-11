@@ -34,6 +34,17 @@ fn handle_testsuite(testsuite: Element) {
         eprintln!("=== test suite: (no documentation) ===");
     }
 
+    let mut skip = false;
+    for requires in testsuite.get_elements_by_qname("requires") {
+        if let Some(library) = requires.get_attribute("datatypeLibrary", None) {
+            eprintln!("--- skip because datatypeLibrary '{library}' is not supported. ---");
+            skip = true;
+        }
+    }
+    if skip {
+        return;
+    }
+
     for testcase in testsuite.get_elements_by_qname("testCase") {
         if let Some(documentation) = testcase.get_elements_by_qname("documentation").next() {
             eprintln!("=== test case: {} ===", documentation.text_content());

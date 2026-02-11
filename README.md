@@ -201,6 +201,24 @@ assert_eq!(
 );
 ```
 
+## Validation
+The current implementation supports validation using DTD or RELAX NG.
+
+### DTD Validation
+This crate supports full DTD validation, including parameter entity substitution and loading external subsets.
+
+In the current implementation, it is only available as a built-in parser feature, and validation can be enabled by specifying parser options.  \
+Enabling validation automatically activates the external resource loading option. Therefore, when reading untrusted documents, it is necessary to implement `EntityResolver` properly.
+
+Note that the internal entity substitution and the attribute value normalization occur regardless of whether DTD validation is performed.
+
+### RELAX NG Schema Validation
+This crate fully supports validation using RELAX NG. Currently, only tree validation is available.
+
+It passes all tests in [James Clark's test suite](https://raw.githubusercontent.com/relaxng/jing-trang/refs/heads/master/mod/rng-validate/test/spectest.xml), except for tests related to unsupported XSD types and tests for name characters that have been marked as valid in new XML specifications.
+
+Schemas containing `"externalRef"` or `"include"` require access to external resources. By default, it searches local files, but a custom `EntityResolver` can be provided.
+
 ## XPath Execution
 This crate supports XPath, enabling the search for specific nodes within the document tree.
 
@@ -252,7 +270,7 @@ This crate passes the following tests:
 - [xml:id Conformance Test Suites](https://www.w3.org/XML/Test/xml-id/)
 - [OASIS XSLT Test Suites](https://www.oasis-open.org/committees/document.php?document_id=12171&wg_abbrev=xslt) (for XPath)
     - This link is already broken and requires the Wayback Machine to access it.
-- [RELAX NG Test Suite by James Clark](https://gnosis.cx/download/gnosis/xml/relax/spectest.xml)
+- [RELAX NG Test Suite by James Clark](https://github.com/relaxng/jing-trang/blob/master/mod/rng-validate/test/spectest.xml)
 - [XML Inclusions (XInclude) Conformance Test Suites](https://www.w3.org/XML/Test/XInclude/)
 - some self-made tests
 
