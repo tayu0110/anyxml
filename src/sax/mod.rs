@@ -517,6 +517,32 @@ impl Default for NamespaceStack {
     }
 }
 
+pub struct NsIter<'a> {
+    iter: std::collections::hash_map::Iter<'a, Arc<str>, usize>,
+    stack: &'a NamespaceStack,
+}
+
+impl<'a> Iterator for NsIter<'a> {
+    type Item = &'a Namespace;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (_, index) = self.iter.next()?;
+        Some(&self.stack.namespaces[*index].0)
+    }
+}
+
+impl<'a> IntoIterator for &'a NamespaceStack {
+    type IntoIter = NsIter<'a>;
+    type Item = &'a Namespace;
+
+    fn into_iter(self) -> Self::IntoIter {
+        NsIter {
+            iter: self.prefix_map.iter(),
+            stack: self,
+        }
+    }
+}
+
 /// Notation.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
 pub struct Notation {
