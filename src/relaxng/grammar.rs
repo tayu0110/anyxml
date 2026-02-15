@@ -1,12 +1,16 @@
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::Arc,
+};
 
 use crate::{
+    XMLVersion,
     error::XMLError,
     relaxng::{
         datatype_library::RelaxNGDatatypeLibraries,
-        parse::{RelaxNGNodeType, RelaxNGParseHandler},
+        parse::{ChoiceType, ExceptType, RelaxNGNodeType, RelaxNGParseHandler},
     },
-    sax::handler::SAXHandler,
+    sax::{NamespaceStack, handler::SAXHandler},
     uri::{URIStr, URIString},
 };
 
@@ -726,6 +730,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             RelaxNGNodeType::Value {
                 ref r#type,
                 ref value,
+                ..
             } => Ok(RelaxNGNonEmptyPattern::Value {
                 type_name: r#type.clone().unwrap(),
                 datatype_library: URIString::parse(
@@ -857,6 +862,751 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 })
             }
             _ => Err(XMLError::RngParseUnknownError),
+        }
+    }
+}
+
+type Uri = Arc<str>;
+type LocalName = Arc<str>;
+type ParamList = BTreeMap<LocalName, Arc<str>>;
+type Prefix = Arc<str>;
+type Context = (Arc<URIStr>, BTreeMap<Prefix, Uri>);
+type Datatype = (Uri, LocalName);
+
+#[derive(PartialEq, Eq, Hash)]
+enum NameClass {
+    AnyName,
+    AnyNameExcept(Arc<NameClass>),
+    Name(Uri, LocalName),
+    NsName(Uri),
+    NsNameExcept(Uri, Arc<NameClass>),
+    NameClassChoice(Arc<NameClass>, Arc<NameClass>),
+}
+
+impl NameClass {
+    fn contains(&self, qname: &QName) -> bool {
+        match (self, qname) {
+            (Self::AnyName, _) => true,
+            (Self::AnyNameExcept(nc), n) => !nc.contains(n),
+            (Self::NsName(ns1), QName(ns2, _)) => ns1 == ns2,
+            (Self::NsNameExcept(ns1, nc), n @ QName(ns2, _)) => ns1 == ns2 && !nc.contains(n),
+            (Self::Name(ns1, ln1), QName(ns2, ln2)) => ns1 == ns2 && ln1 == ln2,
+            (Self::NameClassChoice(nc1, nc2), n) => nc1.contains(n) || nc2.contains(n),
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Hash)]
+enum Pattern {
+    Empty,
+    NotAllowed,
+    Text,
+    Choice(Arc<Pattern>, Arc<Pattern>),
+    Interleave(Arc<Pattern>, Arc<Pattern>),
+    Group(Arc<Pattern>, Arc<Pattern>),
+    OneOrMore(Arc<Pattern>),
+    List(Arc<Pattern>),
+    Data(Datatype, ParamList),
+    DataExcept(Datatype, ParamList, Arc<Pattern>),
+    Value(Datatype, Arc<str>, Context),
+    Attribute(Arc<NameClass>, Arc<Pattern>),
+    Element(Arc<NameClass>, Arc<Pattern>),
+    After(Arc<Pattern>, Arc<Pattern>),
+}
+
+impl Pattern {
+    fn nullable(&self) -> bool {
+        match self {
+            Self::Group(p1, p2) => p1.nullable() && p2.nullable(),
+            Self::Interleave(p1, p2) => p1.nullable() && p2.nullable(),
+            Self::Choice(p1, p2) => p1.nullable() || p2.nullable(),
+            Self::OneOrMore(p) => p.nullable(),
+            Self::Element(_, _) => false,
+            Self::Attribute(_, _) => false,
+            Self::List(_) => false,
+            Self::Value(_, _, _) => false,
+            Self::Data(_, _) => false,
+            Self::DataExcept(_, _, _) => false,
+            Self::NotAllowed => false,
+            Self::Empty => true,
+            Self::Text => true,
+            Self::After(_, _) => false,
+        }
+    }
+}
+
+struct QName(Uri, LocalName);
+struct AttributeNode(QName, Arc<str>);
+
+enum ChildNode {
+    ElementNode(QName, Context, Vec<AttributeNode>, Vec<ChildNode>),
+    TextNode(Arc<str>),
+}
+
+pub(super) struct Grammar {
+    root: usize,
+    patterns: Vec<Arc<Pattern>>,
+    intern: HashMap<Arc<Pattern>, usize>,
+}
+
+impl Grammar {
+    fn create_node(&mut self, pattern: Pattern) -> usize {
+        if let Some(&index) = self.intern.get(&pattern) {
+            index
+        } else {
+            let new = Arc::new(pattern);
+            let at = self.patterns.len();
+            self.intern.insert(new.clone(), at);
+            self.patterns.push(new);
+            at
+        }
+    }
+
+    fn child_deriv(
+        &mut self,
+        cx: &Context,
+        p: Arc<Pattern>,
+        child_node: &ChildNode,
+    ) -> Arc<Pattern> {
+        match child_node {
+            ChildNode::TextNode(s) => self.text_deriv(cx, p, s),
+            ChildNode::ElementNode(qn, cx, atts, children) => {
+                let p1 = self.start_tag_open_deriv(p, qn);
+                let p2 = self.atts_deriv(cx, p1, atts);
+                let p3 = self.start_tag_close_deriv(p2);
+                let p4 = self.children_deriv(cx, p3, children);
+                self.end_tag_deriv(p4)
+            }
+        }
+    }
+
+    fn text_deriv(
+        &mut self,
+        context: &Context,
+        pattern: Arc<Pattern>,
+        string: &str,
+    ) -> Arc<Pattern> {
+        match (context, pattern.as_ref(), string) {
+            (cx, Pattern::Choice(p1, p2), s) => {
+                let p1 = self.text_deriv(cx, p1.clone(), s);
+                let p2 = self.text_deriv(cx, p2.clone(), s);
+                self.choice(p1, p2)
+            }
+            (cx, Pattern::Interleave(p1, p2), s) => {
+                let r1 = self.text_deriv(cx, p1.clone(), s);
+                let q1 = self.interleave(r1, p2.clone());
+                let r2 = self.text_deriv(cx, p2.clone(), s);
+                let q2 = self.interleave(p1.clone(), r2);
+                self.choice(q1, q2)
+            }
+            (cx, Pattern::Group(p1, p2), s) => {
+                let q = self.text_deriv(cx, p1.clone(), s);
+                let p = self.group(q, p2.clone());
+                if p1.nullable() {
+                    let q = self.text_deriv(cx, p2.clone(), s);
+                    self.choice(p, q)
+                } else {
+                    p
+                }
+            }
+            (cx, Pattern::After(p1, p2), s) => {
+                let q = self.text_deriv(cx, p1.clone(), s);
+                self.after(q, p2.clone())
+            }
+            (cx, Pattern::OneOrMore(p), s) => {
+                let q1 = self.text_deriv(cx, p.clone(), s);
+                let q2 = self.choice(
+                    Arc::new(Pattern::OneOrMore(p.clone())),
+                    Arc::new(Pattern::Empty),
+                );
+                self.group(q1, q2)
+            }
+            (_, Pattern::Text, _) => pattern,
+            (cx1, Pattern::Value(dt, value, cx2), s) => {
+                if self.datatype_equal(dt, value, cx2, s, cx1) {
+                    Arc::new(Pattern::Empty)
+                } else {
+                    Arc::new(Pattern::NotAllowed)
+                }
+            }
+            (cx, Pattern::Data(dt, params), s) => {
+                if self.datatype_allows(dt, params, s, cx) {
+                    Arc::new(Pattern::Empty)
+                } else {
+                    Arc::new(Pattern::NotAllowed)
+                }
+            }
+            (cx, Pattern::DataExcept(dt, params, p), s) => {
+                if self.datatype_allows(dt, params, s, cx)
+                    && !self.text_deriv(cx, p.clone(), s).nullable()
+                {
+                    Arc::new(Pattern::Empty)
+                } else {
+                    Arc::new(Pattern::NotAllowed)
+                }
+            }
+            (cx, Pattern::List(p), s) => {
+                if self
+                    .list_deriv(
+                        cx,
+                        p.clone(),
+                        &s.split(|c| XMLVersion::default().is_whitespace(c))
+                            .collect::<Vec<_>>(),
+                    )
+                    .nullable()
+                {
+                    Arc::new(Pattern::Empty)
+                } else {
+                    Arc::new(Pattern::NotAllowed)
+                }
+            }
+            (_, _, _) => Arc::new(Pattern::NotAllowed),
+        }
+    }
+
+    fn list_deriv(&mut self, cx: &Context, p: Arc<Pattern>, list: &[&str]) -> Arc<Pattern> {
+        match list {
+            [] => p,
+            [h, t @ ..] => {
+                let p = self.text_deriv(cx, p, h);
+                self.list_deriv(cx, p, t)
+            }
+        }
+    }
+
+    fn choice(&mut self, p1: Arc<Pattern>, p2: Arc<Pattern>) -> Arc<Pattern> {
+        match (p1.as_ref(), p2.as_ref()) {
+            (_, Pattern::NotAllowed) => p1,
+            (Pattern::NotAllowed, _) => p2,
+            (_, _) => Arc::new(Pattern::Choice(p1, p2)),
+        }
+    }
+
+    fn group(&mut self, p1: Arc<Pattern>, p2: Arc<Pattern>) -> Arc<Pattern> {
+        match (p1.as_ref(), p2.as_ref()) {
+            (_, Pattern::NotAllowed) => p2,
+            (Pattern::NotAllowed, _) => p1,
+            (_, Pattern::Empty) => p1,
+            (Pattern::Empty, _) => p2,
+            (_, _) => Arc::new(Pattern::Group(p1, p2)),
+        }
+    }
+
+    fn interleave(&mut self, p1: Arc<Pattern>, p2: Arc<Pattern>) -> Arc<Pattern> {
+        match (p1.as_ref(), p2.as_ref()) {
+            (_, Pattern::NotAllowed) => p2,
+            (Pattern::NotAllowed, _) => p1,
+            (_, Pattern::Empty) => p1,
+            (Pattern::Empty, _) => p2,
+            (_, _) => Arc::new(Pattern::Interleave(p1, p2)),
+        }
+    }
+
+    fn after(&mut self, p1: Arc<Pattern>, p2: Arc<Pattern>) -> Arc<Pattern> {
+        match (p1.as_ref(), p2.as_ref()) {
+            (_, Pattern::NotAllowed) => p2,
+            (Pattern::NotAllowed, _) => p1,
+            (_, _) => Arc::new(Pattern::After(p1, p2)),
+        }
+    }
+
+    fn datatype_allows(
+        &mut self,
+        dt: &Datatype,
+        params: &ParamList,
+        string: &str,
+        context: &Context,
+    ) -> bool {
+        todo!()
+    }
+
+    fn datatype_equal(
+        &mut self,
+        dt: &Datatype,
+        s1: &str,
+        c1: &Context,
+        s2: &str,
+        cx2: &Context,
+    ) -> bool {
+        todo!()
+    }
+
+    fn apply_after(
+        &mut self,
+        f: &impl Fn(&mut Grammar, Arc<Pattern>) -> Arc<Pattern>,
+        pattern: Arc<Pattern>,
+    ) -> Arc<Pattern> {
+        match pattern.as_ref() {
+            Pattern::After(p1, p2) => {
+                let p2 = f(self, p2.clone());
+                self.after(p1.clone(), p2)
+            }
+            Pattern::Choice(p1, p2) => {
+                let q1 = self.apply_after(f, p1.clone());
+                let q2 = self.apply_after(f, p2.clone());
+                self.choice(q1, q2)
+            }
+            Pattern::NotAllowed => pattern,
+            _ => unreachable!(),
+        }
+    }
+
+    fn start_tag_open_deriv(&mut self, pattern: Arc<Pattern>, qn: &QName) -> Arc<Pattern> {
+        match pattern.as_ref() {
+            Pattern::Choice(p1, p2) => {
+                let q1 = self.start_tag_open_deriv(p1.clone(), qn);
+                let q2 = self.start_tag_open_deriv(p2.clone(), qn);
+                self.choice(q1, q2)
+            }
+            Pattern::Element(nc, p) => {
+                if nc.contains(qn) {
+                    self.after(p.clone(), Arc::new(Pattern::Empty))
+                } else {
+                    Arc::new(Pattern::NotAllowed)
+                }
+            }
+            Pattern::Interleave(p1, p2) => {
+                let r = self.start_tag_open_deriv(p1.clone(), qn);
+                let q1 = self.apply_after(
+                    &move |slf: &mut Grammar, p: Arc<Pattern>| slf.interleave(p, p2.clone()),
+                    r,
+                );
+                let r = self.start_tag_open_deriv(p2.clone(), qn);
+                let q2 = self.apply_after(
+                    &move |slf: &mut Grammar, p: Arc<Pattern>| slf.interleave(p1.clone(), p),
+                    r,
+                );
+                self.choice(q1, q2)
+            }
+            Pattern::OneOrMore(p) => {
+                let pattern = pattern.clone();
+                let q = self.start_tag_open_deriv(p.clone(), qn);
+                self.apply_after(
+                    &move |slf: &mut Grammar, p: Arc<Pattern>| {
+                        let q = slf.choice(pattern.clone(), Arc::new(Pattern::Empty));
+                        slf.group(p, q)
+                    },
+                    q,
+                )
+            }
+            Pattern::Group(p1, p2) => {
+                let q = self.start_tag_open_deriv(p1.clone(), qn);
+                let x = self.apply_after(
+                    &move |slf: &mut Grammar, p1: Arc<Pattern>| slf.group(p1, p2.clone()),
+                    q,
+                );
+                if p1.nullable() {
+                    let q = self.start_tag_open_deriv(p2.clone(), qn);
+                    self.choice(x, q)
+                } else {
+                    x
+                }
+            }
+            _ => Arc::new(Pattern::NotAllowed),
+        }
+    }
+
+    fn atts_deriv(
+        &mut self,
+        cx: &Context,
+        pattern: Arc<Pattern>,
+        atts: &[AttributeNode],
+    ) -> Arc<Pattern> {
+        match atts {
+            [] => pattern.clone(),
+            [att, t @ ..] => {
+                let pattern = self.att_deriv(cx, pattern, att);
+                self.atts_deriv(cx, pattern, t)
+            }
+        }
+    }
+
+    fn att_deriv(
+        &mut self,
+        cx: &Context,
+        pattern: Arc<Pattern>,
+        att: &AttributeNode,
+    ) -> Arc<Pattern> {
+        match (pattern.as_ref(), att) {
+            (Pattern::After(p1, p2), att) => {
+                let q = self.att_deriv(cx, p1.clone(), att);
+                self.after(q, p2.clone())
+            }
+            (Pattern::Choice(p1, p2), att) => {
+                let q1 = self.att_deriv(cx, p1.clone(), att);
+                let q2 = self.att_deriv(cx, p2.clone(), att);
+                self.choice(q1, q2)
+            }
+            (Pattern::Group(p1, p2), att) => {
+                let r1 = self.att_deriv(cx, p1.clone(), att);
+                let q1 = self.group(r1, p2.clone());
+                let r2 = self.att_deriv(cx, p2.clone(), att);
+                let q2 = self.group(p1.clone(), r2);
+                self.choice(q1, q2)
+            }
+            (Pattern::Interleave(p1, p2), att) => {
+                let r1 = self.att_deriv(cx, p1.clone(), att);
+                let q1 = self.interleave(r1, p2.clone());
+                let r2 = self.att_deriv(cx, p2.clone(), att);
+                let q2 = self.interleave(p1.clone(), r2);
+                self.choice(q1, q2)
+            }
+            (Pattern::OneOrMore(p), att) => {
+                let q1 = self.att_deriv(cx, p.clone(), att);
+                let q2 = self.choice(pattern.clone(), Arc::new(Pattern::Empty));
+                self.group(q1, q2)
+            }
+            (Pattern::Attribute(nc, p), AttributeNode(qn, s)) => {
+                if nc.contains(qn) && self.value_match(cx, p.clone(), s) {
+                    Arc::new(Pattern::Empty)
+                } else {
+                    Arc::new(Pattern::NotAllowed)
+                }
+            }
+            (_, _) => Arc::new(Pattern::NotAllowed),
+        }
+    }
+
+    fn value_match(&mut self, cx: &Context, p: Arc<Pattern>, s: &str) -> bool {
+        (p.nullable() && s.chars().all(|c| XMLVersion::default().is_whitespace(c)))
+            || self.text_deriv(cx, p, s).nullable()
+    }
+
+    fn start_tag_close_deriv(&mut self, pattern: Arc<Pattern>) -> Arc<Pattern> {
+        match pattern.as_ref() {
+            Pattern::After(p1, p2) => {
+                let p1 = self.start_tag_close_deriv(p1.clone());
+                self.after(p1, p2.clone())
+            }
+            Pattern::Choice(p1, p2) => {
+                let q1 = self.start_tag_close_deriv(p1.clone());
+                let q2 = self.start_tag_close_deriv(p2.clone());
+                self.choice(q1, q2)
+            }
+            Pattern::Group(p1, p2) => {
+                let q1 = self.start_tag_close_deriv(p1.clone());
+                let q2 = self.start_tag_close_deriv(p2.clone());
+                self.group(q1, q2)
+            }
+            Pattern::Interleave(p1, p2) => {
+                let q1 = self.start_tag_close_deriv(p1.clone());
+                let q2 = self.start_tag_close_deriv(p2.clone());
+                self.interleave(q1, q2)
+            }
+            Pattern::OneOrMore(p) => {
+                let q = self.start_tag_close_deriv(p.clone());
+                self.one_or_more(q)
+            }
+            Pattern::Attribute(_, _) => Arc::new(Pattern::NotAllowed),
+            _ => pattern,
+        }
+    }
+
+    fn one_or_more(&mut self, p: Arc<Pattern>) -> Arc<Pattern> {
+        match p.as_ref() {
+            Pattern::NotAllowed => p,
+            _ => Arc::new(Pattern::OneOrMore(p)),
+        }
+    }
+
+    fn children_deriv(
+        &mut self,
+        cx: &Context,
+        p: Arc<Pattern>,
+        children: &[ChildNode],
+    ) -> Arc<Pattern> {
+        match children {
+            [] => self.children_deriv(cx, p, &[ChildNode::TextNode("".into())]),
+            [ChildNode::TextNode(s)] => {
+                let p1 = self.child_deriv(cx, p.clone(), &ChildNode::TextNode(s.clone()));
+                if s.chars().all(|c| XMLVersion::default().is_whitespace(c)) {
+                    self.choice(p, p1.clone())
+                } else {
+                    p1
+                }
+            }
+            children => self.strip_children_deriv(cx, p, children),
+        }
+    }
+
+    fn strip_children_deriv(
+        &mut self,
+        cx: &Context,
+        p: Arc<Pattern>,
+        children: &[ChildNode],
+    ) -> Arc<Pattern> {
+        match children {
+            [] => p,
+            [h, t @ ..] => {
+                let p = if self.strip(h) {
+                    p
+                } else {
+                    self.child_deriv(cx, p, h)
+                };
+                self.strip_children_deriv(cx, p, t)
+            }
+        }
+    }
+
+    fn strip(&mut self, child: &ChildNode) -> bool {
+        matches!(child, ChildNode::TextNode(s) if s.chars().all(|c| XMLVersion::default().is_whitespace(c)))
+    }
+
+    fn end_tag_deriv(&mut self, p: Arc<Pattern>) -> Arc<Pattern> {
+        match p.as_ref() {
+            Pattern::Choice(p1, p2) => {
+                let (p1, p2) = (
+                    self.end_tag_deriv(p1.clone()),
+                    self.end_tag_deriv(p2.clone()),
+                );
+                self.choice(p1, p2)
+            }
+            Pattern::After(p1, p2) => {
+                if p1.nullable() {
+                    p2.clone()
+                } else {
+                    Arc::new(Pattern::NotAllowed)
+                }
+            }
+            _ => Arc::new(Pattern::NotAllowed),
+        }
+    }
+}
+
+pub struct ValidateHandler<'a, H: SAXHandler> {
+    child: H,
+    grammar: &'a mut Grammar,
+
+    // current pattern
+    pattern: Arc<Pattern>,
+
+    // context
+    base_uri: Arc<URIStr>,
+    base_uri_stack: Vec<Arc<URIStr>>,
+    ns_stack: NamespaceStack,
+}
+
+impl<H: SAXHandler> RelaxNGParseHandler<H> {
+    pub(super) fn build(&self) -> Grammar {
+        let mut patterns = vec![];
+        let mut intern = HashMap::new();
+        let root = self.do_build(0, &mut patterns, &mut intern, &mut HashMap::new());
+
+        Grammar {
+            root,
+            patterns,
+            intern,
+        }
+    }
+    fn do_build<'a>(
+        &'a self,
+        current: usize,
+        patterns: &mut Vec<Arc<Pattern>>,
+        intern: &mut HashMap<Arc<Pattern>, usize>,
+        defines: &mut HashMap<&'a str, usize>,
+    ) -> usize {
+        match &self.tree[current].r#type {
+            RelaxNGNodeType::Grammar => todo!(),
+            RelaxNGNodeType::Start(_) => todo!(),
+            RelaxNGNodeType::Define { name, .. } => {
+                let index = self.create_define_node(name, patterns, defines);
+                let element = self.tree[current].children[0];
+                let nc = self.tree[element].children[0];
+                let pat = self.tree[element].children[1];
+
+                let nc = self.create_name_class(nc);
+                let pat = self.do_build(pat, patterns, intern, defines);
+                patterns[index] = Arc::new(Pattern::Element(nc, patterns[pat].clone()));
+                index
+            }
+            RelaxNGNodeType::Attribute(_) => {
+                let nc = self.tree[current].children[0];
+                let pat = self.tree[current].children[1];
+
+                let nc = self.create_name_class(nc);
+                let pat = self.do_build(pat, patterns, intern, defines);
+                self.create_common_node(
+                    patterns,
+                    intern,
+                    Pattern::Attribute(nc, patterns[pat].clone()),
+                )
+            }
+            RelaxNGNodeType::Empty => self.create_common_node(patterns, intern, Pattern::Empty),
+            RelaxNGNodeType::NotAllowed => {
+                self.create_common_node(patterns, intern, Pattern::NotAllowed)
+            }
+            RelaxNGNodeType::Text => self.create_common_node(patterns, intern, Pattern::Text),
+            RelaxNGNodeType::Ref(name) => self.create_define_node(name, patterns, defines),
+            RelaxNGNodeType::Choice(ChoiceType::Pattern) => {
+                let mut left =
+                    self.do_build(self.tree[current].children[0], patterns, intern, defines);
+                let mut right =
+                    self.do_build(self.tree[current].children[1], patterns, intern, defines);
+                if left > right {
+                    (left, right) = (right, left);
+                }
+                self.create_common_node(
+                    patterns,
+                    intern,
+                    Pattern::Choice(patterns[left].clone(), patterns[right].clone()),
+                )
+            }
+            RelaxNGNodeType::Interleave => {
+                let mut left =
+                    self.do_build(self.tree[current].children[0], patterns, intern, defines);
+                let mut right =
+                    self.do_build(self.tree[current].children[1], patterns, intern, defines);
+                if left > right {
+                    (left, right) = (right, left);
+                }
+                self.create_common_node(
+                    patterns,
+                    intern,
+                    Pattern::Interleave(patterns[left].clone(), patterns[right].clone()),
+                )
+            }
+            RelaxNGNodeType::Group => {
+                let left = self.do_build(self.tree[current].children[0], patterns, intern, defines);
+                let right =
+                    self.do_build(self.tree[current].children[1], patterns, intern, defines);
+                self.create_common_node(
+                    patterns,
+                    intern,
+                    Pattern::Group(patterns[left].clone(), patterns[right].clone()),
+                )
+            }
+            RelaxNGNodeType::OneOrMore => {
+                let p = self.do_build(self.tree[current].children[0], patterns, intern, defines);
+                self.create_common_node(patterns, intern, Pattern::OneOrMore(patterns[p].clone()))
+            }
+            RelaxNGNodeType::List => {
+                let p = self.do_build(self.tree[current].children[0], patterns, intern, defines);
+                self.create_common_node(patterns, intern, Pattern::List(patterns[p].clone()))
+            }
+            RelaxNGNodeType::Data(r#type) => {
+                let uri = self.tree[current]
+                    .datatype_library
+                    .clone()
+                    .unwrap_or_default();
+                let local_name = r#type.as_ref().into();
+                let mut params = BTreeMap::new();
+                let mut except = usize::MAX;
+                for &ch in &self.tree[current].children {
+                    match &self.tree[ch].r#type {
+                        RelaxNGNodeType::Param { name, value } => {
+                            params.insert(name.as_ref().into(), value.as_ref().into());
+                        }
+                        RelaxNGNodeType::Except(ExceptType::Pattern) => {
+                            let gch = self.tree[ch].children[0];
+                            except = self.do_build(gch, patterns, intern, defines)
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+
+                if except == usize::MAX {
+                    self.create_common_node(
+                        patterns,
+                        intern,
+                        Pattern::Data((uri, local_name), params),
+                    )
+                } else {
+                    self.create_common_node(
+                        patterns,
+                        intern,
+                        Pattern::DataExcept((uri, local_name), params, patterns[except].clone()),
+                    )
+                }
+            }
+            RelaxNGNodeType::Value {
+                r#type,
+                ns_map,
+                value,
+            } => {
+                let uri = self.tree[current]
+                    .datatype_library
+                    .clone()
+                    .unwrap_or_default();
+                let local_name = r#type.as_deref().unwrap().into();
+                let base_uri = self.tree[current].base_uri.clone().unwrap();
+                self.create_common_node(
+                    patterns,
+                    intern,
+                    Pattern::Value(
+                        (uri, local_name),
+                        value.as_ref().into(),
+                        (base_uri, ns_map.clone()),
+                    ),
+                )
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn create_common_node(
+        &self,
+        patterns: &mut Vec<Arc<Pattern>>,
+        intern: &mut HashMap<Arc<Pattern>, usize>,
+        pattern: Pattern,
+    ) -> usize {
+        if let Some(&index) = intern.get(&pattern) {
+            index
+        } else {
+            let new = Arc::new(pattern);
+            let at = patterns.len();
+            intern.insert(new.clone(), at);
+            patterns.push(new);
+            at
+        }
+    }
+
+    fn create_define_node<'a>(
+        &self,
+        name: &'a str,
+        patterns: &mut Vec<Arc<Pattern>>,
+        defines: &mut HashMap<&'a str, usize>,
+    ) -> usize {
+        if let Some(&index) = defines.get(&name) {
+            index
+        } else {
+            let ret = patterns.len();
+            defines.insert(name, ret);
+            patterns.push(Arc::new(Pattern::Text));
+            ret
+        }
+    }
+
+    fn create_name_class(&self, current: usize) -> Arc<NameClass> {
+        match &self.tree[current].r#type {
+            RelaxNGNodeType::AnyName => {
+                if !self.tree[current].children.is_empty() {
+                    let ch = self.tree[current].children[0];
+                    let gch = self.tree[ch].children[0];
+                    Arc::new(NameClass::AnyNameExcept(self.create_name_class(gch)))
+                } else {
+                    Arc::new(NameClass::AnyName)
+                }
+            }
+            RelaxNGNodeType::NsName => {
+                let ns = self.tree[current].ns.clone().unwrap_or_default();
+                if !self.tree[current].children.is_empty() {
+                    let ch = self.tree[current].children[0];
+                    let gch = self.tree[ch].children[0];
+                    Arc::new(NameClass::NsNameExcept(ns, self.create_name_class(gch)))
+                } else {
+                    Arc::new(NameClass::NsName(ns))
+                }
+            }
+            RelaxNGNodeType::Name(name) => {
+                let ns = self.tree[current].ns.clone().unwrap_or_default();
+                Arc::new(NameClass::Name(ns, name.as_ref().into()))
+            }
+            RelaxNGNodeType::Choice(ChoiceType::NameClass) => {
+                let left = self.create_name_class(self.tree[current].children[0]);
+                let right = self.create_name_class(self.tree[current].children[1]);
+                Arc::new(NameClass::NameClassChoice(left, right))
+            }
+            _ => unreachable!(),
         }
     }
 }

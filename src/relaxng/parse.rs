@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -131,6 +131,10 @@ pub(super) enum RelaxNGNodeType {
     Text,
     Value {
         r#type: Option<Box<str>>,
+        /// Validating the `value` pattern requires the context of the `value` element itself.
+        /// While the base URI is held by the `RelaxNGNode`, it does not retain namespace mappings,
+        /// so they are stored here.
+        ns_map: BTreeMap<Arc<str>, Arc<str>>,
         value: Box<str>,
     },
     Data(Box<str>),
@@ -261,7 +265,7 @@ impl RelaxNGNodeType {
 
 #[derive(Clone)]
 pub(super) struct RelaxNGNode {
-    base_uri: Option<Arc<URIStr>>,
+    pub(super) base_uri: Option<Arc<URIStr>>,
     pub(super) datatype_library: Option<Arc<str>>,
     pub(super) ns: Option<Arc<str>>,
     xmlns: HashMap<Arc<str>, Box<str>>,
@@ -1204,6 +1208,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             ns_stack.push(pre, nsname);
         }
 
+        let ns = self.tree[current].ns.clone();
         match self.tree[current].r#type {
             RelaxNGNodeType::Element(ref mut name) if name.is_some() => {
                 let name = name.take().unwrap();
@@ -1248,6 +1253,23 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                             prefix
                         );
                     }
+                }
+            }
+            RelaxNGNodeType::Value { ref mut ns_map, .. } => {
+                // Update the namespace mapping using `ns_stack` information.
+                // I think this should be done before importing external resources,
+                // but if each external resource is namespace well-formed, constructing
+                // it here should be fine.
+
+                for namespace in &*ns_stack {
+                    ns_map.insert(namespace.prefix.clone(), namespace.namespace_name.clone());
+                }
+
+                let ns = ns.unwrap_or_default();
+                if ns.is_empty() {
+                    ns_map.remove("");
+                } else {
+                    ns_map.insert("".into(), ns);
                 }
             }
             _ => {}
@@ -2297,7 +2319,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 write!(f, "{}", value)?;
             }
             RelaxNGNodeType::Start(Some(combine)) => write!(f, " combine=\"{}\">", combine)?,
-            RelaxNGNodeType::Value { r#type, value } => {
+            RelaxNGNodeType::Value { r#type, value, .. } => {
                 if let Some(ty) = r#type {
                     write!(f, " type=\"{}\">", ty)?;
                 }
@@ -2492,6 +2514,7 @@ impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
                     self.new_node(
                         RelaxNGNodeType::Value {
                             r#type: Some(value.into()),
+                            ns_map: BTreeMap::new(),
                             value: "".into(),
                         },
                         atts.iter()
@@ -2502,6 +2525,7 @@ impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
                     self.new_node(
                         RelaxNGNodeType::Value {
                             r#type: None,
+                            ns_map: BTreeMap::new(),
                             value: "".into(),
                         },
                         atts,
