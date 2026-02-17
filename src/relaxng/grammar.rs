@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    XML_XML_NAMESPACE, XMLVersion,
+    XMLVersion,
     error::XMLError,
     relaxng::{
         datatype_library::RelaxNGDatatypeLibraries,
@@ -932,6 +932,7 @@ enum ChildNode {
 
 pub(super) struct Grammar {
     root: PatternId,
+    libraries: RelaxNGDatatypeLibraries,
     patterns: Vec<Arc<Pattern>>,
     intern: HashMap<Arc<Pattern>, PatternId>,
     /// -1: unknown, 0: false, 1: true
@@ -1146,7 +1147,10 @@ impl Grammar {
         string: &str,
         context: &Context,
     ) -> bool {
-        todo!()
+        self.libraries
+            .get(&dt.0)
+            .and_then(|lib| lib.validate(&dt.1, &context.1, string))
+            .is_some_and(|b| b)
     }
 
     fn datatype_equal(
@@ -1157,7 +1161,10 @@ impl Grammar {
         s2: &str,
         cx2: &Context,
     ) -> bool {
-        todo!()
+        self.libraries
+            .get(&dt.0)
+            .and_then(|lib| lib.eq(&dt.1, s1, s2))
+            .is_some_and(|b| b)
     }
 
     fn apply_after(
@@ -1448,6 +1455,8 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
         self.locator = locator;
         self.pattern = self.grammar.root;
         self.text.clear();
+        self.mixed = false;
+        self.mixed_stack.clear();
     }
 
     fn start_prefix_mapping(&mut self, prefix: Option<&str>, uri: &str) {
@@ -1655,6 +1664,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
 
         Grammar {
             root,
+            libraries: self.datatype_libraries.clone(),
             patterns,
             intern,
             nullable,

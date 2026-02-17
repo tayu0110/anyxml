@@ -1564,18 +1564,14 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 self.check_constraints(pat, allow_anyname, allow_nsname, allow_xmlns);
             }
             RelaxNGNodeType::Data(ref type_name) => {
-                if let Some(datatype_library) = self.tree[current]
-                    .datatype_library
-                    .as_deref()
-                    .and_then(|dl| URIString::parse(dl).ok())
-                {
-                    if let Some(library) = self.datatype_libraries.get(&datatype_library) {
-                        let mut params = HashMap::new();
+                if let Some(datatype_library) = self.tree[current].datatype_library.as_deref() {
+                    if let Some(library) = self.datatype_libraries.get(datatype_library) {
+                        let mut params = BTreeMap::new();
                         let len = self.tree[current].children.len();
                         for i in 0..len {
                             let ch = self.tree[current].children[i];
                             if let RelaxNGNodeType::Param { name, value } = &self.tree[ch].r#type {
-                                params.insert(name.to_string(), value.to_string());
+                                params.insert(name.as_ref().into(), value.as_ref().into());
                             }
                         }
                         if !library.contains(type_name) {
@@ -1615,13 +1611,9 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 }
             }
             RelaxNGNodeType::Value { ref r#type, .. } => {
-                if let Some(datatype_library) = self.tree[current]
-                    .datatype_library
-                    .as_deref()
-                    .and_then(|dl| URIString::parse(dl).ok())
-                {
+                if let Some(datatype_library) = self.tree[current].datatype_library.as_deref() {
                     let type_name = r#type.as_deref().unwrap();
-                    if let Some(library) = self.datatype_libraries.get(&datatype_library) {
+                    if let Some(library) = self.datatype_libraries.get(datatype_library) {
                         if !library.contains(type_name) {
                             error!(
                                 self,

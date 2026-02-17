@@ -1,9 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
-
-use crate::{
-    XMLVersion,
-    uri::{URIStr, URIString},
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
 };
+
+use crate::XMLVersion;
 
 pub trait RelaxNGDatatypeLibrary: Send + Sync {
     /// If a type named `type_name` exists in the library, return `true`,
@@ -22,14 +22,18 @@ pub trait RelaxNGDatatypeLibrary: Send + Sync {
     fn validate(
         &self,
         type_name: &str,
-        params: &HashMap<String, String>,
+        params: &BTreeMap<Arc<str>, Arc<str>>,
         value: &str,
     ) -> Option<bool>;
     /// If a type named `type_name` exists in the library, return [`Some`] wrapped around
     /// [`true`] if `params` is a valid parameter list of that type, or [`false`] otherwise.
     ///
     /// If a type named `type_name` does not exist in the library, return [`None`].
-    fn validate_params(&self, type_name: &str, params: &HashMap<String, String>) -> Option<bool>;
+    fn validate_params(
+        &self,
+        type_name: &str,
+        params: &BTreeMap<Arc<str>, Arc<str>>,
+    ) -> Option<bool>;
     /// If a type named `type_name` exists in the library, return [`Some`] wrapped around
     /// [`true`] if `lhs` and `rhs` are equal as representations of that type,
     /// or [`false`] if they are not equal.
@@ -51,7 +55,7 @@ impl RelaxNGDatatypeLibrary for RelaxNGBuiltinDatatypeLibrary {
     fn validate(
         &self,
         type_name: &str,
-        _params: &HashMap<String, String>,
+        _params: &BTreeMap<Arc<str>, Arc<str>>,
         _value: &str,
     ) -> Option<bool> {
         match type_name {
@@ -60,7 +64,11 @@ impl RelaxNGDatatypeLibrary for RelaxNGBuiltinDatatypeLibrary {
         }
     }
 
-    fn validate_params(&self, type_name: &str, params: &HashMap<String, String>) -> Option<bool> {
+    fn validate_params(
+        &self,
+        type_name: &str,
+        params: &BTreeMap<Arc<str>, Arc<str>>,
+    ) -> Option<bool> {
         self.contains(type_name).then_some(params.is_empty())
     }
 
@@ -86,17 +94,17 @@ impl RelaxNGDatatypeLibrary for RelaxNGBuiltinDatatypeLibrary {
 
 #[derive(Clone)]
 pub struct RelaxNGDatatypeLibraries {
-    map: HashMap<URIString, Arc<dyn RelaxNGDatatypeLibrary>>,
+    map: HashMap<Arc<str>, Arc<dyn RelaxNGDatatypeLibrary>>,
 }
 
 impl RelaxNGDatatypeLibraries {
-    pub(super) fn get(&self, namespace_name: &URIStr) -> Option<&dyn RelaxNGDatatypeLibrary> {
+    pub(super) fn get(&self, namespace_name: &str) -> Option<&dyn RelaxNGDatatypeLibrary> {
         self.map.get(namespace_name).map(|library| &**library)
     }
 
     fn insert(
         &mut self,
-        namespace_name: URIString,
+        namespace_name: Arc<str>,
         library: Arc<dyn RelaxNGDatatypeLibrary>,
     ) -> Option<Arc<dyn RelaxNGDatatypeLibrary>> {
         self.map.insert(namespace_name, library)
@@ -108,10 +116,7 @@ impl Default for RelaxNGDatatypeLibraries {
         let mut libraries = Self {
             map: HashMap::new(),
         };
-        libraries.insert(
-            URIString::parse("").unwrap(),
-            Arc::new(RelaxNGBuiltinDatatypeLibrary),
-        );
+        libraries.insert("".into(), Arc::new(RelaxNGBuiltinDatatypeLibrary));
         libraries
     }
 }

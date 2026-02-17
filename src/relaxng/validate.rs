@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::{
     XMLVersion,
@@ -181,10 +181,10 @@ impl RelaxNGNonEmptyPattern {
 
                 let params = param
                     .iter()
-                    .map(|param| (param.name.to_string(), param.value.to_string()))
-                    .collect::<HashMap<_, _>>();
+                    .map(|param| (param.name.as_ref().into(), param.value.as_ref().into()))
+                    .collect::<BTreeMap<_, _>>();
 
-                if let Some(library) = grammar.libraries.get(datatype_library)
+                if let Some(library) = grammar.libraries.get(&datatype_library.to_string())
                     && library
                         .validate(type_name, &params, &value)
                         .unwrap_or_default()
@@ -235,7 +235,7 @@ impl RelaxNGNonEmptyPattern {
                     return Err(XMLError::RngValidValue);
                 };
 
-                if let Some(library) = grammar.libraries.get(datatype_library)
+                if let Some(library) = grammar.libraries.get(&datatype_library.to_string())
                     && library.eq(type_name, &lhs, value).unwrap_or_default()
                 {
                     seq_matches.fill(true);
