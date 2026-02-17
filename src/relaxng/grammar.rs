@@ -1149,7 +1149,7 @@ impl Grammar {
     ) -> bool {
         self.libraries
             .get(&dt.0)
-            .and_then(|lib| lib.validate(&dt.1, &context.1, string))
+            .and_then(|lib| lib.validate(&dt.1, params, string, context))
             .is_some_and(|b| b)
     }
 
@@ -1163,7 +1163,7 @@ impl Grammar {
     ) -> bool {
         self.libraries
             .get(&dt.0)
-            .and_then(|lib| lib.eq(&dt.1, s1, s2))
+            .and_then(|lib| lib.eq(&dt.1, s1, cx1, s2, cx2))
             .is_some_and(|b| b)
     }
 

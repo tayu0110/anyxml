@@ -8,6 +8,7 @@ use crate::{
         grammar::{RelaxNGDefine, RelaxNGNonEmptyPattern, RelaxNGPattern},
     },
     tree::{Attribute, Element, Node, NodeType, convert::NodeKind, node::NodeSpec},
+    uri::URIString,
 };
 
 impl RelaxNGSchema {
@@ -186,7 +187,12 @@ impl RelaxNGNonEmptyPattern {
 
                 if let Some(library) = grammar.libraries.get(&datatype_library.to_string())
                     && library
-                        .validate(type_name, &params, &value)
+                        .validate(
+                            type_name,
+                            &params,
+                            &value,
+                            &(URIString::parse("").unwrap().into(), BTreeMap::new()),
+                        )
                         .unwrap_or_default()
                 {
                     if let Some(except) = except_pattern.as_ref() {
@@ -236,7 +242,15 @@ impl RelaxNGNonEmptyPattern {
                 };
 
                 if let Some(library) = grammar.libraries.get(&datatype_library.to_string())
-                    && library.eq(type_name, &lhs, value).unwrap_or_default()
+                    && library
+                        .eq(
+                            type_name,
+                            &lhs,
+                            &(URIString::parse("").unwrap().into(), BTreeMap::new()),
+                            value,
+                            &(URIString::parse("").unwrap().into(), BTreeMap::new()),
+                        )
+                        .unwrap_or_default()
                 {
                     seq_matches.fill(true);
                     Ok(())

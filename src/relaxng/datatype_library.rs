@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::XMLVersion;
+use crate::{XMLVersion, uri::URIStr};
 
 pub trait RelaxNGDatatypeLibrary: Send + Sync {
     /// If a type named `type_name` exists in the library, return `true`,
@@ -24,6 +24,7 @@ pub trait RelaxNGDatatypeLibrary: Send + Sync {
         type_name: &str,
         params: &BTreeMap<Arc<str>, Arc<str>>,
         value: &str,
+        context: &(Arc<URIStr>, BTreeMap<Arc<str>, Arc<str>>),
     ) -> Option<bool>;
     /// If a type named `type_name` exists in the library, return [`Some`] wrapped around
     /// [`true`] if `params` is a valid parameter list of that type, or [`false`] otherwise.
@@ -42,7 +43,14 @@ pub trait RelaxNGDatatypeLibrary: Send + Sync {
     ///
     /// # Reference
     /// ISO/IEC 19757-2:2008 9.3.8 data and value pattern
-    fn eq(&self, type_name: &str, lhs: &str, rhs: &str) -> Option<bool>;
+    fn eq(
+        &self,
+        type_name: &str,
+        lhs: &str,
+        cx1: &(Arc<URIStr>, BTreeMap<Arc<str>, Arc<str>>),
+        rhs: &str,
+        cx2: &(Arc<URIStr>, BTreeMap<Arc<str>, Arc<str>>),
+    ) -> Option<bool>;
 }
 
 pub struct RelaxNGBuiltinDatatypeLibrary;
@@ -57,6 +65,7 @@ impl RelaxNGDatatypeLibrary for RelaxNGBuiltinDatatypeLibrary {
         type_name: &str,
         _params: &BTreeMap<Arc<str>, Arc<str>>,
         _value: &str,
+        _context: &(Arc<URIStr>, BTreeMap<Arc<str>, Arc<str>>),
     ) -> Option<bool> {
         match type_name {
             "string" | "token" => Some(true),
@@ -72,7 +81,14 @@ impl RelaxNGDatatypeLibrary for RelaxNGBuiltinDatatypeLibrary {
         self.contains(type_name).then_some(params.is_empty())
     }
 
-    fn eq(&self, type_name: &str, lhs: &str, rhs: &str) -> Option<bool> {
+    fn eq(
+        &self,
+        type_name: &str,
+        lhs: &str,
+        _cx1: &(Arc<URIStr>, BTreeMap<Arc<str>, Arc<str>>),
+        rhs: &str,
+        _cx2: &(Arc<URIStr>, BTreeMap<Arc<str>, Arc<str>>),
+    ) -> Option<bool> {
         match type_name {
             "string" => Some(lhs == rhs),
             "token" => {
