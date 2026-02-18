@@ -902,6 +902,66 @@ impl NameClass {
             (Self::NameClassChoice(nc1, nc2), n) => nc1.contains(n) || nc2.contains(n),
         }
     }
+
+    /// # Reference
+    /// - [Name class analysis](https://relaxng.org/jclark/nameclass.html)
+    fn overlap(&self, other: &Self) -> bool {
+        self.representatives(other)
+            .map(|(ns, ln)| QName(ns, ln))
+            .any(|qn| self.contains(&qn) && other.contains(&qn))
+    }
+    /// # Reference
+    /// - [Name class analysis](https://relaxng.org/jclark/nameclass.html)
+    fn representatives<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> impl Iterator<Item = (Arc<str>, Arc<str>)> + 'a {
+        let mut stack = vec![self, other];
+        let mut seen = HashSet::new();
+        let mut seen_anyname = false;
+        let illegal_local_name = Arc::<str>::from("");
+        let illegal_uri = Arc::<str>::from("\x01");
+        std::iter::from_fn(move || {
+            while let Some(now) = stack.pop() {
+                match now {
+                    NameClass::AnyName => {
+                        if !seen_anyname {
+                            seen_anyname = true;
+                            return Some((illegal_uri.clone(), illegal_local_name.clone()));
+                        }
+                    }
+                    NameClass::AnyNameExcept(nc) => {
+                        stack.push(nc.as_ref());
+                        if !seen_anyname {
+                            seen_anyname = true;
+                            return Some((illegal_uri.clone(), illegal_local_name.clone()));
+                        }
+                    }
+                    NameClass::NsName(ns) => {
+                        if seen.insert((ns.clone(), illegal_local_name.clone())) {
+                            return Some((ns.clone(), illegal_local_name.clone()));
+                        }
+                    }
+                    NameClass::NsNameExcept(ns, nc) => {
+                        stack.push(nc.as_ref());
+                        if seen.insert((ns.clone(), illegal_local_name.clone())) {
+                            return Some((ns.clone(), illegal_local_name.clone()));
+                        }
+                    }
+                    NameClass::Name(ns, ln) => {
+                        if seen.insert((ns.clone(), ln.clone())) {
+                            return Some((ns.clone(), ln.clone()));
+                        }
+                    }
+                    NameClass::NameClassChoice(nc1, nc2) => {
+                        stack.push(nc1.as_ref());
+                        stack.push(nc2.as_ref());
+                    }
+                }
+            }
+            None
+        })
+    }
 }
 
 #[derive(PartialEq, Eq, Hash)]
