@@ -6,7 +6,11 @@ use std::{
 use crate::{
     XML_NS_NAMESPACE, XMLVersion,
     error::XMLError,
-    relaxng::{XML_RELAX_NG_NAMESPACE, datatype_library::RelaxNGDatatypeLibraries},
+    relaxng::{
+        XML_RELAX_NG_NAMESPACE,
+        datatype_library::RelaxNGDatatypeLibraries,
+        grammar::{Grammar, NameClass, Pattern},
+    },
     sax::{
         AttributeType, DefaultDecl, Locator, NamespaceStack,
         attributes::{Attribute, Attributes},
@@ -2325,6 +2329,188 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         }
 
         write!(f, "</{}>", self.tree[current].r#type.typename())
+    }
+
+    pub(super) fn build(&self) -> Grammar {
+        let mut grammar = Grammar {
+            root: 0,
+            libraries: self.datatype_libraries.clone(),
+            patterns: vec![],
+            intern: HashMap::new(),
+            nullable: vec![],
+        };
+        let root = self.do_build(0, &mut grammar, &mut HashMap::new());
+        grammar.root = root;
+        grammar
+    }
+    fn do_build<'a>(
+        &'a self,
+        current: usize,
+        grammar: &mut Grammar,
+        defines: &mut HashMap<&'a str, usize>,
+    ) -> usize {
+        match &self.tree[current].r#type {
+            RelaxNGNodeType::Grammar => {
+                let start = self.do_build(self.tree[current].children[0], grammar, defines);
+                let len = self.tree[current].children.len();
+                for def in 1..len {
+                    let ch = self.tree[current].children[def];
+                    self.do_build(ch, grammar, defines);
+                }
+                start
+            }
+            RelaxNGNodeType::Start(_) => {
+                self.do_build(self.tree[current].children[0], grammar, defines)
+            }
+            RelaxNGNodeType::Define { name, .. } => {
+                let index = self.create_define_node(name, grammar, defines);
+                let element = self.tree[current].children[0];
+                let nc = self.tree[element].children[0];
+                let pat = self.tree[element].children[1];
+
+                let nc = self.create_name_class(nc);
+                let pat = self.do_build(pat, grammar, defines);
+                grammar.patterns[index] = Arc::new(Pattern::Element(nc, pat));
+                index
+            }
+            RelaxNGNodeType::Attribute(_) => {
+                let nc = self.tree[current].children[0];
+                let pat = self.tree[current].children[1];
+
+                let nc = self.create_name_class(nc);
+                let pat = self.do_build(pat, grammar, defines);
+                grammar.create_node(Pattern::Attribute(nc, pat))
+            }
+            RelaxNGNodeType::Empty => grammar.create_node(Pattern::Empty),
+            RelaxNGNodeType::NotAllowed => grammar.create_node(Pattern::NotAllowed),
+            RelaxNGNodeType::Text => grammar.create_node(Pattern::Text),
+            RelaxNGNodeType::Ref(name) => self.create_define_node(name, grammar, defines),
+            RelaxNGNodeType::Choice(ChoiceType::Pattern) => {
+                let mut left = self.do_build(self.tree[current].children[0], grammar, defines);
+                let mut right = self.do_build(self.tree[current].children[1], grammar, defines);
+                if left > right {
+                    (left, right) = (right, left);
+                }
+                grammar.create_node(Pattern::Choice(left, right))
+            }
+            RelaxNGNodeType::Interleave => {
+                let mut left = self.do_build(self.tree[current].children[0], grammar, defines);
+                let mut right = self.do_build(self.tree[current].children[1], grammar, defines);
+                if left > right {
+                    (left, right) = (right, left);
+                }
+                grammar.create_node(Pattern::Interleave(left, right))
+            }
+            RelaxNGNodeType::Group => {
+                let left = self.do_build(self.tree[current].children[0], grammar, defines);
+                let right = self.do_build(self.tree[current].children[1], grammar, defines);
+                grammar.create_node(Pattern::Group(left, right))
+            }
+            RelaxNGNodeType::OneOrMore => {
+                let p = self.do_build(self.tree[current].children[0], grammar, defines);
+                grammar.create_node(Pattern::OneOrMore(p))
+            }
+            RelaxNGNodeType::List => {
+                let p = self.do_build(self.tree[current].children[0], grammar, defines);
+                grammar.create_node(Pattern::List(p))
+            }
+            RelaxNGNodeType::Data(r#type) => {
+                let uri = self.tree[current]
+                    .datatype_library
+                    .clone()
+                    .unwrap_or_default();
+                let local_name = r#type.as_ref().into();
+                let mut params = BTreeMap::new();
+                let mut except = usize::MAX;
+                for &ch in &self.tree[current].children {
+                    match &self.tree[ch].r#type {
+                        RelaxNGNodeType::Param { name, value } => {
+                            params.insert(name.as_ref().into(), value.as_ref().into());
+                        }
+                        RelaxNGNodeType::Except(ExceptType::Pattern) => {
+                            let gch = self.tree[ch].children[0];
+                            except = self.do_build(gch, grammar, defines)
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+
+                if except == usize::MAX {
+                    grammar.create_node(Pattern::Data((uri, local_name), params))
+                } else {
+                    grammar.create_node(Pattern::DataExcept((uri, local_name), params, except))
+                }
+            }
+            RelaxNGNodeType::Value {
+                r#type,
+                ns_map,
+                value,
+            } => {
+                let uri = self.tree[current]
+                    .datatype_library
+                    .clone()
+                    .unwrap_or_default();
+                let local_name = r#type.as_deref().unwrap().into();
+                let base_uri = self.tree[current].base_uri.clone().unwrap();
+                grammar.create_node(Pattern::Value(
+                    (uri, local_name),
+                    value.as_ref().into(),
+                    (base_uri, ns_map.clone()),
+                ))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn create_define_node<'a>(
+        &self,
+        name: &'a str,
+        grammar: &mut Grammar,
+        defines: &mut HashMap<&'a str, usize>,
+    ) -> usize {
+        if let Some(&index) = defines.get(&name) {
+            index
+        } else {
+            let ret = grammar.patterns.len();
+            defines.insert(name, ret);
+            grammar.patterns.push(Arc::new(Pattern::Text));
+            grammar.nullable.push(-1);
+            ret
+        }
+    }
+
+    fn create_name_class(&self, current: usize) -> Arc<NameClass> {
+        match &self.tree[current].r#type {
+            RelaxNGNodeType::AnyName => {
+                if !self.tree[current].children.is_empty() {
+                    let ch = self.tree[current].children[0];
+                    let gch = self.tree[ch].children[0];
+                    Arc::new(NameClass::AnyNameExcept(self.create_name_class(gch)))
+                } else {
+                    Arc::new(NameClass::AnyName)
+                }
+            }
+            RelaxNGNodeType::NsName => {
+                let ns = self.tree[current].ns.clone().unwrap_or_default();
+                if !self.tree[current].children.is_empty() {
+                    let ch = self.tree[current].children[0];
+                    let gch = self.tree[ch].children[0];
+                    Arc::new(NameClass::NsNameExcept(ns, self.create_name_class(gch)))
+                } else {
+                    Arc::new(NameClass::NsName(ns))
+                }
+            }
+            RelaxNGNodeType::Name(name) => {
+                let ns = self.tree[current].ns.clone().unwrap_or_default();
+                Arc::new(NameClass::Name(ns, name.as_ref().into()))
+            }
+            RelaxNGNodeType::Choice(ChoiceType::NameClass) => {
+                let left = self.create_name_class(self.tree[current].children[0]);
+                let right = self.create_name_class(self.tree[current].children[1]);
+                Arc::new(NameClass::NameClassChoice(left, right))
+            }
+            _ => unreachable!(),
+        }
     }
 }
 

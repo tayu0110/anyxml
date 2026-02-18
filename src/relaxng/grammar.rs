@@ -882,7 +882,7 @@ type Datatype = (Uri, LocalName);
 type PatternId = usize;
 
 #[derive(PartialEq, Eq, Hash)]
-enum NameClass {
+pub(super) enum NameClass {
     AnyName,
     AnyNameExcept(Arc<NameClass>),
     Name(Uri, LocalName),
@@ -900,6 +900,16 @@ impl NameClass {
             (Self::NsNameExcept(ns1, nc), n @ QName(ns2, _)) => ns1 == ns2 && !nc.contains(n),
             (Self::Name(ns1, ln1), QName(ns2, ln2)) => ns1 == ns2 && ln1 == ln2,
             (Self::NameClassChoice(nc1, nc2), n) => nc1.contains(n) || nc2.contains(n),
+        }
+    }
+
+    fn is_infinite(&self) -> bool {
+        match self {
+            Self::AnyName | Self::AnyNameExcept(_) | Self::NsName(_) | Self::NsNameExcept(_, _) => {
+                true
+            }
+            Self::Name(_, _) => false,
+            Self::NameClassChoice(nc1, nc2) => nc1.is_infinite() || nc2.is_infinite(),
         }
     }
 
@@ -965,7 +975,7 @@ impl NameClass {
 }
 
 #[derive(PartialEq, Eq, Hash)]
-enum Pattern {
+pub(super) enum Pattern {
     Empty,
     NotAllowed,
     Text,
@@ -991,12 +1001,12 @@ enum ChildNode {
 }
 
 pub(super) struct Grammar {
-    root: PatternId,
-    libraries: RelaxNGDatatypeLibraries,
-    patterns: Vec<Arc<Pattern>>,
-    intern: HashMap<Arc<Pattern>, PatternId>,
+    pub(super) root: PatternId,
+    pub(super) libraries: RelaxNGDatatypeLibraries,
+    pub(super) patterns: Vec<Arc<Pattern>>,
+    pub(super) intern: HashMap<Arc<Pattern>, PatternId>,
     /// -1: unknown, 0: false, 1: true
-    nullable: Vec<i8>,
+    pub(super) nullable: Vec<i8>,
 }
 
 impl Grammar {
@@ -1019,7 +1029,7 @@ impl Grammar {
         }
     }
 
-    fn create_node(&mut self, pattern: Pattern) -> PatternId {
+    pub(super) fn create_node(&mut self, pattern: Pattern) -> PatternId {
         if let Some(&index) = self.intern.get(&pattern) {
             index
         } else {
@@ -1027,6 +1037,7 @@ impl Grammar {
             let at = self.patterns.len();
             self.intern.insert(new.clone(), at);
             self.patterns.push(new);
+            self.nullable.push(-1);
             at
         }
     }
@@ -1712,217 +1723,5 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
     ) {
         self.child
             .unparsed_entity_decl(name, public_id, system_id, notation_name);
-    }
-}
-
-impl<H: SAXHandler> RelaxNGParseHandler<H> {
-    pub(super) fn build(&self) -> Grammar {
-        let mut patterns = vec![];
-        let mut intern = HashMap::new();
-        let root = self.do_build(0, &mut patterns, &mut intern, &mut HashMap::new());
-        let nullable = vec![-1; patterns.len()];
-
-        Grammar {
-            root,
-            libraries: self.datatype_libraries.clone(),
-            patterns,
-            intern,
-            nullable,
-        }
-    }
-    fn do_build<'a>(
-        &'a self,
-        current: usize,
-        patterns: &mut Vec<Arc<Pattern>>,
-        intern: &mut HashMap<Arc<Pattern>, usize>,
-        defines: &mut HashMap<&'a str, usize>,
-    ) -> usize {
-        match &self.tree[current].r#type {
-            RelaxNGNodeType::Grammar => todo!(),
-            RelaxNGNodeType::Start(_) => todo!(),
-            RelaxNGNodeType::Define { name, .. } => {
-                let index = self.create_define_node(name, patterns, defines);
-                let element = self.tree[current].children[0];
-                let nc = self.tree[element].children[0];
-                let pat = self.tree[element].children[1];
-
-                let nc = self.create_name_class(nc);
-                let pat = self.do_build(pat, patterns, intern, defines);
-                patterns[index] = Arc::new(Pattern::Element(nc, pat));
-                index
-            }
-            RelaxNGNodeType::Attribute(_) => {
-                let nc = self.tree[current].children[0];
-                let pat = self.tree[current].children[1];
-
-                let nc = self.create_name_class(nc);
-                let pat = self.do_build(pat, patterns, intern, defines);
-                self.create_common_node(patterns, intern, Pattern::Attribute(nc, pat))
-            }
-            RelaxNGNodeType::Empty => self.create_common_node(patterns, intern, Pattern::Empty),
-            RelaxNGNodeType::NotAllowed => {
-                self.create_common_node(patterns, intern, Pattern::NotAllowed)
-            }
-            RelaxNGNodeType::Text => self.create_common_node(patterns, intern, Pattern::Text),
-            RelaxNGNodeType::Ref(name) => self.create_define_node(name, patterns, defines),
-            RelaxNGNodeType::Choice(ChoiceType::Pattern) => {
-                let mut left =
-                    self.do_build(self.tree[current].children[0], patterns, intern, defines);
-                let mut right =
-                    self.do_build(self.tree[current].children[1], patterns, intern, defines);
-                if left > right {
-                    (left, right) = (right, left);
-                }
-                self.create_common_node(patterns, intern, Pattern::Choice(left, right))
-            }
-            RelaxNGNodeType::Interleave => {
-                let mut left =
-                    self.do_build(self.tree[current].children[0], patterns, intern, defines);
-                let mut right =
-                    self.do_build(self.tree[current].children[1], patterns, intern, defines);
-                if left > right {
-                    (left, right) = (right, left);
-                }
-                self.create_common_node(patterns, intern, Pattern::Interleave(left, right))
-            }
-            RelaxNGNodeType::Group => {
-                let left = self.do_build(self.tree[current].children[0], patterns, intern, defines);
-                let right =
-                    self.do_build(self.tree[current].children[1], patterns, intern, defines);
-                self.create_common_node(patterns, intern, Pattern::Group(left, right))
-            }
-            RelaxNGNodeType::OneOrMore => {
-                let p = self.do_build(self.tree[current].children[0], patterns, intern, defines);
-                self.create_common_node(patterns, intern, Pattern::OneOrMore(p))
-            }
-            RelaxNGNodeType::List => {
-                let p = self.do_build(self.tree[current].children[0], patterns, intern, defines);
-                self.create_common_node(patterns, intern, Pattern::List(p))
-            }
-            RelaxNGNodeType::Data(r#type) => {
-                let uri = self.tree[current]
-                    .datatype_library
-                    .clone()
-                    .unwrap_or_default();
-                let local_name = r#type.as_ref().into();
-                let mut params = BTreeMap::new();
-                let mut except = usize::MAX;
-                for &ch in &self.tree[current].children {
-                    match &self.tree[ch].r#type {
-                        RelaxNGNodeType::Param { name, value } => {
-                            params.insert(name.as_ref().into(), value.as_ref().into());
-                        }
-                        RelaxNGNodeType::Except(ExceptType::Pattern) => {
-                            let gch = self.tree[ch].children[0];
-                            except = self.do_build(gch, patterns, intern, defines)
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-
-                if except == usize::MAX {
-                    self.create_common_node(
-                        patterns,
-                        intern,
-                        Pattern::Data((uri, local_name), params),
-                    )
-                } else {
-                    self.create_common_node(
-                        patterns,
-                        intern,
-                        Pattern::DataExcept((uri, local_name), params, except),
-                    )
-                }
-            }
-            RelaxNGNodeType::Value {
-                r#type,
-                ns_map,
-                value,
-            } => {
-                let uri = self.tree[current]
-                    .datatype_library
-                    .clone()
-                    .unwrap_or_default();
-                let local_name = r#type.as_deref().unwrap().into();
-                let base_uri = self.tree[current].base_uri.clone().unwrap();
-                self.create_common_node(
-                    patterns,
-                    intern,
-                    Pattern::Value(
-                        (uri, local_name),
-                        value.as_ref().into(),
-                        (base_uri, ns_map.clone()),
-                    ),
-                )
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    fn create_common_node(
-        &self,
-        patterns: &mut Vec<Arc<Pattern>>,
-        intern: &mut HashMap<Arc<Pattern>, usize>,
-        pattern: Pattern,
-    ) -> usize {
-        if let Some(&index) = intern.get(&pattern) {
-            index
-        } else {
-            let new = Arc::new(pattern);
-            let at = patterns.len();
-            intern.insert(new.clone(), at);
-            patterns.push(new);
-            at
-        }
-    }
-
-    fn create_define_node<'a>(
-        &self,
-        name: &'a str,
-        patterns: &mut Vec<Arc<Pattern>>,
-        defines: &mut HashMap<&'a str, usize>,
-    ) -> usize {
-        if let Some(&index) = defines.get(&name) {
-            index
-        } else {
-            let ret = patterns.len();
-            defines.insert(name, ret);
-            patterns.push(Arc::new(Pattern::Text));
-            ret
-        }
-    }
-
-    fn create_name_class(&self, current: usize) -> Arc<NameClass> {
-        match &self.tree[current].r#type {
-            RelaxNGNodeType::AnyName => {
-                if !self.tree[current].children.is_empty() {
-                    let ch = self.tree[current].children[0];
-                    let gch = self.tree[ch].children[0];
-                    Arc::new(NameClass::AnyNameExcept(self.create_name_class(gch)))
-                } else {
-                    Arc::new(NameClass::AnyName)
-                }
-            }
-            RelaxNGNodeType::NsName => {
-                let ns = self.tree[current].ns.clone().unwrap_or_default();
-                if !self.tree[current].children.is_empty() {
-                    let ch = self.tree[current].children[0];
-                    let gch = self.tree[ch].children[0];
-                    Arc::new(NameClass::NsNameExcept(ns, self.create_name_class(gch)))
-                } else {
-                    Arc::new(NameClass::NsName(ns))
-                }
-            }
-            RelaxNGNodeType::Name(name) => {
-                let ns = self.tree[current].ns.clone().unwrap_or_default();
-                Arc::new(NameClass::Name(ns, name.as_ref().into()))
-            }
-            RelaxNGNodeType::Choice(ChoiceType::NameClass) => {
-                let left = self.create_name_class(self.tree[current].children[0]);
-                let right = self.create_name_class(self.tree[current].children[1]);
-                Arc::new(NameClass::NameClassChoice(left, right))
-            }
-            _ => unreachable!(),
-        }
     }
 }
