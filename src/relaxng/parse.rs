@@ -857,7 +857,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
     }
 
     /// Process simplification defined from ISO/IEC 19757-2:2008 7.7 to 7.22.
-    pub(super) fn simplification(&mut self) -> Result<(), SAXParseError> {
+    pub(super) fn simplification(&mut self) -> Result<Grammar, SAXParseError> {
         self.last_error.clone()?;
         self.resolve_external_resource();
         self.last_error.clone()?;
@@ -933,7 +933,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         names.clear();
         memo.clear();
         self.check_interleave_restrictions(grammar.root, &grammar, &mut names, &mut memo);
-        self.last_error.clone()
+        self.last_error.clone().map(|_| grammar)
     }
 
     /// process `externalRef` and `include`.
@@ -2354,11 +2354,11 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         grammar.root = root;
         grammar
     }
-    fn do_build(
-        &mut self,
+    fn do_build<'a>(
+        &'a self,
         current: usize,
         grammar: &mut Grammar,
-        defines: &mut HashMap<String, usize>,
+        defines: &mut HashMap<&'a str, usize>,
     ) -> usize {
         match &self.tree[current].r#type {
             RelaxNGNodeType::Grammar => {
@@ -2479,14 +2479,14 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         }
     }
 
-    fn create_define_node(
-        &self,
-        name: &str,
+    fn create_define_node<'a>(
+        &'a self,
+        name: &'a str,
         grammar: &mut Grammar,
-        defines: &mut HashMap<String, usize>,
+        defines: &mut HashMap<&'a str, usize>,
     ) -> usize {
         let ret = grammar.patterns.len();
-        defines.insert(name.to_owned(), ret);
+        defines.insert(name, ret);
         grammar.patterns.push(Arc::new(Pattern::Text));
         grammar.nullable.push(-1);
         ret
