@@ -190,6 +190,7 @@ pub enum XMLError {
     RngParseRefLoop,
     RngParseProhibitedPath,
     RngParseUngroupablePattern,
+    RngParseConflictElementNameClass,
     RngParseConflictAttributeNameClass,
     RngParseUnrepeatedAttributeWithInfiniteNameClass,
     RngParseUnknownError,

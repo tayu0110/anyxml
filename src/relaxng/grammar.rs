@@ -903,7 +903,7 @@ impl NameClass {
         }
     }
 
-    fn is_infinite(&self) -> bool {
+    pub(super) fn is_infinite(&self) -> bool {
         match self {
             Self::AnyName | Self::AnyNameExcept(_) | Self::NsName(_) | Self::NsNameExcept(_, _) => {
                 true
@@ -915,7 +915,7 @@ impl NameClass {
 
     /// # Reference
     /// - [Name class analysis](https://relaxng.org/jclark/nameclass.html)
-    fn overlap(&self, other: &Self) -> bool {
+    pub(super) fn overlap(&self, other: &Self) -> bool {
         self.representatives(other)
             .map(|(ns, ln)| QName(ns, ln))
             .any(|qn| self.contains(&qn) && other.contains(&qn))
