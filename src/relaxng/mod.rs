@@ -16,7 +16,10 @@ use std::io::Read;
 
 use crate::{
     error::XMLError,
-    relaxng::{grammar::RelaxNGGrammar, parse::RelaxNGParseHandler},
+    relaxng::{
+        grammar::{Grammar, RelaxNGGrammar, ValidateHandler},
+        parse::RelaxNGParseHandler,
+    },
     sax::{handler::SAXHandler, parser::XMLReaderBuilder},
     uri::URIStr,
 };
@@ -24,7 +27,8 @@ use crate::{
 pub const XML_RELAX_NG_NAMESPACE: &str = "http://relaxng.org/ns/structure/1.0";
 
 pub struct RelaxNGSchema {
-    grammar: RelaxNGGrammar,
+    _grammar: RelaxNGGrammar,
+    grammar: Grammar,
 }
 
 impl RelaxNGSchema {
@@ -45,17 +49,17 @@ impl RelaxNGSchema {
                 .set_handler(RelaxNGParseHandler::with_handler(handler))
                 .build();
             parser.parse_uri(uri, encoding)?;
-            parser.handler.simplification().map_err(|err| err.error)?;
-            let grammar = parser.handler.build_grammar()?;
-            Ok(Self { grammar })
+            let grammar = parser.handler.simplification().map_err(|err| err.error)?;
+            let _grammar = parser.handler.build_grammar()?;
+            Ok(Self { _grammar, grammar })
         } else {
             let mut parser = XMLReaderBuilder::new()
                 .set_handler(RelaxNGParseHandler::default())
                 .build();
             parser.parse_uri(uri, encoding)?;
-            parser.handler.simplification().map_err(|err| err.error)?;
-            let grammar = parser.handler.build_grammar()?;
-            Ok(Self { grammar })
+            let grammar = parser.handler.simplification().map_err(|err| err.error)?;
+            let _grammar = parser.handler.build_grammar()?;
+            Ok(Self { _grammar, grammar })
         }
     }
 
@@ -77,17 +81,17 @@ impl RelaxNGSchema {
                 .set_handler(RelaxNGParseHandler::with_handler(handler))
                 .build();
             parser.parse_reader(reader, encoding, Some(uri.as_ref()))?;
-            parser.handler.simplification().map_err(|err| err.error)?;
-            let grammar = parser.handler.build_grammar()?;
-            Ok(Self { grammar })
+            let grammar = parser.handler.simplification().map_err(|err| err.error)?;
+            let _grammar = parser.handler.build_grammar()?;
+            Ok(Self { _grammar, grammar })
         } else {
             let mut parser = XMLReaderBuilder::new()
                 .set_handler(RelaxNGParseHandler::default())
                 .build();
             parser.parse_reader(reader, encoding, Some(uri.as_ref()))?;
-            parser.handler.simplification().map_err(|err| err.error)?;
-            let grammar = parser.handler.build_grammar()?;
-            Ok(Self { grammar })
+            let grammar = parser.handler.simplification().map_err(|err| err.error)?;
+            let _grammar = parser.handler.build_grammar()?;
+            Ok(Self { _grammar, grammar })
         }
     }
 
@@ -108,17 +112,21 @@ impl RelaxNGSchema {
                 .set_handler(RelaxNGParseHandler::with_handler(handler))
                 .build();
             parser.parse_str(schema, Some(uri.as_ref()))?;
-            parser.handler.simplification().map_err(|err| err.error)?;
-            let grammar = parser.handler.build_grammar()?;
-            Ok(Self { grammar })
+            let grammar = parser.handler.simplification().map_err(|err| err.error)?;
+            let _grammar = parser.handler.build_grammar()?;
+            Ok(Self { _grammar, grammar })
         } else {
             let mut parser = XMLReaderBuilder::new()
                 .set_handler(RelaxNGParseHandler::default())
                 .build();
             parser.parse_str(schema, Some(uri.as_ref()))?;
-            parser.handler.simplification().map_err(|err| err.error)?;
-            let grammar = parser.handler.build_grammar()?;
-            Ok(Self { grammar })
+            let grammar = parser.handler.simplification().map_err(|err| err.error)?;
+            let _grammar = parser.handler.build_grammar()?;
+            Ok(Self { _grammar, grammar })
         }
+    }
+
+    pub fn new_validate_handler<H: SAXHandler>(&mut self, handler: H) -> ValidateHandler<'_, H> {
+        self.grammar.new_validate_handler(handler)
     }
 }

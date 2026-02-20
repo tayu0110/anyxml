@@ -5,10 +5,10 @@ use std::{
 
 use crate::{
     XMLVersion,
-    error::XMLError,
+    error::{XMLError, XMLErrorDomain, XMLErrorLevel},
     relaxng::{
         datatype_library::RelaxNGDatatypeLibraries,
-        parse::{ChoiceType, ExceptType, RelaxNGNodeType, RelaxNGParseHandler},
+        parse::{RelaxNGNodeType, RelaxNGParseHandler},
     },
     sax::{
         AttributeType, DefaultDecl, Locator, NamespaceStack,
@@ -995,11 +995,6 @@ pub(super) enum Pattern {
 struct QName(Uri, LocalName);
 struct AttributeNode(QName, Arc<str>);
 
-enum ChildNode {
-    ElementNode(QName, Context, Vec<AttributeNode>, Vec<ChildNode>),
-    TextNode(Arc<str>),
-}
-
 pub(super) struct Grammar {
     pub(super) root: PatternId,
     pub(super) libraries: RelaxNGDatatypeLibraries,
@@ -1023,6 +1018,7 @@ impl Grammar {
             base_uri: URIString::parse("").unwrap().into(),
             base_uri_stack: vec![],
             ns_stack: NamespaceStack::default(),
+            last_error: Ok(()),
             text: String::new(),
             mixed: false,
             mixed_stack: vec![],
@@ -1063,19 +1059,6 @@ impl Grammar {
         };
         self.nullable[node] = ret as i8;
         ret
-    }
-
-    fn child_deriv(&mut self, cx: &Context, p: PatternId, child_node: &ChildNode) -> PatternId {
-        match child_node {
-            ChildNode::TextNode(s) => self.text_deriv(cx, p, s),
-            ChildNode::ElementNode(qn, cx, atts, children) => {
-                let p1 = self.start_tag_open_deriv(p, qn);
-                let p2 = self.atts_deriv(cx, p1, atts);
-                let p3 = self.start_tag_close_deriv(p2);
-                let p4 = self.children_deriv(cx, p3, children);
-                self.end_tag_deriv(p4)
-            }
-        }
     }
 
     fn text_deriv(&mut self, context: &Context, pattern: PatternId, string: &str) -> PatternId {
@@ -1403,44 +1386,6 @@ impl Grammar {
         }
     }
 
-    fn children_deriv(&mut self, cx: &Context, p: PatternId, children: &[ChildNode]) -> PatternId {
-        match children {
-            [] => self.children_deriv(cx, p, &[ChildNode::TextNode("".into())]),
-            [ChildNode::TextNode(s)] => {
-                let p1 = self.child_deriv(cx, p, &ChildNode::TextNode(s.clone()));
-                if s.chars().all(|c| XMLVersion::default().is_whitespace(c)) {
-                    self.choice(p, p1)
-                } else {
-                    p1
-                }
-            }
-            children => self.strip_children_deriv(cx, p, children),
-        }
-    }
-
-    fn strip_children_deriv(
-        &mut self,
-        cx: &Context,
-        p: PatternId,
-        children: &[ChildNode],
-    ) -> PatternId {
-        match children {
-            [] => p,
-            [h, t @ ..] => {
-                let p = if self.strip(h) {
-                    p
-                } else {
-                    self.child_deriv(cx, p, h)
-                };
-                self.strip_children_deriv(cx, p, t)
-            }
-        }
-    }
-
-    fn strip(&mut self, child: &ChildNode) -> bool {
-        matches!(child, ChildNode::TextNode(s) if s.chars().all(|c| XMLVersion::default().is_whitespace(c)))
-    }
-
     fn end_tag_deriv(&mut self, p: PatternId) -> PatternId {
         match *self.patterns[p].as_ref() {
             Pattern::Choice(p1, p2) => {
@@ -1471,6 +1416,7 @@ pub struct ValidateHandler<'a, H: SAXHandler> {
     base_uri: Arc<URIStr>,
     base_uri_stack: Vec<Arc<URIStr>>,
     ns_stack: NamespaceStack,
+    last_error: Result<(), SAXParseError>,
 
     // text buffer
     // `text` can be validated as chunked character content,
@@ -1523,6 +1469,7 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
         self.base_uri = locator.system_id();
         self.base_uri_stack.clear();
         self.ns_stack.clear();
+        self.last_error = Ok(());
         self.locator = locator;
         self.pattern = self.grammar.root;
         self.text.clear();
@@ -1650,6 +1597,22 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
         self.child.characters(data);
     }
 
+    fn end_document(&mut self) {
+        if !self.grammar.nullable(self.pattern) {
+            self.error(SAXParseError {
+                error: XMLError::RngValidUnknownError,
+                level: XMLErrorLevel::Error,
+                domain: XMLErrorDomain::RngValid,
+                line: self.locator.line(),
+                column: self.locator.column(),
+                system_id: self.locator.system_id(),
+                public_id: self.locator.public_id(),
+                message: "Finish validation unsuccessfully.".into(),
+            });
+        }
+        self.child.end_document();
+    }
+
     // Following callbacks are not used for RELAX NG validation.
     // They simply forward received events to the child handler.
 
@@ -1698,9 +1661,6 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
     }
     fn start_document(&mut self) {
         self.child.start_document();
-    }
-    fn end_document(&mut self) {
-        self.child.end_document();
     }
     fn start_dtd(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
         self.child.start_dtd(name, public_id, system_id);
