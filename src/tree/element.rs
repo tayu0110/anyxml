@@ -499,7 +499,9 @@ impl Element {
             })
         {
             // If it is already bound to a different namespace name, it is an error.
-            if namespace.namespace_name().as_ref() == namespace_name {
+            if namespace.namespace_name().as_ref() == namespace_name
+                && namespace.prefix().as_deref() != prefix
+            {
                 return Err(XMLTreeError::AlreadyBoundPrefix);
             }
 

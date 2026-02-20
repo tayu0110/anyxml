@@ -17,8 +17,9 @@ use std::io::Read;
 use crate::{
     error::XMLError,
     relaxng::{
-        grammar::{Grammar, RelaxNGGrammar, ValidateHandler},
+        grammar::{Grammar, RelaxNGGrammar},
         parse::RelaxNGParseHandler,
+        validate::ValidateHandler,
     },
     sax::{handler::SAXHandler, parser::XMLReaderBuilder},
     uri::URIStr,
