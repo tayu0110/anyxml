@@ -500,6 +500,10 @@ impl NamespaceStack {
     pub(crate) fn clear(&mut self) {
         self.truncate(1);
     }
+
+    pub fn iter(&self) -> NsIter<'_> {
+        self.into_iter()
+    }
 }
 
 impl Default for NamespaceStack {
@@ -513,6 +517,32 @@ impl Default for NamespaceStack {
                 usize::MAX,
             )],
             prefix_map: HashMap::from([(ARC_XML_XML_NAMESPACE_PREFIX.clone(), 0)]),
+        }
+    }
+}
+
+pub struct NsIter<'a> {
+    iter: std::collections::hash_map::Iter<'a, Arc<str>, usize>,
+    stack: &'a NamespaceStack,
+}
+
+impl<'a> Iterator for NsIter<'a> {
+    type Item = &'a Namespace;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (_, index) = self.iter.next()?;
+        Some(&self.stack.namespaces[*index].0)
+    }
+}
+
+impl<'a> IntoIterator for &'a NamespaceStack {
+    type IntoIter = NsIter<'a>;
+    type Item = &'a Namespace;
+
+    fn into_iter(self) -> Self::IntoIter {
+        NsIter {
+            iter: self.prefix_map.iter(),
+            stack: self,
         }
     }
 }
@@ -605,5 +635,15 @@ impl Locator {
             })
             .is_err()
         {}
+    }
+}
+
+impl Default for Locator {
+    fn default() -> Self {
+        let system_id = std::env::current_dir().unwrap_or_default();
+        let system_id = URIString::parse_file_path(system_id)
+            .unwrap_or_else(|_| URIString::parse("").unwrap())
+            .into();
+        Self::new(system_id, None, 1, 1)
     }
 }

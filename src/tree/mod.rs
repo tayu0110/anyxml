@@ -114,7 +114,7 @@ impl std::error::Error for XMLTreeError {}
 /// [`ParserOption::Namespaces`](crate::sax::parser::ParserOption::Namespaces) option of the parser.
 pub struct TreeBuildHandler<H: SAXHandler = DefaultSAXHandler> {
     node: Node<dyn InternalNodeSpec>,
-    /// The root node of the parsed document tree.  
+    /// The root node of the parsed document tree.
     /// Before parsing begins or when `fatal_error` is true, it does not indicate meaningful data.
     ///
     /// This field is automatically initialized by the SAX callbacks after parsing begins,

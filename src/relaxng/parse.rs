@@ -1,12 +1,16 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
 use crate::{
     XML_NS_NAMESPACE, XMLVersion,
     error::XMLError,
-    relaxng::{XML_RELAX_NG_NAMESPACE, datatype_library::RelaxNGDatatypeLibraries},
+    relaxng::{
+        XML_RELAX_NG_NAMESPACE,
+        datatype_library::RelaxNGDatatypeLibraries,
+        grammar::{Grammar, NameClass, Pattern},
+    },
     sax::{
         AttributeType, DefaultDecl, Locator, NamespaceStack,
         attributes::{Attribute, Attributes},
@@ -131,6 +135,10 @@ pub(super) enum RelaxNGNodeType {
     Text,
     Value {
         r#type: Option<Box<str>>,
+        /// Validating the `value` pattern requires the context of the `value` element itself.
+        /// While the base URI is held by the `RelaxNGNode`, it does not retain namespace mappings,
+        /// so they are stored here.
+        ns_map: BTreeMap<Arc<str>, Arc<str>>,
         value: Box<str>,
     },
     Data(Box<str>),
@@ -261,7 +269,7 @@ impl RelaxNGNodeType {
 
 #[derive(Clone)]
 pub(super) struct RelaxNGNode {
-    base_uri: Option<Arc<URIStr>>,
+    pub(super) base_uri: Option<Arc<URIStr>>,
     pub(super) datatype_library: Option<Arc<str>>,
     pub(super) ns: Option<Arc<str>>,
     xmlns: HashMap<Arc<str>, Box<str>>,
@@ -849,7 +857,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
     }
 
     /// Process simplification defined from ISO/IEC 19757-2:2008 7.7 to 7.22.
-    pub(super) fn simplification(&mut self) -> Result<(), SAXParseError> {
+    pub(super) fn simplification(&mut self) -> Result<Grammar, SAXParseError> {
         self.last_error.clone()?;
         self.resolve_external_resource();
         self.last_error.clone()?;
@@ -914,7 +922,18 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         self.last_error.clone()?;
 
         self.check_content_type(0);
-        self.last_error.clone()
+        self.last_error.clone()?;
+
+        let grammar = self.build();
+        self.last_error.clone()?;
+        let mut names = vec![];
+        let mut memo = HashSet::new();
+        self.check_attributes_restrictions(grammar.root, false, &grammar, &mut names, &mut memo);
+        self.last_error.clone()?;
+        names.clear();
+        memo.clear();
+        self.check_interleave_restrictions(grammar.root, &grammar, &mut names, &mut memo);
+        self.last_error.clone().map(|_| grammar)
     }
 
     /// process `externalRef` and `include`.
@@ -1204,6 +1223,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             ns_stack.push(pre, nsname);
         }
 
+        let ns = self.tree[current].ns.clone();
         match self.tree[current].r#type {
             RelaxNGNodeType::Element(ref mut name) if name.is_some() => {
                 let name = name.take().unwrap();
@@ -1248,6 +1268,23 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                             prefix
                         );
                     }
+                }
+            }
+            RelaxNGNodeType::Value { ref mut ns_map, .. } => {
+                // Update the namespace mapping using `ns_stack` information.
+                // I think this should be done before importing external resources,
+                // but if each external resource is namespace well-formed, constructing
+                // it here should be fine.
+
+                for namespace in &*ns_stack {
+                    ns_map.insert(namespace.prefix.clone(), namespace.namespace_name.clone());
+                }
+
+                let ns = ns.unwrap_or_default();
+                if ns.is_empty() {
+                    ns_map.remove("");
+                } else {
+                    ns_map.insert("".into(), ns);
                 }
             }
             _ => {}
@@ -1542,18 +1579,14 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 self.check_constraints(pat, allow_anyname, allow_nsname, allow_xmlns);
             }
             RelaxNGNodeType::Data(ref type_name) => {
-                if let Some(datatype_library) = self.tree[current]
-                    .datatype_library
-                    .as_deref()
-                    .and_then(|dl| URIString::parse(dl).ok())
-                {
-                    if let Some(library) = self.datatype_libraries.get(&datatype_library) {
-                        let mut params = HashMap::new();
+                if let Some(datatype_library) = self.tree[current].datatype_library.as_deref() {
+                    if let Some(library) = self.datatype_libraries.get(datatype_library) {
+                        let mut params = BTreeMap::new();
                         let len = self.tree[current].children.len();
                         for i in 0..len {
                             let ch = self.tree[current].children[i];
                             if let RelaxNGNodeType::Param { name, value } = &self.tree[ch].r#type {
-                                params.insert(name.to_string(), value.to_string());
+                                params.insert(name.as_ref().into(), value.as_ref().into());
                             }
                         }
                         if !library.contains(type_name) {
@@ -1593,13 +1626,9 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 }
             }
             RelaxNGNodeType::Value { ref r#type, .. } => {
-                if let Some(datatype_library) = self.tree[current]
-                    .datatype_library
-                    .as_deref()
-                    .and_then(|dl| URIString::parse(dl).ok())
-                {
+                if let Some(datatype_library) = self.tree[current].datatype_library.as_deref() {
                     let type_name = r#type.as_deref().unwrap();
-                    if let Some(library) = self.datatype_libraries.get(&datatype_library) {
+                    if let Some(library) = self.datatype_libraries.get(datatype_library) {
                         if !library.contains(type_name) {
                             error!(
                                 self,
@@ -2297,7 +2326,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 write!(f, "{}", value)?;
             }
             RelaxNGNodeType::Start(Some(combine)) => write!(f, " combine=\"{}\">", combine)?,
-            RelaxNGNodeType::Value { r#type, value } => {
+            RelaxNGNodeType::Value { r#type, value, .. } => {
                 if let Some(ty) = r#type {
                     write!(f, " type=\"{}\">", ty)?;
                 }
@@ -2311,6 +2340,302 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         }
 
         write!(f, "</{}>", self.tree[current].r#type.typename())
+    }
+
+    pub(super) fn build(&mut self) -> Grammar {
+        let mut grammar = Grammar {
+            root: 0,
+            libraries: self.datatype_libraries.clone(),
+            patterns: vec![],
+            intern: HashMap::new(),
+            nullable: vec![],
+        };
+        let root = self.do_build(0, &mut grammar, &mut HashMap::new());
+        grammar.root = root;
+        grammar
+    }
+    fn do_build<'a>(
+        &'a self,
+        current: usize,
+        grammar: &mut Grammar,
+        defines: &mut HashMap<&'a str, usize>,
+    ) -> usize {
+        match &self.tree[current].r#type {
+            RelaxNGNodeType::Grammar => {
+                let ch = self.tree[current].children[0];
+                self.do_build(ch, grammar, defines)
+            }
+            RelaxNGNodeType::Start(_) => {
+                self.do_build(self.tree[current].children[0], grammar, defines)
+            }
+            RelaxNGNodeType::Define { name, .. } => {
+                if let Some(&index) = defines.get(name.as_ref()) {
+                    return index;
+                }
+                let index = self.create_define_node(name, grammar, defines);
+                let element = self.tree[current].children[0];
+                let nc = self.tree[element].children[0];
+                let pat = self.tree[element].children[1];
+
+                let nc = self.create_name_class(nc);
+                let pat = self.do_build(pat, grammar, defines);
+                grammar.patterns[index] = Arc::new(Pattern::Element(nc, pat));
+                index
+            }
+            RelaxNGNodeType::Attribute(_) => {
+                let nc = self.tree[current].children[0];
+                let pat = self.tree[current].children[1];
+
+                let nc = self.create_name_class(nc);
+                let pat = self.do_build(pat, grammar, defines);
+                grammar.create_node(Pattern::Attribute(nc, pat))
+            }
+            RelaxNGNodeType::Empty => grammar.create_node(Pattern::Empty),
+            RelaxNGNodeType::NotAllowed => grammar.create_node(Pattern::NotAllowed),
+            RelaxNGNodeType::Text => grammar.create_node(Pattern::Text),
+            RelaxNGNodeType::Ref(name) => {
+                if let Some(&index) = defines.get(name.as_ref()) {
+                    return index;
+                }
+                let &ch = self.defines.get(name.as_ref()).unwrap();
+                self.do_build(ch, grammar, defines)
+            }
+            RelaxNGNodeType::Choice(ChoiceType::Pattern) => {
+                let mut left = self.do_build(self.tree[current].children[0], grammar, defines);
+                let mut right = self.do_build(self.tree[current].children[1], grammar, defines);
+                if left > right {
+                    (left, right) = (right, left);
+                }
+                grammar.create_node(Pattern::Choice(left, right))
+            }
+            RelaxNGNodeType::Interleave => {
+                let mut left = self.do_build(self.tree[current].children[0], grammar, defines);
+                let mut right = self.do_build(self.tree[current].children[1], grammar, defines);
+                if left > right {
+                    (left, right) = (right, left);
+                }
+                grammar.create_node(Pattern::Interleave(left, right))
+            }
+            RelaxNGNodeType::Group => {
+                let left = self.do_build(self.tree[current].children[0], grammar, defines);
+                let right = self.do_build(self.tree[current].children[1], grammar, defines);
+                grammar.create_node(Pattern::Group(left, right))
+            }
+            RelaxNGNodeType::OneOrMore => {
+                let p = self.do_build(self.tree[current].children[0], grammar, defines);
+                grammar.create_node(Pattern::OneOrMore(p))
+            }
+            RelaxNGNodeType::List => {
+                let p = self.do_build(self.tree[current].children[0], grammar, defines);
+                grammar.create_node(Pattern::List(p))
+            }
+            RelaxNGNodeType::Data(r#type) => {
+                let uri = self.tree[current]
+                    .datatype_library
+                    .clone()
+                    .unwrap_or_default();
+                let local_name = r#type.as_ref().into();
+                let mut params = BTreeMap::new();
+                let mut except = usize::MAX;
+                let len = self.tree[current].children.len();
+                for i in 0..len {
+                    let ch = self.tree[current].children[i];
+                    match &self.tree[ch].r#type {
+                        RelaxNGNodeType::Param { name, value } => {
+                            params.insert(name.as_ref().into(), value.as_ref().into());
+                        }
+                        RelaxNGNodeType::Except(ExceptType::Pattern) => {
+                            let gch = self.tree[ch].children[0];
+                            except = self.do_build(gch, grammar, defines);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+
+                if except == usize::MAX {
+                    grammar.create_node(Pattern::Data((uri, local_name), params))
+                } else {
+                    grammar.create_node(Pattern::DataExcept((uri, local_name), params, except))
+                }
+            }
+            RelaxNGNodeType::Value {
+                r#type,
+                ns_map,
+                value,
+            } => {
+                let uri = self.tree[current]
+                    .datatype_library
+                    .clone()
+                    .unwrap_or_default();
+                let local_name = r#type.as_deref().unwrap().into();
+                let base_uri = self.tree[current].base_uri.clone().unwrap();
+                grammar.create_node(Pattern::Value(
+                    (uri, local_name),
+                    value.as_ref().into(),
+                    (base_uri, ns_map.clone()),
+                ))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn create_define_node<'a>(
+        &'a self,
+        name: &'a str,
+        grammar: &mut Grammar,
+        defines: &mut HashMap<&'a str, usize>,
+    ) -> usize {
+        let ret = grammar.patterns.len();
+        defines.insert(name, ret);
+        grammar.patterns.push(Arc::new(Pattern::Text));
+        grammar.nullable.push(-1);
+        ret
+    }
+
+    fn create_name_class(&self, current: usize) -> Arc<NameClass> {
+        match &self.tree[current].r#type {
+            RelaxNGNodeType::AnyName => {
+                if !self.tree[current].children.is_empty() {
+                    let ch = self.tree[current].children[0];
+                    let gch = self.tree[ch].children[0];
+                    Arc::new(NameClass::AnyNameExcept(self.create_name_class(gch)))
+                } else {
+                    Arc::new(NameClass::AnyName)
+                }
+            }
+            RelaxNGNodeType::NsName => {
+                let ns = self.tree[current].ns.clone().unwrap_or_default();
+                if !self.tree[current].children.is_empty() {
+                    let ch = self.tree[current].children[0];
+                    let gch = self.tree[ch].children[0];
+                    Arc::new(NameClass::NsNameExcept(ns, self.create_name_class(gch)))
+                } else {
+                    Arc::new(NameClass::NsName(ns))
+                }
+            }
+            RelaxNGNodeType::Name(name) => {
+                let ns = self.tree[current].ns.clone().unwrap_or_default();
+                Arc::new(NameClass::Name(ns, name.as_ref().into()))
+            }
+            RelaxNGNodeType::Choice(ChoiceType::NameClass) => {
+                let left = self.create_name_class(self.tree[current].children[0]);
+                let right = self.create_name_class(self.tree[current].children[1]);
+                Arc::new(NameClass::NameClassChoice(left, right))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 10.4 Restrictions on attributes
+    fn check_attributes_restrictions(
+        &mut self,
+        current: usize,
+        repeat: bool,
+        grammar: &Grammar,
+        names: &mut Vec<Arc<NameClass>>,
+        memo: &mut HashSet<usize>,
+    ) {
+        match grammar.patterns[current].as_ref() {
+            Pattern::Attribute(nc, pattern) => {
+                if names.iter().any(|nc2| nc.overlap(nc2)) {
+                    error!(
+                        self,
+                        RngParseConflictAttributeNameClass,
+                        "The nameclass of attribute is duplicate."
+                    );
+                }
+                if nc.is_infinite() {
+                    if !repeat {
+                        error!(
+                            self,
+                            RngParseUnrepeatedAttributeWithInfiniteNameClass,
+                            "Attributes using infinite name classes shall be repeated."
+                        );
+                    }
+                    if !matches!(grammar.patterns[*pattern].as_ref(), Pattern::Text) {
+                        error!(
+                            self,
+                            RngParseUnacceptablePattern,
+                            "Attributes using infinite name classes shall have 'text' as their value."
+                        );
+                    }
+                }
+                names.push(nc.clone());
+            }
+            Pattern::Element(_, pattern) => {
+                if memo.insert(*pattern) {
+                    self.check_attributes_restrictions(*pattern, false, grammar, &mut vec![], memo);
+                }
+            }
+            Pattern::Choice(p1, p2) => {
+                let len = names.len();
+                self.check_attributes_restrictions(*p1, repeat, grammar, names, memo);
+                let tmp = names.split_off(len);
+                self.check_attributes_restrictions(*p2, repeat, grammar, names, memo);
+                names.extend(tmp);
+            }
+            Pattern::Interleave(p1, p2) | Pattern::Group(p1, p2) => {
+                self.check_attributes_restrictions(*p1, repeat, grammar, names, memo);
+                self.check_attributes_restrictions(*p2, repeat, grammar, names, memo);
+            }
+            Pattern::OneOrMore(p) => {
+                self.check_attributes_restrictions(*p, true, grammar, names, memo);
+            }
+            _ => {}
+        }
+    }
+
+    /// # Reference
+    /// - ISO/IEC 19757-2:2008 10.5 Restrictions on `interleave`
+    fn check_interleave_restrictions(
+        &mut self,
+        current: usize,
+        grammar: &Grammar,
+        names: &mut Vec<Arc<NameClass>>,
+        memo: &mut HashSet<usize>,
+    ) {
+        match grammar.patterns[current].as_ref() {
+            Pattern::Element(nc, pattern) => {
+                if names.iter().any(|nc2| nc.overlap(nc2)) {
+                    error!(
+                        self,
+                        RngParseConflictElementNameClass, "The nameclass of element is duplicate."
+                    );
+                }
+                names.push(nc.clone());
+                if memo.insert(*pattern) {
+                    self.check_interleave_restrictions(*pattern, grammar, &mut vec![], memo);
+                }
+            }
+            Pattern::Text => {
+                let dum = Arc::new(NameClass::Name("".into(), "#text".into()));
+                if names.contains(&dum) {
+                    error!(
+                        self,
+                        RngParseConflictElementNameClass,
+                        "A text pattern shall not occur in both children of 'interleave'."
+                    );
+                } else {
+                    names.push(dum);
+                }
+            }
+            Pattern::Choice(p1, p2) | Pattern::Group(p1, p2) => {
+                let len = names.len();
+                self.check_interleave_restrictions(*p1, grammar, names, memo);
+                let tmp = names.split_off(len);
+                self.check_interleave_restrictions(*p2, grammar, names, memo);
+                names.extend(tmp);
+            }
+            Pattern::Interleave(p1, p2) => {
+                self.check_interleave_restrictions(*p1, grammar, names, memo);
+                self.check_interleave_restrictions(*p2, grammar, names, memo);
+            }
+            Pattern::OneOrMore(p) => {
+                self.check_interleave_restrictions(*p, grammar, names, memo);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -2492,6 +2817,7 @@ impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
                     self.new_node(
                         RelaxNGNodeType::Value {
                             r#type: Some(value.into()),
+                            ns_map: BTreeMap::new(),
                             value: "".into(),
                         },
                         atts.iter()
@@ -2502,6 +2828,7 @@ impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
                     self.new_node(
                         RelaxNGNodeType::Value {
                             r#type: None,
+                            ns_map: BTreeMap::new(),
                             value: "".into(),
                         },
                         atts,

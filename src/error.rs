@@ -32,6 +32,7 @@ pub enum XMLErrorDomain {
     Namespace,
     DTDValid,
     RngParser,
+    RngValid,
     C14N,
     XInclude,
 }
@@ -43,6 +44,7 @@ impl std::fmt::Display for XMLErrorDomain {
             Self::Namespace => write!(f, "namespace"),
             Self::DTDValid => write!(f, "dtd-valid"),
             Self::RngParser => write!(f, "relaxng-parser"),
+            Self::RngValid => write!(f, "relaxng-valid"),
             Self::C14N => write!(f, "c14n"),
             Self::XInclude => write!(f, "xinclude"),
         }
@@ -190,6 +192,7 @@ pub enum XMLError {
     RngParseRefLoop,
     RngParseProhibitedPath,
     RngParseUngroupablePattern,
+    RngParseConflictElementNameClass,
     RngParseConflictAttributeNameClass,
     RngParseUnrepeatedAttributeWithInfiniteNameClass,
     RngParseUnknownError,

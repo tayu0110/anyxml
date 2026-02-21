@@ -841,10 +841,17 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     &att_name[prefix_length + 1..]
                 };
                 match URIString::parse(att_value) {
-                    // Report an error if the namespace name is not an absolute URI.
+                    // Report an error if the namespace name is relative reference.
                     // However, this is not an error if it is a default namespace
                     // declaration and the namespace name is an empty string.
-                    Ok(uri) if !uri.is_absolute() => {
+                    //
+                    // Note that relative references are deprecated, but URIs that
+                    // are not absolute URIs are not necessarily errors.
+                    //
+                    // # Reference
+                    // - [Results of W3C XML Plenary Ballot on relative URI References
+                    //    In namespace declarations](https://www.w3.org/2000/09/xppa)
+                    Ok(uri) if uri.is_relative() => {
                         if !prefix.is_empty() || !att_value.is_empty() {
                             ns_error!(
                                 self,

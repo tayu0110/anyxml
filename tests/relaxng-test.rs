@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
 use anyxml::{
-    error::XMLError,
+    error::{XMLError, XMLErrorDomain},
     relaxng::RelaxNGSchema,
     sax::{
         error::SAXParseError,
         handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
+        parser::XMLReaderBuilder,
         source::InputSource,
     },
     tree::{Element, Node, node::InternalNodeSpec},
@@ -23,11 +24,75 @@ fn spectest() {
         .unwrap();
 
     for testsuite in &testsuites {
-        handle_testsuite(testsuite.as_element().unwrap());
+        handle_testsuite(
+            testsuite.as_element().unwrap(),
+            |sch: &mut RelaxNGSchema, e: Element| assert!(sch.validate(&e).is_ok()),
+            |sch: &mut RelaxNGSchema, e: Element| assert!(sch.validate(&e).is_err()),
+        );
     }
 }
 
-fn handle_testsuite(testsuite: Element) {
+#[test]
+fn spectest_streaming_validation() {
+    let uri = URIString::parse("resources/relaxng/spectest.xml").unwrap();
+
+    let testsuites = evaluate_uri("//testSuite", uri.as_ref(), None)
+        .unwrap()
+        .as_nodeset()
+        .unwrap();
+
+    struct StreamingValidationTestHandler {
+        error: usize,
+    }
+    impl ErrorHandler for StreamingValidationTestHandler {
+        fn fatal_error(&mut self, error: SAXParseError) {
+            if matches!(error.domain, XMLErrorDomain::RngValid) {
+                self.error += 1;
+            }
+            DefaultSAXHandler.fatal_error(error);
+        }
+        fn error(&mut self, error: SAXParseError) {
+            if matches!(error.domain, XMLErrorDomain::RngValid) {
+                self.error += 1;
+            }
+            DefaultSAXHandler.error(error);
+        }
+        fn warning(&mut self, error: SAXParseError) {
+            if matches!(error.domain, XMLErrorDomain::RngValid) {
+                self.error += 1;
+            }
+            DefaultSAXHandler.warning(error);
+        }
+    }
+    impl EntityResolver for StreamingValidationTestHandler {}
+    impl SAXHandler for StreamingValidationTestHandler {}
+
+    for testsuite in &testsuites {
+        handle_testsuite(
+            testsuite.as_element().unwrap(),
+            |sch: &mut RelaxNGSchema, e: Element| {
+                let mut handler =
+                    sch.new_validate_handler(StreamingValidationTestHandler { error: 0 });
+                let mut reader = XMLReaderBuilder::new().set_handler(&mut handler).build();
+                assert!(reader.parse_str(&e.to_string(), None).is_ok());
+                assert_eq!(reader.handler.child.error, 0);
+            },
+            |sch: &mut RelaxNGSchema, e: Element| {
+                let mut handler =
+                    sch.new_validate_handler(StreamingValidationTestHandler { error: 0 });
+                let mut reader = XMLReaderBuilder::new().set_handler(&mut handler).build();
+                assert!(reader.parse_str(&e.to_string(), None).is_ok());
+                assert_ne!(reader.handler.child.error, 0);
+            },
+        );
+    }
+}
+
+fn handle_testsuite(
+    testsuite: Element,
+    valid_runner: fn(&mut RelaxNGSchema, Element),
+    invalid_runner: fn(&mut RelaxNGSchema, Element),
+) {
     if let Some(documentation) = testsuite.get_elements_by_qname("documentation").next() {
         eprintln!("=== test suite: {} ===", documentation.text_content());
     } else {
@@ -71,6 +136,8 @@ fn handle_testsuite(testsuite: Element) {
                 testcase.clone(),
                 correct.first_element_child().unwrap(),
                 resource_map,
+                valid_runner,
+                invalid_runner,
             );
         } else {
             let incorrect = testcase.get_elements_by_qname("incorrect").next().unwrap();
@@ -173,7 +240,13 @@ impl ErrorHandler for CustomResourseHandler {
 }
 impl SAXHandler for CustomResourseHandler {}
 
-fn handle_correct_case(testcase: Element, schema: Element, resource_map: HashMap<String, String>) {
+fn handle_correct_case(
+    testcase: Element,
+    schema: Element,
+    resource_map: HashMap<String, String>,
+    valid_runner: fn(&mut RelaxNGSchema, Element),
+    invalid_runner: fn(&mut RelaxNGSchema, Element),
+) {
     let document = schema.owner_document();
     let schema = format!("{schema}");
     eprintln!("--- begin correct schema ---");
@@ -189,7 +262,7 @@ fn handle_correct_case(testcase: Element, schema: Element, resource_map: HashMap
         })
         .collect::<HashMap<_, _>>();
 
-    let schema = RelaxNGSchema::parse_str(
+    let mut schema = RelaxNGSchema::parse_str(
         &schema,
         base_uri,
         Some(CustomResourseHandler { resource_map }),
@@ -201,7 +274,7 @@ fn handle_correct_case(testcase: Element, schema: Element, resource_map: HashMap
         eprintln!("----- begin valid test case -----");
         eprintln!("{valid}");
         eprintln!("----- end valid test case -----");
-        schema.validate(&valid).unwrap();
+        valid_runner(&mut schema, valid);
     }
 
     for invalid in testcase.get_elements_by_qname("invalid") {
@@ -209,7 +282,7 @@ fn handle_correct_case(testcase: Element, schema: Element, resource_map: HashMap
         eprintln!("----- begin invalid test case -----");
         eprintln!("{invalid}");
         eprintln!("----- end invalid test case -----");
-        assert!(schema.validate(&invalid).is_err());
+        invalid_runner(&mut schema, invalid);
     }
 }
 
