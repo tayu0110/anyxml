@@ -318,33 +318,24 @@ fn do_validate_command(
             };
 
             let schema_uri = URIString::parse(schema)?;
-            let schema = RelaxNGSchema::parse_uri(schema_uri, None, None::<DefaultSAXHandler>)?;
-
-            let mut reader = XMLReaderBuilder::new()
-                .set_handler(TreeBuildHandler::default())
-                .build();
-            let document = if let Some(document) = document {
+            let mut schema = RelaxNGSchema::parse_uri(schema_uri, None, None::<DefaultSAXHandler>)?;
+            let validator = schema.new_validate_handler(DefaultSAXHandler);
+            let mut reader = XMLReaderBuilder::new().set_handler(validator).build();
+            if let Some(document) = document {
                 let uri = URIString::parse(document)?;
                 reader.parse_uri(uri, None)?;
-                reader.handler.document
             } else {
                 let stdin = std::io::stdin();
                 let lock = stdin.lock();
                 reader.parse_reader(lock, None, None)?;
-                reader.handler.document
-            };
+            }
 
-            let Some(document_element) = document.document_element() else {
-                eprintln!("Failed to parse the document because of unknown errors.");
-                return Err(XMLError::InternalError);
-            };
-
-            schema
-                .validate(&document_element)
+            reader
+                .handler
+                .last_error
                 .inspect(|_| eprintln!("successfully validate a document."))
-                .inspect_err(|err| {
-                    eprintln!("failed to validate a document because of '{err:?}'")
-                })?
+                .inspect_err(|err| eprintln!("failed to validate a document because of '{err:?}'"))
+                .map_err(|e| e.error)?
         }
     }
     Ok(())
