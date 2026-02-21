@@ -35,7 +35,7 @@ pub enum PreferMode {
 }
 
 /// List of catalog entry files to walk through.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Catalog {
     entry_files: Vec<CatalogEntryFile>,
     // 1: catalog index for entry_files
@@ -373,6 +373,7 @@ impl Catalog {
 /// This type itself does not have methods for resolving external identifiers or alternative URIs.
 /// To do that, it is necessary to generate a list using [`Catalog::default`] and add files
 /// to the list.
+#[derive(Clone)]
 pub struct CatalogEntryFile {
     base_uri: Arc<URIStr>,
     entries: CatalogEntryMap,
@@ -1375,6 +1376,7 @@ impl Ord for CatalogEntry {
     }
 }
 
+#[derive(Clone)]
 struct TrieNode {
     fragment: String,
     next: Vec<(u8, usize)>,
@@ -1422,6 +1424,7 @@ impl TrieNode {
     }
 }
 
+#[derive(Clone)]
 struct CatalogEntryMap {
     trie: Vec<TrieNode>,
 }
