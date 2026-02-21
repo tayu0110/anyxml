@@ -29,8 +29,8 @@ impl std::fmt::Display for SAXParseError {
             .unwrap_or(system_id.as_ref());
         write!(
             f,
-            "{}[line:{},column:{}][{}] {}",
-            last, self.line, self.column, self.level, self.message,
+            "{}[line:{},column:{}][{}][{}] {}",
+            last, self.line, self.column, self.domain, self.level, self.message,
         )
     }
 }
