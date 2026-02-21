@@ -318,7 +318,7 @@ fn do_validate_command(
             };
 
             let schema_uri = URIString::parse(schema)?;
-            let schema = RelaxNGSchema::parse_uri(schema_uri, None, None::<DefaultSAXHandler>)?;
+            let mut schema = RelaxNGSchema::parse_uri(schema_uri, None, None::<DefaultSAXHandler>)?;
 
             let mut reader = XMLReaderBuilder::new()
                 .set_handler(TreeBuildHandler::default())
@@ -340,7 +340,7 @@ fn do_validate_command(
             };
 
             schema
-                .validate(&document_element)
+                .validate(&document_element, DefaultSAXHandler)
                 .inspect(|_| eprintln!("successfully validate a document."))
                 .inspect_err(|err| {
                     eprintln!("failed to validate a document because of '{err:?}'")

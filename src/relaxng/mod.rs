@@ -16,11 +16,7 @@ use std::io::Read;
 
 use crate::{
     error::XMLError,
-    relaxng::{
-        grammar::{Grammar, RelaxNGGrammar},
-        parse::RelaxNGParseHandler,
-        validate::ValidateHandler,
-    },
+    relaxng::{grammar::Grammar, parse::RelaxNGParseHandler, validate::ValidateHandler},
     sax::{handler::SAXHandler, parser::XMLReaderBuilder},
     uri::URIStr,
 };
@@ -28,7 +24,6 @@ use crate::{
 pub const XML_RELAX_NG_NAMESPACE: &str = "http://relaxng.org/ns/structure/1.0";
 
 pub struct RelaxNGSchema {
-    _grammar: RelaxNGGrammar,
     grammar: Grammar,
 }
 
@@ -51,16 +46,14 @@ impl RelaxNGSchema {
                 .build();
             parser.parse_uri(uri, encoding)?;
             let grammar = parser.handler.simplification().map_err(|err| err.error)?;
-            let _grammar = parser.handler.build_grammar()?;
-            Ok(Self { _grammar, grammar })
+            Ok(Self { grammar })
         } else {
             let mut parser = XMLReaderBuilder::new()
                 .set_handler(RelaxNGParseHandler::default())
                 .build();
             parser.parse_uri(uri, encoding)?;
             let grammar = parser.handler.simplification().map_err(|err| err.error)?;
-            let _grammar = parser.handler.build_grammar()?;
-            Ok(Self { _grammar, grammar })
+            Ok(Self { grammar })
         }
     }
 
@@ -83,16 +76,14 @@ impl RelaxNGSchema {
                 .build();
             parser.parse_reader(reader, encoding, Some(uri.as_ref()))?;
             let grammar = parser.handler.simplification().map_err(|err| err.error)?;
-            let _grammar = parser.handler.build_grammar()?;
-            Ok(Self { _grammar, grammar })
+            Ok(Self { grammar })
         } else {
             let mut parser = XMLReaderBuilder::new()
                 .set_handler(RelaxNGParseHandler::default())
                 .build();
             parser.parse_reader(reader, encoding, Some(uri.as_ref()))?;
             let grammar = parser.handler.simplification().map_err(|err| err.error)?;
-            let _grammar = parser.handler.build_grammar()?;
-            Ok(Self { _grammar, grammar })
+            Ok(Self { grammar })
         }
     }
 
@@ -114,16 +105,14 @@ impl RelaxNGSchema {
                 .build();
             parser.parse_str(schema, Some(uri.as_ref()))?;
             let grammar = parser.handler.simplification().map_err(|err| err.error)?;
-            let _grammar = parser.handler.build_grammar()?;
-            Ok(Self { _grammar, grammar })
+            Ok(Self { grammar })
         } else {
             let mut parser = XMLReaderBuilder::new()
                 .set_handler(RelaxNGParseHandler::default())
                 .build();
             parser.parse_str(schema, Some(uri.as_ref()))?;
             let grammar = parser.handler.simplification().map_err(|err| err.error)?;
-            let _grammar = parser.handler.build_grammar()?;
-            Ok(Self { _grammar, grammar })
+            Ok(Self { grammar })
         }
     }
 

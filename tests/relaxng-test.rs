@@ -14,6 +14,32 @@ use anyxml::{
     xpath::evaluate_uri,
 };
 
+struct ValidationTestHandler {
+    error: usize,
+}
+impl ErrorHandler for ValidationTestHandler {
+    fn fatal_error(&mut self, error: SAXParseError) {
+        if matches!(error.domain, XMLErrorDomain::RngValid) {
+            self.error += 1;
+        }
+        DefaultSAXHandler.fatal_error(error);
+    }
+    fn error(&mut self, error: SAXParseError) {
+        if matches!(error.domain, XMLErrorDomain::RngValid) {
+            self.error += 1;
+        }
+        DefaultSAXHandler.error(error);
+    }
+    fn warning(&mut self, error: SAXParseError) {
+        if matches!(error.domain, XMLErrorDomain::RngValid) {
+            self.error += 1;
+        }
+        DefaultSAXHandler.warning(error);
+    }
+}
+impl EntityResolver for ValidationTestHandler {}
+impl SAXHandler for ValidationTestHandler {}
+
 #[test]
 fn spectest() {
     let uri = URIString::parse("resources/relaxng/spectest.xml").unwrap();
@@ -26,8 +52,15 @@ fn spectest() {
     for testsuite in &testsuites {
         handle_testsuite(
             testsuite.as_element().unwrap(),
-            |sch: &mut RelaxNGSchema, e: Element| assert!(sch.validate(&e).is_ok()),
-            |sch: &mut RelaxNGSchema, e: Element| assert!(sch.validate(&e).is_err()),
+            |sch: &mut RelaxNGSchema, e: Element| {
+                assert!(sch.validate(&e, ValidationTestHandler { error: 0 }).is_ok())
+            },
+            |sch: &mut RelaxNGSchema, e: Element| {
+                assert!(
+                    sch.validate(&e, ValidationTestHandler { error: 0 })
+                        .is_err()
+                )
+            },
         );
     }
 }
@@ -41,45 +74,17 @@ fn spectest_streaming_validation() {
         .as_nodeset()
         .unwrap();
 
-    struct StreamingValidationTestHandler {
-        error: usize,
-    }
-    impl ErrorHandler for StreamingValidationTestHandler {
-        fn fatal_error(&mut self, error: SAXParseError) {
-            if matches!(error.domain, XMLErrorDomain::RngValid) {
-                self.error += 1;
-            }
-            DefaultSAXHandler.fatal_error(error);
-        }
-        fn error(&mut self, error: SAXParseError) {
-            if matches!(error.domain, XMLErrorDomain::RngValid) {
-                self.error += 1;
-            }
-            DefaultSAXHandler.error(error);
-        }
-        fn warning(&mut self, error: SAXParseError) {
-            if matches!(error.domain, XMLErrorDomain::RngValid) {
-                self.error += 1;
-            }
-            DefaultSAXHandler.warning(error);
-        }
-    }
-    impl EntityResolver for StreamingValidationTestHandler {}
-    impl SAXHandler for StreamingValidationTestHandler {}
-
     for testsuite in &testsuites {
         handle_testsuite(
             testsuite.as_element().unwrap(),
             |sch: &mut RelaxNGSchema, e: Element| {
-                let mut handler =
-                    sch.new_validate_handler(StreamingValidationTestHandler { error: 0 });
+                let mut handler = sch.new_validate_handler(ValidationTestHandler { error: 0 });
                 let mut reader = XMLReaderBuilder::new().set_handler(&mut handler).build();
                 assert!(reader.parse_str(&e.to_string(), None).is_ok());
                 assert_eq!(reader.handler.child.error, 0);
             },
             |sch: &mut RelaxNGSchema, e: Element| {
-                let mut handler =
-                    sch.new_validate_handler(StreamingValidationTestHandler { error: 0 });
+                let mut handler = sch.new_validate_handler(ValidationTestHandler { error: 0 });
                 let mut reader = XMLReaderBuilder::new().set_handler(&mut handler).build();
                 assert!(reader.parse_str(&e.to_string(), None).is_ok());
                 assert_ne!(reader.handler.child.error, 0);

@@ -3335,13 +3335,6 @@ mod tests {
         assert!(reader.handler.last_error.is_ok());
         reader.handler.simplification().unwrap();
         assert!(reader.handler.last_error.is_ok());
-        let grammar = reader.handler.build_grammar().unwrap();
-
-        let schema = format!("{}", grammar);
-        assert_eq!(
-            schema,
-            r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="2"/></start><define name="0"><element><name ns="http://www.example.com/n1">bar1</name><empty/></element></define><define name="1"><element><name ns="http://www.example.com/n2">bar2</name><empty/></element></define><define name="2"><element><name ns="">foo</name><group><ref name="0"/><ref name="1"/></group></element></define></grammar>"#
-        );
 
         reader.parse_str(r#"
             <element xmlns="http://relaxng.org/ns/structure/1.0" ns="http://www.example.com" name="foo">
@@ -3349,12 +3342,6 @@ mod tests {
             </element>"#, None).unwrap();
         assert!(reader.handler.last_error.is_ok());
         assert!(reader.handler.simplification().is_ok());
-        let grammar = reader.handler.build_grammar().unwrap();
-        let schema = format!("{}", grammar);
-        assert_eq!(
-            schema,
-            r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="0"/></start><define name="0"><element><name ns="http://www.example.com">foo</name><attribute><name ns="">bar</name><text/></attribute></element></define></grammar>"#
-        );
 
         reader
             .parse_str(
@@ -3372,12 +3359,6 @@ mod tests {
             .unwrap();
         assert!(reader.handler.last_error.is_ok());
         assert!(reader.handler.simplification().is_ok());
-        let grammar = reader.handler.build_grammar().unwrap();
-        let schema = format!("{}", grammar);
-        assert_eq!(
-            schema,
-            r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="4"/></start><define name="1"><element><name ns="">bar</name><empty/></element></define><define name="2"><element><name ns="">bar</name><empty/></element></define><define name="3"><element><name ns="">bar</name><empty/></element></define><define name="4"><element><name ns="">foo</name><group><ref name="1"/><group><ref name="2"/><ref name="3"/></group></group></element></define></grammar>"#
-        );
 
         reader
             .parse_str(
@@ -3390,12 +3371,6 @@ mod tests {
             .unwrap();
         assert!(reader.handler.last_error.is_ok());
         assert!(reader.handler.simplification().is_ok());
-        let grammar = reader.handler.build_grammar().unwrap();
-        let schema = format!("{}", grammar);
-        assert_eq!(
-            schema,
-            r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="0"/></start><define name="0"><element><name ns="">foo</name><value datatypeLibrary="" type="string" ns=""> x</value></element></define></grammar>"#
-        );
 
         reader
             .parse_str(
@@ -3418,11 +3393,5 @@ mod tests {
         assert!(reader.handler.last_error.is_ok());
         assert!(reader.handler.simplification().is_ok());
         eprintln!("{}", reader.handler);
-        let grammar = reader.handler.build_grammar().unwrap();
-        let schema = format!("{}", grammar);
-        assert_eq!(
-            schema,
-            r#"<grammar xmlns="http://relaxng.org/ns/structure/1.0"><start><ref name="0"/></start><define name="0"><element><name ns="">foo</name><empty/></element></define></grammar>"#
-        );
     }
 }
