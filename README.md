@@ -13,7 +13,7 @@ The current implementation supports the following features:
     - [x] Default attribute value handling
 - validate XML 1.0 document
     - [x] DTD (parser embeded)
-    - [x] RELAX NG (for document tree, XML Syntax only)
+    - [x] RELAX NG (XML Syntax only)
     - [ ] XML Schema
 - handle namespace conforming to XML Namespace 1.0
 - build, modify and serialize XML document trees
@@ -213,11 +213,13 @@ Enabling validation automatically activates the external resource loading option
 Note that the internal entity substitution and the attribute value normalization occur regardless of whether DTD validation is performed.
 
 ### RELAX NG Schema Validation
-This crate fully supports validation using RELAX NG. Currently, only tree validation is available.
+This crate fully supports validation using RELAX NG.
 
 It passes all tests in [James Clark's test suite](https://raw.githubusercontent.com/relaxng/jing-trang/refs/heads/master/mod/rng-validate/test/spectest.xml), except for tests related to unsupported XSD types and tests for name characters that have been marked as valid in new XML specifications.
 
 Schemas containing `"externalRef"` or `"include"` require access to external resources. By default, it searches local files, but a custom `EntityResolver` can be provided.
+
+For more details, please see the document of `relaxng` module.
 
 ## XPath Execution
 This crate supports XPath, enabling the search for specific nodes within the document tree.

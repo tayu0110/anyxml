@@ -269,7 +269,7 @@ fn handle_correct_case(
 
     let mut schema = RelaxNGSchema::parse_str(
         &schema,
-        base_uri,
+        Some(&base_uri),
         Some(CustomResourseHandler { resource_map }),
     )
     .unwrap();
@@ -313,7 +313,7 @@ fn handle_incorrect_case(
 
     let schema = RelaxNGSchema::parse_str(
         &schema,
-        base_uri,
+        Some(&base_uri),
         Some(CustomResourseHandler { resource_map }),
     );
 
