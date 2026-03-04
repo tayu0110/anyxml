@@ -71,7 +71,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidEntityReference);
         }
         // skip '&'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         let mut name = String::new();
@@ -91,7 +91,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidEntityReference);
         }
         // skip ';'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         if let Some(decl) = self.entities.get(name.as_str()) {

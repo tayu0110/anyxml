@@ -85,23 +85,85 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
 
     /// Even if NCName is empty, no error will be reported.
     fn parse_ncname_allow_empty(&mut self, buffer: &mut String) -> Result<(), XMLError> {
-        let Some(c) = self
-            .source
-            .next_char_if(|c| self.version.is_name_start_char(c) && c != ':')?
-        else {
-            return Ok(());
-        };
-        buffer.push(c);
-        self.locator.update_column(|c| c + 1);
-
-        while let Some(c) = self
-            .source
-            .next_char_if(|c| self.version.is_name_char(c) && c != ':')?
-        {
+        if self.source.content_bytes().is_empty() {
+            self.source.grow()?;
+        }
+        let mut col = self.locator.column();
+        let content = self.source.content_bytes();
+        let rem = content
+            .iter()
+            .position(|b| !b.is_ascii_alphabetic() && *b != b'_')
+            .unwrap_or(content.len());
+        if rem > 0 {
+            buffer.push_str(unsafe {
+                // # Safety
+                // `content[..rem]` contains only ASCII alphabetic or '_',
+                // so UTF-8 validation won't fail.
+                std::str::from_utf8_unchecked(&content[..rem])
+            });
+            self.source.advance(rem);
+            col += rem;
+        } else {
+            let Some(c) = self
+                .source
+                .next_char_if(|c| self.version.is_name_start_char(c) && c != ':')?
+            else {
+                return Ok(());
+            };
             buffer.push(c);
-            self.locator.update_column(|c| c + 1);
+            col += 1;
+        }
+        self.source.grow()?;
+
+        while let content = self.source.content_bytes()
+            && !content.is_empty()
+        {
+            match content
+                .iter()
+                .position(|b| !b.is_ascii_alphanumeric() && !matches!(b, b'-' | b'.' | b'_'))
+            {
+                Some(rem) if rem > 0 => {
+                    buffer.push_str(unsafe {
+                        // # Safety
+                        // `content[..rem]` contains only ASCII alphanumeric , b'-', b'.' or '_',
+                        // so UTF-8 validation won't fail.
+                        std::str::from_utf8_unchecked(&content[..rem])
+                    });
+                    let end = content[rem] < 0x80;
+                    self.source.advance(rem);
+                    col += rem;
+                    if end {
+                        break;
+                    }
+                }
+                None => {
+                    buffer.push_str(unsafe {
+                        // # Safety
+                        // `content` contains only ASCII alphanumeric , b'-', b'.' or '_',
+                        // so UTF-8 validation won't fail.
+                        std::str::from_utf8_unchecked(content)
+                    });
+                    let len = content.len();
+                    self.source.advance(len);
+                    col += len;
+                }
+                _ => {}
+            }
+
+            if let Some(c) = self.source.peek_char()?
+                && self.version.is_name_char(c)
+                && c != ':'
+            {
+                buffer.push(c);
+                col += 1;
+                self.source.advance(c.len_utf8());
+            } else {
+                break;
+            }
+            self.source.grow()?;
         }
 
+        self.locator.set_column(col);
         Ok(())
     }
 

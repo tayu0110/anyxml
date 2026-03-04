@@ -223,7 +223,7 @@ impl<H: SAXHandler> SAXHandler for CanonicalizeHandler<H> {
             write!(self.buffer, "<{}", qname).ok();
             for att in &retained_atts {
                 write!(self.buffer, " {}=\"", att.qname).ok();
-                let mut value = att.value.as_ref();
+                let mut value = att.value.as_str();
                 while let Some(pos) = value
                     .bytes()
                     .position(|b| matches!(b, b'&' | b'<' | b'"' | 0x9 | 0xA | 0xD))

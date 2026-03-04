@@ -213,7 +213,7 @@ impl SAXHandler for XMLConfWalker {
         match qname {
             "TESTSUITE" => {
                 for att in atts.iter() {
-                    if att.qname.as_ref() == "PROFILE" {
+                    if att.qname == "PROFILE" {
                         writeln!(
                             self.log.borrow_mut(),
                             "=== Start Test Suite '{}' ===",
@@ -225,7 +225,7 @@ impl SAXHandler for XMLConfWalker {
             }
             "TESTCASES" => {
                 for att in atts.iter() {
-                    if att.qname.as_ref() == "PROFILE" {
+                    if att.qname == "PROFILE" {
                         writeln!(
                             self.log.borrow_mut(),
                             "--- Start Test Case '{}' in '{}' ---",

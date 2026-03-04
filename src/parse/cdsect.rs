@@ -23,7 +23,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidCDSect);
         }
         // skip '<![CDATA['
-        self.source.advance(9)?;
+        self.source.advance(9);
         self.locator.update_column(|c| c + 9);
 
         if !self.fatal_error_occurred {
@@ -38,24 +38,24 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         }
 
         self.grow()?;
-        let mut buffer = String::new();
+        self.text_buffer.clear();
         while !self.source.content_bytes().starts_with(b"]]>") {
             match self.source.next_char()? {
                 Some('\r') => {
                     if self.source.peek_char()? != Some('\n') {
                         self.locator.update_line(|l| l + 1);
                         self.locator.set_column(1);
-                        buffer.push('\n');
+                        self.text_buffer.push('\n');
                     }
                 }
                 Some('\n') => {
                     self.locator.update_line(|l| l + 1);
                     self.locator.set_column(1);
-                    buffer.push('\n');
+                    self.text_buffer.push('\n');
                 }
                 Some(c) if self.is_char(c) => {
                     self.locator.update_column(|c| c + 1);
-                    buffer.push(c);
+                    self.text_buffer.push(c);
                 }
                 Some(c) => {
                     fatal_error!(
@@ -65,16 +65,16 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         c as u32
                     );
                     self.locator.update_column(|c| c + 1);
-                    buffer.push(c);
+                    self.text_buffer.push(c);
                 }
                 None => break,
             }
 
-            if buffer.len() >= CHARDATA_CHUNK_LENGTH {
+            if self.text_buffer.len() >= CHARDATA_CHUNK_LENGTH {
                 if !self.fatal_error_occurred {
-                    self.handler.characters(&buffer);
+                    self.handler.characters(&self.text_buffer);
                 }
-                buffer.clear();
+                self.text_buffer.clear();
             }
 
             if self.source.content_bytes().len() < 3 {
@@ -82,8 +82,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             }
         }
 
-        if !buffer.is_empty() && !self.fatal_error_occurred {
-            self.handler.characters(&buffer);
+        if !self.text_buffer.is_empty() && !self.fatal_error_occurred {
+            self.handler.characters(&self.text_buffer);
         }
 
         if !self.source.content_bytes().starts_with(b"]]>") {
@@ -91,7 +91,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidCDSect);
         }
         // skip ']]>'
-        self.source.advance(3)?;
+        self.source.advance(3);
         self.locator.update_column(|c| c + 3);
 
         if !self.fatal_error_occurred {

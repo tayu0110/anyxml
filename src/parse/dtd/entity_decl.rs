@@ -32,7 +32,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidEntityDecl);
         }
         // skip '<!ENTITY'
-        self.source.advance(8)?;
+        self.source.advance(8);
         self.locator.update_column(|c| c + 8);
 
         // The base URI of the entity is determined by the position of the first occurrence
@@ -55,7 +55,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
 
             pe = true;
             // skip '%'
-            self.source.advance(1)?;
+            self.source.advance(1);
             self.locator.update_column(|c| c + 1);
 
             s = self.skip_whitespaces_with_handle_peref(true)?;
@@ -136,7 +136,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         return Err(XMLError::ParserInvalidEntityDecl);
                     }
                     // skip 'NDATA'
-                    self.source.advance(5)?;
+                    self.source.advance(5);
                     self.locator.update_column(|c| c + 5);
 
                     if self.skip_whitespaces_with_handle_peref(true)? == 0 {
@@ -225,7 +225,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidEntityDecl);
         }
         // skip '>'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         // Duplicate declarations are not errors.

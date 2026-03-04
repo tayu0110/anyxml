@@ -398,7 +398,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
         {
             for att in atts {
                 if att.is_nsdecl() {
-                    if att.qname.as_ref() == "xmlns" {
+                    if att.qname == "xmlns" {
                         elem.declare_namespace(None, &att.value).ok();
                     } else {
                         elem.declare_namespace(att.local_name.as_deref(), &att.value)

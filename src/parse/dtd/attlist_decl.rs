@@ -28,7 +28,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidAttlistDecl);
         }
         // skip '<!ATTLIST'
-        self.source.advance(9)?;
+        self.source.advance(9);
         self.locator.update_column(|c| c + 9);
 
         let base_source_id = self.source.source_id();
@@ -211,7 +211,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserUnexpectedEOF);
         }
         // skip '>'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         Ok(())
@@ -255,7 +255,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 // [59] Enumeration ::= '(' S? Nmtoken (S? '|' S? Nmtoken)* S? ')'
 
                 // skip '('
-                self.source.advance(1)?;
+                self.source.advance(1);
                 self.locator.update_column(|c| c + 1);
 
                 let enum_source_id = self.source.source_id();
@@ -267,7 +267,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 self.skip_whitespaces_with_handle_peref(true)?;
                 self.grow()?;
                 while self.source.content_bytes().starts_with(b"|") {
-                    self.source.advance(1)?;
+                    self.source.advance(1);
                     self.locator.update_column(|c| c + 1);
                     self.skip_whitespaces_with_handle_peref(true)?;
                     if !ret.insert(buffer.as_str().into())
@@ -320,7 +320,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     return Err(XMLError::ParserInvalidAttlistDecl);
                 }
                 // skip ')'
-                self.source.advance(1)?;
+                self.source.advance(1);
                 self.locator.update_column(|c| c + 1);
 
                 AttributeType::Enumeration(ret)
@@ -328,7 +328,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             [b'C', b'D', b'A', b'T', b'A', ..] => {
                 // StringType
                 // [55] StringType ::= 'CDATA'
-                self.source.advance(5)?;
+                self.source.advance(5);
                 self.locator.update_column(|c| c + 5);
                 AttributeType::CDATA
             }
@@ -337,7 +337,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 // [58] NotationType ::= 'NOTATION' S '(' S? Name (S? '|' S? Name)* S? ')'
 
                 // skip 'NOTATION'
-                self.source.advance(8)?;
+                self.source.advance(8);
                 self.locator.update_column(|c| c + 8);
 
                 if self.skip_whitespaces_with_handle_peref(true)? == 0 {
@@ -358,7 +358,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     return Err(XMLError::ParserInvalidAttlistDecl);
                 }
                 // skip '('
-                self.source.advance(1)?;
+                self.source.advance(1);
                 self.locator.update_column(|c| c + 1);
 
                 let enum_source_id = self.source.source_id();
@@ -375,7 +375,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 let mut ret = HashSet::new();
                 while self.source.content_bytes().starts_with(b"|") {
                     // skip '|'
-                    self.source.advance(1)?;
+                    self.source.advance(1);
                     self.locator.update_column(|c| c + 1);
                     self.skip_whitespaces_with_handle_peref(true)?;
                     if !ret.insert(buffer.as_str().into())
@@ -432,44 +432,44 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     return Err(XMLError::ParserInvalidAttlistDecl);
                 }
                 // skip ')'
-                self.source.advance(1)?;
+                self.source.advance(1);
                 self.locator.update_column(|c| c + 1);
 
                 AttributeType::NOTATION(ret)
             }
             // TokenizedType
             [b'I', b'D', b'R', b'E', b'F', b'S', ..] => {
-                self.source.advance(6)?;
+                self.source.advance(6);
                 self.locator.update_column(|c| c + 6);
                 AttributeType::IDREFS
             }
             [b'I', b'D', b'R', b'E', b'F', ..] => {
-                self.source.advance(5)?;
+                self.source.advance(5);
                 self.locator.update_column(|c| c + 5);
                 AttributeType::IDREF
             }
             [b'I', b'D', ..] => {
-                self.source.advance(2)?;
+                self.source.advance(2);
                 self.locator.update_column(|c| c + 2);
                 AttributeType::ID
             }
             [b'E', b'N', b'T', b'I', b'T', b'I', b'E', b'S', ..] => {
-                self.source.advance(8)?;
+                self.source.advance(8);
                 self.locator.update_column(|c| c + 8);
                 AttributeType::ENTITIES
             }
             [b'E', b'N', b'T', b'I', b'T', b'Y', ..] => {
-                self.source.advance(6)?;
+                self.source.advance(6);
                 self.locator.update_column(|c| c + 6);
                 AttributeType::ENTITY
             }
             [b'N', b'M', b'T', b'O', b'K', b'E', b'N', b'S', ..] => {
-                self.source.advance(8)?;
+                self.source.advance(8);
                 self.locator.update_column(|c| c + 8);
                 AttributeType::NMTOKENS
             }
             [b'N', b'M', b'T', b'O', b'K', b'E', b'N', ..] => {
-                self.source.advance(7)?;
+                self.source.advance(7);
                 self.locator.update_column(|c| c + 7);
                 AttributeType::NMTOKEN
             }
@@ -496,19 +496,19 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         let default_decl = match self.source.content_bytes() {
             [b'#', b'R', b'E', b'Q', b'U', b'I', b'R', b'E', b'D', ..] => {
                 // skip '#REQUIRED'
-                self.source.advance(9)?;
+                self.source.advance(9);
                 self.locator.update_column(|c| c + 9);
                 DefaultDecl::REQUIRED
             }
             [b'#', b'I', b'M', b'P', b'L', b'I', b'E', b'D', ..] => {
                 // skip '#IMPLIED'
-                self.source.advance(8)?;
+                self.source.advance(8);
                 self.locator.update_column(|c| c + 8);
                 DefaultDecl::IMPLIED
             }
             [b'#', b'F', b'I', b'X', b'E', b'D', ..] => {
                 // skip '#FIXED'
-                self.source.advance(6)?;
+                self.source.advance(6);
                 self.locator.update_column(|c| c + 6);
 
                 if self.skip_whitespaces_with_handle_peref(true)? == 0 {

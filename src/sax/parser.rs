@@ -13,6 +13,7 @@ use crate::{
     error::XMLError,
     sax::{
         AttlistDeclMap, ElementDeclMap, EntityMap, Locator, NamespaceStack, Notation,
+        attributes::{Attribute, Attributes},
         contentspec::ContentSpecValidationContext,
         error::fatal_error,
         handler::{DefaultSAXHandler, SAXHandler},
@@ -195,11 +196,21 @@ pub struct XMLReader<Spec: ParserSpec, H: SAXHandler = DefaultSAXHandler> {
     base_uri_stack: Vec<Arc<URIStr>>,
     entity_name_stack: Vec<Option<Arc<str>>>,
 
+    // memory management
+    /// reuse allocated memory in text and comment parsing.
+    pub(crate) text_buffer: String,
+    /// reuse allocated memory in name parsing.
+    pub(crate) name_buffer: Vec<String>,
+    /// reuse allocated memory of attributes list.
+    pub(crate) atts_buffer: Attributes,
+    /// reuse allocated memory of temporary attributes list.
+    pub(crate) atts_temp_buffer: Vec<Attribute>,
+
     // Parser Context
     pub(crate) state: ParserState,
     pub(crate) fatal_error_occurred: bool,
     pub(crate) version: XMLVersion,
-    pub(crate) encoding: Option<String>,
+    pub(crate) encoding: Option<Box<str>>,
     pub(crate) standalone: Option<bool>,
     pub(crate) dtd_name: String,
     pub(crate) has_internal_subset: bool,
@@ -280,6 +291,15 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
         self.locator_stack.clear();
         self.base_uri_stack.clear();
         self.entity_name_stack.clear();
+
+        // reset buffers
+        self.text_buffer.clear();
+        self.text_buffer.shrink_to_fit();
+        self.name_buffer.clear();
+        self.name_buffer.shrink_to_fit();
+        self.atts_buffer.clear();
+        self.atts_temp_buffer.clear();
+        self.atts_temp_buffer.shrink_to_fit();
 
         // reset Parser Context
         self.state = ParserState::BeforeStart;
@@ -393,7 +413,7 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         encoding: Option<&str>,
     ) -> Result<(), XMLError> {
         self.reset_context();
-        self.encoding = encoding.map(|enc| enc.to_owned());
+        self.encoding = encoding.map(|enc| enc.into());
         self.base_uri = self.default_base_uri()?;
         self.source = if self.config.is_enable(ParserOption::Catalogs)
             && let Some(uri) = self.catalog_resolve_uri(Some(&self.base_uri.clone()), uri.as_ref())
@@ -437,7 +457,7 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         uri: Option<&URIStr>,
     ) -> Result<(), XMLError> {
         self.reset_context();
-        self.encoding = encoding.map(|enc| enc.to_owned());
+        self.encoding = encoding.map(|enc| enc.into());
         self.base_uri = self.default_base_uri()?;
         self.source = Box::new(InputSource::from_reader(reader, encoding)?);
         if let Some(uri) = uri {
@@ -497,7 +517,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
     /// If set at any other time, it will be ignored.
     pub fn set_encoding(&mut self, encoding: &str) {
         if self.state == ParserState::BeforeStart {
-            self.encoding = Some(encoding.to_owned());
+            self.encoding = Some(encoding.into());
         }
     }
 
@@ -664,6 +684,10 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             locator_stack: vec![],
             base_uri_stack: vec![],
             entity_name_stack: vec![],
+            text_buffer: String::new(),
+            name_buffer: vec![],
+            atts_buffer: Attributes::new(),
+            atts_temp_buffer: vec![],
             state: ParserState::BeforeStart,
             fatal_error_occurred: false,
             version: XMLVersion::default(),
@@ -729,6 +753,10 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
                 locator_stack: self.reader.locator_stack,
                 base_uri_stack: self.reader.base_uri_stack,
                 entity_name_stack: self.reader.entity_name_stack,
+                text_buffer: String::new(),
+                name_buffer: vec![],
+                atts_buffer: Attributes::new(),
+                atts_temp_buffer: vec![],
                 state: self.reader.state,
                 fatal_error_occurred: self.reader.fatal_error_occurred,
                 version: self.reader.version,
@@ -784,6 +812,10 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
                 locator_stack: self.reader.locator_stack,
                 base_uri_stack: self.reader.base_uri_stack,
                 entity_name_stack: self.reader.entity_name_stack,
+                text_buffer: String::new(),
+                name_buffer: vec![],
+                atts_buffer: Attributes::new(),
+                atts_temp_buffer: vec![],
                 state: self.reader.state,
                 fatal_error_occurred: self.reader.fatal_error_occurred,
                 version: self.reader.version,
@@ -848,6 +880,10 @@ impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
                 locator_stack: self.reader.locator_stack,
                 base_uri_stack: self.reader.base_uri_stack,
                 entity_name_stack: self.reader.entity_name_stack,
+                text_buffer: String::new(),
+                name_buffer: vec![],
+                atts_buffer: Attributes::new(),
+                atts_temp_buffer: vec![],
                 state: self.reader.state,
                 fatal_error_occurred: self.reader.fatal_error_occurred,
                 version: self.reader.version,

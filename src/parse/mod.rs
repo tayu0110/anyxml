@@ -110,7 +110,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
     /// ```
     pub(crate) fn parse_pe_reference(&mut self, in_decl: bool) -> Result<bool, XMLError> {
         // skip '%'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         let mut name = "%".to_owned();
@@ -130,7 +130,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidEntityReference);
         }
         // skip ';'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         if self.entity_recursion_check(name.as_str()) {
@@ -341,7 +341,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         let (code, overflowed, hex, len) = match self.source.content_bytes() {
             [b'&', b'#', b'x', ..] => {
                 // skip '&#x'
-                self.source.advance(3)?;
+                self.source.advance(3);
                 self.locator.update_column(|c| c + 3);
 
                 self.source.grow()?;
@@ -366,7 +366,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             }
             [b'&', b'#', ..] => {
                 // skip '&#'
-                self.source.advance(2)?;
+                self.source.advance(2);
                 self.locator.update_column(|c| c + 2);
 
                 self.source.grow()?;
@@ -394,7 +394,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         };
 
         // skip the read characters
-        self.source.advance(len)?;
+        self.source.advance(len);
         self.locator.update_column(|c| c + len);
 
         self.source.grow()?;
@@ -428,7 +428,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             Err(XMLError::ParserInvalidCharacterReference)
         } else if let Some(c) = char::from_u32(code).filter(|c| self.is_char(*c)) {
             // skip ';'
-            self.source.advance(1)?;
+            self.source.advance(1);
             self.locator.update_column(|c| c + 1);
 
             Ok(c)

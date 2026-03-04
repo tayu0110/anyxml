@@ -406,7 +406,9 @@ impl<Child: SAXHandler> EntityResolver for DebugHandler<Child> {
         name: &str,
         base_uri: Option<&URIStr>,
     ) -> Result<InputSource<'static>, XMLError> {
-        writeln!(self.buffer, "getExternalSubset({name})").ok();
+        self.buffer.push_str("getExternalSubset(");
+        self.buffer.push_str(name);
+        self.buffer.push_str(")\n");
         self.child.get_external_subset(name, base_uri)
     }
 
@@ -418,7 +420,9 @@ impl<Child: SAXHandler> EntityResolver for DebugHandler<Child> {
         system_id: &URIStr,
     ) -> Result<InputSource<'static>, XMLError> {
         if name != "[document]" {
-            writeln!(self.buffer, "resolveEntity({name})").ok();
+            self.buffer.push_str("resolveEntity(");
+            self.buffer.push_str(name);
+            self.buffer.push_str(")\n");
         }
         self.child
             .resolve_entity(name, public_id, base_uri, system_id)
@@ -441,60 +445,68 @@ impl<Child: SAXHandler> ErrorHandler for DebugHandler<Child> {
 
 impl<Child: SAXHandler> SAXHandler for DebugHandler<Child> {
     fn characters(&mut self, data: &str) {
-        writeln!(self.buffer, "characters({data})").ok();
+        self.buffer.push_str("characters(");
+        self.buffer.push_str(data);
+        self.buffer.push_str(")\n");
         self.child.characters(data);
     }
 
     fn declaration(&mut self, version: &str, encoding: Option<&str>, standalone: Option<bool>) {
-        write!(
-            self.buffer,
-            "declaration({version}, {}, ",
-            encoding.unwrap_or("None")
-        )
-        .ok();
+        self.buffer.push_str("declaration(");
+        self.buffer.push_str(version);
+        self.buffer.push_str(", ");
+        self.buffer.push_str(encoding.unwrap_or("None"));
+        self.buffer.push_str(", ");
         if let Some(standalone) = standalone {
             if standalone {
-                writeln!(self.buffer, "yes)").ok();
+                self.buffer.push_str("yes)\n");
             } else {
-                writeln!(self.buffer, "no)").ok();
+                self.buffer.push_str("no)\n");
             }
         } else {
-            writeln!(self.buffer, "None)").ok();
+            self.buffer.push_str("None)\n");
         }
         self.child.declaration(version, encoding, standalone);
     }
 
     fn ignorable_whitespace(&mut self, data: &str) {
-        writeln!(self.buffer, "ignorableWhitespace({data})").ok();
+        self.buffer.push_str("ignorableWhitespace(");
+        self.buffer.push_str(data);
+        self.buffer.push_str(")\n");
         self.child.ignorable_whitespace(data);
     }
 
     fn processing_instruction(&mut self, target: &str, data: Option<&str>) {
-        write!(self.buffer, "processingInstruction({target}, ").ok();
+        self.buffer.push_str("processingInstruction(");
+        self.buffer.push_str(target);
         if let Some(data) = data {
-            writeln!(self.buffer, "'{data}')").ok();
+            self.buffer.push_str(", '");
+            self.buffer.push_str(data);
+            self.buffer.push_str("')\n");
         } else {
-            writeln!(self.buffer, "None)").ok();
+            self.buffer.push_str(", None)\n");
         }
         self.child.processing_instruction(target, data);
     }
 
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
-        writeln!(self.buffer, "setDocumentLocator()").ok();
+        self.buffer.push_str("setDocumentLocator()\n");
         self.child.set_document_locator(locator);
     }
 
     fn skipped_entity(&mut self, name: &str) {
-        writeln!(self.buffer, "skippedEntity({name})").ok();
+        self.buffer.push_str("skippedEntity(");
+        self.buffer.push_str(name);
+        self.buffer.push_str(")\n");
         self.child.skipped_entity(name);
     }
 
     fn start_document(&mut self) {
-        writeln!(self.buffer, "startDocument()").ok();
+        self.buffer.push_str("startDocument()\n");
         self.child.start_document();
     }
     fn end_document(&mut self) {
-        writeln!(self.buffer, "endDocument()").ok();
+        self.buffer.push_str("endDocument()\n");
         self.child.end_document();
     }
 
@@ -505,55 +517,58 @@ impl<Child: SAXHandler> SAXHandler for DebugHandler<Child> {
         qname: &str,
         atts: &Attributes,
     ) {
-        write!(
-            self.buffer,
-            "startElement({}, {}, {qname}",
-            namespace_name.unwrap_or("None"),
-            local_name.unwrap_or("None")
-        )
-        .ok();
+        self.buffer.push_str("startElement(");
+        self.buffer.push_str(namespace_name.unwrap_or("None"));
+        self.buffer.push_str(", ");
+        self.buffer.push_str(local_name.unwrap_or("None"));
+        self.buffer.push_str(", ");
+        self.buffer.push_str(qname);
         for att in atts {
-            write!(self.buffer, ", ").ok();
+            self.buffer.push_str(", ");
             if let Some(local_name) = att.local_name.as_deref() {
                 if let Some(uri) = att.namespace_name.as_deref() {
-                    write!(self.buffer, "{{{uri}}}").ok();
+                    self.buffer.push('{');
+                    self.buffer.push_str(uri);
+                    self.buffer.push('}');
                 }
-                write!(self.buffer, "{local_name}='{}'", att.value).ok();
+                self.buffer.push_str(local_name);
+                self.buffer.push_str("='");
+                self.buffer.push_str(&att.value);
+                self.buffer.push('\'');
             } else {
-                write!(self.buffer, "{}='{}'", att.qname, att.value).ok();
+                self.buffer.push_str(&att.qname);
+                self.buffer.push_str("='");
+                self.buffer.push_str(&att.value);
+                self.buffer.push('\'');
             }
         }
-        writeln!(self.buffer, ")").ok();
+        self.buffer.push_str(")\n");
         self.child
             .start_element(namespace_name, local_name, qname, atts);
     }
     fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
-        writeln!(
-            self.buffer,
-            "endElement({}, {}, {qname})",
-            namespace_name.unwrap_or("None"),
-            local_name.unwrap_or("None")
-        )
-        .ok();
+        self.buffer.push_str("endElement(");
+        self.buffer.push_str(namespace_name.unwrap_or("None"));
+        self.buffer.push_str(", ");
+        self.buffer.push_str(local_name.unwrap_or("None"));
+        self.buffer.push_str(", ");
+        self.buffer.push_str(qname);
+        self.buffer.push_str(")\n");
         self.child.end_element(namespace_name, local_name, qname);
     }
 
     fn start_prefix_mapping(&mut self, prefix: Option<&str>, uri: &str) {
-        writeln!(
-            self.buffer,
-            "startPrefixMapping({}, {uri})",
-            prefix.unwrap_or("None")
-        )
-        .ok();
+        self.buffer.push_str("startPrefixMapping(");
+        self.buffer.push_str(prefix.unwrap_or("None"));
+        self.buffer.push_str(", ");
+        self.buffer.push_str(uri);
+        self.buffer.push_str(")\n");
         self.child.start_prefix_mapping(prefix, uri);
     }
     fn end_prefix_mapping(&mut self, prefix: Option<&str>) {
-        writeln!(
-            self.buffer,
-            "endPrefixMapping({})",
-            prefix.unwrap_or("None")
-        )
-        .ok();
+        self.buffer.push_str("endPrefixMapping(");
+        self.buffer.push_str(prefix.unwrap_or("None"));
+        self.buffer.push_str(")\n");
         self.child.end_prefix_mapping(prefix);
     }
 
@@ -623,7 +638,9 @@ impl<Child: SAXHandler> SAXHandler for DebugHandler<Child> {
     }
 
     fn comment(&mut self, data: &str) {
-        writeln!(self.buffer, "comment({data})").ok();
+        self.buffer.push_str("comment(");
+        self.buffer.push_str(data);
+        self.buffer.push_str(")\n");
         self.child.comment(data);
     }
 

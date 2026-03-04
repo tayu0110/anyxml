@@ -157,7 +157,7 @@ impl<'a, H: SAXHandler> ValidateHandler<'a, H> {
                 namespace_name: att.namespace_name().map(|ns| ns.as_ref().into()),
                 local_name: Some(att.local_name().as_ref().into()),
                 qname: att.name().as_ref().into(),
-                value: att.value().into(),
+                value: att.value(),
                 flag: 0,
             };
             att.set_specified();
@@ -178,7 +178,7 @@ impl<'a, H: SAXHandler> ValidateHandler<'a, H> {
                 sax::attributes::Attribute {
                     namespace_name: Some(XML_NS_NAMESPACE.into()),
                     local_name: ns.prefix().as_deref().map(|pre| pre.into()),
-                    qname: format!("xmlns:{}", ns.prefix().unwrap()).into(),
+                    qname: format!("xmlns:{}", ns.prefix().unwrap()),
                     value: ns.namespace_name().as_ref().into(),
                     flag: 0,
                 }
@@ -396,10 +396,10 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
             for att in atts.iter().filter(|att| !att.is_nsdecl()) {
                 let attribute = AttributeNode(
                     QName(
-                        att.namespace_name.clone().unwrap_or_default(),
-                        att.local_name.clone().unwrap_or_default(),
+                        att.namespace_name.clone().unwrap_or_default().into(),
+                        att.local_name.clone().unwrap_or_default().into(),
                     ),
-                    att.value.as_ref().into(),
+                    att.value.as_str().into(),
                 );
                 let np = self.grammar.att_deriv(&cx, p, &attribute);
                 if matches!(self.grammar.patterns[np].as_ref(), Pattern::NotAllowed) {

@@ -1,12 +1,14 @@
 use std::{
     fs::File,
-    io::{BufReader, Read},
+    io::{BufReader, BufWriter, Read, StdoutLock, Write as _},
 };
 
 use anyxml::{
     error::{XMLError, XMLErrorDomain},
     relaxng::RelaxNGSchema,
     sax::{
+        AttributeType, DefaultDecl,
+        attributes::Attributes,
         error::SAXParseError,
         handler::{DebugHandler, DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
         parser::{ParserOption, XMLReaderBuilder},
@@ -107,11 +109,185 @@ fn do_show_command(document: Option<String>) -> Result<(), XMLError> {
     Ok(())
 }
 
+struct CompactDebugHandler {
+    stdout: StdoutLock<'static>,
+    child: DebugHandler,
+}
+
+impl CompactDebugHandler {
+    fn new() -> Self {
+        CompactDebugHandler {
+            stdout: std::io::stdout().lock(),
+            child: DebugHandler::default(),
+        }
+    }
+    fn force_show(&mut self) {
+        self.stdout.write_all(self.child.buffer.as_bytes()).ok();
+        self.child.buffer.clear();
+    }
+    fn show(&mut self) {
+        if self.child.buffer.len() > 4096 {
+            self.force_show();
+        }
+    }
+}
+
+impl EntityResolver for CompactDebugHandler {
+    fn resolve_entity(
+        &mut self,
+        name: &str,
+        public_id: Option<&str>,
+        base_uri: &URIStr,
+        system_id: &URIStr,
+    ) -> Result<InputSource<'static>, XMLError> {
+        self.child
+            .resolve_entity(name, public_id, base_uri, system_id)
+    }
+    fn get_external_subset(
+        &mut self,
+        name: &str,
+        base_uri: Option<&URIStr>,
+    ) -> Result<InputSource<'static>, XMLError> {
+        self.child.get_external_subset(name, base_uri)
+    }
+}
+impl ErrorHandler for CompactDebugHandler {
+    fn fatal_error(&mut self, error: SAXParseError) {
+        self.child.fatal_error(error);
+    }
+    fn error(&mut self, error: SAXParseError) {
+        self.child.error(error);
+    }
+    fn warning(&mut self, error: SAXParseError) {
+        self.child.warning(error);
+    }
+}
+impl SAXHandler for CompactDebugHandler {
+    fn attribute_decl(
+        &mut self,
+        element_name: &str,
+        attribute_name: &str,
+        attribute_type: &AttributeType,
+        default_decl: &DefaultDecl,
+    ) {
+        self.child
+            .attribute_decl(element_name, attribute_name, attribute_type, default_decl);
+        self.show();
+    }
+    fn characters(&mut self, data: &str) {
+        self.child.characters(data);
+        self.show();
+    }
+    fn comment(&mut self, data: &str) {
+        self.child.comment(data);
+        self.show();
+    }
+    fn declaration(&mut self, version: &str, encoding: Option<&str>, standalone: Option<bool>) {
+        self.child.declaration(version, encoding, standalone);
+    }
+    fn element_decl(&mut self, name: &str, contentspec: &anyxml::sax::contentspec::ContentSpec) {
+        self.child.element_decl(name, contentspec);
+        self.show();
+    }
+    fn end_cdata(&mut self) {
+        self.child.end_cdata();
+        self.show();
+    }
+    fn end_document(&mut self) {
+        self.child.end_document();
+        self.show();
+    }
+    fn end_dtd(&mut self) {
+        self.child.end_dtd();
+        self.show();
+    }
+    fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
+        self.child.end_element(namespace_name, local_name, qname);
+        self.show();
+    }
+    fn end_entity(&mut self) {
+        self.child.end_entity();
+        self.show();
+    }
+    fn end_prefix_mapping(&mut self, prefix: Option<&str>) {
+        self.child.end_prefix_mapping(prefix);
+        self.show();
+    }
+    fn external_entity_decl(&mut self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
+        self.child.external_entity_decl(name, public_id, system_id);
+        self.show();
+    }
+    fn ignorable_whitespace(&mut self, data: &str) {
+        self.child.ignorable_whitespace(data);
+        self.show();
+    }
+    fn internal_entity_decl(&mut self, name: &str, value: &str) {
+        self.child.internal_entity_decl(name, value);
+        self.show();
+    }
+    fn notation_decl(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
+        self.child.notation_decl(name, public_id, system_id);
+        self.show();
+    }
+    fn processing_instruction(&mut self, target: &str, data: Option<&str>) {
+        self.child.processing_instruction(target, data);
+        self.show();
+    }
+    fn set_document_locator(&mut self, locator: std::sync::Arc<anyxml::sax::Locator>) {
+        self.child.set_document_locator(locator);
+    }
+    fn skipped_entity(&mut self, name: &str) {
+        self.child.skipped_entity(name);
+        self.show();
+    }
+    fn start_cdata(&mut self) {
+        self.child.start_cdata();
+        self.show();
+    }
+    fn start_document(&mut self) {
+        self.child.start_document();
+    }
+    fn start_dtd(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
+        self.child.start_dtd(name, public_id, system_id);
+        self.show();
+    }
+    fn start_element(
+        &mut self,
+        namespace_name: Option<&str>,
+        local_name: Option<&str>,
+        qname: &str,
+        atts: &Attributes,
+    ) {
+        self.child
+            .start_element(namespace_name, local_name, qname, atts);
+        self.show();
+    }
+    fn start_entity(&mut self, name: &str) {
+        self.child.start_entity(name);
+        self.show();
+    }
+    fn start_prefix_mapping(&mut self, prefix: Option<&str>, uri: &str) {
+        self.child.start_prefix_mapping(prefix, uri);
+        self.show();
+    }
+    fn unparsed_entity_decl(
+        &mut self,
+        name: &str,
+        public_id: Option<&str>,
+        system_id: &URIStr,
+        notation_name: &str,
+    ) {
+        self.child
+            .unparsed_entity_decl(name, public_id, system_id, notation_name);
+        self.show();
+    }
+}
+
 fn do_inspect_command(mode: InspectMode, document: Option<String>) -> Result<(), XMLError> {
     match mode {
         InspectMode::SAX => {
             let mut reader = XMLReaderBuilder::new()
-                .set_handler(DebugHandler::default())
+                .set_handler(CompactDebugHandler::new())
                 .build();
             if let Some(document) = document {
                 let uri = URIString::parse(document)?;
@@ -122,7 +298,7 @@ fn do_inspect_command(mode: InspectMode, document: Option<String>) -> Result<(),
                 reader.parse_reader(lock, None, None)?;
             }
 
-            print!("{}", reader.handler.buffer);
+            reader.handler.force_show();
         }
         InspectMode::SAXProgressive => {
             let mut reader = XMLReaderBuilder::new()
@@ -143,16 +319,18 @@ fn do_inspect_command(mode: InspectMode, document: Option<String>) -> Result<(),
                 Box::new(std::io::stdin().lock())
             };
             let source = BufReader::new(source);
+            let mut stdout = BufWriter::new(std::io::stdout().lock());
 
             for byte in source.bytes() {
                 reader.parse_chunk([byte?], false)?;
                 if !reader.handler.buffer.is_empty() {
-                    print!("{}", reader.handler.buffer);
+                    write!(stdout, "{}", reader.handler.buffer)?;
                     reader.handler.buffer.clear();
                 }
             }
             reader.parse_chunk([], true)?;
-            print!("{}", reader.handler.buffer);
+            write!(stdout, "{}", reader.handler.buffer)?;
+            stdout.flush()?;
         }
         InspectMode::StAX => {
             let mut reader = XMLStreamReaderBuilder::new().build();

@@ -136,52 +136,75 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         quote: char,
         orig_source_id: usize,
     ) -> Result<(), XMLError> {
-        self.grow()?;
+        self.source.grow()?;
         'outer: while !self.source.content_bytes().is_empty() {
-            while !matches!(self.source.content_bytes()[0], b'<' | b'&')
-                && self.source.content_bytes()[0] != quote as u8
+            while let content = self.source.content_bytes()
+                && !matches!(content[0], b'<' | b'&')
+                && content[0] != quote as u8
             {
-                match self.source.next_char()? {
-                    Some('\r') => {
-                        // End-of-Line normalization is performed before entity references
-                        // are recognized, so there is no need to consider the possibility
-                        // of references with line feeds at the beginning appearing
-                        // immediately after.
-                        //
-                        // Reference: 3.3.3 Attribute-Value Normalization
-                        if self.source.peek_char()? != Some('\n') {
-                            self.locator.update_line(|l| l + 1);
-                            self.locator.set_column(1);
-                            buffer.push('\x20');
-                        }
-                    }
-                    Some('\n') => {
+                if content[0] == b'\r' {
+                    self.source.advance(1);
+                    // End-of-Line normalization is performed before entity references
+                    // are recognized, so there is no need to consider the possibility
+                    // of references with line feeds at the beginning appearing
+                    // immediately after.
+                    //
+                    // Reference: 3.3.3 Attribute-Value Normalization
+                    if self.source.content_bytes().first() != Some(&b'\n') {
                         self.locator.update_line(|l| l + 1);
                         self.locator.set_column(1);
                         buffer.push('\x20');
                     }
-                    Some(c) if self.is_whitespace(c) => {
-                        self.locator.update_column(|c| c + 1);
-                        buffer.push('\x20');
+                } else if content[0] == b'\n' {
+                    self.source.advance(1);
+                    self.locator.update_line(|l| l + 1);
+                    self.locator.set_column(1);
+                    buffer.push('\x20');
+                } else if content[0] < 0x80 && self.is_whitespace(content[0] as char) {
+                    self.source.advance(1);
+                    self.locator.update_column(|c| c + 1);
+                    buffer.push('\x20');
+                } else if let at = content
+                    .iter()
+                    .position(|&b| {
+                        !matches!(b, 0x20..0x80) || b == b'<' || b == b'&' || b == quote as u8
+                    })
+                    .unwrap_or(content.len())
+                    && at > 0
+                {
+                    buffer.push_str(unsafe {
+                        // # Safety
+                        // `content[..at]` contains only ASCII graphic characters
+                        // other than '<' and '&', so UTF-8 validation won't fail.
+                        std::str::from_utf8_unchecked(&content[..at])
+                    });
+                    self.source.advance(at);
+                    self.locator.update_column(|c| c + at);
+                } else {
+                    match self.source.next_char()? {
+                        Some(c) if self.is_whitespace(c) => {
+                            self.locator.update_column(|c| c + 1);
+                            buffer.push('\x20');
+                        }
+                        Some(c) if self.is_char(c) => {
+                            self.locator.update_column(|c| c + 1);
+                            buffer.push(c);
+                        }
+                        Some(c) => {
+                            fatal_error!(
+                                self,
+                                ParserInvalidCharacter,
+                                "The character '0x{:X}' is not allowed in the XML document.",
+                                c as u32
+                            );
+                            self.locator.update_column(|c| c + 1);
+                        }
+                        None => unreachable!(),
                     }
-                    Some(c) if self.is_char(c) => {
-                        self.locator.update_column(|c| c + 1);
-                        buffer.push(c);
-                    }
-                    Some(c) => {
-                        fatal_error!(
-                            self,
-                            ParserInvalidCharacter,
-                            "The character '0x{:X}' is not allowed in the XML document.",
-                            c as u32
-                        );
-                        self.locator.update_column(|c| c + 1);
-                    }
-                    None => unreachable!(),
                 }
 
                 if self.source.content_bytes().is_empty() {
-                    self.grow()?;
+                    self.source.grow()?;
                     if self.source.content_bytes().is_empty() {
                         break 'outer;
                     }
@@ -196,7 +219,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         "AttValue must not contain '<'."
                     );
                     buffer.push('<');
-                    self.source.advance(1)?;
+                    self.source.advance(1);
                     self.locator.update_column(|c| c + 1);
                 }
                 b'&' => {
@@ -215,12 +238,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     // Within the included entity, quotes must also be treated as part of the data.
                     // Reference: 4.4.5 Included in Literal
                     buffer.push(quote);
-                    self.source.advance(quote.len_utf8())?;
+                    self.source.advance(quote.len_utf8());
                     self.locator.update_column(|c| c + quote.len_utf8());
                 }
                 _ => break,
             }
-            self.grow()?;
+            self.source.grow()?;
         }
 
         if self.source.content_bytes().is_empty() && self.source.source_id() == orig_source_id {
@@ -245,7 +268,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidEntityReference);
         }
         // skip '&'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         let mut name = String::new();
@@ -265,7 +288,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidEntityReference);
         }
         // skip ';'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         if let Some(decl) = self.entities.get(name.as_str()) {
@@ -415,7 +438,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     }
 
                     // skip '%'
-                    self.source.advance(1)?;
+                    self.source.advance(1);
                     self.locator.update_column(|c| c + 1);
 
                     let mut name = "%".to_owned();
@@ -434,7 +457,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         return Err(XMLError::ParserInvalidEntityReference);
                     }
                     // skip ';'
-                    self.source.advance(1)?;
+                    self.source.advance(1);
                     self.locator.update_column(|c| c + 1);
 
                     if let Some(decl) = self.entities.get(name.as_str()) {
@@ -583,7 +606,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 [b'&', b'#', ..] => buffer.push(self.parse_char_ref()?),
                 [b'&', ..] => {
                     // skip '&'
-                    self.source.advance(1)?;
+                    self.source.advance(1);
                     self.locator.update_column(|c| c + 1);
 
                     let mut name = String::new();
@@ -602,7 +625,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         return Err(XMLError::ParserInvalidEntityReference);
                     }
                     // skip ';'
-                    self.source.advance(1)?;
+                    self.source.advance(1);
                     self.locator.update_column(|c| c + 1);
 
                     // If the appearing entity reference is an Unparsed Entity, it must be
@@ -620,7 +643,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     if in_entity {
                         // Within the included entity, quotes must also be treated as part of the data.
                         // Reference: 4.4.5 Included in Literal
-                        self.source.advance(quote.len_utf8())?;
+                        self.source.advance(quote.len_utf8());
                         self.locator.update_column(|c| c + quote.len_utf8());
                         buffer.push(quote);
                     } else {

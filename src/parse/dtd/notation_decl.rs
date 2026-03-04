@@ -29,7 +29,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidNotationDecl);
         }
         // skip '<!NOTATION'
-        self.source.advance(10)?;
+        self.source.advance(10);
         self.locator.update_column(|c| c + 10);
 
         let base_source_id = self.source.source_id();
@@ -79,7 +79,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 // [83] PublicID   ::= 'PUBLIC' S PubidLiteral
 
                 // skip 'PUBLIC'
-                self.source.advance(6)?;
+                self.source.advance(6);
                 self.locator.update_column(|c| c + 6);
 
                 if self.skip_whitespaces_with_handle_peref(true)? == 0 {
@@ -145,7 +145,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidNotationDecl);
         }
         // skip '>'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         match self.notations.entry(name.as_str().into()) {

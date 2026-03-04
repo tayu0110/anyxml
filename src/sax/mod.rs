@@ -35,7 +35,7 @@ pub mod parser;
 pub mod source;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::{
         Arc, LazyLock, RwLock,
         atomic::{AtomicUsize, Ordering},
@@ -430,7 +430,7 @@ pub struct NamespaceStack {
     // the namespace declaration appeared. If there is no such namespace, it is `usize::MAX`.
     namespaces: Vec<(Namespace, usize)>,
     // (prefix, position in `namespaces`)
-    prefix_map: HashMap<Arc<str>, usize>,
+    prefix_map: BTreeMap<Arc<str>, usize>,
 }
 
 impl NamespaceStack {
@@ -516,13 +516,13 @@ impl Default for NamespaceStack {
                 },
                 usize::MAX,
             )],
-            prefix_map: HashMap::from([(ARC_XML_XML_NAMESPACE_PREFIX.clone(), 0)]),
+            prefix_map: BTreeMap::from([(ARC_XML_XML_NAMESPACE_PREFIX.clone(), 0)]),
         }
     }
 }
 
 pub struct NsIter<'a> {
-    iter: std::collections::hash_map::Iter<'a, Arc<str>, usize>,
+    iter: std::collections::btree_map::Iter<'a, Arc<str>, usize>,
     stack: &'a NamespaceStack,
 }
 

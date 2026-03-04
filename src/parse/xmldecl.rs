@@ -25,7 +25,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidXMLDecl);
         }
         // skip '<?xml'
-        self.source.advance(5)?;
+        self.source.advance(5);
         self.locator.update_column(|c| c + 5);
 
         // parse VersionInfo
@@ -72,7 +72,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidXMLDecl);
         }
         // skip '?>'
-        self.source.advance(2)?;
+        self.source.advance(2);
         self.locator.update_column(|c| c + 2);
 
         // If an encoding is provided from an external source, it is used as a priority.
@@ -98,7 +98,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         self.version = version;
         self.standalone = standalone;
         if self.encoding.is_none() {
-            self.encoding = encoding;
+            self.encoding = encoding.map(From::from);
         }
         Ok(())
     }
@@ -128,7 +128,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidXMLVersion);
         }
         // skip 'version'
-        self.source.advance(7)?;
+        self.source.advance(7);
         self.locator.update_column(|c| c + 7);
 
         self.skip_whitespaces()?;
@@ -141,7 +141,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidXMLDecl);
         }
         // skip '='
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
         self.skip_whitespaces()?;
 
@@ -233,7 +233,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             // so this operation is safe.
             String::from_utf8_unchecked(content[..minor].to_owned())
         };
-        self.source.advance(minor + 1)?;
+        self.source.advance(minor + 1);
         self.locator.update_column(|c| c + minor + 1);
 
         Ok((version, version_str))
@@ -263,7 +263,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidEncodingDecl);
         }
         // skip 'encoding'
-        self.source.advance(8)?;
+        self.source.advance(8);
         self.locator.update_column(|c| c + 8);
 
         self.skip_whitespaces()?;
@@ -349,7 +349,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidSDDecl);
         }
         // skip 'standalone'
-        self.source.advance(10)?;
+        self.source.advance(10);
         self.locator.update_column(|c| c + 10);
 
         self.skip_whitespaces()?;
@@ -359,7 +359,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidSDDecl);
         }
         // skip '='
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 10);
 
         let quote = match self.source.next_char()? {
@@ -377,12 +377,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
 
         let ret = match self.source.content_bytes() {
             [b'y', b'e', b's', ..] => {
-                self.source.advance(3)?;
+                self.source.advance(3);
                 self.locator.update_column(|c| c + 3);
                 true
             }
             [b'n', b'o', ..] => {
-                self.source.advance(2)?;
+                self.source.advance(2);
                 self.locator.update_column(|c| c + 2);
                 false
             }
@@ -474,7 +474,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             // so this operation is safe.
             String::from_utf8_unchecked(content[..cur].to_owned())
         };
-        self.source.advance(cur)?;
+        self.source.advance(cur);
         self.locator.update_column(|c| c + cur);
         Ok(ret)
     }
@@ -493,7 +493,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidTextDecl);
         }
         // skip '<?xml'
-        self.source.advance(5)?;
+        self.source.advance(5);
         self.locator.update_column(|c| c + 5);
 
         // parse VersionInfo if exists
@@ -530,7 +530,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             );
             return Err(XMLError::ParserUnsupportedEncoding);
         }
-        self.encoding = Some(encoding);
+        self.encoding = Some(encoding.into());
         self.skip_whitespaces()?;
         self.grow()?;
 
@@ -543,7 +543,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidTextDecl);
         }
         // skip '?>'
-        self.source.advance(2)?;
+        self.source.advance(2);
         self.locator.update_column(|c| c + 2);
 
         Ok(())

@@ -1,14 +1,11 @@
-use std::{
-    mem::take,
-    sync::{Arc, LazyLock},
-};
+use std::mem::take;
 
 use crate::{
     ParserSpec, XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::{
         AttributeType, DefaultDecl, EntityDecl,
-        attributes::{Attribute, Attributes},
+        attributes::Attribute,
         error::{error, fatal_error, ns_error, validity_error},
         handler::SAXHandler,
         parser::{ParserOption, ParserState, XMLReader},
@@ -16,8 +13,6 @@ use crate::{
     },
     uri::URIString,
 };
-
-static ARC_XML_NS_NAMESPACE: LazyLock<Arc<str>> = LazyLock::new(|| XML_NS_NAMESPACE.into());
 
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
     /// ```text
@@ -29,7 +24,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
     /// ```
     pub(crate) fn parse_element(&mut self) -> Result<(), XMLError> {
         let old_ns_stack_depth = self.namespaces.len();
-        let mut name = String::new();
+        let mut name = self
+            .name_buffer
+            .pop()
+            .unwrap_or_else(|| String::with_capacity(64));
+        name.clear();
         let mut prefix_length = 0;
         let empty = self.parse_start_or_empty_tag(&mut name, &mut prefix_length)?;
 
@@ -40,11 +39,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             // parse end tag
             let end_tag_name = self.parse_end_tag()?;
             self.check_element_type_match(&name, &end_tag_name)?;
+            self.name_buffer.push(end_tag_name);
         }
 
         self.report_end_element(&name, prefix_length);
         self.resume_namespace_stack(old_ns_stack_depth);
         self.finish_content_model_validation(&name);
+        self.name_buffer.push(name);
         Ok(())
     }
 
@@ -65,7 +66,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidStartOrEmptyTag);
         }
         // skip '<'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         if self.config.is_enable(ParserOption::Namespaces) {
@@ -120,9 +121,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserUnexpectedEOF);
         }
 
-        let mut atts = vec![];
-        let mut att_name = String::new();
-        let mut att_value = String::new();
+        let mut att_name = self
+            .name_buffer
+            .pop()
+            .unwrap_or_else(|| String::with_capacity(64));
+        att_name.clear();
         while !matches!(self.source.content_bytes()[0], b'/' | b'>') {
             if s == 0 {
                 fatal_error!(
@@ -151,11 +154,15 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 return Err(XMLError::ParserInvalidAttribute);
             }
             // skip '='
-            self.source.advance(1)?;
+            self.source.advance(1);
             self.locator.update_column(|c| c + 1);
 
             self.skip_whitespaces()?;
 
+            let mut att_value = self
+                .name_buffer
+                .pop()
+                .unwrap_or_else(|| String::with_capacity(64));
             att_value.clear();
             self.parse_att_value(&mut att_value)?;
             let (declared, modified) = {
@@ -164,14 +171,15 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 (declared, before_normalize != att_value.len())
             };
 
-            atts.push(self.create_attribute(
+            let att = self.create_attribute(
                 &att_name,
-                &att_value,
+                att_value,
                 prefix_length,
                 true,
                 declared,
                 modified,
-            ));
+            );
+            self.atts_temp_buffer.push(att);
 
             s = self.skip_whitespaces()?;
             if self.source.content_bytes().is_empty() {
@@ -181,6 +189,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 }
             }
         }
+        self.name_buffer.push(att_name);
 
         let attlistdecls = take(&mut self.attlistdecls);
         if let Some(decls) = attlistdecls.attlist(name) {
@@ -188,7 +197,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 match default_decl {
                     DefaultDecl::REQUIRED => {
                         if self.config.is_enable(ParserOption::Validation)
-                            && atts.iter().all(|att| att.qname.as_ref() != attr)
+                            && self.atts_temp_buffer.iter().all(|att| att.qname != attr)
                         {
                             // [VC: Required Attribute]
                             validity_error!(
@@ -201,7 +210,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         }
                     }
                     DefaultDecl::None(def) | DefaultDecl::FIXED(def) => {
-                        if atts.iter().all(|att| att.qname.as_ref() != attr) {
+                        if self.atts_temp_buffer.iter().all(|att| att.qname != attr) {
                             if self.config.is_enable(ParserOption::Validation)
                                 && *is_external_markup
                                 && self.standalone == Some(true)
@@ -216,14 +225,21 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                                 );
                             }
                             let prefix_length = attr.find(':').unwrap_or(0);
-                            atts.push(self.create_attribute(
+                            let mut att_value = self
+                                .name_buffer
+                                .pop()
+                                .unwrap_or_else(|| String::with_capacity(64));
+                            att_value.clear();
+                            att_value.push_str(def.as_ref());
+                            let att = self.create_attribute(
                                 attr,
-                                def,
+                                att_value,
                                 prefix_length,
                                 false,
                                 true,
                                 false,
-                            ));
+                            );
+                            self.atts_temp_buffer.push(att);
                         }
                     }
                     _ => {}
@@ -233,63 +249,63 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         self.attlistdecls = attlistdecls;
 
         // resolve namespaces for attribtues
-        let atts = {
-            let mut attributes = Attributes::new();
-            for mut att in atts {
-                if !att.is_nsdecl()
-                    && self.config.is_enable(ParserOption::Namespaces)
-                    && let Some(local_name) = att.local_name.as_deref()
-                {
-                    if local_name.len() == att.qname.len() {
-                        // According to the namespace specification, attribute names without prefixes
-                        // do not belong to the default namespace, but rather belong to no namespace.
-                        // Therefore, we need to do nothing.
-                        att.namespace_name = None;
+        for mut att in self.atts_temp_buffer.drain(..) {
+            if !att.is_nsdecl()
+                && self.config.is_enable(ParserOption::Namespaces)
+                && let Some(local_name) = att.local_name.as_deref()
+            {
+                if local_name.len() == att.qname.len() {
+                    // According to the namespace specification, attribute names without prefixes
+                    // do not belong to the default namespace, but rather belong to no namespace.
+                    // Therefore, we need to do nothing.
+                    att.namespace_name = None;
+                } else {
+                    let prefix_len = att.qname.len() - local_name.len() - 1;
+                    let prefix = &att.qname[..prefix_len];
+                    att.namespace_name = if let Some(namespace) = self.namespaces.get(prefix) {
+                        Some(create_name(
+                            &mut self.name_buffer,
+                            &namespace.namespace_name,
+                        ))
                     } else {
-                        let prefix_len = att.qname.len() - local_name.len() - 1;
-                        let prefix = &att.qname[..prefix_len];
-                        att.namespace_name = if let Some(namespace) = self.namespaces.get(prefix) {
-                            Some(namespace.namespace_name.clone())
-                        } else {
-                            // It is unclear what to do when the corresponding namespace cannot be found,
-                            // but for now, we will do nothing except for report an error.
-                            ns_error!(
-                                self,
-                                ParserUndefinedNamespace,
-                                "The namespace name for the prefix '{}' has not been declared.",
-                                prefix
-                            );
-                            None
-                        };
-                    }
-                }
-                if let Err((att, _)) = attributes.push(att) {
-                    // check attribute constraints
-                    if self.config.is_enable(ParserOption::Namespaces) {
-                        // [NSC: Attributes Unique]
-                        fatal_error!(
+                        // It is unclear what to do when the corresponding namespace cannot be found,
+                        // but for now, we will do nothing except for report an error.
+                        ns_error!(
                             self,
-                            ParserDuplicateAttributes,
-                            "The attribute '{{{}}}{}' is duplicated",
-                            att.namespace_name.as_deref().unwrap_or("(null)"),
-                            att.local_name.as_deref().unwrap()
+                            ParserUndefinedNamespace,
+                            "The namespace name for the prefix '{}' has not been declared.",
+                            prefix
                         );
-                    } else {
-                        // [WFC: Unique Att Spec]
-                        fatal_error!(
-                            self,
-                            ParserDuplicateAttributes,
-                            "The attribute '{}' is duplicated.",
-                            att.qname
-                        );
-                    }
+                        None
+                    };
                 }
             }
-            attributes
-        };
+            if let Err((att, _)) = self.atts_buffer.push(att) {
+                // check attribute constraints
+                if self.config.is_enable(ParserOption::Namespaces) {
+                    // [NSC: Attributes Unique]
+                    fatal_error!(
+                        self,
+                        ParserDuplicateAttributes,
+                        "The attribute '{{{}}}{}' is duplicated",
+                        att.namespace_name.as_deref().unwrap_or("(null)"),
+                        att.local_name.as_deref().unwrap()
+                    );
+                } else {
+                    // [WFC: Unique Att Spec]
+                    fatal_error!(
+                        self,
+                        ParserDuplicateAttributes,
+                        "The attribute '{}' is duplicated.",
+                        att.qname
+                    );
+                }
+            }
+        }
+
         if self.config.is_enable(ParserOption::Validation) {
             let mut notation_attribute = false;
-            for att in &atts {
+            for att in &self.atts_buffer {
                 let Some((atttype, default_decl, is_external_markup)) =
                     self.attlistdecls.get(name, &att.qname)
                 else {
@@ -318,7 +334,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                             // [VC: ID]
                             validity_error!(self, err, "ID attribute must match to Name.");
                         } else {
-                            if !self.specified_ids.insert(att.value.clone()) {
+                            if !self.specified_ids.insert(att.value.as_str().into()) {
                                 // [VC: ID]
                                 validity_error!(
                                     self,
@@ -327,7 +343,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                                     att.value
                                 );
                             }
-                            self.unresolved_ids.remove(&att.value);
+                            self.unresolved_ids.remove(att.value.as_str());
                         }
                     }
                     AttributeType::IDREF => {
@@ -341,8 +357,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         {
                             // [VC: IDREF]
                             validity_error!(self, err, "IDREF attribute must match to Name.");
-                        } else if !self.specified_ids.contains(&att.value) {
-                            self.unresolved_ids.insert(att.value.clone());
+                        } else if !self.specified_ids.contains(att.value.as_str()) {
+                            self.unresolved_ids.insert(att.value.as_str().into());
                         }
                     }
                     AttributeType::IDREFS => {
@@ -476,7 +492,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         }
                     }
                     AttributeType::NOTATION(set) => {
-                        if !set.contains(&att.value) {
+                        if !set.contains(att.value.as_str()) {
                             // [VC: Notation Attributes]
                             validity_error!(
                                 self,
@@ -499,7 +515,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         notation_attribute = true;
                     }
                     AttributeType::Enumeration(set) => {
-                        if !set.contains(&att.value) {
+                        if !set.contains(att.value.as_str()) {
                             // [VC: Validity constraint: Enumeration]
                             validity_error!(
                                 self,
@@ -516,7 +532,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 // ID attributes are excluded from validation of #FIXED default attribute values.
                 if !matches!(atttype, AttributeType::ID)
                     && let DefaultDecl::FIXED(def) = default_decl
-                    && &att.value != def
+                    && att.value != def.as_ref()
                 {
                     // [VC: Fixed Attribute Default]
                     validity_error!(
@@ -558,7 +574,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         }
 
         if !self.fatal_error_occurred {
-            for att in atts.iter().filter(|att| att.is_nsdecl()) {
+            for att in self.atts_buffer.iter().filter(|att| att.is_nsdecl()) {
                 let local_name = att.local_name.as_deref().unwrap();
                 if local_name.len() == att.qname.len() {
                     self.handler.start_prefix_mapping(None, &att.value);
@@ -574,7 +590,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                             Some(&namespace.namespace_name),
                             Some(&name[*prefix_length + 1..]),
                             name,
-                            &atts,
+                            &self.atts_buffer,
                         );
                     } else {
                         ns_error!(
@@ -592,30 +608,42 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                                 .then_some(&namespace.namespace_name),
                             Some(name),
                             name,
-                            &atts,
+                            &self.atts_buffer,
                         );
                     } else {
-                        self.handler.start_element(None, Some(name), name, &atts);
+                        self.handler
+                            .start_element(None, Some(name), name, &self.atts_buffer);
                     }
                 }
             } else {
-                self.handler.start_element(None, None, name, &atts);
+                self.handler
+                    .start_element(None, None, name, &self.atts_buffer);
             }
         }
 
+        for mut att in self.atts_buffer.drain() {
+            self.name_buffer.push(att.value);
+            self.name_buffer.push(att.qname);
+            if let Some(namespace_name) = att.namespace_name.take() {
+                self.name_buffer.push(namespace_name);
+            }
+            if let Some(local_name) = att.local_name.take() {
+                self.name_buffer.push(local_name);
+            }
+        }
         self.grow()?;
         if self.source.content_bytes().starts_with(b"/>") {
             // This is an empty tag.
 
             // skip '/>'
-            self.source.advance(2)?;
+            self.source.advance(2);
             self.locator.update_column(|c| c + 2);
             Ok(true)
         } else {
             // This is a start tag.
 
             // skip '>'
-            self.source.advance(1)?;
+            self.source.advance(1);
             self.locator.update_column(|c| c + 1);
             Ok(false)
         }
@@ -633,10 +661,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidEndTag);
         }
         // skip '</'
-        self.source.advance(2)?;
+        self.source.advance(2);
         self.locator.update_column(|c| c + 2);
 
-        let mut end_tag_name = String::new();
+        let mut end_tag_name = self
+            .name_buffer
+            .pop()
+            .unwrap_or_else(|| String::with_capacity(64));
+        end_tag_name.clear();
         if self.config.is_enable(ParserOption::Namespaces) {
             self.parse_qname(&mut end_tag_name)?;
         } else {
@@ -655,7 +687,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidEndTag);
         }
         // skip '>'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
         Ok(end_tag_name)
     }
@@ -770,7 +802,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
     fn create_attribute(
         &mut self,
         att_name: &str,
-        att_value: &str,
+        att_value: String,
         prefix_length: usize,
         specified: bool,
         declared: bool,
@@ -840,7 +872,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     }
                     &att_name[prefix_length + 1..]
                 };
-                match URIString::parse(att_value) {
+                match URIString::parse(att_value.as_str()) {
                     // Report an error if the namespace name is relative reference.
                     // However, this is not an error if it is a default namespace
                     // declaration and the namespace name is an empty string.
@@ -884,21 +916,21 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         );
                     }
                 }
-                self.namespaces.push(prefix, att_value);
-                uri = Some(ARC_XML_NS_NAMESPACE.clone());
+                self.namespaces.push(prefix, &att_value);
+                uri = Some(create_name(&mut self.name_buffer, XML_NS_NAMESPACE));
             }
-            // The namespace name may be overwritten by declarations that appear later,
-            // so set it to `None` at this point.
-            // Check after reading all attributes of this tag.
             let mut att = Attribute {
                 namespace_name: uri,
                 local_name: if prefix_length > 0 {
-                    Some(att_name[prefix_length + 1..].into())
+                    Some(create_name(
+                        &mut self.name_buffer,
+                        &att_name[prefix_length + 1..],
+                    ))
                 } else {
-                    Some(att_name.into())
+                    Some(create_name(&mut self.name_buffer, att_name))
                 },
-                qname: att_name.into(),
-                value: att_value.into(),
+                qname: create_name(&mut self.name_buffer, att_name),
+                value: att_value,
                 flag: 0,
             };
             if att.namespace_name.is_some() {
@@ -906,11 +938,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             }
             att
         } else {
+            // The namespace name may be overwritten by declarations that appear later,
+            // so set it to `None` at this point.
+            // Check after reading all attributes of this tag.
             Attribute {
                 namespace_name: None,
                 local_name: None,
-                qname: att_name.into(),
-                value: att_value.into(),
+                qname: create_name(&mut self.name_buffer, att_name),
+                value: att_value,
                 flag: 0,
             }
         };
@@ -923,9 +958,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         if modified {
             att.set_declaration_dependent_normalization();
         }
-        if att.qname.as_ref() == "xml:space"
-            && !matches!(att.value.as_ref(), "default" | "preserve")
-        {
+        if att.qname == "xml:space" && !matches!(att.value.as_str(), "default" | "preserve") {
             error!(
                 self,
                 ParserUnacceptableXMLSpaceAttribute,
@@ -935,4 +968,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         }
         att
     }
+}
+
+fn create_name(name_buffer: &mut Vec<String>, name: &str) -> String {
+    let mut buf = name_buffer
+        .pop()
+        .unwrap_or_else(|| String::with_capacity(name.len()));
+    buf.clear();
+    buf.push_str(name);
+    buf
 }

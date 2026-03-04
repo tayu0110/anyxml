@@ -190,14 +190,14 @@ fn xmlconf_tests() {
                 match start.name() {
                     "TESTSUITE" => {
                         for att in start.attributes() {
-                            if att.qname.as_ref() == "PROFILE" {
+                            if att.qname == "PROFILE" {
                                 writeln!(buffer, "=== Start Test Suite '{}' ===", att.value).ok();
                             }
                         }
                     }
                     "TESTCASES" => {
                         for att in start.attributes() {
-                            if att.qname.as_ref() == "PROFILE" {
+                            if att.qname == "PROFILE" {
                                 writeln!(
                                     buffer,
                                     "--- Start Test Case '{}' in '{}' ---",

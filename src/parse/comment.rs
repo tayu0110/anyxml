@@ -19,7 +19,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidComment);
         }
         // skip '<!--'
-        self.source.advance(4)?;
+        self.source.advance(4);
         self.locator.update_column(|c| c + 4);
 
         if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
@@ -29,7 +29,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         }
 
         self.grow()?;
-        let mut buffer = String::new();
+        self.text_buffer.clear();
         while !self.source.content_bytes().starts_with(b"-->") {
             let next = self.source.next_char()?;
             match next {
@@ -41,7 +41,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                             "Comment must not contain '--' except for delimiters."
                         );
                     }
-                    buffer.push('-');
+                    self.text_buffer.push('-');
                 }
                 Some('\r') => {
                     // If the next character is not a line feed, normalize it to a line feed.
@@ -50,17 +50,17 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     if self.source.peek_char()? != Some('\n') {
                         self.locator.update_line(|l| l + 1);
                         self.locator.set_column(1);
-                        buffer.push('\n');
+                        self.text_buffer.push('\n');
                     }
                 }
                 Some('\n') => {
                     self.locator.update_line(|l| l + 1);
                     self.locator.set_column(1);
-                    buffer.push('\n');
+                    self.text_buffer.push('\n');
                 }
                 Some(c) if self.is_char(c) => {
                     self.locator.update_column(|c| c + 1);
-                    buffer.push(c)
+                    self.text_buffer.push(c)
                 }
                 Some(c) => {
                     self.locator.update_column(|c| c + 1);
@@ -76,19 +76,19 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 }
             }
 
-            if buffer.len() >= CHARDATA_CHUNK_LENGTH {
+            if self.text_buffer.len() >= CHARDATA_CHUNK_LENGTH {
                 if !self.fatal_error_occurred {
-                    self.handler.comment(&buffer);
+                    self.handler.comment(&self.text_buffer);
                 }
-                buffer.clear();
+                self.text_buffer.clear();
             }
             if self.source.content_bytes().len() < 3 {
                 self.grow()?;
             }
         }
 
-        if !buffer.is_empty() && !self.fatal_error_occurred {
-            self.handler.comment(&buffer);
+        if !self.text_buffer.is_empty() && !self.fatal_error_occurred {
+            self.handler.comment(&self.text_buffer);
         }
 
         if !self.source.content_bytes().starts_with(b"-->") {
@@ -100,7 +100,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidComment);
         }
         // skip '-->'
-        self.source.advance(3)?;
+        self.source.advance(3);
         self.locator.update_column(|c| c + 3);
 
         Ok(())

@@ -30,7 +30,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidProcessingInstruction);
         }
         // skip '<?'
-        self.source.advance(2)?;
+        self.source.advance(2);
         self.locator.update_column(|c| c + 2);
 
         if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
@@ -70,7 +70,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             }
 
             // skip '?>'
-            self.source.advance(2)?;
+            self.source.advance(2);
             self.locator.update_column(|c| c + 2);
 
             if !self.fatal_error_occurred {
@@ -147,7 +147,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidProcessingInstruction);
         }
         // skip '?>'
-        self.source.advance(2)?;
+        self.source.advance(2);
         self.locator.update_column(|c| c + 2);
 
         if !self.fatal_error_occurred {

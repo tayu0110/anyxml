@@ -1,18 +1,16 @@
 use std::{io::Read, sync::atomic::AtomicUsize};
 
-use anyxml_encoding::IBM037Decoder;
-
 use crate::{
     encoding::{
-        DecodeError, Decoder, UCS4Unusual2143Decoder, UCS4Unusual3412Decoder, UTF8Decoder,
-        UTF16BEDecoder, UTF16LEDecoder, UTF32BEDecoder, UTF32LEDecoder, find_decoder,
+        DecodeError, Decoder, IBM037Decoder, UCS4Unusual2143Decoder, UCS4Unusual3412Decoder,
+        UTF8Decoder, UTF16BEDecoder, UTF16LEDecoder, UTF32BEDecoder, UTF32LEDecoder, find_decoder,
     },
     error::XMLError,
     uri::{URIStr, URIString},
 };
 
 pub(crate) const INPUT_CHUNK: usize = 4096;
-const GROW_THRESHOLD: usize = 64;
+const GROW_THRESHOLD: usize = INPUT_CHUNK / 4;
 
 static SOURCE_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -32,7 +30,7 @@ pub struct InputSource<'a> {
     /// Whether `source` has reached EOF
     eof: bool,
     /// If `true`, keep `buffer` within the size specified by `INPUT_CHUNK` automatically.  \
-    /// If `false`, the read byte sequence in `buffer` is retained.  
+    /// If `false`, the read byte sequence in `buffer` is retained.
     ///
     /// Basically, this should be set to `true`, but if parsing is started with an unknown encoding,
     /// it is necessary to re-decode all byte sequences later, so it should be set to `false`.
@@ -123,13 +121,14 @@ impl<'a> InputSource<'a> {
             let rem = self.buffer_end - self.buffer_next;
             if rem < GROW_THRESHOLD {
                 if self.compact {
-                    // If compact mode, copy the remaining bytes to the top and leave a space.
-                    self.buffer
-                        .copy_within(self.buffer_next..self.buffer_end, 0);
-                    self.buffer_next = 0;
-                    self.buffer_end = rem;
+                    if self.buffer_next != 0 {
+                        // If compact mode, copy the remaining bytes to the top and leave a space.
+                        self.buffer
+                            .copy_within(self.buffer_next..self.buffer_end, 0);
+                        self.buffer_next = 0;
+                        self.buffer_end = rem;
+                    }
                     if self.buffer.len() > INPUT_CHUNK {
-                        debug_assert!(rem <= INPUT_CHUNK);
                         self.buffer.truncate(INPUT_CHUNK);
                         self.buffer.shrink_to_fit();
                     }
@@ -151,14 +150,18 @@ impl<'a> InputSource<'a> {
             let cap = self.decoded.len() - self.decoded_next;
             if cap < GROW_THRESHOLD {
                 if self.compact {
-                    self.decoded.drain(..self.decoded_next);
-                    self.decoded.shrink_to(INPUT_CHUNK);
-                    self.decoded_next = 0;
+                    if self.decoded_next != 0 {
+                        self.decoded.drain(..self.decoded_next);
+                        if self.decoded.capacity() > INPUT_CHUNK * 2 {
+                            self.decoded.shrink_to(INPUT_CHUNK);
+                        }
+                        self.decoded_next = 0;
+                    }
                 } else {
                     self.decoded.reserve_exact(INPUT_CHUNK);
                 }
             }
-            if self.decoded.capacity() - self.decoded.len() > GROW_THRESHOLD {
+            if self.decoded.len() < GROW_THRESHOLD {
                 match self.decoder.decode(
                     &self.buffer[self.buffer_next..self.buffer_end],
                     &mut self.decoded,
@@ -192,10 +195,12 @@ impl<'a> InputSource<'a> {
         Ok(())
     }
 
+    #[inline(always)]
     pub fn content_bytes(&self) -> &[u8] {
         &self.decoded.as_bytes()[self.decoded_next..]
     }
 
+    #[inline(always)]
     pub fn content_str(&self) -> &str {
         &self.decoded[self.decoded_next..]
     }
@@ -220,6 +225,7 @@ impl<'a> InputSource<'a> {
             .inspect(|c| self.decoded_next += c.len_utf8()))
     }
 
+    #[inline(always)]
     pub(crate) fn peek_char(&mut self) -> Result<Option<char>, XMLError> {
         if let Some(c) = self.decoded[self.decoded_next..].chars().next() {
             return Ok(Some(c));
@@ -228,25 +234,17 @@ impl<'a> InputSource<'a> {
         Ok(self.decoded[self.decoded_next..].chars().next())
     }
 
-    pub(crate) fn advance(&mut self, mut len: usize) -> Result<(), XMLError> {
-        while len > 0 {
-            let l = len.min(self.decoded.len() - self.decoded_next);
-            assert!(l > 0);
-            assert!(self.decoded.is_char_boundary(self.decoded_next + l));
-            self.decoded_next += l;
-            len -= l;
-            if self.decoded.len() - self.decoded_next == 0 {
-                self.grow()?;
-            }
-        }
-        Ok(())
+    #[inline(always)]
+    pub(crate) fn advance(&mut self, len: usize) {
+        debug_assert!(len <= self.decoded.len() - self.decoded_next);
+        self.decoded_next += len;
     }
 
     /// Returns `true` if both the decoded but unused string
     /// and the read but undecoded data are 0 bytes.
     ///
     /// # Note
-    /// Returning `true` does not mean that EOF has been reached.  
+    /// Returning `true` does not mean that EOF has been reached.  \
     /// If all of the read data has been decoded and you continue to consume the decoded strings
     /// without explicitly calling `grow`, this function may return `true` before reaching EOF.
     pub fn is_empty(&self) -> bool {

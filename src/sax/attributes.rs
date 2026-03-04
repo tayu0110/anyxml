@@ -1,13 +1,13 @@
-use std::{collections::HashMap, ops::Index, sync::Arc};
+use std::ops::Index;
 
 use crate::error::XMLError;
 
 #[derive(Debug, Clone)]
 pub struct Attribute {
-    pub namespace_name: Option<Arc<str>>,
-    pub local_name: Option<Arc<str>>,
-    pub qname: Arc<str>,
-    pub value: Box<str>,
+    pub namespace_name: Option<String>,
+    pub local_name: Option<String>,
+    pub qname: String,
+    pub value: String,
     // 0: is declared in DTD
     // 1: is specified explicitly (in other words, `value` is not the default value provided by DTD)
     // 2: is namespace declaration attribute
@@ -51,28 +51,20 @@ impl Attribute {
 
 /// A list of attributes.
 ///
-/// This list may contain namespace declarations.  
+/// This list may contain namespace declarations.
 #[derive(Debug, Clone, Default)]
 pub struct Attributes {
     attributes: Vec<Attribute>,
-    index_by_qname: HashMap<Arc<str>, usize>,
-    // key      : local_name
-    // value    : uri_map
-    index_by_expanded_name: HashMap<Arc<str>, HashMap<Arc<str>, usize>>,
 }
 
 impl Attributes {
     pub(crate) fn new() -> Self {
-        Self {
-            attributes: vec![],
-            index_by_qname: HashMap::new(),
-            index_by_expanded_name: HashMap::new(),
-        }
+        Self { attributes: vec![] }
     }
 
     /// Get the index of an attribute whose QName is `qname`.
     pub fn get_index_by_qname(&self, qname: &str) -> Option<usize> {
-        self.index_by_qname.get(qname).copied()
+        self.attributes.iter().position(|att| att.qname == qname)
     }
 
     /// Get the index of an attribute whose extended name is `{namespace_name}local_name`.
@@ -81,10 +73,10 @@ impl Attributes {
         namespace_name: Option<&str>,
         local_name: &str,
     ) -> Option<usize> {
-        self.index_by_expanded_name
-            .get(local_name)?
-            .get(namespace_name.unwrap_or(""))
-            .copied()
+        self.attributes.iter().position(|att| {
+            att.local_name.as_deref() == Some(local_name)
+                && att.namespace_name.as_deref() == namespace_name
+        })
     }
 
     /// The number of attributes contained in this list.
@@ -148,40 +140,29 @@ impl Attributes {
         self.attributes.iter()
     }
 
+    #[allow(clippy::result_large_err)]
     pub(crate) fn push(&mut self, attribute: Attribute) -> Result<usize, (Attribute, XMLError)> {
-        use std::collections::hash_map::Entry::*;
-
         let index = self.attributes.len();
-        match self.index_by_qname.entry(attribute.qname.clone()) {
-            Vacant(entry) => {
-                entry.insert(index);
-            }
-            Occupied(_) => return Err((attribute, XMLError::ParserDuplicateAttributes)),
+        if self.get_index_by_qname(&attribute.qname).is_some() {
+            return Err((attribute, XMLError::ParserDuplicateAttributes));
         }
-        if let Some(local_name) = attribute.local_name.clone() {
-            match self.index_by_expanded_name.entry(local_name) {
-                Vacant(entry) => {
-                    let namespace_name = attribute.namespace_name.clone().unwrap_or_default();
-                    let new = HashMap::from([(namespace_name, index)]);
-                    entry.insert(new);
-                }
-                Occupied(mut entry) => {
-                    let map = entry.get_mut();
-                    let namespace_name = attribute.namespace_name.clone().unwrap_or_default();
-                    match map.entry(namespace_name) {
-                        Vacant(entry) => {
-                            entry.insert(index);
-                        }
-                        Occupied(_) => {
-                            return Err((attribute, XMLError::ParserDuplicateAttributes));
-                        }
-                    }
-                }
-            }
-            self.index_by_qname.insert(attribute.qname.clone(), index);
+        if let Some(local_name) = attribute.local_name.as_deref()
+            && self
+                .get_index_by_expanded_name(attribute.namespace_name.as_deref(), local_name)
+                .is_some()
+        {
+            return Err((attribute, XMLError::ParserDuplicateAttributes));
         }
         self.attributes.push(attribute);
         Ok(index)
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.attributes.clear();
+    }
+
+    pub(crate) fn drain(&mut self) -> std::vec::Drain<'_, Attribute> {
+        self.attributes.drain(..)
     }
 }
 

@@ -433,7 +433,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             let s = source.content_str();
             let len = s.len();
             buf.push_str(s);
-            source.advance(len)?;
+            source.advance(len);
             source.grow()?;
         }
 

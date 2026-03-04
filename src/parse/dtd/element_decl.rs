@@ -30,7 +30,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidElementDecl);
         }
         // skip '<!ELEMENT'
-        self.source.advance(9)?;
+        self.source.advance(9);
         self.locator.update_column(|c| c + 9);
 
         let base_source_id = self.source.source_id();
@@ -64,13 +64,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         let contentspec = match self.source.content_bytes() {
             [b'E', b'M', b'P', b'T', b'Y', ..] => {
                 // skip 'EMPTY'
-                self.source.advance(5)?;
+                self.source.advance(5);
                 self.locator.update_column(|c| c + 5);
                 ContentSpec::EMPTY
             }
             [b'A', b'N', b'Y', ..] => {
                 // skip 'ANY'
-                self.source.advance(3)?;
+                self.source.advance(3);
                 self.locator.update_column(|c| c + 3);
                 ContentSpec::ANY
             }
@@ -84,7 +84,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     return Err(XMLError::ParserInvalidElementDecl);
                 }
                 // skip '('
-                self.source.advance(1)?;
+                self.source.advance(1);
                 self.locator.update_column(|c| c + 1);
                 let model_source_id = self.source.source_id();
 
@@ -97,7 +97,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     //              | '(' S? '#PCDATA' S? ')'
 
                     // skip '#PCDATA'
-                    self.source.advance(7)?;
+                    self.source.advance(7);
                     self.locator.update_column(|c| c + 7);
 
                     self.skip_whitespaces_with_handle_peref(true)?;
@@ -105,7 +105,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     let mut ret = HashSet::new();
                     if self.source.content_bytes().starts_with(b"|") {
                         // skip '|'
-                        self.source.advance(1)?;
+                        self.source.advance(1);
                         self.locator.update_column(|c| c + 1);
 
                         self.skip_whitespaces_with_handle_peref(true)?;
@@ -118,7 +118,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                         self.skip_whitespaces_with_handle_peref(true)?;
                         while self.source.content_bytes().starts_with(b"|") {
                             // skip '|'
-                            self.source.advance(1)?;
+                            self.source.advance(1);
                             self.locator.update_column(|c| c + 1);
 
                             if !ret.insert(buffer.as_str().into())
@@ -168,7 +168,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     }
                     if self.source.content_bytes().starts_with(b")*") {
                         // skip ')*'
-                        self.source.advance(2)?;
+                        self.source.advance(2);
                         self.locator.update_column(|c| c + 2);
                     } else if self.source.content_bytes().starts_with(b")") {
                         if !ret.is_empty() {
@@ -179,7 +179,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                             );
                         }
                         // skip ')'
-                        self.source.advance(1)?;
+                        self.source.advance(1);
                         self.locator.update_column(|c| c + 1);
                     } else {
                         fatal_error!(
@@ -242,7 +242,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidElementDecl);
         }
         // skip '>'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         if !self.fatal_error_occurred {
@@ -289,7 +289,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             [b'|', ..] => {
                 while self.source.content_bytes().starts_with(b"|") {
                     // skip '|'
-                    self.source.advance(1)?;
+                    self.source.advance(1);
                     self.locator.update_column(|c| c + 1);
 
                     self.skip_whitespaces_with_handle_peref(true)?;
@@ -301,7 +301,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             [b',', ..] => {
                 while self.source.content_bytes().starts_with(b",") {
                     // skip ','
-                    self.source.advance(1)?;
+                    self.source.advance(1);
                     self.locator.update_column(|c| c + 1);
 
                     self.skip_whitespaces_with_handle_peref(true)?;
@@ -340,7 +340,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidElementDecl);
         }
         // skip ')'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
         buffer.push(')');
 
@@ -352,7 +352,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 b'+' => model.create_one_or_more(id),
                 _ => unreachable!(),
             };
-            self.source.advance(1)?;
+            self.source.advance(1);
             self.locator.update_column(|c| c + 1);
         }
 
@@ -391,7 +391,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 b'+' => model.create_one_or_more(id),
                 _ => unreachable!(),
             };
-            self.source.advance(1)?;
+            self.source.advance(1);
             self.locator.update_column(|c| c + 1);
         }
 
@@ -426,7 +426,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidElementDecl);
         }
         // skip '('
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         let base_source_id = self.source.source_id();
@@ -441,7 +441,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             [b'|', ..] => {
                 while self.source.content_bytes().starts_with(b"|") {
                     // skip '|'
-                    self.source.advance(1)?;
+                    self.source.advance(1);
                     self.locator.update_column(|c| c + 1);
 
                     self.skip_whitespaces_with_handle_peref(true)?;
@@ -453,7 +453,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             [b',', ..] => {
                 while self.source.content_bytes().starts_with(b",") {
                     // skip ','
-                    self.source.advance(1)?;
+                    self.source.advance(1);
                     self.locator.update_column(|c| c + 1);
 
                     self.skip_whitespaces_with_handle_peref(true)?;
@@ -492,7 +492,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidElementDecl);
         }
         // skip ')'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         Ok(id)

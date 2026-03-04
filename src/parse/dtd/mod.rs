@@ -22,7 +22,7 @@ use crate::{
 
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
     /// ```text
-    /// [28] doctypedecl ::= '<!DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'  
+    /// [28] doctypedecl ::= '<!DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'
     ///                                                             [VC:  Root Element Type]
     ///                                                             [WFC: External Subset]
     /// ```
@@ -33,7 +33,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         // try to detect Internal Subset
         if self.source.content_bytes().starts_with(b"[") {
             // skip '['
-            self.source.advance(1)?;
+            self.source.advance(1);
             self.locator.update_column(|c| c + 1);
 
             self.has_internal_subset = true;
@@ -51,7 +51,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                 return Err(XMLError::ParserInvalidDoctypeDecl);
             }
             // skip ']'
-            self.source.advance(1)?;
+            self.source.advance(1);
             self.locator.update_column(|c| c + 1);
 
             self.skip_whitespaces()?;
@@ -67,7 +67,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidDoctypeDecl);
         }
         // skip '>'
-        self.source.advance(1)?;
+        self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
         if let Some(external_subset) = external_subset {
@@ -217,7 +217,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidDoctypeDecl);
         }
         // skip '<!DOCTYPE'
-        self.source.advance(9)?;
+        self.source.advance(9);
         self.locator.update_column(|c| c + 9);
 
         if self.skip_whitespaces()? == 0 {
@@ -354,7 +354,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         match self.source.content_bytes() {
             [b'S', b'Y', b'S', b'T', b'E', b'M', ..] => {
                 // skip 'SYSTEM'
-                self.source.advance(6)?;
+                self.source.advance(6);
                 self.locator.update_column(|c| c + 6);
                 let s = if self.state == ParserState::InExternalSubset {
                     self.skip_whitespaces_with_handle_peref(true)?
@@ -373,7 +373,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             }
             [b'P', b'U', b'B', b'L', b'I', b'C', ..] => {
                 // skip 'PUBLIC'
-                self.source.advance(6)?;
+                self.source.advance(6);
                 self.locator.update_column(|c| c + 6);
                 let s = if self.state == ParserState::InExternalSubset {
                     self.skip_whitespaces_with_handle_peref(true)?

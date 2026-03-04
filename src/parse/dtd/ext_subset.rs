@@ -91,7 +91,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
             return Err(XMLError::ParserInvalidConditionalSect);
         }
         // skip '<!['
-        self.source.advance(3)?;
+        self.source.advance(3);
         self.locator.update_column(|c| c + 3);
 
         let base_source_id = self.source.source_id();
@@ -101,7 +101,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
         match self.source.content_bytes() {
             [b'I', b'N', b'C', b'L', b'U', b'D', b'E', ..] => {
                 // skip 'INCLUDE'
-                self.source.advance(7)?;
+                self.source.advance(7);
                 self.locator.update_column(|c| c + 7);
 
                 self.skip_whitespaces_with_handle_peref(true)?;
@@ -124,7 +124,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     return Err(XMLError::ParserInvalidConditionalSect);
                 }
                 // skip '['
-                self.source.advance(1)?;
+                self.source.advance(1);
                 self.locator.update_column(|c| c + 1);
 
                 self.parse_ext_subset_decl()?;
@@ -138,12 +138,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     return Err(XMLError::ParserInvalidConditionalSect);
                 }
                 // skip ']]>'
-                self.source.advance(3)?;
+                self.source.advance(3);
                 self.locator.update_column(|c| c + 3);
             }
             [b'I', b'G', b'N', b'O', b'R', b'E', ..] => {
                 // skip 'IGNORE'
-                self.source.advance(6)?;
+                self.source.advance(6);
                 self.locator.update_column(|c| c + 6);
 
                 self.skip_whitespaces_with_handle_peref(true)?;
@@ -166,7 +166,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     return Err(XMLError::ParserInvalidConditionalSect);
                 }
                 // skip '['
-                self.source.advance(1)?;
+                self.source.advance(1);
                 self.locator.update_column(|c| c + 1);
 
                 let mut depth = 1;
@@ -174,11 +174,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     self.grow()?;
                     if self.source.content_bytes().starts_with(b"<![") {
                         depth += 1;
-                        self.source.advance(3)?;
+                        self.source.advance(3);
                         self.locator.update_column(|c| c + 3);
                     } else if self.source.content_bytes().starts_with(b"]]>") {
                         depth -= 1;
-                        self.source.advance(3)?;
+                        self.source.advance(3);
                         self.locator.update_column(|c| c + 3);
                     } else {
                         match self.source.next_char()? {

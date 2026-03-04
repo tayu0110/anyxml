@@ -59,7 +59,7 @@ pub struct ProgressiveParserSpecificContext {
     // (QName, prefix length, namespace stack length)
     pub(crate) element_stack: Vec<(String, usize, usize)>,
     // (old element stack length, old xml version, old encoding)
-    pub(crate) entity_stack: Vec<(usize, XMLVersion, Option<String>)>,
+    pub(crate) entity_stack: Vec<(usize, XMLVersion, Option<Box<str>>)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
@@ -67,7 +67,7 @@ pub enum XMLVersion {
     /// XML 1.0
     #[default]
     XML10,
-    /// Unknown version. Treat as specified in XML 1.0.  
+    /// Unknown version. Treat as specified in XML 1.0.
     Unknown,
 }
 

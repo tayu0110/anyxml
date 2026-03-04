@@ -29,6 +29,9 @@ anyxml-uri = { path = "./anyxml-uri", version = "^0.1" }
 anyxml-automata = { path = "./anyxml-automata", version = "^0.1" }
 anyxml-encoding = { path = "./anyxml-encoding", version = "^0.1" }
 
+[dev-dependencies]
+criterion = { "version" = "0.8.2" }
+quick-xml = "0.39.2"
 
 [[test]]
 name = "sax-test"
@@ -65,6 +68,11 @@ path = "tests/relaxng-test.rs"
 [[test]]
 name = "c14n-test"
 path = "tests/c14n-test.rs"
+
+[[bench]]
+name = "sax"
+path = "benches/sax.rs"
+harness = false
 
 [lints.clippy]
 type_complexity = "allow"

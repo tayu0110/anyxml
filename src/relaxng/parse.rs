@@ -272,7 +272,7 @@ pub(super) struct RelaxNGNode {
     pub(super) base_uri: Option<Arc<URIStr>>,
     pub(super) datatype_library: Option<Arc<str>>,
     pub(super) ns: Option<Arc<str>>,
-    xmlns: HashMap<Arc<str>, Box<str>>,
+    xmlns: HashMap<String, String>,
     pub(super) r#type: RelaxNGNodeType,
     pub(super) children: Vec<usize>,
 }
@@ -361,7 +361,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         let mut xmlns = HashMap::new();
         for att in atts {
             if att.is_nsdecl() {
-                if att.qname.as_ref() == "xmlns" {
+                if att.qname == "xmlns" {
                     xmlns.insert("".into(), att.value.clone());
                 } else {
                     xmlns.insert(
