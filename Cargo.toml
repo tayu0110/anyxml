@@ -23,6 +23,9 @@ repository.workspace = true
 description = "A fully spec-conformant XML library"
 keywords = ["xml", "dtd", "xpath", "catalog", "relaxng"]
 rust-version.workspace = true
+exclude = [
+    "benches/*"
+]
 
 [dependencies]
 anyxml-uri = { path = "./anyxml-uri", version = "^0.1" }
