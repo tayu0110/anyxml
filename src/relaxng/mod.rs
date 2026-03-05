@@ -109,13 +109,16 @@ use std::io::Read;
 
 use crate::{
     error::XMLError,
-    relaxng::{grammar::Grammar, parse::RelaxNGParseHandler, validate::ValidateHandler},
+    relaxng::{grammar::Grammar, parse::RelaxNGParseHandler},
     sax::{handler::SAXHandler, parser::XMLReaderBuilder},
     uri::URIStr,
 };
 
+pub use validate::ValidateHandler;
+
 pub const XML_RELAX_NG_NAMESPACE: &str = "http://relaxng.org/ns/structure/1.0";
 
+/// Parsed RELAX NG schema.
 pub struct RelaxNGSchema {
     grammar: Grammar,
 }

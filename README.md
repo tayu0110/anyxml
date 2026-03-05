@@ -26,12 +26,18 @@ The current implementation supports the following features:
     - [x] C14N 1.0 (only octet stream source is supported now)
 
 ## Parser
+This crate provides multiple styles of XML parsers.
+
+SAX Parser is the base for all other styles of parsers and offers the best performance.  \
+Other styles of parsers are more flexible than SAX Parser in some ways, but tend to be less performant than SAX Parser.
+
+### SAX Parser
 You can use a SAX-like API designed with reference to Java SAX API.
 
 The key difference from the Java API is that SAX handlers are provided solely as three traits: `SAXHandler`, `EntityResolver` and `ErrorHandler`.  \
 This approach reduces opportunities to use `Rc`/`Arc` or internal mutability.
 
-### Example
+#### Example
 ```rust
 use std::fmt::Write as _;
 
@@ -92,7 +98,7 @@ end document
 "#, handler.buffer);
 ```
 
-## Parser (Progressive)
+### Progressive Parser
 SAX-like parsers appear to retrieve all data from a specific source at once, but in some cases, applications may want to provide data incrementally.  \
 This crate also supports such feature, which libxml2 calls as "Push type parser" or "Progressive type parser".
 
@@ -102,63 +108,12 @@ This is because "push" and "pull" are generally used as terms to classify how th
 When parsing XML documents that retrieve external resources, note that the application must set the appropriate base URI for the parser before starting parsing.  \
 By default, the current directory is set as the base URI.
 
-### Example
-```rust
-use anyxml::sax::{
-    attributes::Attributes,
-    handler::DebugHandler,
-    parser::XMLReaderBuilder,
-};
-
-let mut reader = XMLReaderBuilder::new()
-    .set_handler(DebugHandler::default())
-    .progressive_parser()
-    .build();
-let source = br#"<greeting>Hello!!</greeting>"#;
-
-for chunk in source.chunks(5) {
-    reader.parse_chunk(chunk, false).ok();
-}
-// Note that the last chunk must set `finish` to `true`.
-// As shown below, it's okay for an empty chunk.
-reader.parse_chunk([], true).ok();
-
-let handler = reader.handler;
-assert_eq!(r#"setDocumentLocator()
-startDocument()
-startElement(None, greeting, greeting)
-characters(Hello!!)
-endElement(None, greeting, greeting)
-endDocument()
-"#, handler.buffer);
-```
-
-## Parser (StAX)
+### StAX Parser
 This crate also supports StAX (Streaming API for XML) style parser.  \
 Unlike SAX parsers, which cannot control the timing of event reports, applications can retrieve events from StAX parsers at arbitrary moments.
 
 StAX parser does not require event handlers, but applications can configure user-defined `EntityResolver` and `ErrorHandler`.  \
 To capture all errors except unrecoverable fatal error, configuring `ErrorHandler` is mandatory. If no `ErrorHandler` is configured, only the last error can be retrieved.
-
-### Example
-```rust
-use anyxml::stax::{
-    events::XMLEvent::*,
-    XMLStreamReader
-};
-
-let mut reader = XMLStreamReader::default();
-reader
-    .parse_str(r#"<greeting>Hello!!</greeting>"#, None)
-    .unwrap();
-
-assert!(matches!(reader.next_event(), Ok(StartDocument)));
-assert!(matches!(reader.next_event(), Ok(StartElement(_))));
-assert!(matches!(reader.next_event(), Ok(Characters("Hello!!"))));
-assert!(matches!(reader.next_event(), Ok(EndElement(_))));
-assert!(matches!(reader.next_event(), Ok(EndDocument)));
-assert!(matches!(reader.next_event(), Ok(Finished)));
-```
 
 ## Tree Manipulation
 This API represents the entire XML document as a tree and provides methods for manipulating it.
@@ -210,7 +165,7 @@ This crate supports full DTD validation, including parameter entity substitution
 In the current implementation, it is only available as a built-in parser feature, and validation can be enabled by specifying parser options.  \
 Enabling validation automatically activates the external resource loading option. Therefore, when reading untrusted documents, it is necessary to implement `EntityResolver` properly.
 
-Note that the internal entity substitution and the attribute value normalization occur regardless of whether DTD validation is performed.
+Note that internal entity substitution, attribute value normalization and some other mechanisms occur regardless of whether DTD validation is performed.
 
 ### RELAX NG Schema Validation
 This crate fully supports validation using RELAX NG.

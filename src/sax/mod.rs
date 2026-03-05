@@ -19,6 +19,163 @@
 //! Since the handler type is statically determined, it is impossible to reassign
 //! a different type of handler to an already generated parser.
 //!
+//! ## Example
+//! ```rust
+//! use std::fmt::Write as _;
+//!
+//! use anyxml::sax::{
+//!     attributes::Attributes,
+//!     handler::{EntityResolver, ErrorHandler, SAXHandler},
+//!     parser::XMLReaderBuilder,
+//! };
+//!
+//! #[derive(Default)]
+//! struct ExampleHandler {
+//!     buffer: String,
+//! }
+//! impl EntityResolver for ExampleHandler {}
+//! impl ErrorHandler for ExampleHandler {}
+//! impl SAXHandler for ExampleHandler {
+//!     fn start_document(&mut self) {
+//!         writeln!(self.buffer, "start document").ok();
+//!     }
+//!     fn end_document(&mut self) {
+//!         writeln!(self.buffer, "end document").ok();
+//!     }
+//!
+//!     fn start_element(
+//!         &mut self,
+//!         _namespace_name: Option<&str>,
+//!         _local_name: Option<&str>,
+//!         qname: &str,
+//!         _atts: &Attributes,
+//!     ) {
+//!         writeln!(self.buffer, "start element {qname}").ok();
+//!     }
+//!     fn end_element(
+//!         &mut self,
+//!         _namespace_name: Option<&str>,
+//!         _local_name: Option<&str>,
+//!         qname: &str
+//!     ) {
+//!         writeln!(self.buffer, "end element {qname}").ok();
+//!     }
+//!
+//!     fn characters(&mut self, data: &str) {
+//!         writeln!(self.buffer, "characters '{data}'").ok();
+//!     }
+//! }
+//!
+//! let mut reader = XMLReaderBuilder::new()
+//!     .set_handler(ExampleHandler::default())
+//!     .build();
+//! reader.parse_str(r#"<?xml version="1.0"?><greeting>Hello!!</greeting>"#, None).ok();
+//!
+//! let handler = reader.handler;
+//! assert_eq!(r#"start document
+//! start element greeting
+//! characters 'Hello!!'
+//! end element greeting
+//! end document
+//! "#, handler.buffer);
+//! ```
+//!
+//! # Progressive Parser
+//! A normal SAX Parser appears to retrieve all document resources at once, but using a
+//! Progressive Parser allows the application to feed document resources to the parser
+//! sequentially.
+//!
+//! For example, when parsing chunked document resources, the application can feed resources
+//! to the parser sequentially as they are acquired, rather than collecting all resources and
+//! feeding them as a single batch.
+//!
+//! When parsing XML documents that retrieve external resources, note that the application
+//! must set the appropriate base URI for the parser before starting parsing.  \
+//! By default, the current directory is set as the base URI.
+//!
+//! ## Example
+//! ```rust
+//! use anyxml::sax::{
+//!     attributes::Attributes,
+//!     handler::DebugHandler,
+//!     parser::XMLReaderBuilder,
+//! };
+//!
+//! let mut reader = XMLReaderBuilder::new()
+//!     .set_handler(DebugHandler::default())
+//!     .progressive_parser()
+//!     .build();
+//! let source = br#"<greeting>Hello!!</greeting>"#;
+//!
+//! for chunk in source.chunks(5) {
+//!     reader.parse_chunk(chunk, false).ok();
+//! }
+//! // Note that the last chunk must set `finish` to `true`.
+//! // As shown below, it's okay for an empty chunk.
+//! reader.parse_chunk([], true).ok();
+//!
+//! let handler = reader.handler;
+//! assert_eq!(r#"setDocumentLocator()
+//! startDocument()
+//! startElement(None, greeting, greeting)
+//! characters(Hello!!)
+//! endElement(None, greeting, greeting)
+//! endDocument()
+//! "#, handler.buffer);
+//! ```
+//!
+//! # Parser embeded DTD validation feature
+//! Applications can enable DTD validation through parser options.  \
+//! Note that when enabling the DTD validation option, all external entity loading options
+//! are automatically enabled, as some XML documents require loading external DTD subsets
+//! for validation.
+//!
+//! Furthermore, this option does not control whether the DTD is parsed.  \
+//! For example, even if the DTD validation option is disabled, parsing the internal DTD
+//! subset always occurs to perform attribute value normalization, add default attributes,
+//! and resolve internal entity references.
+//!
+//! ## Example
+//! ```rust
+//! use anyxml::sax::{
+//!     error::SAXParseError,
+//!     handler::{EntityResolver, ErrorHandler, SAXHandler},
+//!     parser::{ParserOption, XMLReaderBuilder},
+//! };
+//!
+//! #[derive(Default)]
+//! struct ExampleHandler {
+//!     buffer: String,
+//! }
+//! impl EntityResolver for ExampleHandler {}
+//! impl ErrorHandler for ExampleHandler {
+//!     fn error(&mut self, error: SAXParseError) {
+//!         self.buffer.push_str(&format!("\n{error}"));
+//!     }
+//! }
+//! impl SAXHandler for ExampleHandler {}
+//!
+//! const DOCUMENT: &str = r#"<?xml version="1.0"?>
+//! <!DOCTYPE root [
+//!     <!ELEMENT root EMPTY>
+//!     <!ATTLIST root attr1 CDATA #IMPLIED>
+//!     <!ATTLIST root attr2 CDATA #REQUIRED>
+//! ]>
+//! <root attr1="attr1">non empty string</root>
+//! "#;
+//!
+//! const EXPECT: &str = r#"
+//! document.xml[line:7,column:20][dtd-valid][error] #REQUIRED attribute 'attr2' of the element 'root' is not specified.
+//! document.xml[line:7,column:44][dtd-valid][error] The content of element 'root' does not match to its content model."#;
+//!
+//! let mut reader = XMLReaderBuilder::new()
+//!     .set_handler(ExampleHandler::default())
+//!     .enable_option(ParserOption::Validation)
+//!     .build();
+//! reader.parse_str(DOCUMENT, None).unwrap();
+//! assert_eq!(reader.handler.buffer, EXPECT);
+//! ```
+//!
 //! [SAXHandler]: handler::SAXHandler
 //! [EntityResolver]: handler::EntityResolver
 //! [ErrorHandler]: handler::ErrorHandler

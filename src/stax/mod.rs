@@ -1,4 +1,24 @@
 //! Provide StAX style XML parser and event types.
+//!
+//! # Example
+//! ```rust
+//! use anyxml::stax::{
+//!     events::XMLEvent::*,
+//!     XMLStreamReader
+//! };
+//!
+//! let mut reader = XMLStreamReader::default();
+//! reader
+//!     .parse_str(r#"<greeting>Hello!!</greeting>"#, None)
+//!     .unwrap();
+//!
+//! assert!(matches!(reader.next_event(), Ok(StartDocument)));
+//! assert!(matches!(reader.next_event(), Ok(StartElement(_))));
+//! assert!(matches!(reader.next_event(), Ok(Characters("Hello!!"))));
+//! assert!(matches!(reader.next_event(), Ok(EndElement(_))));
+//! assert!(matches!(reader.next_event(), Ok(EndDocument)));
+//! assert!(matches!(reader.next_event(), Ok(Finished)));
+//! ```
 
 pub mod events;
 mod handler;
