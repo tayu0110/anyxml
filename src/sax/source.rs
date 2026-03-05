@@ -299,6 +299,9 @@ impl<'a> InputSource<'a> {
             }
             // UTF-8
             [0xEF, 0xBB, 0xBF, ..] => {
+                // If the encoding determined by the XML declaration is not UTF-8,
+                // these three bytes must be interpreted according to the determined encoding;
+                // therefore, the BOM must not be removed here.
                 self.buffer_next = 3;
                 self.decoder = Box::new(UTF8Decoder);
             }
@@ -359,9 +362,14 @@ impl<'a> InputSource<'a> {
                 &mut self.decoded,
                 false,
             ) {
-                Ok((read, write)) => {
+                Ok((read, mut write)) => {
                     if read == 0 && write == 0 {
                         break;
+                    }
+                    if self.buffer_next == 0 && self.decoded.starts_with('\u{FEFF}') {
+                        // remove BOM for UTF-8
+                        write -= 2;
+                        self.decoded.remove(0);
                     }
                     self.buffer_next += read;
                     if write <= self.decoded_next {
