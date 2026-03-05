@@ -1,0 +1,39 @@
+setDocumentLocator()
+startDocument()
+declaration(1.0, None, None)
+comment( https://www.w3.org/TR/2004/REC-rdf-syntax-grammar-20040210/example07.rdf )
+comment( The namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#" is not a relative URI reference, so it should not generate an error. )
+comment( reference: https://www.w3.org/2000/09/xppa )
+startPrefixMapping(rdf, http://www.w3.org/1999/02/22-rdf-syntax-ns#)
+startPrefixMapping(dc, http://purl.org/dc/elements/1.1/)
+startPrefixMapping(ex, http://example.org/stuff/1.0/)
+startElement(http://www.w3.org/1999/02/22-rdf-syntax-ns#, RDF, rdf:RDF, {http://www.w3.org/2000/xmlns/}rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#', {http://www.w3.org/2000/xmlns/}dc='http://purl.org/dc/elements/1.1/', {http://www.w3.org/2000/xmlns/}ex='http://example.org/stuff/1.0/')
+characters(
+  )
+startElement(http://www.w3.org/1999/02/22-rdf-syntax-ns#, Description, rdf:Description, {http://www.w3.org/1999/02/22-rdf-syntax-ns#}about='http://www.w3.org/TR/rdf-syntax-grammar', {http://purl.org/dc/elements/1.1/}title='RDF/XML Syntax Specification (Revised)')
+characters(
+    )
+startElement(http://example.org/stuff/1.0/, editor, ex:editor)
+characters(
+      )
+startElement(http://www.w3.org/1999/02/22-rdf-syntax-ns#, Description, rdf:Description, {http://example.org/stuff/1.0/}fullName='Dave Beckett')
+characters(
+	)
+startElement(http://example.org/stuff/1.0/, homePage, ex:homePage, {http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource='http://purl.org/net/dajobe/')
+endElement(http://example.org/stuff/1.0/, homePage, ex:homePage)
+characters(
+      )
+endElement(http://www.w3.org/1999/02/22-rdf-syntax-ns#, Description, rdf:Description)
+characters(
+    )
+endElement(http://example.org/stuff/1.0/, editor, ex:editor)
+characters(
+  )
+endElement(http://www.w3.org/1999/02/22-rdf-syntax-ns#, Description, rdf:Description)
+characters(
+)
+endElement(http://www.w3.org/1999/02/22-rdf-syntax-ns#, RDF, rdf:RDF)
+endPrefixMapping(ex)
+endPrefixMapping(dc)
+endPrefixMapping(rdf)
+endDocument()
