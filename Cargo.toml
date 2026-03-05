@@ -24,7 +24,11 @@ description = "A fully spec-conformant XML library"
 keywords = ["xml", "dtd", "xpath", "catalog", "relaxng"]
 rust-version.workspace = true
 exclude = [
-    "benches/*"
+    "benches/*",
+    "resources/*",
+]
+include = [
+    "resources/catalog-compact.dtd"
 ]
 
 [dependencies]
