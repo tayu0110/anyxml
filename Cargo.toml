@@ -32,6 +32,7 @@ anyxml-encoding = { path = "./anyxml-encoding", version = "^0.1" }
 [dev-dependencies]
 criterion = { "version" = "0.8.2" }
 quick-xml = "0.39.2"
+xml = "1.0.0"
 
 [[test]]
 name = "sax-test"
