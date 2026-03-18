@@ -10,7 +10,7 @@ use crate::{
 
 pub(super) type Uri = Arc<str>;
 pub(super) type LocalName = Arc<str>;
-pub(super) type ParamList = BTreeMap<LocalName, Arc<str>>;
+pub(super) type ParamList = Vec<(LocalName, Arc<str>)>;
 pub(super) type Prefix = Arc<str>;
 pub(super) type Context = (Arc<URIStr>, BTreeMap<Prefix, Uri>);
 pub(super) type Datatype = (Uri, LocalName);

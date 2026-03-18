@@ -1,8 +1,10 @@
 #![doc = include_str!("../README.md")]
 
 pub mod automata;
+pub mod base64;
 pub mod c14n;
 pub mod catalog;
+pub mod datetime;
 pub mod encoding;
 pub mod error;
 mod parse;
@@ -13,6 +15,7 @@ pub mod stax;
 pub mod tree;
 pub mod uri;
 pub mod xinclude;
+pub mod xmlschematypes;
 pub mod xpath;
 pub mod xpointer;
 
@@ -30,11 +33,15 @@ const CHARDATA_CHUNK_LENGTH: usize = 4096;
 const XML_XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
 const XML_NS_NAMESPACE: &str = "http://www.w3.org/2000/xmlns/";
 
+/// The trait representing the parser's features.
+///
+/// Extension by users is not supported.
 pub trait ParserSpec {
     type Reader;
     type SpecificContext;
 }
 
+/// [`ParserSpec`] for the standard SAX Parser.
 pub struct DefaultParserSpec<'a> {
     _phantom: PhantomData<&'a ()>,
 }
@@ -44,6 +51,7 @@ impl<'a> ParserSpec for DefaultParserSpec<'a> {
     type SpecificContext = ();
 }
 
+/// [`ParserSpec`] for the Progressive Parser.
 pub struct ProgressiveParserSpec;
 
 impl ParserSpec for ProgressiveParserSpec {
@@ -51,6 +59,7 @@ impl ParserSpec for ProgressiveParserSpec {
     type SpecificContext = ProgressiveParserSpecificContext;
 }
 
+/// Progressive Parser execution context.
 #[derive(Debug, Default)]
 pub struct ProgressiveParserSpecificContext {
     pub(crate) seen: usize,
@@ -62,6 +71,7 @@ pub struct ProgressiveParserSpecificContext {
     pub(crate) entity_stack: Vec<(usize, XMLVersion, Option<Box<str>>)>,
 }
 
+/// XML version. Currently supports XML 1.0 only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum XMLVersion {
     /// XML 1.0
@@ -187,6 +197,22 @@ impl XMLVersion {
         let mut chars = s.chars();
         chars.next().is_some_and(|c| self.is_name_start_char(c))
             && chars.all(|c| self.is_name_char(c))
+    }
+
+    /// ```text
+    /// // XML 1.0
+    /// [7] Nmtoken ::= (NameChar)+
+    /// ```
+    pub fn validate_nmtoken(&self, s: &str) -> bool {
+        !s.is_empty() && s.chars().all(|c| self.is_name_char(c))
+    }
+
+    /// ```text
+    /// // XML 1.0
+    /// [8] Nmtokens ::= Nmtoken (#x20 Nmtoken)*
+    /// ```
+    pub fn validate_nmtokens(&self, s: &str) -> bool {
+        !s.is_empty() && s.split(' ').all(|s| self.validate_nmtoken(s))
     }
 
     /// ```text

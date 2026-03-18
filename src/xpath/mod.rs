@@ -74,6 +74,7 @@ use crate::{
     xpath::{function::FunctionLibrary, step::location_step},
 };
 
+/// XPath error codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XPathError {
     IncorrectOperandType,
@@ -758,32 +759,49 @@ impl_node_to_xpath_object!(
     CDATASection
 );
 
+/// XPath node-set defined in [XPath 1.0](https://www.w3.org/TR/1999/REC-xpath-19991116/).
 #[derive(Clone, Default)]
 pub struct XPathNodeSet {
     nodes: Vec<Node<dyn NodeSpec>>,
 }
 
 impl XPathNodeSet {
+    /// The length of this node-set.
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
+    /// Check if this node-set is empty or not.
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
 
+    /// Generate an iterator to scan all nodes in this node-set.
     pub fn iter(&self) -> impl Iterator<Item = Node<dyn NodeSpec>> + '_ {
         self.nodes.iter().cloned()
     }
 
+    /// Get the first node in this node-set.
+    ///
+    /// # Note
+    /// In XPath 1.0, a node set is an unordered set; therefore,
+    /// it is not the first node in any meaningful order.
     pub fn first(&self) -> Option<&Node<dyn NodeSpec>> {
         self.nodes.first()
     }
 
+    /// Get the last node in this node-set.
+    ///
+    /// # Note
+    /// In XPath 1.0, a node set is an unordered set; therefore,
+    /// it is not the last node in any meaningful order.
     pub fn last(&self) -> Option<&Node<dyn NodeSpec>> {
         self.nodes.last()
     }
 
+    /// Check whether `node` is included in this node-set.
+    ///
+    /// The check is performed based on identity, not equality.
     pub fn contains(&self, node: impl Into<Node<dyn NodeSpec>>) -> bool {
         let node: Node<dyn NodeSpec> = node.into();
         self.iter().any(|n| node.is_same_node(n))
@@ -797,6 +815,7 @@ impl XPathNodeSet {
         self.nodes.push(node);
     }
 
+    /// Clear all node-set elements.
     pub fn clear(&mut self) {
         self.nodes.clear();
     }
@@ -811,6 +830,9 @@ impl XPathNodeSet {
             .sort_unstable_by(|l, r| r.compare_document_order(l).unwrap());
     }
 
+    /// Returns the union of node-sets.
+    ///
+    /// Node duplication checks are based on identity, not equality.
     pub fn union(&self, other: &Self) -> Self {
         let mut ret = self.clone();
         for node in other.iter() {
@@ -820,6 +842,9 @@ impl XPathNodeSet {
         ret
     }
 
+    /// Returns the difference of node-sets.
+    ///
+    /// Node duplication checks are based on identity, not equality.
     pub fn difference(&self, other: &Self) -> Self {
         let mut ret = Self::default();
         for node in other.iter() {
@@ -836,6 +861,9 @@ impl XPathNodeSet {
         ret
     }
 
+    /// Returns the intersection of node-sets.
+    ///
+    /// Node duplication checks are based on identity, not equality.
     pub fn intersection(&self, other: &Self) -> Self {
         let mut ret = Self::default();
         for node in other.iter() {
@@ -905,6 +933,7 @@ impl Default for NamespaceSet {
     }
 }
 
+/// XPath compile error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XPathCompileError {
     ExpressionNotTerminated,

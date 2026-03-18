@@ -368,6 +368,9 @@ impl FromStr for GMonth {
     type Err = DateTimeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s
+            .strip_prefix("--")
+            .ok_or(datetime_error!(Year, InvalidFormat))?;
         if let Some(sep) = s.bytes().position(|b| !b.is_ascii_digit()) {
             let (month, tz) = s.split_at(sep);
             Ok(Self {
@@ -474,6 +477,9 @@ impl FromStr for GDay {
     type Err = DateTimeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s
+            .strip_prefix("---")
+            .ok_or(datetime_error!(Year, InvalidFormat))?;
         if let Some(sep) = s.bytes().position(|b| !b.is_ascii_digit()) {
             let (day, tz) = s.split_at(sep);
             Ok(Self {
@@ -656,6 +662,9 @@ impl FromStr for GMonthDay {
     type Err = DateTimeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s
+            .strip_prefix("--")
+            .ok_or(datetime_error!(Year, InvalidFormat))?;
         if s.len() < 5 {
             // MM-DD
             Err(datetime_error!(Month, InvalidFormat))
@@ -1784,46 +1793,46 @@ mod tests {
 
     #[test]
     fn gmonth_parse_test() {
-        assert!("12".parse::<GMonth>().is_ok());
-        assert!("12Z".parse::<GMonth>().is_ok());
-        assert!("12+09:00".parse::<GMonth>().is_ok());
-        assert!("12-09:00".parse::<GMonth>().is_ok());
+        assert!("--12".parse::<GMonth>().is_ok());
+        assert!("--12Z".parse::<GMonth>().is_ok());
+        assert!("--12+09:00".parse::<GMonth>().is_ok());
+        assert!("--12-09:00".parse::<GMonth>().is_ok());
 
         // '00' is not allowed.
-        assert!("00".parse::<GMonth>().is_err());
-        assert!("00+09:00".parse::<GMonth>().is_err());
+        assert!("--00".parse::<GMonth>().is_err());
+        assert!("--00+09:00".parse::<GMonth>().is_err());
         // Too large month
-        assert!("13".parse::<GMonth>().is_err());
+        assert!("--13".parse::<GMonth>().is_err());
         // invalid timezone
-        assert!("12+12:60".parse::<GMonth>().is_err());
-        assert!("12+12:000".parse::<GMonth>().is_err());
-        assert!("12+012:00".parse::<GMonth>().is_err());
+        assert!("--12+12:60".parse::<GMonth>().is_err());
+        assert!("--12+12:000".parse::<GMonth>().is_err());
+        assert!("--12+012:00".parse::<GMonth>().is_err());
         // unallowed positive sign
-        assert!("+12+09:00".parse::<GMonth>().is_err());
+        assert!("--+12+09:00".parse::<GMonth>().is_err());
         // unallowed negative sign
-        assert!("-12+09:00".parse::<GMonth>().is_err());
+        assert!("---12+09:00".parse::<GMonth>().is_err());
     }
 
     #[test]
     fn gday_parse_test() {
-        assert!("08".parse::<GDay>().is_ok());
-        assert!("08Z".parse::<GDay>().is_ok());
-        assert!("08+09:00".parse::<GDay>().is_ok());
-        assert!("08-09:00".parse::<GDay>().is_ok());
+        assert!("---08".parse::<GDay>().is_ok());
+        assert!("---08Z".parse::<GDay>().is_ok());
+        assert!("---08+09:00".parse::<GDay>().is_ok());
+        assert!("---08-09:00".parse::<GDay>().is_ok());
 
         // '00' is not allowed.
-        assert!("00".parse::<GDay>().is_err());
-        assert!("00+09:00".parse::<GDay>().is_err());
+        assert!("---00".parse::<GDay>().is_err());
+        assert!("---00+09:00".parse::<GDay>().is_err());
         // Too large day
-        assert!("32".parse::<GDay>().is_err());
+        assert!("---32".parse::<GDay>().is_err());
         // invalid timezone
-        assert!("12+12:60".parse::<GDay>().is_err());
-        assert!("12+12:000".parse::<GDay>().is_err());
-        assert!("12+012:00".parse::<GDay>().is_err());
+        assert!("---12+12:60".parse::<GDay>().is_err());
+        assert!("---12+12:000".parse::<GDay>().is_err());
+        assert!("---12+012:00".parse::<GDay>().is_err());
         // unallowed positive sign
-        assert!("+12+09:00".parse::<GDay>().is_err());
+        assert!("---+12+09:00".parse::<GDay>().is_err());
         // unallowed negative sign
-        assert!("-12+09:00".parse::<GDay>().is_err());
+        assert!("----12+09:00".parse::<GDay>().is_err());
     }
 
     #[test]
@@ -1845,45 +1854,45 @@ mod tests {
 
     #[test]
     fn gmonthday_parse_test() {
-        assert!("05-15".parse::<GMonthDay>().is_ok());
-        assert!("05-15Z".parse::<GMonthDay>().is_ok());
-        assert!("05-15+09:00".parse::<GMonthDay>().is_ok());
-        assert!("05-15-09:00".parse::<GMonthDay>().is_ok());
-        assert!("02-11+09:00".parse::<GMonthDay>().is_ok());
-        assert!("02-11-09:00".parse::<GMonthDay>().is_ok());
+        assert!("--05-15".parse::<GMonthDay>().is_ok());
+        assert!("--05-15Z".parse::<GMonthDay>().is_ok());
+        assert!("--05-15+09:00".parse::<GMonthDay>().is_ok());
+        assert!("--05-15-09:00".parse::<GMonthDay>().is_ok());
+        assert!("--02-11+09:00".parse::<GMonthDay>().is_ok());
+        assert!("--02-11-09:00".parse::<GMonthDay>().is_ok());
         // edge case
-        assert!("01-31".parse::<GMonthDay>().is_ok());
-        assert!("02-29".parse::<GMonthDay>().is_ok());
-        assert!("03-31".parse::<GMonthDay>().is_ok());
-        assert!("04-30".parse::<GMonthDay>().is_ok());
-        assert!("05-31".parse::<GMonthDay>().is_ok());
-        assert!("06-30".parse::<GMonthDay>().is_ok());
-        assert!("07-31".parse::<GMonthDay>().is_ok());
-        assert!("08-31".parse::<GMonthDay>().is_ok());
-        assert!("09-30".parse::<GMonthDay>().is_ok());
-        assert!("10-31".parse::<GMonthDay>().is_ok());
-        assert!("11-30".parse::<GMonthDay>().is_ok());
-        assert!("12-31".parse::<GMonthDay>().is_ok());
+        assert!("--01-31".parse::<GMonthDay>().is_ok());
+        assert!("--02-29".parse::<GMonthDay>().is_ok());
+        assert!("--03-31".parse::<GMonthDay>().is_ok());
+        assert!("--04-30".parse::<GMonthDay>().is_ok());
+        assert!("--05-31".parse::<GMonthDay>().is_ok());
+        assert!("--06-30".parse::<GMonthDay>().is_ok());
+        assert!("--07-31".parse::<GMonthDay>().is_ok());
+        assert!("--08-31".parse::<GMonthDay>().is_ok());
+        assert!("--09-30".parse::<GMonthDay>().is_ok());
+        assert!("--10-31".parse::<GMonthDay>().is_ok());
+        assert!("--11-30".parse::<GMonthDay>().is_ok());
+        assert!("--12-31".parse::<GMonthDay>().is_ok());
 
         // invalid timezone
-        assert!("05-15+12:60".parse::<GMonthDay>().is_err());
-        assert!("05-15+12:000".parse::<GMonthDay>().is_err());
-        assert!("05-15+012:00".parse::<GMonthDay>().is_err());
+        assert!("--05-15+12:60".parse::<GMonthDay>().is_err());
+        assert!("--05-15+12:000".parse::<GMonthDay>().is_err());
+        assert!("--05-15+012:00".parse::<GMonthDay>().is_err());
         // unallowed positive sign
-        assert!("+05-15+09:00".parse::<GMonthDay>().is_err());
+        assert!("--+05-15+09:00".parse::<GMonthDay>().is_err());
         // out of range
-        assert!("01-32".parse::<GMonthDay>().is_err());
-        assert!("02-30".parse::<GMonthDay>().is_err());
-        assert!("03-32".parse::<GMonthDay>().is_err());
-        assert!("04-31".parse::<GMonthDay>().is_err());
-        assert!("05-32".parse::<GMonthDay>().is_err());
-        assert!("06-31".parse::<GMonthDay>().is_err());
-        assert!("07-32".parse::<GMonthDay>().is_err());
-        assert!("08-32".parse::<GMonthDay>().is_err());
-        assert!("09-31".parse::<GMonthDay>().is_err());
-        assert!("10-32".parse::<GMonthDay>().is_err());
-        assert!("11-31".parse::<GMonthDay>().is_err());
-        assert!("12-32".parse::<GMonthDay>().is_err());
+        assert!("--01-32".parse::<GMonthDay>().is_err());
+        assert!("--02-30".parse::<GMonthDay>().is_err());
+        assert!("--03-32".parse::<GMonthDay>().is_err());
+        assert!("--04-31".parse::<GMonthDay>().is_err());
+        assert!("--05-32".parse::<GMonthDay>().is_err());
+        assert!("--06-31".parse::<GMonthDay>().is_err());
+        assert!("--07-32".parse::<GMonthDay>().is_err());
+        assert!("--08-32".parse::<GMonthDay>().is_err());
+        assert!("--09-31".parse::<GMonthDay>().is_err());
+        assert!("--10-32".parse::<GMonthDay>().is_err());
+        assert!("--11-31".parse::<GMonthDay>().is_err());
+        assert!("--12-32".parse::<GMonthDay>().is_err());
     }
 
     #[test]

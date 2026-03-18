@@ -116,6 +116,7 @@ use crate::{
 
 pub use validate::ValidateHandler;
 
+/// RELAX NG namespace
 pub const XML_RELAX_NG_NAMESPACE: &str = "http://relaxng.org/ns/structure/1.0";
 
 /// Parsed RELAX NG schema.
@@ -213,8 +214,6 @@ impl RelaxNGSchema {
     }
 
     /// Generate SAX handler for RELAX NG schema validation.
-    ///
-    ///
     pub fn new_validate_handler<H: SAXHandler>(&mut self, handler: H) -> ValidateHandler<'_, H> {
         self.grammar.new_validate_handler(handler)
     }

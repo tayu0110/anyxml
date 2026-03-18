@@ -9,6 +9,7 @@ use crate::{
     xpointer::XPointerParseError,
 };
 
+/// Error level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XMLErrorLevel {
     FatalError,
@@ -26,14 +27,24 @@ impl std::fmt::Display for XMLErrorLevel {
     }
 }
 
+/// Error domain.
+///
+/// This helps identify which part of the process caused the error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XMLErrorDomain {
+    /// XML parser errors.
     Parser,
+    /// Namespace error.
     Namespace,
+    /// DTD validation error.
     DTDValid,
+    /// RELAX NG schema parsing error.
     RngParser,
+    /// RELAX NG validation error.
     RngValid,
+    /// XML Canonicalization error.
     C14N,
+    /// XInclude error.
     XInclude,
 }
 
@@ -51,6 +62,7 @@ impl std::fmt::Display for XMLErrorDomain {
     }
 }
 
+/// Error codes.
 #[derive(Debug, Clone)]
 pub enum XMLError {
     // general errors

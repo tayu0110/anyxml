@@ -22,6 +22,7 @@ use crate::{
     xpointer::parse_xpointer,
 };
 
+/// XInclude namespace.
 pub const XML_XINCLUDE_NAMESPACE: &str = "http://www.w3.org/2001/XInclude";
 
 /// Resource resolver for processing `{http://www.w3.org/2001/XInclude}include` elements.
@@ -124,6 +125,7 @@ pub struct XIncludeResource {
     pub encoding: Option<String>,
 }
 
+/// XInclude errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XIncludeError {
     UnacceptableElement,

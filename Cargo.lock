@@ -81,6 +81,8 @@ name = "anyxml"
 version = "0.10.4"
 dependencies = [
  "anyxml-automata",
+ "anyxml-base64",
+ "anyxml-datetime",
  "anyxml-encoding",
  "anyxml-uri",
  "criterion",
@@ -106,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "anyxml-datetime"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "anyxml-encoding"

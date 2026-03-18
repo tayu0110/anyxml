@@ -117,7 +117,7 @@ pub(super) enum ChoiceType {
     NameClass,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(super) enum RelaxNGNodeType {
     Element(Option<Box<str>>),
     Attribute(Option<Box<str>>),
@@ -272,7 +272,7 @@ pub(super) struct RelaxNGNode {
     pub(super) base_uri: Option<Arc<URIStr>>,
     pub(super) datatype_library: Option<Arc<str>>,
     pub(super) ns: Option<Arc<str>>,
-    xmlns: HashMap<String, String>,
+    xmlns: BTreeMap<Arc<str>, Arc<str>>,
     pub(super) r#type: RelaxNGNodeType,
     pub(super) children: Vec<usize>,
 }
@@ -358,15 +358,15 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
         let mut base_uri = None;
         let mut datatype_library = None;
         let mut ns = None;
-        let mut xmlns = HashMap::new();
+        let mut xmlns = BTreeMap::new();
         for att in atts {
             if att.is_nsdecl() {
                 if att.qname == "xmlns" {
-                    xmlns.insert("".into(), att.value.clone());
+                    xmlns.insert("".into(), att.value.as_str().into());
                 } else {
                     xmlns.insert(
-                        att.local_name.clone().unwrap_or_default(),
-                        att.value.clone(),
+                        att.local_name.as_deref().unwrap_or_default().into(),
+                        att.value.as_str().into(),
                     );
                 }
                 continue;
@@ -882,7 +882,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 base_uri: None,
                 datatype_library: None,
                 ns: None,
-                xmlns: HashMap::new(),
+                xmlns: BTreeMap::new(),
                 r#type: RelaxNGNodeType::Grammar,
                 children: vec![grammar + 1],
             });
@@ -890,7 +890,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 base_uri: None,
                 datatype_library: None,
                 ns: None,
-                xmlns: HashMap::new(),
+                xmlns: BTreeMap::new(),
                 r#type: RelaxNGNodeType::Start(None),
                 children: vec![grammar],
             });
@@ -1232,7 +1232,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     base_uri: self.tree[current].base_uri.clone(),
                     datatype_library: None,
                     ns: self.tree[current].ns.clone(),
-                    xmlns: HashMap::new(),
+                    xmlns: BTreeMap::new(),
                     r#type: RelaxNGNodeType::Name(name),
                     children: vec![],
                 };
@@ -1248,7 +1248,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     // If an attribute element has a name attribute but no ns attribute,
                     // then an ns="" attribute is added to the name child element.
                     ns: Some(self.tree[current].ns.as_deref().unwrap_or_default().into()),
-                    xmlns: HashMap::new(),
+                    xmlns: BTreeMap::new(),
                     r#type: RelaxNGNodeType::Name(name),
                     children: vec![],
                 };
@@ -1385,7 +1385,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     base_uri: None,
                     datatype_library: None,
                     ns: None,
-                    xmlns: HashMap::new(),
+                    xmlns: BTreeMap::new(),
                     r#type: RelaxNGNodeType::OneOrMore,
                     children,
                 });
@@ -1394,7 +1394,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     base_uri: None,
                     datatype_library: None,
                     ns: None,
-                    xmlns: HashMap::new(),
+                    xmlns: BTreeMap::new(),
                     r#type: RelaxNGNodeType::Empty,
                     children: vec![],
                 });
@@ -1411,7 +1411,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     base_uri: None,
                     datatype_library: None,
                     ns: None,
-                    xmlns: HashMap::new(),
+                    xmlns: BTreeMap::new(),
                     r#type: RelaxNGNodeType::Empty,
                     children: vec![],
                 });
@@ -1428,7 +1428,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     base_uri: None,
                     datatype_library: None,
                     ns: None,
-                    xmlns: HashMap::new(),
+                    xmlns: BTreeMap::new(),
                     r#type: RelaxNGNodeType::Text,
                     children: vec![],
                 });
@@ -1444,7 +1444,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         base_uri: None,
                         datatype_library: None,
                         ns: None,
-                        xmlns: HashMap::new(),
+                        xmlns: BTreeMap::new(),
                         r#type: RelaxNGNodeType::Text,
                         children: vec![],
                     });
@@ -1478,7 +1478,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                 base_uri: None,
                 datatype_library: None,
                 ns: None,
-                xmlns: HashMap::new(),
+                xmlns: BTreeMap::new(),
                 r#type: r#type.clone(),
                 children: vec![first, second],
             });
@@ -1581,12 +1581,12 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             RelaxNGNodeType::Data(ref type_name) => {
                 if let Some(datatype_library) = self.tree[current].datatype_library.as_deref() {
                     if let Some(library) = self.datatype_libraries.get(datatype_library) {
-                        let mut params = BTreeMap::new();
+                        let mut params = vec![];
                         let len = self.tree[current].children.len();
                         for i in 0..len {
                             let ch = self.tree[current].children[i];
                             if let RelaxNGNodeType::Param { name, value } = &self.tree[ch].r#type {
-                                params.insert(name.as_ref().into(), value.as_ref().into());
+                                params.push((name.as_ref().into(), value.as_ref().into()));
                             }
                         }
                         if !library.contains(type_name) {
@@ -1598,7 +1598,14 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                                 datatype_library
                             );
                         } else if library
-                            .validate_params(type_name, &params)
+                            .validate_params(
+                                type_name,
+                                &params,
+                                &(
+                                    self.tree[current].base_uri.clone().unwrap(),
+                                    self.tree[current].xmlns.clone(),
+                                ),
+                            )
                             .is_none_or(|b| !b)
                         {
                             error!(
@@ -1758,7 +1765,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         base_uri: None,
                         datatype_library: None,
                         ns: None,
-                        xmlns: HashMap::new(),
+                        xmlns: BTreeMap::new(),
                         r#type: ty.clone(),
                         children: vec![next, second],
                     };
@@ -1772,7 +1779,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     base_uri: None,
                     datatype_library: None,
                     ns: None,
-                    xmlns: HashMap::new(),
+                    xmlns: BTreeMap::new(),
                     r#type: RelaxNGNodeType::Start(None),
                     children: vec![second],
                 });
@@ -1802,7 +1809,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                             base_uri: None,
                             datatype_library: None,
                             ns: None,
-                            xmlns: HashMap::new(),
+                            xmlns: BTreeMap::new(),
                             r#type: ty.clone(),
                             children: vec![next, second],
                         };
@@ -1816,7 +1823,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                         base_uri: None,
                         datatype_library: None,
                         ns: None,
-                        xmlns: HashMap::new(),
+                        xmlns: BTreeMap::new(),
                         r#type: RelaxNGNodeType::Define {
                             name,
                             combine: None,
@@ -1973,7 +1980,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     base_uri: None,
                     datatype_library: None,
                     ns: None,
-                    xmlns: HashMap::new(),
+                    xmlns: BTreeMap::new(),
                     r#type: RelaxNGNodeType::Define {
                         name: alias.as_str().into(),
                         combine: None,
@@ -1985,7 +1992,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     base_uri: None,
                     datatype_library: None,
                     ns: None,
-                    xmlns: HashMap::new(),
+                    xmlns: BTreeMap::new(),
                     r#type: RelaxNGNodeType::Ref(alias.into()),
                     children: vec![],
                 });
@@ -2261,7 +2268,9 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             RelaxNGNodeType::Text | RelaxNGNodeType::Ref(_) => Some(ContentType::Complex),
             RelaxNGNodeType::Value { .. } | RelaxNGNodeType::List => Some(ContentType::Simple),
             RelaxNGNodeType::Data(_) => {
-                if let Some(&except) = self.tree[current].children.first() {
+                if let Some(&except) = self.tree[current].children.last()
+                    && matches!(self.tree[except].r#type, RelaxNGNodeType::Except(_))
+                {
                     let ch = self.tree[except].children[0];
                     self.check_content_type(ch).map(|_| ContentType::Simple)
                 } else {
@@ -2435,14 +2444,14 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     .clone()
                     .unwrap_or_default();
                 let local_name = r#type.as_ref().into();
-                let mut params = BTreeMap::new();
+                let mut params = vec![];
                 let mut except = usize::MAX;
                 let len = self.tree[current].children.len();
                 for i in 0..len {
                     let ch = self.tree[current].children[i];
                     match &self.tree[ch].r#type {
                         RelaxNGNodeType::Param { name, value } => {
-                            params.insert(name.as_ref().into(), value.as_ref().into());
+                            params.push((name.as_ref().into(), value.as_ref().into()));
                         }
                         RelaxNGNodeType::Except(ExceptType::Pattern) => {
                             let gch = self.tree[ch].children[0];

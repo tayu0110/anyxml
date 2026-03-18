@@ -18,7 +18,9 @@ use crate::{
 };
 
 const PUBLICID_URN_NAMESPACE: &str = "urn:publicid:";
+/// XML Catalogs namespace.
 pub const XML_CATALOG_NAMESPACE: &str = "urn:oasis:names:tc:entity:xmlns:xml:catalog";
+/// XML Catalogs public identifier.
 pub const XML_CATALOG_PUBLICID: &str = "-//OASIS//DTD XML Catalogs V1.1//EN";
 
 /// Prefer mode (public or system)

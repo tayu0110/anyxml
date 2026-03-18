@@ -57,6 +57,7 @@ use crate::{
     uri::URIStr,
 };
 
+/// Canonicalization method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CanonicalizeMethod {
     // C14N 1.0
