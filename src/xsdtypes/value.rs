@@ -1,0 +1,143 @@
+use std::sync::Arc;
+
+use crate::{base64::*, datetime::*, uri::*};
+
+#[derive(Clone, PartialEq)]
+pub enum SchemaValue {
+    String(Arc<str>),
+    Boolean(bool),
+    // `f64` cannot guarantee at least 18 digits of precision.
+    // An arbitrary-precision floating-point library is required, but since comparison
+    // operations are sufficient for now, I will treat the values as strings.
+    Decimal(Arc<str>, Arc<str>),
+    Float(f32),
+    Double(f64),
+    // This is separated from `Decimal` for convenience.
+    Integer(i128),
+    Duration(Duration),
+    DateTime(DateTime),
+    Time(Time),
+    Date(Date),
+    GYearMonth(GYearMonth),
+    GYear(GYear),
+    GMonthDay(GMonthDay),
+    GDay(GDay),
+    GMonth(GMonth),
+    HexBinary(Arc<str>),
+    Base64Binary(Base64Binary),
+    AnyURI(Arc<URIStr>),
+    QName(Option<Arc<str>>, Arc<str>),
+    NOTATION(Option<Arc<str>>, Arc<str>),
+    List(Arc<[SchemaValue]>),
+}
+
+impl SchemaValue {
+    /// Returns the length for values of types with a defined `length`,
+    /// and returns [`None`] for values of types with an undefined `length`.
+    ///
+    /// # Reference
+    /// - [4.3.1 length](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#rf-length)
+    pub fn length(&self) -> Option<usize> {
+        match self {
+            Self::String(s) => Some(s.len()),
+            Self::AnyURI(u) => Some(
+                u.as_unescaped_str()
+                    .as_deref()
+                    .unwrap_or(u.as_escaped_str())
+                    .len(),
+            ),
+            Self::HexBinary(b) => Some(b.len() / 2),
+            Self::Base64Binary(b) => Some(b.decode().count()),
+            Self::List(l) => Some(l.len()),
+            _ => None,
+        }
+    }
+
+    /// Returns the total digits for values of types with a defined `totalDigits`,
+    /// and returns [`None`] for values of types with an undefined `totalDigits`.
+    ///
+    /// # Reference
+    /// - [4.3.11 totalDigits](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#rf-totalDigits)
+    pub fn total_digits(&self) -> Option<usize> {
+        match self {
+            Self::Decimal(i, f) => match (i.as_ref(), f.as_ref()) {
+                ("0", "0") => Some(1),
+                ("0", i) => Some(i.len()),
+                (i, "0") => Some(i.trim_start_matches('-').len()),
+                (i, f) => Some(i.trim_start_matches('-').len() + f.len()),
+            },
+            Self::Integer(i) => {
+                if *i == 0 {
+                    Some(1)
+                } else {
+                    Some(i.unsigned_abs().ilog10() as usize + 1)
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Returns the fraction digits for values of types with a defined `fractionDigits`,
+    /// and returns [`None`] for values of types with an undefined `totalDigits`.
+    ///
+    /// # Reference
+    /// - [4.3.12 fractionDigits](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#rf-fractionDigits)
+    pub fn fraction_digits(&self) -> Option<usize> {
+        match self {
+            Self::Decimal(_, f) => Some(f.trim_end_matches('0').len()),
+            Self::Integer(_) => Some(0),
+            _ => None,
+        }
+    }
+}
+
+impl PartialOrd for SchemaValue {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Self::Decimal(lhi, llo), Self::Decimal(rhi, rlo)) => {
+                let ml = lhi.starts_with('-');
+                let mr = rhi.starts_with('-');
+                if ml != mr {
+                    return mr.partial_cmp(&ml);
+                }
+
+                if lhi.len() < rhi.len() {
+                    if ml {
+                        Some(std::cmp::Ordering::Greater)
+                    } else {
+                        Some(std::cmp::Ordering::Less)
+                    }
+                } else if lhi.len() > rhi.len() {
+                    if ml {
+                        Some(std::cmp::Ordering::Less)
+                    } else {
+                        Some(std::cmp::Ordering::Greater)
+                    }
+                } else {
+                    match lhi.cmp(rhi) {
+                        ret @ (std::cmp::Ordering::Less | std::cmp::Ordering::Greater) => {
+                            Some(if ml { ret.reverse() } else { ret })
+                        }
+                        std::cmp::Ordering::Equal => {
+                            let ret = llo.cmp(rlo);
+                            Some(if ml { ret.reverse() } else { ret })
+                        }
+                    }
+                }
+            }
+            (Self::Float(lh), Self::Float(rh)) => lh.partial_cmp(rh),
+            (Self::Double(lh), Self::Double(rh)) => lh.partial_cmp(rh),
+            (Self::Integer(lh), Self::Integer(rh)) => lh.partial_cmp(rh),
+            (Self::Duration(lh), Self::Duration(rh)) => lh.partial_cmp(rh),
+            (Self::DateTime(lh), Self::DateTime(rh)) => lh.partial_cmp(rh),
+            (Self::Time(lh), Self::Time(rh)) => lh.partial_cmp(rh),
+            (Self::Date(lh), Self::Date(rh)) => lh.partial_cmp(rh),
+            (Self::GYearMonth(lh), Self::GYearMonth(rh)) => lh.partial_cmp(rh),
+            (Self::GYear(lh), Self::GYear(rh)) => lh.partial_cmp(rh),
+            (Self::GMonthDay(lh), Self::GMonthDay(rh)) => lh.partial_cmp(rh),
+            (Self::GDay(lh), Self::GDay(rh)) => lh.partial_cmp(rh),
+            (Self::GMonth(lh), Self::GMonth(rh)) => lh.partial_cmp(rh),
+            _ => None,
+        }
+    }
+}
