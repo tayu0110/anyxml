@@ -296,3 +296,13 @@ fn handle_incorrect_case(
 
     assert!(schema.is_err());
 }
+
+#[test]
+fn schema_of_schema_test() {
+    let uri = URIString::parse("resources/relaxng/schema-of-schema.rng").unwrap();
+    let mut schema = RelaxNGSchema::parse_uri(&uri, None, None::<DefaultSAXHandler>).unwrap();
+
+    let handler = schema.new_validate_handler(DefaultSAXHandler);
+    let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+    reader.parse_uri(&uri, None).unwrap();
+}
