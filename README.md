@@ -13,11 +13,14 @@ The current implementation supports the following features:
     - [x] Default attribute value handling
 - validate XML 1.0 document
     - [x] DTD (parser embeded)
-    - [x] RELAX NG (XML Syntax only)
+    - [x] RELAX NG
+      - [x] XML Syntax
+      - [ ] Compact Syntax
+      - [x] XSD types
     - [ ] XML Schema
 - handle namespace conforming to XML Namespace 1.0
 - build, modify and serialize XML document trees
-- execute XPath and lookup specific node in the document tree
+- execute XPath expression
     - [x] XPath 1.0
     - [ ] XPath 2.0 or later
 - resolve an alternative URI of external identifiers or URI using XML Catalogs
@@ -170,9 +173,12 @@ Note that internal entity substitution, attribute value normalization and some o
 ### RELAX NG Schema Validation
 This crate fully supports validation using RELAX NG.
 
-It passes all tests in [James Clark's test suite](https://raw.githubusercontent.com/relaxng/jing-trang/refs/heads/master/mod/rng-validate/test/spectest.xml), except for tests related to unsupported XSD types and tests for name characters that have been marked as valid in new XML specifications.
+It passes all tests in [James Clark's test suite](https://raw.githubusercontent.com/relaxng/jing-trang/refs/heads/master/mod/rng-validate/test/spectest.xml), except for tests related to tests for name characters that have been marked as valid in new XML specifications.
 
 Schemas containing `"externalRef"` or `"include"` require access to external resources. By default, it searches local files, but a custom `EntityResolver` can be provided.
+
+The RELAX NG schema processor provided by this crate also supports XSD 1.0 types.  \
+For information on the correspondence between the RELAX NG semantics and the XSD 1.0 type system, please refer to the [Guidelines for using W3C XML Schema Datatypes with RELAX NG](https://relaxng.org/xsd-20010907.html).
 
 For more details, please see the document of `relaxng` module.
 
@@ -212,7 +218,9 @@ This crate conforms to the following specifications:
 - [xml:id Version 1.0](https://www.w3.org/TR/2005/REC-xml-id-20050909/)
 - [XML Path Language (XPath) Version 1.0](https://www.w3.org/TR/1999/REC-xpath-19991116/)
 - [XML Catalogs (OASIS Standard V1.1, 7 October 2005)](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
-- [ISO/IEC 19757-2:2008 Part 2: Regular-grammar-based validation — RELAX NG](https://www.iso.org/standard/52348.html)
+- RELAX NG specifications
+  - [ISO/IEC 19757-2:2008 Part 2: Regular-grammar-based validation — RELAX NG](https://www.iso.org/standard/52348.html)
+  - [Guidelines for using W3C XML Schema Datatypes with RELAX NG](https://relaxng.org/xsd-20010907.html)
 - XPointer specifications
     - [XPointer Framework](https://www.w3.org/TR/xptr-framework/)
     - [XPointer element() Scheme](https://www.w3.org/TR/xptr-element/)

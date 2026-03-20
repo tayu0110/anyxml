@@ -97,8 +97,20 @@
 //! assert!(schema.validate(&card, DefaultSAXHandler).is_ok());
 //! ```
 //!
+//! # XSD types support
+//! While the RELAX NG specification itself defines only two built-in data types
+//! —`string` and `token`—this is often insufficient in practical use.
+//!
+//! This crate provides additional support for data types defined in
+//! [XML Schema Part 2: Datatypes Second Edition](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/),
+//! in accordance with the [Guidelines for using W3C XML Schema Datatypes with RELAX NG](https://relaxng.org/xsd-20010907.html).
+//!
+//! To enable support for XSD types, schema authors must specify `"http://www.w3.org/2001/XMLSchema-datatypes"`
+//! as the data type library, as indicated in the guidelines above.
+//!
 //! # Reference
 //! - [ISO/IEC 19757-2:2008 Information technology — Document Schema Definition Language (DSDL)Part 2: Regular-grammar-based validation — RELAX NG](https://www.iso.org/standard/52348.html)
+//! - [Guidelines for using W3C XML Schema Datatypes with RELAX NG](https://relaxng.org/xsd-20010907.html)
 
 mod datatype_library;
 mod grammar;
