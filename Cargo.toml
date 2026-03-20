@@ -27,9 +27,7 @@ rust-version.workspace = true
 exclude = [
     "benches/*",
     "resources/*",
-]
-include = [
-    "resources/catalog-compact.dtd"
+    "!resources/catalog-compact.dtd"
 ]
 
 [dependencies]
