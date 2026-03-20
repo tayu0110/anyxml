@@ -1,5 +1,3 @@
-use anyxml_uri::uri::URIString;
-
 use crate::{
     ParserSpec,
     catalog::CatalogEntryFile,
@@ -10,6 +8,7 @@ use crate::{
         parser::{ParserOption, ParserState, XMLReader},
         source::InputSource,
     },
+    uri::URIString,
 };
 
 pub(crate) const CATALOG_PI_TARGET_NAME: &str = "oasis-xml-catalog";

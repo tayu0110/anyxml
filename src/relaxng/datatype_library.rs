@@ -8,7 +8,7 @@ use crate::{
     XMLVersion,
     sax::NamespaceStack,
     uri::URIStr,
-    xmlschematypes::{
+    xsdtypes::{
         FacetType, SimpleTypeDefinition, XML_SCHEMA_DATATYPES_NAMESPACE,
         find_builtin_type_definition,
     },

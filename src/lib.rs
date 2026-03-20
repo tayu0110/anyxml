@@ -15,9 +15,9 @@ pub mod stax;
 pub mod tree;
 pub mod uri;
 pub mod xinclude;
-pub mod xmlschematypes;
 pub mod xpath;
 pub mod xpointer;
+pub mod xsdtypes;
 
 use std::{convert::Infallible, marker::PhantomData, str::FromStr};
 
