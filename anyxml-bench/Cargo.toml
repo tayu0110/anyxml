@@ -1,0 +1,21 @@
+[package]
+name = "anyxml-bench"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+anyxml = { "path" = "../", "version" = "^0.10" }
+criterion = { "version" = "0.8.2" }
+quick-xml = "0.39.2"
+xml = "1.0.0"
+
+[[bench]]
+name = "sax"
+path = "benches/sax.rs"
+harness = false

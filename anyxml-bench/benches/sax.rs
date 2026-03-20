@@ -5,7 +5,7 @@ fn sax_533946_luse_6668_2_op(c: &mut Criterion) {
     c.bench_function("533946_luse_6668_2_op.gml", |b| {
         b.iter(|| {
             let mut reader = XMLReaderBuilder::new().build();
-            let uri = URIString::parse("benches/dataset/533946_luse_6668_2_op.gml").unwrap();
+            let uri = URIString::parse("../benches/dataset/533946_luse_6668_2_op.gml").unwrap();
             reader.parse_uri(uri, None).unwrap();
         });
     });
@@ -15,7 +15,7 @@ fn sax_53395538_fld_6697_l2_op(c: &mut Criterion) {
     c.bench_function("53395538_fld_6697_l2_op.gml", |b| {
         b.iter(|| {
             let mut reader = XMLReaderBuilder::new().build();
-            let uri = URIString::parse("benches/dataset/53395538_fld_6697_l2_op.gml").unwrap();
+            let uri = URIString::parse("../benches/dataset/53395538_fld_6697_l2_op.gml").unwrap();
             reader.parse_uri(uri, None).unwrap();
         });
     });
@@ -42,13 +42,13 @@ fn parse_via_quick_xml(path: &str) {
 
 fn sax_533946_luse_6668_2_op_quick_xml(c: &mut Criterion) {
     c.bench_function("quick-xml_533946_luse_6668_2_op.gml", |b| {
-        b.iter(|| parse_via_quick_xml("benches/dataset/533946_luse_6668_2_op.gml"));
+        b.iter(|| parse_via_quick_xml("../benches/dataset/533946_luse_6668_2_op.gml"));
     });
 }
 
 fn sax_53395538_fld_6697_l2_op_quick_xml(c: &mut Criterion) {
     c.bench_function("quick-xml_53395538_fld_6697_l2_op.gml", |b| {
-        b.iter(|| parse_via_quick_xml("benches/dataset/53395538_fld_6697_l2_op.gml"));
+        b.iter(|| parse_via_quick_xml("../benches/dataset/53395538_fld_6697_l2_op.gml"));
     });
 }
 

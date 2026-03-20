@@ -85,9 +85,6 @@ dependencies = [
  "anyxml-datetime",
  "anyxml-encoding",
  "anyxml-uri",
- "criterion",
- "quick-xml",
- "xml",
 ]
 
 [[package]]
@@ -97,6 +94,16 @@ version = "0.1.1"
 [[package]]
 name = "anyxml-base64"
 version = "0.1.0"
+
+[[package]]
+name = "anyxml-bench"
+version = "0.1.0"
+dependencies = [
+ "anyxml",
+ "criterion",
+ "quick-xml",
+ "xml",
+]
 
 [[package]]
 name = "anyxml-cli"
