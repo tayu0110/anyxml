@@ -19,3 +19,8 @@ xml = "1.0.0"
 name = "sax"
 path = "benches/sax.rs"
 harness = false
+
+[[bench]]
+name = "stax"
+path = "benches/stax.rs"
+harness = false
