@@ -1185,7 +1185,7 @@ impl std::fmt::Display for Node<dyn InternalNodeSpec> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{sax::parser::XMLReader, tree::TreeBuildHandler};
+    use crate::{sax::XMLReader, tree::TreeBuildHandler};
 
     use super::*;
 

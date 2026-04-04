@@ -40,12 +40,8 @@ pub use text::Text;
 use crate::{
     error::XMLError,
     sax::{
-        AttributeType, DefaultDecl, Locator,
-        attributes::Attributes,
-        contentspec::ContentSpec,
-        error::SAXParseError,
-        handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
-        source::InputSource,
+        AttributeType, Attributes, ContentSpec, DefaultDecl, DefaultSAXHandler, EntityResolver,
+        ErrorHandler, InputSource, Locator, SAXHandler, error::SAXParseError,
     },
     tree::{
         convert::NodeKind,

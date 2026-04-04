@@ -1,9 +1,6 @@
 use anyxml::{
     catalog::{Catalog, CatalogEntryFile, PreferMode},
-    sax::{
-        handler::{DebugHandler, DefaultSAXHandler},
-        parser::{ParserConfig, ParserOption, XMLReader},
-    },
+    sax::{DebugHandler, DefaultSAXHandler, ParserConfig, ParserOption, XMLReader},
     tree::TreeBuildHandler,
     uri::URIString,
     xpath::{evaluate, evaluate_uri},

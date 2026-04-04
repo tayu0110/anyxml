@@ -10,12 +10,9 @@ use crate::{
     ParserSpec,
     error::XMLError,
     sax::{
-        AttributeType, EntityDecl,
-        contentspec::ContentSpec,
+        AttributeType, ContentSpec, EntityDecl, InputSource, ParserOption, ParserState, SAXHandler,
+        XMLReader,
         error::{error, fatal_error, validity_error},
-        handler::SAXHandler,
-        parser::{ParserOption, ParserState, XMLReader},
-        source::InputSource,
     },
     uri::URIString,
 };

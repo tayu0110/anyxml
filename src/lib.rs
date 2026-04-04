@@ -21,7 +21,7 @@ pub mod xsdtypes;
 
 use std::{convert::Infallible, marker::PhantomData, str::FromStr};
 
-use crate::sax::{parser::ParserSubState, source::InputSource};
+use crate::sax::{InputSource, ParserSubState};
 
 /// Maximum length of XML version numbers accepted by the parser
 const XML_VERSION_NUM_LIMIT_LENGTH: usize = 128;

@@ -12,13 +12,9 @@ use crate::{
         grammar::{Grammar, NameClass, Pattern},
     },
     sax::{
-        AttributeType, DefaultDecl, Locator, NamespaceStack,
-        attributes::{Attribute, Attributes},
-        contentspec::ContentSpec,
+        Attribute, AttributeType, Attributes, ContentSpec, DefaultDecl, DefaultSAXHandler,
+        EntityResolver, ErrorHandler, InputSource, Locator, NamespaceStack, SAXHandler, XMLReader,
         error::SAXParseError,
-        handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
-        parser::XMLReader,
-        source::InputSource,
     },
     uri::{URIStr, rfc2396::validate_rfc2396_absolute_uri, uri::URIString},
 };

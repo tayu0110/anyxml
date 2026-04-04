@@ -1,10 +1,7 @@
 use std::{fmt::Write as _, fs::read_dir, path::Path};
 
 use anyxml::{
-    sax::{
-        handler::{DebugHandler, DefaultSAXHandler},
-        parser::XMLReader,
-    },
+    sax::{DebugHandler, DefaultSAXHandler, XMLReader},
     tree::{Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec},
     uri::URIString,
 };

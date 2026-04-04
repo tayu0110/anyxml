@@ -4,11 +4,8 @@ use crate::{
     ProgressiveParserSpec,
     error::XMLError,
     sax::{
-        EntityDecl,
+        EntityDecl, InputSource, ParserOption, ParserState, ParserSubState, SAXHandler, XMLReader,
         error::{error, fatal_error, validity_error},
-        handler::SAXHandler,
-        parser::{ParserOption, ParserState, ParserSubState, XMLReader},
-        source::InputSource,
     },
     uri::URIString,
 };

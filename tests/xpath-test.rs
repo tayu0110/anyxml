@@ -1,7 +1,7 @@
 use std::{fmt::Write as _, path::Path};
 
 use anyxml::{
-    sax::parser::{ParserOption, XMLReader},
+    sax::{ParserOption, XMLReader},
     tree::{TreeBuildHandler, convert::NodeKind},
     uri::URIString,
     xpath::{self, XPathObject},

@@ -3,10 +3,8 @@ use crate::{
     catalog::CatalogEntryFile,
     error::XMLError,
     sax::{
+        DefaultSAXHandler, InputSource, ParserOption, ParserState, SAXHandler, XMLReader,
         error::{error, fatal_error},
-        handler::{DefaultSAXHandler, SAXHandler},
-        parser::{ParserOption, ParserState, XMLReader},
-        source::InputSource,
     },
     uri::URIString,
 };

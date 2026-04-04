@@ -1,5 +1,5 @@
 use anyxml::{
-    sax::parser::XMLReader,
+    sax::XMLReader,
     tree::{Element, TreeBuildHandler},
     uri::URIString,
     xpath::evaluate_uri,

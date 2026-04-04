@@ -29,11 +29,9 @@ use crate::{
     ProgressiveParserSpec,
     error::XMLError,
     sax::{
-        Locator, NamespaceStack,
+        DefaultSAXHandler, EntityResolver, ErrorHandler, INPUT_CHUNK, Locator, NamespaceStack,
+        ParserConfig, ParserOption, ParserState, XMLProgressiveReaderBuilder, XMLReader,
         error::{SAXParseError, fatal_error},
-        handler::{DefaultSAXHandler, EntityResolver, ErrorHandler},
-        parser::{ParserConfig, ParserOption, ParserState, XMLProgressiveReaderBuilder, XMLReader},
-        source::INPUT_CHUNK,
     },
     stax::{
         events::{

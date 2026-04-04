@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    sax::{AttributeType, DefaultDecl, contentspec::ContentSpec},
+    sax::{AttributeType, ContentSpec, DefaultDecl},
     tree::{
         AttlistDecl, CDATASection, Comment, DocumentFragment, DocumentType, Element, ElementDecl,
         EntityDecl, EntityReference, NodeType, NotationDecl, ProcessingInstruction, Text,

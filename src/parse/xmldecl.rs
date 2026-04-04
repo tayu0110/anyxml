@@ -2,10 +2,8 @@ use crate::{
     ENCODING_NAME_LIMIT_LENGTH, ParserSpec, XML_VERSION_NUM_LIMIT_LENGTH, XMLVersion,
     error::XMLError,
     sax::{
+        InputSource, ParserState, SAXHandler, XMLReader,
         error::{fatal_error, warning},
-        handler::SAXHandler,
-        parser::{ParserState, XMLReader},
-        source::InputSource,
     },
 };
 

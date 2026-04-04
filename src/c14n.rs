@@ -10,7 +10,7 @@
 //! ```rust
 //! use anyxml::{
 //!     c14n::CanonicalizeHandler,
-//!     sax::parser::{ParserOption, XMLReader},
+//!     sax::{ParserOption, XMLReader},
 //!     uri::URIString,
 //! };
 //!
@@ -48,11 +48,8 @@ use std::{borrow::Cow, collections::HashMap, fmt::Write as _, sync::Arc};
 use crate::{
     error::{XMLError, XMLErrorDomain, XMLErrorLevel},
     sax::{
-        Locator,
-        attributes::Attributes,
-        error::SAXParseError,
-        handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
-        source::InputSource,
+        Attributes, DefaultSAXHandler, EntityResolver, ErrorHandler, InputSource, Locator,
+        SAXHandler, error::SAXParseError,
     },
     uri::URIStr,
 };

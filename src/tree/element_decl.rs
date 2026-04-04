@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    sax::contentspec::ContentSpec,
+    sax::ContentSpec,
     tree::{
         Document, NodeType,
         node::{Node, NodeCore, NodeSpec},

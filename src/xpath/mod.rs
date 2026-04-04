@@ -26,7 +26,7 @@
 //!
 //! ```rust
 //! use anyxml::{
-//!     sax::parser::XMLReader,
+//!     sax::XMLReader,
 //!     tree::TreeBuildHandler,
 //!     xpath::compile,
 //! };
@@ -65,7 +65,7 @@ pub use compile::*;
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE,
     error::XMLError,
-    sax::parser::XMLReader,
+    sax::XMLReader,
     tree::{
         Attribute, CDATASection, Comment, Document, Element, Node, NodeType, ProcessingInstruction,
         Text, TreeBuildHandler, convert::NodeKind, namespace::Namespace, node::NodeSpec,

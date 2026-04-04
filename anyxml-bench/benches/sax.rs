@@ -1,4 +1,4 @@
-use anyxml::{sax::parser::XMLReader, uri::URIString};
+use anyxml::{sax::XMLReader, uri::URIString};
 use criterion::{Criterion, criterion_group, criterion_main};
 
 fn sax_533946_luse_6668_2_op(c: &mut Criterion) {

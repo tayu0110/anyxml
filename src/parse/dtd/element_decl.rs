@@ -4,11 +4,9 @@ use crate::{
     ParserSpec,
     error::XMLError,
     sax::{
-        contentspec::{ContentSpec, ElementContent, ElementContentStateID},
+        ContentSpec, ElementContent, ElementContentStateID, InputSource, ParserOption, SAXHandler,
+        XMLReader,
         error::{error, fatal_error, validity_error},
-        handler::SAXHandler,
-        parser::{ParserOption, XMLReader},
-        source::InputSource,
     },
 };
 

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path, rc::Rc};
 
 use anyxml::{
-    sax::parser::XMLReader,
+    sax::XMLReader,
     tree::{Document, Element, Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec},
     uri::{URIStr, URIString},
     xinclude::XIncludeProcessor,

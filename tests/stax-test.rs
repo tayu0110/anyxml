@@ -2,10 +2,7 @@ use std::{fmt::Write as _, fs::read_dir, path::Path};
 
 use anyxml::{
     error::XMLErrorDomain,
-    sax::{
-        handler::{DefaultSAXHandler, ErrorHandler},
-        parser::ParserOption,
-    },
+    sax::{DefaultSAXHandler, ErrorHandler, ParserOption},
     stax::{XMLStreamReaderBuilder, events::XMLEvent},
     uri::URIString,
 };

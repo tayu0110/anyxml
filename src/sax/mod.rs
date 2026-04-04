@@ -23,11 +23,7 @@
 //! ```rust
 //! use std::fmt::Write as _;
 //!
-//! use anyxml::sax::{
-//!     attributes::Attributes,
-//!     handler::{EntityResolver, ErrorHandler, SAXHandler},
-//!     parser::XMLReader,
-//! };
+//! use anyxml::sax::{Attributes, EntityResolver, ErrorHandler, SAXHandler, XMLReader};
 //!
 //! #[derive(Default)]
 //! struct ExampleHandler {
@@ -95,11 +91,7 @@
 //!
 //! ## Example
 //! ```rust
-//! use anyxml::sax::{
-//!     attributes::Attributes,
-//!     handler::DebugHandler,
-//!     parser::XMLReader,
-//! };
+//! use anyxml::sax::{Attributes, DebugHandler, XMLReader};
 //!
 //! let mut reader = XMLReader::builder()
 //!     .set_handler(DebugHandler::default())
@@ -139,8 +131,7 @@
 //! ```rust
 //! use anyxml::sax::{
 //!     error::SAXParseError,
-//!     handler::{EntityResolver, ErrorHandler, SAXHandler},
-//!     parser::{ParserOption, XMLReader},
+//!     EntityResolver, ErrorHandler, ParserOption, SAXHandler, XMLReader,
 //! };
 //!
 //! #[derive(Default)]
@@ -184,12 +175,12 @@
 //! [get_external_subset]: handler::EntityResolver::get_external_subset
 //! [XMLReaderBuilder]: parser::XMLReaderBuilder
 
-pub mod attributes;
-pub mod contentspec;
+mod attributes;
+mod contentspec;
 pub mod error;
-pub mod handler;
-pub mod parser;
-pub mod source;
+mod handler;
+mod parser;
+mod source;
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -202,9 +193,19 @@ use std::{
 use crate::{
     XML_XML_NAMESPACE,
     error::XMLError,
-    sax::contentspec::ContentSpec,
     uri::{URIStr, URIString},
 };
+
+pub use attributes::{Attribute, Attributes};
+pub use contentspec::ContentSpec;
+pub(crate) use contentspec::{ElementContent, ElementContentStateID};
+pub use handler::{DebugHandler, DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler};
+pub use parser::{
+    ParserConfig, ParserOption, XMLProgressiveReaderBuilder, XMLReader, XMLReaderBuilder,
+};
+pub(crate) use parser::{ParserState, ParserSubState};
+pub(crate) use source::INPUT_CHUNK;
+pub use source::InputSource;
 
 /// Attribute type of attlist declarations.
 ///

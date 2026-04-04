@@ -1,7 +1,7 @@
 use crate::{
     CHARDATA_CHUNK_LENGTH, ParserSpec,
     error::XMLError,
-    sax::{error::fatal_error, handler::SAXHandler, parser::XMLReader, source::InputSource},
+    sax::{InputSource, SAXHandler, XMLReader, error::fatal_error},
 };
 
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {

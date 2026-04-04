@@ -1,6 +1,6 @@
 use anyxml::{
     c14n::CanonicalizeHandler,
-    sax::parser::{ParserOption, XMLReader},
+    sax::{ParserOption, XMLReader},
     uri::URIString,
 };
 

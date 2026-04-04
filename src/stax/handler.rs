@@ -3,11 +3,8 @@ use std::sync::Arc;
 use crate::{
     error::XMLError,
     sax::{
-        Locator,
-        attributes::Attributes,
-        error::SAXParseError,
-        handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
-        source::InputSource,
+        Attributes, DefaultSAXHandler, EntityResolver, ErrorHandler, InputSource, Locator,
+        SAXHandler, error::SAXParseError,
     },
     stax::events::XMLEventType,
     uri::{URIStr, URIString},

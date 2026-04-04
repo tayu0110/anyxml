@@ -85,7 +85,7 @@ impl std::ops::BitOr<ParserConfig> for ParserOption {
 /// Configuration provided to the parser.
 ///
 /// ```rust
-/// use anyxml::sax::parser::{ParserConfig, ParserOption::*};
+/// use anyxml::sax::{ParserConfig, ParserOption::*};
 ///
 /// assert!(ParserConfig::default().is_enable(Namespaces));
 ///

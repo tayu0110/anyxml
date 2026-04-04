@@ -10,10 +10,8 @@ use std::{
 use anyxml::{
     error::{XMLErrorDomain, XMLErrorLevel},
     sax::{
-        Locator,
-        attributes::Attributes,
-        handler::{DebugHandler, EntityResolver, ErrorHandler, SAXHandler},
-        parser::{ParserOption, XMLReader},
+        Attributes, DebugHandler, EntityResolver, ErrorHandler, Locator, ParserOption, SAXHandler,
+        XMLReader,
     },
     uri::URIString,
 };

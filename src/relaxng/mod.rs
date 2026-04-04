@@ -12,10 +12,7 @@
 //! ```rust
 //! use anyxml::{
 //!     relaxng::RelaxNGSchema,
-//!     sax::{
-//!         handler::DefaultSAXHandler,
-//!         parser::XMLReader,
-//!     },
+//!     sax::{DefaultSAXHandler, XMLReader},
 //! };
 //!
 //! // example of RELAX NG Tutorial 1. Getting started
@@ -62,10 +59,7 @@
 //! ```rust
 //! use anyxml::{
 //!     relaxng::RelaxNGSchema,
-//!     sax::{
-//!         handler::DefaultSAXHandler,
-//!         parser::XMLReader,
-//!     },
+//!     sax::{DefaultSAXHandler, XMLReader},
 //!     tree::TreeBuildHandler,
 //! };
 //!
@@ -122,7 +116,7 @@ use std::io::Read;
 use crate::{
     error::XMLError,
     relaxng::{grammar::Grammar, parse::RelaxNGParseHandler},
-    sax::{handler::SAXHandler, parser::XMLReader},
+    sax::{SAXHandler, XMLReader},
     uri::URIStr,
 };
 

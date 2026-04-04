@@ -11,7 +11,7 @@
 //! ```rust
 //! use anyxml::{
 //!     catalog::{Catalog, CatalogEntryFile},
-//!     sax::handler::DefaultSAXHandler,
+//!     sax::DefaultSAXHandler,
 //!     uri::URIString,
 //! };
 //!
@@ -71,12 +71,8 @@ use crate::{
     XMLVersion,
     error::XMLError,
     sax::{
-        Locator,
-        attributes::Attributes,
-        error::SAXParseError,
-        handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
-        parser::XMLReader,
-        source::InputSource,
+        Attributes, DefaultSAXHandler, EntityResolver, ErrorHandler, InputSource, Locator,
+        SAXHandler, XMLReader, error::SAXParseError,
     },
     uri::{URIStr, URIString},
 };

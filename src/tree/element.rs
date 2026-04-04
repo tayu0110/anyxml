@@ -1006,7 +1006,7 @@ impl<'a> Iterator for NamespaceIter<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{sax::parser::XMLReader, tree::TreeBuildHandler};
+    use crate::{sax::XMLReader, tree::TreeBuildHandler};
 
     #[test]
     fn get_language_tests() {

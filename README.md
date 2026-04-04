@@ -44,11 +44,7 @@ This approach reduces opportunities to use `Rc`/`Arc` or internal mutability.
 ```rust
 use std::fmt::Write as _;
 
-use anyxml::sax::{
-    attributes::Attributes,
-    handler::{EntityResolver, ErrorHandler, SAXHandler},
-    parser::XMLReader,
-};
+use anyxml::sax::{Attributes, EntityResolver, ErrorHandler, SAXHandler, XMLReader};
 
 #[derive(Default)]
 struct ExampleHandler {
@@ -129,7 +125,7 @@ This API assumes namespace support, so it may not accept prefixed names without 
 ### Example
 ```rust
 use anyxml::{
-    sax::parser::XMLReader,
+    sax::XMLReader,
     tree::TreeBuildHandler
 };
 

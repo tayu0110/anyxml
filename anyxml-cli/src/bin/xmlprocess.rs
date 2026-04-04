@@ -7,12 +7,9 @@ use anyxml::{
     error::{XMLError, XMLErrorDomain},
     relaxng::RelaxNGSchema,
     sax::{
-        AttributeType, DefaultDecl,
-        attributes::Attributes,
+        AttributeType, Attributes, ContentSpec, DebugHandler, DefaultDecl, DefaultSAXHandler,
+        EntityResolver, ErrorHandler, InputSource, ParserOption, SAXHandler, XMLReader,
         error::SAXParseError,
-        handler::{DebugHandler, DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
-        parser::{ParserOption, XMLReader},
-        source::InputSource,
     },
     stax::{XMLStreamReaderBuilder, events::XMLEvent},
     tree::TreeBuildHandler,
@@ -185,7 +182,7 @@ impl SAXHandler for CompactDebugHandler {
     fn declaration(&mut self, version: &str, encoding: Option<&str>, standalone: Option<bool>) {
         self.child.declaration(version, encoding, standalone);
     }
-    fn element_decl(&mut self, name: &str, contentspec: &anyxml::sax::contentspec::ContentSpec) {
+    fn element_decl(&mut self, name: &str, contentspec: &ContentSpec) {
         self.child.element_decl(name, contentspec);
         self.show();
     }

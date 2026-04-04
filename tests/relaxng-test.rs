@@ -4,10 +4,8 @@ use anyxml::{
     error::{XMLError, XMLErrorDomain},
     relaxng::RelaxNGSchema,
     sax::{
+        DefaultSAXHandler, EntityResolver, ErrorHandler, InputSource, SAXHandler, XMLReader,
         error::SAXParseError,
-        handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
-        parser::XMLReader,
-        source::InputSource,
     },
     tree::{Element, Node, node::InternalNodeSpec},
     uri::{URIStr, URIString},

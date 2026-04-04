@@ -8,12 +8,8 @@ use crate::{
         grammar::{Context, Datatype, LocalName, ParamList, Pattern, PatternId, Uri},
     },
     sax::{
-        self, AttributeType, DefaultDecl, Locator, NamespaceStack,
-        attributes::Attributes,
-        contentspec::ContentSpec,
-        error::SAXParseError,
-        handler::{EntityResolver, ErrorHandler, SAXHandler},
-        source::InputSource,
+        self, AttributeType, Attributes, ContentSpec, DefaultDecl, EntityResolver, ErrorHandler,
+        InputSource, Locator, NamespaceStack, SAXHandler, error::SAXParseError,
     },
     tree::{Element, convert::NodeKind},
     uri::{URIStr, URIString},
@@ -153,7 +149,7 @@ impl<'a, H: SAXHandler> ValidateHandler<'a, H> {
     fn validate_element(&mut self, element: &Element) -> Result<(), XMLError> {
         let mut atts = Attributes::new();
         for att in element.attributes() {
-            let mut att = sax::attributes::Attribute {
+            let mut att = sax::Attribute {
                 namespace_name: att.namespace_name().map(|ns| ns.as_ref().into()),
                 local_name: Some(att.local_name().as_ref().into()),
                 qname: att.name().as_ref().into(),
@@ -167,7 +163,7 @@ impl<'a, H: SAXHandler> ValidateHandler<'a, H> {
             self.start_prefix_mapping(ns.prefix().as_deref(), &ns.namespace_name());
 
             let mut att = if ns.prefix().is_none() {
-                sax::attributes::Attribute {
+                sax::Attribute {
                     namespace_name: Some(XML_NS_NAMESPACE.into()),
                     local_name: Some("xmlns".into()),
                     qname: "xmlns".into(),
@@ -175,7 +171,7 @@ impl<'a, H: SAXHandler> ValidateHandler<'a, H> {
                     flag: 0,
                 }
             } else {
-                sax::attributes::Attribute {
+                sax::Attribute {
                     namespace_name: Some(XML_NS_NAMESPACE.into()),
                     local_name: ns.prefix().as_deref().map(|pre| pre.into()),
                     qname: format!("xmlns:{}", ns.prefix().unwrap()),

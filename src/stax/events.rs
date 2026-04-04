@@ -1,4 +1,4 @@
-use crate::{XMLVersion, sax::attributes::Attributes};
+use crate::{XMLVersion, sax::Attributes};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum XMLEventType {

@@ -8,12 +8,7 @@ use std::{collections::HashMap, fs::File, io::Read};
 use crate::{
     DefaultParserSpec, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
-    sax::{
-        AttributeType,
-        handler::{DefaultSAXHandler, SAXHandler},
-        parser::XMLReader,
-        source::InputSource,
-    },
+    sax::{AttributeType, DefaultSAXHandler, InputSource, SAXHandler, XMLReader},
     tree::{
         Document, Element, Node, NodeType, TreeBuildHandler,
         node::{InternalNodeSpec, NodeSpec},
@@ -153,7 +148,7 @@ macro_rules! fatal_error {
         use self::XIncludeError::*;
         #[allow(unused)]
         use $crate::error::XMLError::*;
-        use crate::sax::handler::ErrorHandler;
+        use crate::sax::ErrorHandler;
         $proc.reader.handler.fatal_error($crate::sax::error::SAXParseError {
             error: $code.into(),
             level: $crate::error::XMLErrorLevel::FatalError,
