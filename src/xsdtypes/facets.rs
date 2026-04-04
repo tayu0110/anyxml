@@ -2,6 +2,8 @@ use std::str::FromStr;
 
 use crate::xsdtypes::{ParseError, SchemaTypeError, SchemaValue};
 
+/// Constraining facet types.
+///
 /// # Reference
 /// - [4.3 Constraining Facets](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#rf-facets)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +44,7 @@ impl FromStr for FacetType {
     }
 }
 
+/// The set of the value of constraining facets.
 #[derive(Clone, PartialEq)]
 pub(super) struct Facets {
     /// if i32::MIN, not set.
@@ -137,6 +140,8 @@ pub enum FacetError {
     Unacceptable,
 }
 
+/// The constraining facet 'whiteSpace'.
+///
 /// # Reference
 /// - [4.3.6 whiteSpace](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#rf-whiteSpace)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

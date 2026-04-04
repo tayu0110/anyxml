@@ -133,7 +133,7 @@ pub struct RelaxNGSchema {
 impl RelaxNGSchema {
     /// Parse RELAX NG schema using `uri` and `encoding`.
     ///
-    /// If a custom [`EntityResolver`](crate::sax::handler::EntityResolver) or [`ErrorHandler`]
+    /// If a custom [`EntityResolver`](crate::sax::EntityResolver) or [`ErrorHandler`](crate::sax::ErrorHandler)
     /// is required, it can be specified using `handler`.
     ///
     /// If the document cannot be parsed for any reason,
@@ -162,7 +162,7 @@ impl RelaxNGSchema {
 
     /// Parse RELAX NG schema using `reader`, `encoding` and `uri`.
     ///
-    /// If a custom [`EntityResolver`](crate::sax::handler::EntityResolver) or [`ErrorHandler`]
+    /// If a custom [`EntityResolver`](crate::sax::EntityResolver) or [`ErrorHandler`](crate::sax::ErrorHandler)
     /// is required, it can be specified using `handler`.
     ///
     /// If the document cannot be parsed for any reason,
@@ -192,7 +192,7 @@ impl RelaxNGSchema {
 
     /// Parse RELAX NG schema using `schema` and `uri`.
     ///
-    /// If a custom [`EntityResolver`](crate::sax::handler::EntityResolver) or [`ErrorHandler`]
+    /// If a custom [`EntityResolver`](crate::sax::EntityResolver) or [`ErrorHandler`](crate::sax::ErrorHandler)
     /// is required, it can be specified using `handler`.
     ///
     /// If the document cannot be parsed for any reason,

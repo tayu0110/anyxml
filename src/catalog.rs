@@ -27,7 +27,7 @@
 //! let mut catalog = Catalog::default();
 //! let entry = CatalogEntryFile::parse_str(
 //!     SAMPLE_CATALOG,
-//!     Some(&URIString::parse("file:///home/user/").unwrap()),
+//!     Some(&URIString::parse("file:///home/user/catalog.xml").unwrap()),
 //!     None::<DefaultSAXHandler>,
 //!     None::<DefaultSAXHandler>
 //! ).unwrap();
@@ -45,7 +45,7 @@
 //! # Parser Integration
 //! By registering the catalog with the parser, the parser can use the catalog to resolve
 //! external identifiers and URIs.  \
-//! This feature is enabled by specifying [`ParserOption::Catalogs`](crate::sax::parser::ParserOption::Catalogs)
+//! This feature is enabled by specifying [`ParserOption::Catalogs`](crate::sax::ParserOption::Catalogs)
 //! to the parser.
 //!
 //! When a catalog is registered with the parser, the parser will always attempt to resolve
@@ -56,11 +56,11 @@
 //! ## `oasis-xml-catalog` processing instruction
 //! As defined in XML Catalogs V1.1, the `oasis-xml-catalog` processing instruction can
 //! specify a catalog that the parser uses to resolve external identifiers and URI references.
-//! This feature is enabled by specifying [`ParserOption::CatalogPIAware`](crate::sax::parser::ParserOption::CatalogPIAware)
+//! This feature is enabled by specifying [`ParserOption::CatalogPIAware`](crate::sax::ParserOption::CatalogPIAware)
 //! to the parser.
 //!
-//! Since untrusted documents may cause issues such as generating a large number of unexpected
-//! resource requests, it is recommended to sanitize them using [`EntityResolver`](crate::sax::handler::EntityResolver).
+//! If this option is enabled, since untrusted documents may cause issues such as generating a large
+//! number of unexpected resource requests, it is recommended to sanitize them using [`EntityResolver`].
 //!
 //! # Reference
 //! - [XML Catalogs V1.1](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)

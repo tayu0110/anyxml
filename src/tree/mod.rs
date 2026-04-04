@@ -107,7 +107,7 @@ impl std::error::Error for XMLTreeError {}
 /// SAX handler that helps build the tree.
 ///
 /// Due to API limitations, when using this handler, it is necessary to enable
-/// [`ParserOption::Namespaces`](crate::sax::parser::ParserOption::Namespaces) option of the parser.
+/// [`ParserOption::Namespaces`](crate::sax::ParserOption::Namespaces) option of the parser.
 pub struct TreeBuildHandler<H: SAXHandler = DefaultSAXHandler> {
     node: Node<dyn InternalNodeSpec>,
     /// The root node of the parsed document tree.

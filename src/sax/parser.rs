@@ -375,8 +375,7 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
 
     /// Add `catalog` to the parser's catalog entry file list.
     ///
-    /// Catalogs added using this method are not removed by [`reset`](XMLReader::reset)
-    /// or [`reset_context`](XMLReader::reset_context).  \
+    /// Catalogs added using this method are not removed by [`reset`](XMLReader::reset).  \
     /// The catalog entry file list can be cleared using [`clear_catalog`](XMLReader::clear_catalog).
     pub fn add_catalog_entry_file(&mut self, catalog: CatalogEntryFile) {
         self.catalog.add(catalog);

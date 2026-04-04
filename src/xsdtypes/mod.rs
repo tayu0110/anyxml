@@ -474,6 +474,8 @@ fn common_ancestor(types: &[Arc<SimpleTypeDefinition>]) -> Arc<SimpleTypeDefinit
         .unwrap_or_else(|| SCHEMA_BUILTIN_ANY_SIMPLE_TYPE.clone())
 }
 
+/// Builtin primitive types.
+///
 /// # Reference
 /// - [3.2 Primitive datatypes](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#built-in-primitive-datatypes)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -988,6 +990,8 @@ impl From<BuiltinPrimitiveType> for Arc<SimpleTypeDefinition> {
     }
 }
 
+/// Builtin derived types.
+///
 /// # Reference
 /// - [3.3 Derived datatypes](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#built-in-derived)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1645,6 +1649,9 @@ impl From<BuiltinDerivedType> for Arc<SimpleTypeDefinition> {
     }
 }
 
+/// User-defined derived type.
+///
+/// It can be generated using [`SimpleTypeDefinitionBuilder`].
 #[derive(Clone, PartialEq)]
 pub struct UserDefinedType {
     name: Arc<str>,
@@ -2074,6 +2081,8 @@ impl UserDefinedType {
     }
 }
 
+/// The property 'variety' of the component 'Simple Type Definition'.
+///
 /// # Reference
 /// - [4.1.1 The Simple Type Definition Schema Component](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#dc-defn)
 #[derive(Clone, PartialEq)]
@@ -2083,6 +2092,8 @@ pub enum Variety {
     Union(Arc<[Arc<SimpleTypeDefinition>]>),
 }
 
+/// Fundamental facet 'ordered'.
+///
 /// # Reference
 /// - [4.2.2 ordered](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#rf-ordered)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2092,6 +2103,8 @@ pub enum Ordered {
     Total,
 }
 
+/// Fundamental facet 'cardinality'.
+///
 /// # Reference
 /// - [4.2.4 cardinality](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#rf-cardinality)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2100,6 +2113,10 @@ pub enum Cardinality {
     CountablyInfinite,
 }
 
+/// The set of the value of the property 'final' of the component 'Simple Type Definition'.
+///
+/// # Reference
+/// - [4.1.1 The Simple Type Definition Schema Component](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#dc-defn)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct FinalSet(u8);
 
@@ -2128,6 +2145,10 @@ impl std::ops::BitOr<Final> for FinalSet {
     }
 }
 
+/// The property 'final' of the component 'Simple Type Definition'.
+///
+/// # Reference
+/// - [4.1.1 The Simple Type Definition Schema Component](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#dc-defn)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Final {
     List = 1,
@@ -2365,6 +2386,9 @@ impl SimpleTypeDefinitionBuilder {
     }
 }
 
+/// Returns a pointer to a predefined built-in type with a name matching `name`.
+///
+/// `name` must be an NCName.
 pub fn find_builtin_type_definition(name: &str) -> Option<Arc<SimpleTypeDefinition>> {
     let ret = match name {
         "string" => SCHEMA_BUILTIN_STRING.clone(),

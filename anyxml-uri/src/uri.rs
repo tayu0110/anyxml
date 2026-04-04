@@ -384,7 +384,7 @@ impl URIString {
     /// > process or software component responsible for dereferencing it SHOULD trigger
     /// > escaping. When escaping does occur, it MUST be performed as follows:
     /// >
-    /// > 1. Each character to be escaped is represented in UTF-8 [Unicode] as one or more
+    /// > 1. Each character to be escaped is represented in UTF-8 \[Unicode\] as one or more
     /// >    bytes.
     /// > 2. The resulting bytes are escaped with the URI escaping mechanism (that is,
     /// >    converted to % HH, where HH is the hexadecimal notation of the byte value).

@@ -103,7 +103,7 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
     /// [`Attribute`](crate::tree::Attribute) and [`Namespace`](crate::tree::Namespace) each return
     /// the same result as [`Attribute::owner_element`](crate::tree::Attribute::owner_element)
     /// and [`Namespace::owner_element`](crate::tree::Namespace::owner_element),
-    /// but neither is a child of [`Element`](crate::tree::Element).
+    /// but neither is a child of [`Element`].
     pub fn parent_node(&self) -> Option<Node<dyn InternalNodeSpec>> {
         self.core.borrow().parent_node.upgrade().map(|core| Node {
             core,

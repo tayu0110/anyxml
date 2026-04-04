@@ -1,21 +1,18 @@
 //! Provide SAX parsers and auxiliary data structures.
 //!
 //! To receive events from the parser, the application must configure a SAX handler.  \
-//! The handler must implement [`SAXHandler`][SAXHandler], [`EntityResolver`][EntityResolver],
-//! and [`ErrorHandler`][ErrorHandler].
+//! The handler must implement [`SAXHandler`], [`EntityResolver`], and [`ErrorHandler`].
 //!
-//! The default implementation for each trait except for [`EntityResolver::resolve_entity`][resolve_entity]
-//! does nothing. The default implementation for [`EntityResolver::resolve_entity`][resolve_entity]
-//! simply searches local files.  \
-//! If the application only handles trusted data, redirecting to the
-//! [`DefaultSAXHandler`][DefaultSAXHandler] implementation should suffice.
+//! The default implementation for each trait except for [`EntityResolver::resolve_entity`]
+//! does nothing. The default implementation for [`EntityResolver::resolve_entity`] simply
+//! searches local files.  \
+//! If the application only handles trusted data, redirecting to the [`DefaultSAXHandler`]
+//! implementation should suffice.
 //! However, when handling untrusted resources, it may be advisable to perform some sanitization
-//! in [`EntityResolver::resolve_entity`][resolve_entity] or
-//! [`EntityResolver::get_external_subset`][get_external_subset].
+//! in [`EntityResolver::resolve_entity`] or [`EntityResolver::get_external_subset`].
 //!
-//! Parsers can be generated via [`XMLReaderBuilder`][XMLReaderBuilder].  \
-//! If a custom handler is required, execute
-//! [`XMLReaderBuilder::set_handler`](parser::XMLReaderBuilder::set_handler).  \
+//! Parsers can be generated via [`XMLReaderBuilder`].  \
+//! If a custom handler is required, execute [`XMLReaderBuilder::set_handler`].  \
 //! Since the handler type is statically determined, it is impossible to reassign
 //! a different type of handler to an already generated parser.
 //!
@@ -166,14 +163,6 @@
 //! reader.parse_str(DOCUMENT, None).unwrap();
 //! assert_eq!(reader.handler.buffer, EXPECT);
 //! ```
-//!
-//! [SAXHandler]: handler::SAXHandler
-//! [EntityResolver]: handler::EntityResolver
-//! [ErrorHandler]: handler::ErrorHandler
-//! [DefaultSAXHandler]: handler::DefaultSAXHandler
-//! [resolve_entity]: handler::EntityResolver::resolve_entity
-//! [get_external_subset]: handler::EntityResolver::get_external_subset
-//! [XMLReaderBuilder]: parser::XMLReaderBuilder
 
 mod attributes;
 mod contentspec;
