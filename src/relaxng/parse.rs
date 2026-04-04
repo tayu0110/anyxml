@@ -17,7 +17,7 @@ use crate::{
         contentspec::ContentSpec,
         error::SAXParseError,
         handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
-        parser::XMLReaderBuilder,
+        parser::XMLReader,
         source::InputSource,
     },
     uri::{URIStr, rfc2396::validate_rfc2396_absolute_uri, uri::URIString},
@@ -969,7 +969,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     return;
                 }
 
-                let mut reader = XMLReaderBuilder::new().set_handler(&mut *self).build();
+                let mut reader = XMLReader::builder().set_handler(&mut *self).build();
                 if let Err(err) = reader.parse_uri(&href, None) {
                     error!(
                         self,
@@ -1060,7 +1060,7 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
                     return None;
                 }
 
-                let mut reader = XMLReaderBuilder::new().set_handler(&mut *self).build();
+                let mut reader = XMLReader::builder().set_handler(&mut *self).build();
                 if reader.parse_uri(&href, None).is_err()
                     || self.tree[current].children.len() == old_num_children
                 {
@@ -3306,7 +3306,7 @@ mod tests {
 
     #[test]
     fn full_syntax_parsing_tests() {
-        let mut reader = XMLReaderBuilder::new()
+        let mut reader = XMLReader::builder()
             .set_handler(RelaxNGParseHandler::default())
             .build();
 
@@ -3350,7 +3350,7 @@ mod tests {
         let path =
             base_uri.resolve(&URIString::parse("resources/relaxng/spec-example.rng").unwrap());
         eprintln!("{}", path);
-        let mut reader = XMLReaderBuilder::new()
+        let mut reader = XMLReader::builder()
             .set_handler(RelaxNGParseHandler::default())
             .build();
         reader.parse_uri(path, None).unwrap();

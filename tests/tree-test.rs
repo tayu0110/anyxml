@@ -3,7 +3,7 @@ use std::{fmt::Write as _, fs::read_dir, path::Path};
 use anyxml::{
     sax::{
         handler::{DebugHandler, DefaultSAXHandler},
-        parser::XMLReaderBuilder,
+        parser::XMLReader,
     },
     tree::{Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec},
     uri::URIString,
@@ -197,7 +197,7 @@ fn tree_walk_tests() {
                 buffer: String::new(),
             });
             handler.expand_entity_reference = false;
-            let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+            let mut reader = XMLReader::builder().set_handler(handler).build();
             reader.parse_uri(&uri, None).ok();
 
             let outname = path.file_name().unwrap().to_str().unwrap();
@@ -236,7 +236,7 @@ fn tree_dump_tests() {
             let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
             let mut handler = TreeBuildHandler::default();
             handler.expand_entity_reference = false;
-            let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+            let mut reader = XMLReader::builder().set_handler(handler).build();
             reader.parse_uri(&uri, None).ok();
             assert!(!reader.handler.fatal_error);
 
@@ -261,7 +261,7 @@ fn tree_deep_copy_tests() {
         {
             let path = ent.path();
             let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
-            let mut reader = XMLReaderBuilder::new()
+            let mut reader = XMLReader::builder()
                 .set_handler(TreeBuildHandler::default())
                 .build();
             reader.parse_uri(&uri, None).ok();
@@ -285,7 +285,7 @@ fn tree_deep_copy_tests() {
 // reference of test method: https://www.w3.org/XML/2005/01/xml-id/runtests.xsl
 #[test]
 fn xml_id_tests() {
-    let mut reader = XMLReaderBuilder::new()
+    let mut reader = XMLReader::builder()
         .set_handler(TreeBuildHandler::default())
         .build();
     reader

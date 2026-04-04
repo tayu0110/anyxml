@@ -26,7 +26,7 @@
 //!
 //! ```rust
 //! use anyxml::{
-//!     sax::parser::XMLReaderBuilder,
+//!     sax::parser::XMLReader,
 //!     tree::TreeBuildHandler,
 //!     xpath::compile,
 //! };
@@ -39,7 +39,7 @@
 //! "#;
 //! const XPATH: &str = "//greeting[lang('ja')]/text()";
 //!
-//! let mut reader = XMLReaderBuilder::new()
+//! let mut reader = XMLReader::builder()
 //!     .set_handler(TreeBuildHandler::default())
 //!     .build();
 //! reader.parse_str(DOCUMENT, None).unwrap();
@@ -65,7 +65,7 @@ pub use compile::*;
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE,
     error::XMLError,
-    sax::parser::XMLReaderBuilder,
+    sax::parser::XMLReader,
     tree::{
         Attribute, CDATASection, Comment, Document, Element, Node, NodeType, ProcessingInstruction,
         Text, TreeBuildHandler, convert::NodeKind, namespace::Namespace, node::NodeSpec,
@@ -121,7 +121,7 @@ pub fn evaluate(xpath: &str, document: Document) -> Result<XPathObject, XPathErr
 /// to specify it in documents that may retrieve external resources.
 pub fn evaluate_str(xpath: &str, xml: &str, uri: Option<&URIStr>) -> Result<XPathObject, XMLError> {
     let mut expression = compile(xpath)?;
-    let mut reader = XMLReaderBuilder::new()
+    let mut reader = XMLReader::builder()
         .set_handler(TreeBuildHandler::default())
         .build();
     reader.parse_str(xml, uri)?;
@@ -145,7 +145,7 @@ pub fn evaluate_uri(
     encoding: Option<&str>,
 ) -> Result<XPathObject, XMLError> {
     let mut expression = compile(xpath)?;
-    let mut reader = XMLReaderBuilder::new()
+    let mut reader = XMLReader::builder()
         .set_handler(TreeBuildHandler::default())
         .build();
     reader.parse_uri(uri, encoding)?;
@@ -172,7 +172,7 @@ pub fn evaluate_reader<'a>(
     uri: Option<&URIStr>,
 ) -> Result<XPathObject, XMLError> {
     let mut expression = compile(xpath)?;
-    let mut parser = XMLReaderBuilder::new()
+    let mut parser = XMLReader::builder()
         .set_handler(TreeBuildHandler::default())
         .build();
     parser.parse_reader(reader, encoding, uri)?;

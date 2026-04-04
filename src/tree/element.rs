@@ -1006,11 +1006,11 @@ impl<'a> Iterator for NamespaceIter<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{sax::parser::XMLReaderBuilder, tree::TreeBuildHandler};
+    use crate::{sax::parser::XMLReader, tree::TreeBuildHandler};
 
     #[test]
     fn get_language_tests() {
-        let mut parser = XMLReaderBuilder::new()
+        let mut parser = XMLReader::builder()
             .set_handler(TreeBuildHandler::default())
             .build();
 

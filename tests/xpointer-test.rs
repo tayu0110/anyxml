@@ -1,5 +1,5 @@
 use anyxml::{
-    sax::parser::XMLReaderBuilder,
+    sax::parser::XMLReader,
     tree::{Element, TreeBuildHandler},
     uri::URIString,
     xpath::evaluate_uri,
@@ -27,7 +27,7 @@ fn handle_testcase(testcases: Element) {
         eprintln!("=== test suite: (no documentation) ===");
     }
 
-    let mut reader = XMLReaderBuilder::new()
+    let mut reader = XMLReader::builder()
         .set_handler(TreeBuildHandler::default())
         .build();
     for testcase in testcases.get_elements_by_qname("testCase") {

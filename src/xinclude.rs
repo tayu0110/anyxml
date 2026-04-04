@@ -11,7 +11,7 @@ use crate::{
     sax::{
         AttributeType,
         handler::{DefaultSAXHandler, SAXHandler},
-        parser::{XMLReader, XMLReaderBuilder},
+        parser::XMLReader,
         source::InputSource,
     },
     tree::{
@@ -806,7 +806,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
 impl Default for XIncludeProcessor<'_> {
     fn default() -> Self {
         Self {
-            reader: XMLReaderBuilder::new()
+            reader: XMLReader::builder()
                 .set_handler(TreeBuildHandler::default())
                 .build(),
             resolver: XIncludeDefaultResourceResolver,

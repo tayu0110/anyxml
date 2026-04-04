@@ -1,5 +1,69 @@
 //! Provide resource resolution APIs based on the OASIS standard
 //! [XML Catalogs V1.1](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest).
+//!
+//! # Usage
+//! The basic usage involves creating a [`CatalogEntryFile`] using the appropriate method
+//! from a URI, string, or document source, and adding it to the [`Catalog`].  \
+//! The [`Catalog`] uses the added catalog entries to resolve external identifier URIs and
+//! search for alternative URIs for URI references.
+//!
+//! ## Example
+//! ```rust
+//! use anyxml::{
+//!     catalog::{Catalog, CatalogEntryFile},
+//!     sax::handler::DefaultSAXHandler,
+//!     uri::URIString,
+//! };
+//!
+//! const SAMPLE_CATALOG: &str = r#"<?xml version="1.0"?>
+//! <!DOCTYPE catalog
+//!     PUBLIC "-//OASIS//DTD XML Catalogs V1.1//EN"
+//!            "http://www.oasis-open.org/committees/entity/release/1.1/catalog.dtd">
+//! <catalog xmlns="urn:oasis:names:tc:entity:xmlns:xml:catalog">
+//!     <public publicId="-//example.com//TEXT public.xml//EN" uri="alternative.xml" />
+//! </catalog>
+//! "#;
+//!
+//! let mut catalog = Catalog::default();
+//! let entry = CatalogEntryFile::parse_str(
+//!     SAMPLE_CATALOG,
+//!     Some(&URIString::parse("file:///home/user/").unwrap()),
+//!     None::<DefaultSAXHandler>,
+//!     None::<DefaultSAXHandler>
+//! ).unwrap();
+//! catalog.add(entry);
+//!
+//! let alternative = catalog.resolve_external_id(
+//!     Some("-//example.com//TEXT public.xml//EN"),
+//!     None,
+//!     Default::default()
+//! ).unwrap();
+//!
+//! assert_eq!(alternative.as_escaped_str(), "file:///home/user/alternative.xml");
+//! ```
+//!
+//! # Parser Integration
+//! By registering the catalog with the parser, the parser can use the catalog to resolve
+//! external identifiers and URIs.  \
+//! This feature is enabled by specifying [`ParserOption::Catalogs`](crate::sax::parser::ParserOption::Catalogs)
+//! to the parser.
+//!
+//! When a catalog is registered with the parser, the parser will always attempt to resolve
+//! external identifiers and URIs using the catalog.  \
+//! If the catalog resolution is successful, the URI obtained from the catalog will be used.  \
+//! If the catalog resolution fails, the original external identifier or URI will be used.
+//!
+//! ## `oasis-xml-catalog` processing instruction
+//! As defined in XML Catalogs V1.1, the `oasis-xml-catalog` processing instruction can
+//! specify a catalog that the parser uses to resolve external identifiers and URI references.
+//! This feature is enabled by specifying [`ParserOption::CatalogPIAware`](crate::sax::parser::ParserOption::CatalogPIAware)
+//! to the parser.
+//!
+//! Since untrusted documents may cause issues such as generating a large number of unexpected
+//! resource requests, it is recommended to sanitize them using [`EntityResolver`](crate::sax::handler::EntityResolver).
+//!
+//! # Reference
+//! - [XML Catalogs V1.1](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
 
 use std::{borrow::Cow, collections::HashSet, io::Read, sync::Arc};
 
@@ -11,7 +75,7 @@ use crate::{
         attributes::Attributes,
         error::SAXParseError,
         handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
-        parser::XMLReaderBuilder,
+        parser::XMLReader,
         source::InputSource,
     },
     uri::{URIStr, URIString},
@@ -135,7 +199,7 @@ impl Catalog {
                                 continue;
                             }
                             let parser = parser.get_or_insert_with(|| {
-                                XMLReaderBuilder::new()
+                                XMLReader::builder()
                                     .set_handler(CatalogParseHandler::new())
                                     .build()
                             });
@@ -170,7 +234,7 @@ impl Catalog {
             }
 
             let parser = parser.get_or_insert_with(|| {
-                XMLReaderBuilder::new()
+                XMLReader::builder()
                     .set_handler(CatalogParseHandler::new())
                     .build()
             });
@@ -262,7 +326,7 @@ impl Catalog {
                                 continue;
                             }
                             let parser = parser.get_or_insert_with(|| {
-                                XMLReaderBuilder::new()
+                                XMLReader::builder()
                                     .set_handler(CatalogParseHandler::new())
                                     .build()
                             });
@@ -297,7 +361,7 @@ impl Catalog {
             }
 
             let parser = parser.get_or_insert_with(|| {
-                XMLReaderBuilder::new()
+                XMLReader::builder()
                     .set_handler(CatalogParseHandler::new())
                     .build()
             });
@@ -408,7 +472,7 @@ impl CatalogEntryFile {
         error_handler: Option<Reporter>,
     ) -> Result<CatalogEntryFile, XMLError> {
         let handler = CatalogParseHandler::with_handler(entity_resolver, error_handler);
-        let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+        let mut reader = XMLReader::builder().set_handler(handler).build();
         reader.parse_uri(uri, encoding)?;
         if reader.handler.resource_failure {
             return Err(XMLError::CatalogResourceFailure);
@@ -429,13 +493,13 @@ impl CatalogEntryFile {
     pub fn parse_reader<'a, Resolver: EntityResolver, Reporter: ErrorHandler>(
         reader: impl Read + 'a,
         encoding: Option<&str>,
-        uri: impl AsRef<URIStr>,
+        uri: Option<&URIStr>,
         entity_resolver: Option<Resolver>,
         error_handler: Option<Reporter>,
     ) -> Result<CatalogEntryFile, XMLError> {
         let handler = CatalogParseHandler::with_handler(entity_resolver, error_handler);
-        let mut parser = XMLReaderBuilder::new().set_handler(handler).build();
-        parser.parse_reader(reader, encoding, Some(uri.as_ref()))?;
+        let mut parser = XMLReader::builder().set_handler(handler).build();
+        parser.parse_reader(reader, encoding, uri)?;
         if parser.handler.resource_failure {
             return Err(XMLError::CatalogResourceFailure);
         }
@@ -454,13 +518,13 @@ impl CatalogEntryFile {
     /// [8. Resource Failures](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
     pub fn parse_str<Resolver: EntityResolver, Reporter: ErrorHandler>(
         catalog: &str,
-        uri: impl AsRef<URIStr>,
+        uri: Option<&URIStr>,
         entity_resolver: Option<Resolver>,
         error_handler: Option<Reporter>,
     ) -> Result<CatalogEntryFile, XMLError> {
         let handler = CatalogParseHandler::with_handler(entity_resolver, error_handler);
-        let mut parser = XMLReaderBuilder::new().set_handler(handler).build();
-        parser.parse_str(catalog, Some(uri.as_ref()))?;
+        let mut parser = XMLReader::builder().set_handler(handler).build();
+        parser.parse_str(catalog, uri)?;
         if parser.handler.resource_failure {
             return Err(XMLError::CatalogResourceFailure);
         }

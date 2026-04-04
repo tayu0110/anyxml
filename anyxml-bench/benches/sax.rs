@@ -1,10 +1,10 @@
-use anyxml::{sax::parser::XMLReaderBuilder, uri::URIString};
+use anyxml::{sax::parser::XMLReader, uri::URIString};
 use criterion::{Criterion, criterion_group, criterion_main};
 
 fn sax_533946_luse_6668_2_op(c: &mut Criterion) {
     c.bench_function("533946_luse_6668_2_op.gml", |b| {
         b.iter(|| {
-            let mut reader = XMLReaderBuilder::new().build();
+            let mut reader = XMLReader::builder().build();
             let uri = URIString::parse("../benches/dataset/533946_luse_6668_2_op.gml").unwrap();
             reader.parse_uri(uri, None).unwrap();
         });
@@ -14,7 +14,7 @@ fn sax_533946_luse_6668_2_op(c: &mut Criterion) {
 fn sax_53395538_fld_6697_l2_op(c: &mut Criterion) {
     c.bench_function("53395538_fld_6697_l2_op.gml", |b| {
         b.iter(|| {
-            let mut reader = XMLReaderBuilder::new().build();
+            let mut reader = XMLReader::builder().build();
             let uri = URIString::parse("../benches/dataset/53395538_fld_6697_l2_op.gml").unwrap();
             reader.parse_uri(uri, None).unwrap();
         });

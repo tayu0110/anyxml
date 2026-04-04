@@ -32,10 +32,7 @@ use crate::{
         Locator, NamespaceStack,
         error::{SAXParseError, fatal_error},
         handler::{DefaultSAXHandler, EntityResolver, ErrorHandler},
-        parser::{
-            ParserConfig, ParserOption, ParserState, XMLProgressiveReaderBuilder, XMLReader,
-            XMLReaderBuilder,
-        },
+        parser::{ParserConfig, ParserOption, ParserState, XMLProgressiveReaderBuilder, XMLReader},
         source::INPUT_CHUNK,
     },
     stax::{
@@ -367,7 +364,7 @@ pub struct XMLStreamReaderBuilder<
 impl<'a> XMLStreamReaderBuilder<'a> {
     pub fn new() -> Self {
         Self {
-            builder: XMLReaderBuilder::new()
+            builder: XMLReader::builder()
                 .set_handler(XMLStreamReaderHandler::default())
                 .progressive_parser(),
             entity_resolver: None,

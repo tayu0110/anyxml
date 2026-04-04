@@ -47,7 +47,7 @@ use std::fmt::Write as _;
 use anyxml::sax::{
     attributes::Attributes,
     handler::{EntityResolver, ErrorHandler, SAXHandler},
-    parser::XMLReaderBuilder,
+    parser::XMLReader,
 };
 
 #[derive(Default)]
@@ -87,7 +87,7 @@ impl SAXHandler for ExampleHandler {
     }
 }
 
-let mut reader = XMLReaderBuilder::new()
+let mut reader = XMLReader::builder()
     .set_handler(ExampleHandler::default())
     .build();
 reader.parse_str(r#"<?xml version="1.0"?><greeting>Hello!!</greeting>"#, None).ok();
@@ -129,11 +129,11 @@ This API assumes namespace support, so it may not accept prefixed names without 
 ### Example
 ```rust
 use anyxml::{
-    sax::parser::XMLReaderBuilder,
+    sax::parser::XMLReader,
     tree::TreeBuildHandler
 };
 
-let mut reader = XMLReaderBuilder::new()
+let mut reader = XMLReader::builder()
     .set_handler(TreeBuildHandler::default())
     .build();
 reader

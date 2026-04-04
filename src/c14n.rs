@@ -10,7 +10,7 @@
 //! ```rust
 //! use anyxml::{
 //!     c14n::CanonicalizeHandler,
-//!     sax::parser::{ParserOption, XMLReaderBuilder},
+//!     sax::parser::{ParserOption, XMLReader},
 //!     uri::URIString,
 //! };
 //!
@@ -29,7 +29,7 @@
 //!
 //! <!-- Comment 3 -->"#;
 //!
-//! let mut reader = XMLReaderBuilder::new()
+//! let mut reader = XMLReader::builder()
 //!     .set_handler(CanonicalizeHandler::default())
 //!     .build();
 //! reader.parse_str(DOC, None).ok();

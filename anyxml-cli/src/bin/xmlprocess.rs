@@ -11,7 +11,7 @@ use anyxml::{
         attributes::Attributes,
         error::SAXParseError,
         handler::{DebugHandler, DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
-        parser::{ParserOption, XMLReaderBuilder},
+        parser::{ParserOption, XMLReader},
         source::InputSource,
     },
     stax::{XMLStreamReaderBuilder, events::XMLEvent},
@@ -89,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn do_show_command(document: Option<String>) -> Result<(), XMLError> {
     let handler = TreeBuildHandler::default();
-    let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+    let mut reader = XMLReader::builder().set_handler(handler).build();
     if let Some(document) = document {
         let uri = URIString::parse(document)?;
         reader.parse_uri(uri, None)?;
@@ -286,7 +286,7 @@ impl SAXHandler for CompactDebugHandler {
 fn do_inspect_command(mode: InspectMode, document: Option<String>) -> Result<(), XMLError> {
     match mode {
         InspectMode::SAX => {
-            let mut reader = XMLReaderBuilder::new()
+            let mut reader = XMLReader::builder()
                 .set_handler(CompactDebugHandler::new())
                 .build();
             if let Some(document) = document {
@@ -301,7 +301,7 @@ fn do_inspect_command(mode: InspectMode, document: Option<String>) -> Result<(),
             reader.handler.force_show();
         }
         InspectMode::SAXProgressive => {
-            let mut reader = XMLReaderBuilder::new()
+            let mut reader = XMLReader::builder()
                 .set_handler(DebugHandler::default())
                 .progressive_parser()
                 .build();
@@ -466,7 +466,7 @@ fn do_validate_command(
                 }
             }
 
-            let mut reader = XMLReaderBuilder::new()
+            let mut reader = XMLReader::builder()
                 .enable_option(ParserOption::Validation)
                 .set_handler(DTDValidationHandler { error: false })
                 .build();
@@ -498,7 +498,7 @@ fn do_validate_command(
             let schema_uri = URIString::parse(schema)?;
             let mut schema = RelaxNGSchema::parse_uri(schema_uri, None, None::<DefaultSAXHandler>)?;
             let validator = schema.new_validate_handler(DefaultSAXHandler);
-            let mut reader = XMLReaderBuilder::new().set_handler(validator).build();
+            let mut reader = XMLReader::builder().set_handler(validator).build();
             if let Some(document) = document {
                 let uri = URIString::parse(document)?;
                 reader.parse_uri(uri, None)?;

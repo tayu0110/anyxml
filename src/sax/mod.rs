@@ -26,7 +26,7 @@
 //! use anyxml::sax::{
 //!     attributes::Attributes,
 //!     handler::{EntityResolver, ErrorHandler, SAXHandler},
-//!     parser::XMLReaderBuilder,
+//!     parser::XMLReader,
 //! };
 //!
 //! #[derive(Default)]
@@ -66,7 +66,7 @@
 //!     }
 //! }
 //!
-//! let mut reader = XMLReaderBuilder::new()
+//! let mut reader = XMLReader::builder()
 //!     .set_handler(ExampleHandler::default())
 //!     .build();
 //! reader.parse_str(r#"<?xml version="1.0"?><greeting>Hello!!</greeting>"#, None).ok();
@@ -98,10 +98,10 @@
 //! use anyxml::sax::{
 //!     attributes::Attributes,
 //!     handler::DebugHandler,
-//!     parser::XMLReaderBuilder,
+//!     parser::XMLReader,
 //! };
 //!
-//! let mut reader = XMLReaderBuilder::new()
+//! let mut reader = XMLReader::builder()
 //!     .set_handler(DebugHandler::default())
 //!     .progressive_parser()
 //!     .build();
@@ -140,7 +140,7 @@
 //! use anyxml::sax::{
 //!     error::SAXParseError,
 //!     handler::{EntityResolver, ErrorHandler, SAXHandler},
-//!     parser::{ParserOption, XMLReaderBuilder},
+//!     parser::{ParserOption, XMLReader},
 //! };
 //!
 //! #[derive(Default)]
@@ -168,7 +168,7 @@
 //! document.xml[line:7,column:20][dtd-valid][error] #REQUIRED attribute 'attr2' of the element 'root' is not specified.
 //! document.xml[line:7,column:44][dtd-valid][error] The content of element 'root' does not match to its content model."#;
 //!
-//! let mut reader = XMLReaderBuilder::new()
+//! let mut reader = XMLReader::builder()
 //!     .set_handler(ExampleHandler::default())
 //!     .enable_option(ParserOption::Validation)
 //!     .build();

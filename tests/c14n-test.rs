@@ -1,6 +1,6 @@
 use anyxml::{
     c14n::CanonicalizeHandler,
-    sax::parser::{ParserOption, XMLReaderBuilder},
+    sax::parser::{ParserOption, XMLReader},
     uri::URIString,
 };
 
@@ -9,7 +9,7 @@ fn c14n10_example1_test() {
     let uri = URIString::parse_file_path("resources/c14n10/example01.xml").unwrap();
 
     let handler = CanonicalizeHandler::default();
-    let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+    let mut reader = XMLReader::builder().set_handler(handler).build();
 
     reader.parse_uri(uri.as_ref(), None).unwrap();
     assert_eq!(
@@ -30,7 +30,7 @@ fn c14n10_example2_test() {
     let uri = URIString::parse_file_path("resources/c14n10/example02.xml").unwrap();
 
     let handler = CanonicalizeHandler::default();
-    let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+    let mut reader = XMLReader::builder().set_handler(handler).build();
 
     reader.parse_uri(uri.as_ref(), None).unwrap();
     assert_eq!(
@@ -44,7 +44,7 @@ fn c14n10_example3_test() {
     let uri = URIString::parse_file_path("resources/c14n10/example03.xml").unwrap();
 
     let handler = CanonicalizeHandler::default();
-    let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+    let mut reader = XMLReader::builder().set_handler(handler).build();
 
     reader.parse_uri(uri.as_ref(), None).unwrap();
     assert_eq!(
@@ -58,7 +58,7 @@ fn c14n10_example4_test() {
     let uri = URIString::parse_file_path("resources/c14n10/example04.xml").unwrap();
 
     let handler = CanonicalizeHandler::default();
-    let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+    let mut reader = XMLReader::builder().set_handler(handler).build();
 
     reader.parse_uri(uri.as_ref(), None).unwrap();
     assert_eq!(
@@ -72,7 +72,7 @@ fn c14n10_example5_test() {
     let uri = URIString::parse_file_path("resources/c14n10/example05.xml").unwrap();
 
     let handler = CanonicalizeHandler::default();
-    let mut reader = XMLReaderBuilder::new()
+    let mut reader = XMLReader::builder()
         .enable_option(ParserOption::ExternalGeneralEntities)
         .set_handler(handler)
         .build();
@@ -89,7 +89,7 @@ fn c14n10_example6_test() {
     let uri = URIString::parse_file_path("resources/c14n10/example06.xml").unwrap();
 
     let handler = CanonicalizeHandler::default();
-    let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+    let mut reader = XMLReader::builder().set_handler(handler).build();
 
     reader.parse_uri(uri.as_ref(), None).unwrap();
     assert_eq!(

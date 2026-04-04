@@ -2,6 +2,7 @@ use std::{
     cell::{Cell, RefCell},
     fmt::Write as _,
     fs::read_dir,
+    mem::take,
     path::Path,
     sync::Arc,
 };
@@ -12,7 +13,7 @@ use anyxml::{
         Locator,
         attributes::Attributes,
         handler::{DebugHandler, EntityResolver, ErrorHandler, SAXHandler},
-        parser::{ParserOption, XMLReaderBuilder},
+        parser::{ParserOption, XMLReader},
     },
     uri::URIString,
 };
@@ -86,7 +87,7 @@ fn well_formed_tests() {
         buffer: String::new(),
     };
 
-    let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+    let mut reader = XMLReader::builder().set_handler(handler).build();
 
     for ent in read_dir("resources/well-formed").unwrap() {
         if let Ok(ent) = ent
@@ -129,7 +130,7 @@ fn progressive_well_formed_tests() {
         buffer: String::new(),
     };
 
-    let mut reader = XMLReaderBuilder::new()
+    let mut reader = XMLReader::builder()
         .set_handler(handler)
         .progressive_parser()
         .build();
@@ -288,7 +289,7 @@ impl SAXHandler for XMLConfWalker {
                     .system_id()
                     .resolve(&URIString::parse(uri).unwrap());
 
-                let mut reader = XMLReaderBuilder::new().set_handler(DebugHandler {
+                let mut reader = XMLReader::builder().set_handler(DebugHandler {
                     child: TestSAXHandler::new(),
                     buffer: String::new(),
                 });
@@ -375,13 +376,13 @@ fn xmlconf_tests() {
     );
 
     let xmlconf = URIString::parse_file_path(format!("{XMLCONF_DIR}/xmlconf.xml")).unwrap();
-    let mut reader = XMLReaderBuilder::new()
+    let mut reader = XMLReader::builder()
         .set_handler(XMLConfWalker::default())
         .enable_option(ParserOption::ExternalGeneralEntities)
         .build();
     reader.parse_uri(xmlconf, None).unwrap();
 
-    let handler = reader.take_handler();
+    let handler = take(&mut reader.handler);
     assert!(
         handler.unexpected_success.get() == 0 && handler.unexpected_failure.get() == 0,
         "{}\n=== Unexpected Success: {}, Unexpected Failure: {} ===\n",
@@ -405,7 +406,7 @@ fn progressive_xmlconf_tests() {
         ..Default::default()
     };
     let xmlconf = URIString::parse_file_path(path.as_str()).unwrap();
-    let mut reader = XMLReaderBuilder::new()
+    let mut reader = XMLReader::builder()
         .set_handler(handler)
         .enable_option(ParserOption::ExternalGeneralEntities)
         .set_default_base_uri(xmlconf)
@@ -417,7 +418,7 @@ fn progressive_xmlconf_tests() {
     }
     reader.parse_chunk([], true).unwrap();
 
-    let handler = reader.take_handler();
+    let handler = take(&mut reader.handler);
     assert!(
         handler.unexpected_success.get() == 0 && handler.unexpected_failure.get() == 0,
         "{}\n=== Unexpected Success: {}, Unexpected Failure: {} ===\n",
@@ -434,7 +435,7 @@ fn ns_well_formed_tests() {
         buffer: String::new(),
     };
 
-    let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+    let mut reader = XMLReader::builder().set_handler(handler).build();
 
     for ent in read_dir("resources/ns-well-formed").unwrap() {
         if let Ok(ent) = ent

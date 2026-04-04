@@ -2,7 +2,7 @@ use anyxml::{
     catalog::{Catalog, CatalogEntryFile, PreferMode},
     sax::{
         handler::{DebugHandler, DefaultSAXHandler},
-        parser::{ParserConfig, ParserOption, XMLReaderBuilder},
+        parser::{ParserConfig, ParserOption, XMLReader},
     },
     tree::TreeBuildHandler,
     uri::URIString,
@@ -153,7 +153,7 @@ fn catalog_resolution_for_entities_tests() {
             None::<DefaultSAXHandler>,
         )
         .unwrap();
-        let mut reader = XMLReaderBuilder::new()
+        let mut reader = XMLReader::builder()
             .set_handler(TreeBuildHandler::with_handler(DebugHandler::default()))
             .set_parser_config(
                 ParserConfig::default()
@@ -267,7 +267,7 @@ fn catalog_pi_resolution_tests() {
             .unwrap()
             .get_attribute("catalog", None)
             .unwrap();
-        let mut reader = XMLReaderBuilder::new()
+        let mut reader = XMLReader::builder()
             .set_handler(TreeBuildHandler::with_handler(DebugHandler::default()))
             .set_parser_config(
                 ParserConfig::default()

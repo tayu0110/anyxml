@@ -6,7 +6,7 @@ use anyxml::{
     sax::{
         error::SAXParseError,
         handler::{DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler},
-        parser::XMLReaderBuilder,
+        parser::XMLReader,
         source::InputSource,
     },
     tree::{Element, Node, node::InternalNodeSpec},
@@ -79,13 +79,13 @@ fn spectest_streaming_validation() {
             testsuite.as_element().unwrap(),
             |sch: &mut RelaxNGSchema, e: Element| {
                 let mut handler = sch.new_validate_handler(ValidationTestHandler { error: 0 });
-                let mut reader = XMLReaderBuilder::new().set_handler(&mut handler).build();
+                let mut reader = XMLReader::builder().set_handler(&mut handler).build();
                 assert!(reader.parse_str(&e.to_string(), None).is_ok());
                 assert_eq!(reader.handler.child.error, 0);
             },
             |sch: &mut RelaxNGSchema, e: Element| {
                 let mut handler = sch.new_validate_handler(ValidationTestHandler { error: 0 });
-                let mut reader = XMLReaderBuilder::new().set_handler(&mut handler).build();
+                let mut reader = XMLReader::builder().set_handler(&mut handler).build();
                 assert!(reader.parse_str(&e.to_string(), None).is_ok());
                 assert_ne!(reader.handler.child.error, 0);
             },
@@ -303,6 +303,6 @@ fn schema_of_schema_test() {
     let mut schema = RelaxNGSchema::parse_uri(&uri, None, None::<DefaultSAXHandler>).unwrap();
 
     let handler = schema.new_validate_handler(DefaultSAXHandler);
-    let mut reader = XMLReaderBuilder::new().set_handler(handler).build();
+    let mut reader = XMLReader::builder().set_handler(handler).build();
     reader.parse_uri(&uri, None).unwrap();
 }

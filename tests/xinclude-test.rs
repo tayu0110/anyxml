@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path, rc::Rc};
 
 use anyxml::{
-    sax::parser::XMLReaderBuilder,
+    sax::parser::XMLReader,
     tree::{Document, Element, Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec},
     uri::{URIStr, URIString},
     xinclude::XIncludeProcessor,
@@ -87,7 +87,7 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
     let test_type = testcase.get_attribute("type", None).unwrap();
     match test_type.as_str() {
         "success" => {
-            let mut reader = XMLReaderBuilder::new()
+            let mut reader = XMLReader::builder()
                 .set_handler(TreeBuildHandler::default())
                 .build();
             eprintln!("href: {}", href.as_unescaped_str().unwrap());
@@ -123,7 +123,7 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
             );
         }
         "error" => {
-            let mut reader = XMLReaderBuilder::new()
+            let mut reader = XMLReader::builder()
                 .set_handler(TreeBuildHandler::default())
                 .build();
             eprintln!("href: {}", href.as_unescaped_str().unwrap());

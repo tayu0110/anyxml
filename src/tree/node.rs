@@ -1185,7 +1185,7 @@ impl std::fmt::Display for Node<dyn InternalNodeSpec> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{sax::parser::XMLReaderBuilder, tree::TreeBuildHandler};
+    use crate::{sax::parser::XMLReader, tree::TreeBuildHandler};
 
     use super::*;
 
@@ -1233,7 +1233,7 @@ mod tests {
 
     #[test]
     fn document_order_comparison_tests() {
-        let mut parser = XMLReaderBuilder::new()
+        let mut parser = XMLReader::builder()
             .set_handler(TreeBuildHandler::default())
             .build();
 
@@ -1360,7 +1360,7 @@ mod tests {
             "http://www.example.org/one/two",
         ];
 
-        let mut parser = XMLReaderBuilder::new()
+        let mut parser = XMLReader::builder()
             .set_handler(TreeBuildHandler::default())
             .build();
         for (i, &case) in CASES.iter().enumerate() {

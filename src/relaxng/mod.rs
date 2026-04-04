@@ -14,7 +14,7 @@
 //!     relaxng::RelaxNGSchema,
 //!     sax::{
 //!         handler::DefaultSAXHandler,
-//!         parser::XMLReaderBuilder,
+//!         parser::XMLReader,
 //!     },
 //! };
 //!
@@ -42,7 +42,7 @@
 //!
 //! let mut schema = RelaxNGSchema::parse_str(SCHEMA, None, Some(DefaultSAXHandler)).unwrap();
 //! let validator = schema.new_validate_handler(DefaultSAXHandler);
-//! let mut reader = XMLReaderBuilder::new().set_handler(validator).build();
+//! let mut reader = XMLReader::builder().set_handler(validator).build();
 //! reader.parse_str(DOCUMENT, None).unwrap();
 //! // `last_error` holds the last validation error.
 //! assert!(reader.handler.last_error.is_ok());
@@ -64,7 +64,7 @@
 //!     relaxng::RelaxNGSchema,
 //!     sax::{
 //!         handler::DefaultSAXHandler,
-//!         parser::XMLReaderBuilder,
+//!         parser::XMLReader,
 //!     },
 //!     tree::TreeBuildHandler,
 //! };
@@ -88,7 +88,7 @@
 //! </addressBook>"#;
 //!
 //! let mut schema = RelaxNGSchema::parse_str(SCHEMA, None, Some(DefaultSAXHandler)).unwrap();
-//! let mut reader = XMLReaderBuilder::new().set_handler(TreeBuildHandler::default()).build();
+//! let mut reader = XMLReader::builder().set_handler(TreeBuildHandler::default()).build();
 //! reader.parse_str(DOCUMENT, None).unwrap();
 //! let document = reader.handler.document;
 //! let element = document.document_element().unwrap();
@@ -122,7 +122,7 @@ use std::io::Read;
 use crate::{
     error::XMLError,
     relaxng::{grammar::Grammar, parse::RelaxNGParseHandler},
-    sax::{handler::SAXHandler, parser::XMLReaderBuilder},
+    sax::{handler::SAXHandler, parser::XMLReader},
     uri::URIStr,
 };
 
@@ -150,14 +150,14 @@ impl RelaxNGSchema {
         handler: Option<Handler>,
     ) -> Result<Self, XMLError> {
         if let Some(handler) = handler {
-            let mut parser = XMLReaderBuilder::new()
+            let mut parser = XMLReader::builder()
                 .set_handler(RelaxNGParseHandler::with_handler(handler))
                 .build();
             parser.parse_uri(uri, encoding)?;
             let grammar = parser.handler.simplification().map_err(|err| err.error)?;
             Ok(Self { grammar })
         } else {
-            let mut parser = XMLReaderBuilder::new()
+            let mut parser = XMLReader::builder()
                 .set_handler(RelaxNGParseHandler::default())
                 .build();
             parser.parse_uri(uri, encoding)?;
@@ -180,14 +180,14 @@ impl RelaxNGSchema {
         handler: Option<Handler>,
     ) -> Result<Self, XMLError> {
         if let Some(handler) = handler {
-            let mut parser = XMLReaderBuilder::new()
+            let mut parser = XMLReader::builder()
                 .set_handler(RelaxNGParseHandler::with_handler(handler))
                 .build();
             parser.parse_reader(reader, encoding, uri)?;
             let grammar = parser.handler.simplification().map_err(|err| err.error)?;
             Ok(Self { grammar })
         } else {
-            let mut parser = XMLReaderBuilder::new()
+            let mut parser = XMLReader::builder()
                 .set_handler(RelaxNGParseHandler::default())
                 .build();
             parser.parse_reader(reader, encoding, uri)?;
@@ -209,14 +209,14 @@ impl RelaxNGSchema {
         handler: Option<Handler>,
     ) -> Result<Self, XMLError> {
         if let Some(handler) = handler {
-            let mut parser = XMLReaderBuilder::new()
+            let mut parser = XMLReader::builder()
                 .set_handler(RelaxNGParseHandler::with_handler(handler))
                 .build();
             parser.parse_str(schema, uri)?;
             let grammar = parser.handler.simplification().map_err(|err| err.error)?;
             Ok(Self { grammar })
         } else {
-            let mut parser = XMLReaderBuilder::new()
+            let mut parser = XMLReader::builder()
                 .set_handler(RelaxNGParseHandler::default())
                 .build();
             parser.parse_str(schema, uri)?;

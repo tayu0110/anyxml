@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     io::Read,
-    mem::{replace, take},
+    mem::replace,
     sync::{Arc, RwLock, atomic::AtomicUsize},
 };
 
@@ -271,14 +271,6 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
         }
     }
 
-    pub fn handler(&self) -> &H {
-        &self.handler
-    }
-
-    pub fn replace_handler(&mut self, handler: H) -> H {
-        replace(&mut self.handler, handler)
-    }
-
     pub fn entity_name(&self) -> Option<Arc<str>> {
         self.entity_name.clone()
     }
@@ -393,12 +385,6 @@ impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
     /// Clear the parser's catalog entry file list.
     pub fn clear_catalog(&mut self) {
         self.catalog.clear();
-    }
-}
-
-impl<Spec: ParserSpec, H: SAXHandler + Default> XMLReader<Spec, H> {
-    pub fn take_handler(&mut self) -> H {
-        take(&mut self.handler)
     }
 }
 
@@ -667,6 +653,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
     }
 }
 
+impl<'a> XMLReader<DefaultParserSpec<'a>> {
+    pub fn builder() -> XMLReaderBuilder<'a> {
+        XMLReaderBuilder::new()
+    }
+}
+
 impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
     fn default() -> Self {
         let base_uri: Arc<URIStr> = URIString::parse("").unwrap().into();
@@ -720,7 +712,7 @@ pub struct XMLReaderBuilder<'a, H: SAXHandler = DefaultSAXHandler> {
 }
 
 impl<'a> XMLReaderBuilder<'a> {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             reader: Default::default(),
         }
