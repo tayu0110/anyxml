@@ -236,10 +236,26 @@ This crate passes the following tests:
 - some self-made tests
 
 # Performance
-Currently, I won't make any specific comments regarding performance.  \
-I only care about two things: expanding features and ensuring proper operation.
+According to preliminary benchmarks, the results show that it is about 1.8 times slower than `quick-xml` but more than 50 times faster than `xml` when processing simple, large XML documents.
 
-Some crates improve performance by not adhering to the specification—such as skipping DTD reading, entity expansion, or value normalization—but this crate prioritizes conforming to the specification as much as possible.
+When `xmllint` (included with `libxml2`) and `xmlprocess` (included with `anyxml-cli`) are run in SAX mode, their performance is nearly equivalent, but `xmlprocess` is slightly faster and significantly more memory-efficient.
+
+```bash
+$ du -h benches/dataset/533946_luse_6668_2_op.gml
+386M	benches/dataset/533946_luse_6668_2_op.gml
+$ time xmllint --sax benches/dataset/533946_luse_6668_2_op.gml > /dev/null
+
+real	0m1.831s
+user	0m1.792s
+sys	0m0.035s
+$ time xmlprocess inspect --mode sax benches/dataset/533946_luse_6668_2_op.gml > /dev/null
+
+real	0m1.576s
+user	0m1.511s
+sys	0m0.063s
+```
+
+Since the current implementation is optimized only for parsing simple documents like those used in the benchmarks, `libxml2` may demonstrate higher performance when parsing documents that require more complex operations.
 
 # Command Line Utility
 As a related project, a simple command line utility [`anyxml-cli`](https://crates.io/crates/anyxml-cli) is also provided.
