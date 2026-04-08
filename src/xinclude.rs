@@ -6,9 +6,11 @@
 use std::{collections::HashMap, fs::File, io::Read};
 
 use crate::{
-    DefaultParserSpec, XML_XML_NAMESPACE, XMLVersion,
+    XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
-    sax::{AttributeType, DefaultSAXHandler, InputSource, SAXHandler, XMLReader},
+    sax::{
+        AttributeType, DefaultParserSpec, DefaultSAXHandler, InputSource, SAXHandler, XMLReader,
+    },
     tree::{
         Document, Element, Node, NodeType, TreeBuildHandler,
         node::{InternalNodeSpec, NodeSpec},

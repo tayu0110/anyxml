@@ -26,11 +26,11 @@ mod handler;
 use std::{io::Read, marker::PhantomData, sync::Arc};
 
 use crate::{
-    ProgressiveParserSpec,
     error::XMLError,
     sax::{
         DefaultSAXHandler, EntityResolver, ErrorHandler, INPUT_CHUNK, Locator, NamespaceStack,
-        ParserConfig, ParserOption, ParserState, XMLProgressiveReaderBuilder, XMLReader,
+        ParserConfig, ParserOption, ParserState, ProgressiveParserSpec,
+        XMLProgressiveReaderBuilder, XMLReader,
         error::{SAXParseError, fatal_error},
     },
     stax::{

@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
 use crate::{
-    ParserSpec,
     error::XMLError,
     sax::{
-        EntityDecl, InputSource, ParserOption, ParserState, SAXHandler, XMLReader,
+        EntityDecl, InputSource, ParserOption, ParserSpec, ParserState, SAXHandler, XMLReader,
         error::{error, fatal_error, validity_error},
     },
     uri::URIString,

@@ -19,9 +19,7 @@ pub mod xpath;
 pub mod xpointer;
 pub mod xsdtypes;
 
-use std::{convert::Infallible, marker::PhantomData, str::FromStr};
-
-use crate::sax::{InputSource, ParserSubState};
+use std::{convert::Infallible, str::FromStr};
 
 /// Maximum length of XML version numbers accepted by the parser
 const XML_VERSION_NUM_LIMIT_LENGTH: usize = 128;
@@ -32,44 +30,6 @@ const CHARDATA_CHUNK_LENGTH: usize = 4096;
 
 const XML_XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
 const XML_NS_NAMESPACE: &str = "http://www.w3.org/2000/xmlns/";
-
-/// The trait representing the parser's features.
-///
-/// Extension by users is not supported.
-pub trait ParserSpec {
-    type Reader;
-    type SpecificContext;
-}
-
-/// [`ParserSpec`] for the standard SAX Parser.
-pub struct DefaultParserSpec<'a> {
-    _phantom: PhantomData<&'a ()>,
-}
-
-impl<'a> ParserSpec for DefaultParserSpec<'a> {
-    type Reader = InputSource<'a>;
-    type SpecificContext = ();
-}
-
-/// [`ParserSpec`] for the Progressive Parser.
-pub struct ProgressiveParserSpec;
-
-impl ParserSpec for ProgressiveParserSpec {
-    type Reader = InputSource<'static>;
-    type SpecificContext = ProgressiveParserSpecificContext;
-}
-
-/// Progressive Parser execution context.
-#[derive(Debug, Default)]
-pub struct ProgressiveParserSpecificContext {
-    pub(crate) seen: usize,
-    pub(crate) quote: u8,
-    pub(crate) sub_state: ParserSubState,
-    // (QName, prefix length, namespace stack length)
-    pub(crate) element_stack: Vec<(String, usize, usize)>,
-    // (old element stack length, old xml version, old encoding)
-    pub(crate) entity_stack: Vec<(usize, XMLVersion, Option<Box<str>>)>,
-}
 
 /// XML version. Currently supports XML 1.0 only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]

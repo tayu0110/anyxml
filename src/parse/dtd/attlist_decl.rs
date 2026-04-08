@@ -1,10 +1,9 @@
 use std::collections::HashSet;
 
 use crate::{
-    ParserSpec,
     error::XMLError,
     sax::{
-        AttributeType, DefaultDecl, InputSource, ParserOption, SAXHandler, XMLReader,
+        AttributeType, DefaultDecl, InputSource, ParserOption, ParserSpec, SAXHandler, XMLReader,
         error::{error, fatal_error, validity_error, warning},
     },
 };

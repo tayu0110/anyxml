@@ -1,10 +1,10 @@
 use std::{ops::ControlFlow, sync::Arc};
 
 use crate::{
-    ProgressiveParserSpec,
     error::XMLError,
     sax::{
-        EntityDecl, InputSource, ParserOption, ParserState, ParserSubState, SAXHandler, XMLReader,
+        EntityDecl, InputSource, ParserOption, ParserState, ParserSubState, ProgressiveParserSpec,
+        SAXHandler, XMLReader,
         error::{error, fatal_error, validity_error},
     },
     uri::URIString,

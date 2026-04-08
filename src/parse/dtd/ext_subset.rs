@@ -1,8 +1,7 @@
 use crate::{
-    ParserSpec,
     error::XMLError,
     sax::{
-        InputSource, ParserState, SAXHandler, XMLReader,
+        InputSource, ParserSpec, ParserState, SAXHandler, XMLReader,
         error::{fatal_error, validity_error},
     },
 };

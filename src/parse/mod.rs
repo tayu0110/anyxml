@@ -13,10 +13,10 @@ mod xmldecl;
 use std::{str::from_utf8_unchecked, sync::Arc};
 
 use crate::{
-    ParserSpec,
     error::XMLError,
     sax::{
-        AttributeType, EntityDecl, InputSource, ParserOption, ParserState, SAXHandler, XMLReader,
+        AttributeType, EntityDecl, InputSource, ParserOption, ParserSpec, ParserState, SAXHandler,
+        XMLReader,
         error::{error, fatal_error, validity_error},
     },
     uri::URIString,

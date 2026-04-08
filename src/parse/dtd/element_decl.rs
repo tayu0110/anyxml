@@ -1,11 +1,10 @@
 use std::{collections::HashSet, sync::Arc};
 
 use crate::{
-    ParserSpec,
     error::XMLError,
     sax::{
-        ContentSpec, ElementContent, ElementContentStateID, InputSource, ParserOption, SAXHandler,
-        XMLReader,
+        ContentSpec, ElementContent, ElementContentStateID, InputSource, ParserOption, ParserSpec,
+        SAXHandler, XMLReader,
         error::{error, fatal_error, validity_error},
     },
 };

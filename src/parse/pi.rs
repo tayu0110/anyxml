@@ -1,9 +1,9 @@
 use crate::{
-    ParserSpec,
     catalog::CatalogEntryFile,
     error::XMLError,
     sax::{
-        DefaultSAXHandler, InputSource, ParserOption, ParserState, SAXHandler, XMLReader,
+        DefaultSAXHandler, InputSource, ParserOption, ParserSpec, ParserState, SAXHandler,
+        XMLReader,
         error::{error, fatal_error},
     },
     uri::URIString,

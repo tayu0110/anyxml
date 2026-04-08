@@ -1,11 +1,11 @@
 use std::mem::take;
 
 use crate::{
-    ParserSpec, XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
+    XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::{
-        Attribute, AttributeType, DefaultDecl, EntityDecl, InputSource, ParserOption, ParserState,
-        SAXHandler, XMLReader,
+        Attribute, AttributeType, DefaultDecl, EntityDecl, InputSource, ParserOption, ParserSpec,
+        ParserState, SAXHandler, XMLReader,
         error::{error, fatal_error, ns_error, validity_error},
     },
     uri::URIString,

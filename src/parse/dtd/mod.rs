@@ -7,11 +7,10 @@ mod notation_decl;
 use std::mem::take;
 
 use crate::{
-    ParserSpec,
     error::XMLError,
     sax::{
-        AttributeType, ContentSpec, EntityDecl, InputSource, ParserOption, ParserState, SAXHandler,
-        XMLReader,
+        AttributeType, ContentSpec, EntityDecl, InputSource, ParserOption, ParserSpec, ParserState,
+        SAXHandler, XMLReader,
         error::{error, fatal_error, validity_error},
     },
     uri::URIString,

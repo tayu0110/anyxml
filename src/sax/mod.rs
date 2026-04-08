@@ -190,7 +190,8 @@ pub use contentspec::ContentSpec;
 pub(crate) use contentspec::{ElementContent, ElementContentStateID};
 pub use handler::{DebugHandler, DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler};
 pub use parser::{
-    ParserConfig, ParserOption, XMLProgressiveReaderBuilder, XMLReader, XMLReaderBuilder,
+    DefaultParserSpec, ParserConfig, ParserOption, ParserSpec, ProgressiveParserSpec,
+    ProgressiveParserSpecificContext, XMLProgressiveReaderBuilder, XMLReader, XMLReaderBuilder,
 };
 pub(crate) use parser::{ParserState, ParserSubState};
 pub(crate) use source::INPUT_CHUNK;

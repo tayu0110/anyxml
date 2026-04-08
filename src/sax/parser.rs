@@ -1,12 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
     io::Read,
+    marker::PhantomData,
     mem::replace,
     sync::{Arc, RwLock, atomic::AtomicUsize},
 };
 
 use crate::{
-    DefaultParserSpec, ParserSpec, ProgressiveParserSpec, ProgressiveParserSpecificContext,
     XMLVersion,
     catalog::{Catalog, CatalogEntryFile, PreferMode},
     encoding::UTF8_NAME,
@@ -21,6 +21,44 @@ use crate::{
     },
     uri::{URIStr, URIString},
 };
+
+/// The trait representing the parser's features.
+///
+/// Extension by users is not supported.
+pub trait ParserSpec {
+    type Reader;
+    type SpecificContext;
+}
+
+/// [`ParserSpec`] for the standard SAX Parser.
+pub struct DefaultParserSpec<'a> {
+    _phantom: PhantomData<&'a ()>,
+}
+
+impl<'a> ParserSpec for DefaultParserSpec<'a> {
+    type Reader = InputSource<'a>;
+    type SpecificContext = ();
+}
+
+/// [`ParserSpec`] for the Progressive Parser.
+pub struct ProgressiveParserSpec;
+
+impl ParserSpec for ProgressiveParserSpec {
+    type Reader = InputSource<'static>;
+    type SpecificContext = ProgressiveParserSpecificContext;
+}
+
+/// Progressive Parser execution context.
+#[derive(Debug, Default)]
+pub struct ProgressiveParserSpecificContext {
+    pub(crate) seen: usize,
+    pub(crate) quote: u8,
+    pub(crate) sub_state: ParserSubState,
+    // (QName, prefix length, namespace stack length)
+    pub(crate) element_stack: Vec<(String, usize, usize)>,
+    // (old element stack length, old xml version, old encoding)
+    pub(crate) entity_stack: Vec<(usize, XMLVersion, Option<Box<str>>)>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ParserOption {
