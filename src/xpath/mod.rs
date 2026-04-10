@@ -83,6 +83,7 @@ pub enum XPathError {
     WrongTypeConversion,
     UnresolvableFunctionName,
     UnresolvableVariableName,
+    UnsupportedNodeType,
     CompileError(XPathCompileError),
     InternalError,
 }
@@ -101,13 +102,26 @@ impl std::fmt::Display for XPathError {
 
 impl std::error::Error for XPathError {}
 
-/// Evaluate `xpath` as an XPath expression with `document` as the initial context node.
+/// Evaluate `xpath` as an XPath expression with `context_node` as the initial context node.
 ///
 /// If successfully executed, it returns an [`XPathObject`] representing the evaluation
 /// result of the XPath expression.  \
 /// If the compilation or evaluation of the XPath expression fails, it returns [`Err`].
-pub fn evaluate(xpath: &str, document: Document) -> Result<XPathObject, XPathError> {
-    compile(xpath)?.evaluate(document)
+///
+/// Additionally, if the node provided as a context node has an unsupported type, return [`Err`].  \
+/// Specifically, an error is returned if a node of a type other than `Document`, `Element`,
+/// `Attribute`, `ProcessingInstruction`, `Comment`, `Text`, or `CDATASection` is provided.
+///
+/// # Note
+/// The `Namespace` node type is not supported.  \
+/// Although this type should be supported according to the XPath data model, the `Namespace`
+/// node type in this crate does not align with the XPath data model; therefore, to avoid
+/// confusion, it is not supported.
+pub fn evaluate(
+    xpath: &str,
+    context_node: impl Into<Node<dyn NodeSpec>>,
+) -> Result<XPathObject, XPathError> {
+    compile(xpath)?.evaluate(context_node)
 }
 
 /// Parse `xml` as the XML document and evaluate `xpath` as an XPath expression.
@@ -189,17 +203,50 @@ pub struct XPathExpression {
 }
 
 impl XPathExpression {
-    /// Evaluate the precompiled XPath expression with `document` as the initial context node.
+    /// Evaluate the precompiled XPath expression with `context_node` as the initial context node.
     ///
     /// If successfully executed, it returns an [`XPathObject`] representing the evaluation
     /// result of the XPath expression.  \
     /// If the evaluation of the XPath expression fails, it returns [`Err`].
-    pub fn evaluate(&mut self, document: Document) -> Result<XPathObject, XPathError> {
+    ///
+    /// Additionally, if the node provided as a context node has an unsupported type, return [`Err`].  \
+    /// Specifically, an error is returned if a node of a type other than `Document`, `Element`,
+    /// `Attribute`, `ProcessingInstruction`, `Comment`, `Text`, or `CDATASection` is provided.
+    ///
+    /// # Note
+    /// The `Namespace` node type is not supported.  \
+    /// Although this type should be supported according to the XPath data model, the `Namespace`
+    /// node type in this crate does not align with the XPath data model; therefore, to avoid
+    /// confusion, it is not supported.
+    pub fn evaluate(
+        &mut self,
+        context_node: impl Into<Node<dyn NodeSpec>>,
+    ) -> Result<XPathObject, XPathError> {
+        self.evaluate_node(context_node.into())
+    }
+
+    fn evaluate_node(
+        &mut self,
+        context_node: Node<dyn NodeSpec>,
+    ) -> Result<XPathObject, XPathError> {
+        if !matches!(
+            context_node.node_type(),
+            NodeType::Document
+                | NodeType::Element
+                | NodeType::Attribute
+                | NodeType::ProcessingInstruction
+                | NodeType::Comment
+                | NodeType::Text
+                | NodeType::CDATASection
+        ) {
+            return Err(XPathError::UnsupportedNodeType);
+        }
+
         // clear context
         self.context.stack.clear();
 
         // initialize context
-        self.context.node = Some(document.into());
+        self.context.node = Some(context_node);
         self.context.position = 1;
         self.context.size = 1;
 
@@ -894,6 +941,14 @@ impl<'a> IntoIterator for &'a XPathNodeSet {
     }
 }
 
+impl std::ops::Index<usize> for XPathNodeSet {
+    type Output = Node<dyn NodeSpec>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.nodes[index]
+    }
+}
+
 #[derive(Default)]
 struct VariableSet {
     map: HashMap<Cow<'static, str>, XPathObject>,
@@ -1269,5 +1324,101 @@ impl Comment {
 impl Text {
     fn xpath_string_value(&self) -> String {
         self.data().to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn element_context_node_tests() {
+        const DOCUMENT: &str = r#"<doc>
+            <ch1>ch1-1</ch1>
+            <ch1>ch1-2</ch1>
+            <ch2>ch2-1</ch2>
+            <ch2>ch2-2</ch2>
+            <ch3><gch3>gch3</gch3></ch3>
+        </doc>"#;
+
+        let mut reader = XMLReader::builder()
+            .set_handler(TreeBuildHandler::default())
+            .build();
+        reader.parse_str(DOCUMENT, None).unwrap();
+        let document = reader.handler.document;
+
+        let ch1_1 = evaluate("/doc/ch1[1]", document.clone())
+            .unwrap()
+            .as_nodeset()
+            .unwrap()[0]
+            .clone();
+        assert_eq!(ch1_1.text_content(), "ch1-1");
+
+        let ch1_2 = evaluate("./parent::*/ch1[2]", ch1_1.clone())
+            .unwrap()
+            .as_nodeset()
+            .unwrap()[0]
+            .clone();
+        assert_eq!(ch1_2.text_content(), "ch1-2");
+
+        let ch2_1 = evaluate("./following::*[.='ch2-1']", ch1_1.clone())
+            .unwrap()
+            .as_nodeset()
+            .unwrap()[0]
+            .clone();
+        assert_eq!(ch2_1.text_content(), "ch2-1");
+
+        let ch2_1 = evaluate("./following::*[.='gch3']", ch1_1.clone())
+            .unwrap()
+            .as_nodeset()
+            .unwrap()[0]
+            .clone();
+        assert_eq!(ch2_1.text_content(), "gch3");
+    }
+
+    #[test]
+    fn comment_context_node_tests() {
+        const DOCUMENT: &str = r#"<doc>
+            <ch1>ch1-1</ch1>
+            <ch1>ch1-2</ch1>
+            <!--comment-->
+            <ch2>ch2-1</ch2>
+            <ch2>ch2-2</ch2>
+            <ch3><gch3>gch3</gch3></ch3>
+        </doc>"#;
+
+        let mut reader = XMLReader::builder()
+            .set_handler(TreeBuildHandler::default())
+            .build();
+        reader.parse_str(DOCUMENT, None).unwrap();
+        let document = reader.handler.document;
+
+        let comment = evaluate("//comment()", document.clone())
+            .unwrap()
+            .as_nodeset()
+            .unwrap()[0]
+            .clone();
+        assert_eq!(comment.text_content(), "comment");
+
+        let ch1_2 = evaluate("./preceding::*[1]", comment.clone())
+            .unwrap()
+            .as_nodeset()
+            .unwrap()[0]
+            .clone();
+        assert_eq!(ch1_2.text_content(), "ch1-2");
+
+        let ch2_1 = evaluate("./following::*[.='ch2-1']", comment.clone())
+            .unwrap()
+            .as_nodeset()
+            .unwrap()[0]
+            .clone();
+        assert_eq!(ch2_1.text_content(), "ch2-1");
+
+        let ch2_1 = evaluate("./following::*[.='gch3']", comment.clone())
+            .unwrap()
+            .as_nodeset()
+            .unwrap()[0]
+            .clone();
+        assert_eq!(ch2_1.text_content(), "gch3");
     }
 }
