@@ -63,7 +63,7 @@ use std::{borrow::Cow, collections::HashMap, io::Read, sync::Arc};
 pub use compile::*;
 
 use crate::{
-    XML_NS_NAMESPACE, XML_XML_NAMESPACE,
+    XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::XMLReader,
     tree::{
@@ -83,6 +83,7 @@ pub enum XPathError {
     WrongTypeConversion,
     UnresolvableFunctionName,
     UnresolvableVariableName,
+    InvalidNamespacePrefix,
     UnsupportedNodeType,
     CompileError(XPathCompileError),
     InternalError,
@@ -581,6 +582,13 @@ impl XPathExpression {
     pub fn add_variable(&mut self, name: &str, object: XPathObject) -> Option<XPathObject> {
         self.context.variables.insert(name, object)
     }
+
+    /// Add a namespace binding.
+    ///
+    /// If the prefix is empty or not an NCName, return [`Err`].
+    pub fn add_namespace(&mut self, prefix: &str, namespace_name: &str) -> Result<(), XPathError> {
+        self.context.namespaces.insert(prefix, namespace_name)
+    }
 }
 
 /// XPath evaluation context.
@@ -988,11 +996,22 @@ struct NamespaceSet {
 }
 
 impl NamespaceSet {
-    fn get_namespace_name(&self, prefix: Option<&str>) -> Option<&str> {
+    fn get(&self, prefix: Option<&str>) -> Option<&str> {
         let prefix = prefix.unwrap_or("");
         self.prefix_map
             .get(prefix)
             .map(|namespace_name| namespace_name.as_ref())
+    }
+
+    fn insert(&mut self, prefix: &str, namespace_name: &str) -> Result<(), XPathError> {
+        if prefix.is_empty() || !XMLVersion::default().validate_ncname(prefix) {
+            return Err(XPathError::InvalidNamespacePrefix);
+        }
+        self.prefix_map.insert(
+            Cow::Owned(prefix.to_owned()),
+            Cow::Owned(namespace_name.to_owned()),
+        );
+        Ok(())
     }
 }
 
@@ -1134,7 +1153,7 @@ impl NodeTest {
                         .search_namespace_by_prefix(Some(prefix))
                         .map(|namespace| namespace.namespace_name())
                         .as_deref()
-                        .or_else(|| namespace_set.get_namespace_name(Some(prefix)))
+                        .or_else(|| namespace_set.get(Some(prefix)))
                         .is_some_and(|namespace_name| {
                             element.namespace_name().as_deref() == Some(namespace_name)
                                 && local_name == element.local_name().as_ref()
@@ -1164,7 +1183,7 @@ impl NodeTest {
                         .and_then(|element| element.search_namespace_by_prefix(Some(prefix)))
                         .map(|namespace| namespace.namespace_name())
                         .as_deref()
-                        .or_else(|| namespace_set.get_namespace_name(Some(prefix)))
+                        .or_else(|| namespace_set.get(Some(prefix)))
                         .is_some_and(|namespace_name| {
                             attribute.namespace_name().as_deref() == Some(namespace_name)
                                 && local_name == attribute.local_name().as_ref()
