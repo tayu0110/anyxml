@@ -566,6 +566,21 @@ impl XPathExpression {
         }
         Ok(())
     }
+
+    /// Add a variable binding.
+    ///
+    /// If a variable with the same name already exists, return the existing value and
+    /// overwrite it with the new value.
+    ///
+    /// # Note
+    /// Although variables should be QNames, this function does not verify whether `name`
+    /// is a QName. Therefore, it is possible to add variable bindings with names that are
+    /// not QNames.  \
+    /// However, since such variables are never referenced in a validly compiled XPath
+    /// expression, this is merely a waste of resources and has no harmful effects.
+    pub fn add_variable(&mut self, name: &str, object: XPathObject) -> Option<XPathObject> {
+        self.context.variables.insert(name, object)
+    }
 }
 
 /// XPath evaluation context.
@@ -960,6 +975,10 @@ impl VariableSet {
             .get(name)
             .cloned()
             .ok_or(XPathError::UnresolvableVariableName)
+    }
+
+    fn insert(&mut self, name: &str, object: XPathObject) -> Option<XPathObject> {
+        self.map.insert(Cow::Owned(name.to_owned()), object)
     }
 }
 
