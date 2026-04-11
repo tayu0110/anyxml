@@ -137,6 +137,12 @@ pub struct TreeBuildHandler<H: SAXHandler = DefaultSAXHandler> {
     ///
     /// The default value is `true`.
     pub expand_entity_reference: bool,
+    /// If `true`, `CDATASection` nodes are treated as `Text` nodes, and any adjacent Text
+    /// nodes are merged. In other words, by expanding the contents of the CDATA section using
+    /// appropriate escaping, the CDATA section is treated as if it did not exist in the document.
+    ///
+    /// The default value is `false`.
+    pub coalescing: bool,
 }
 
 impl<H: SAXHandler> TreeBuildHandler<H> {
@@ -149,6 +155,7 @@ impl<H: SAXHandler> TreeBuildHandler<H> {
             fatal_error: false,
             in_cdata: false,
             expand_entity_reference: true,
+            coalescing: false,
         }
     }
 }
@@ -163,6 +170,7 @@ impl Default for TreeBuildHandler {
             fatal_error: false,
             in_cdata: false,
             expand_entity_reference: true,
+            coalescing: false,
         }
     }
 }
@@ -346,15 +354,19 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
     }
 
     fn start_cdata(&mut self) {
-        self.in_cdata = true;
-        self.node
-            .append_child(self.document.create_cdata_section(""))
-            .unwrap();
-        self.handler.start_cdata();
+        if !self.coalescing {
+            self.in_cdata = true;
+            self.node
+                .append_child(self.document.create_cdata_section(""))
+                .unwrap();
+            self.handler.start_cdata();
+        }
     }
     fn end_cdata(&mut self) {
-        self.in_cdata = false;
-        self.handler.end_cdata();
+        if !self.coalescing {
+            self.in_cdata = false;
+            self.handler.end_cdata();
+        }
     }
 
     fn start_document(&mut self) {
@@ -640,4 +652,29 @@ fn compare_document_order(
         rp = rprev;
     }
     Some(Greater)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::sax::XMLReader;
+
+    use super::*;
+
+    #[test]
+    fn coalescing_tests() {
+        const DOCUMENT: &str = r#"<doc><ch1><![CDATA[abc]]></ch1><ch2><![CDATA[abc]]>def</ch2><ch3>abc<![CDATA[def]]></ch3><ch4>abc<![CDATA[def]]>ghi</ch4></doc>"#;
+
+        let handler = TreeBuildHandler {
+            coalescing: true,
+            ..Default::default()
+        };
+        let mut reader = XMLReader::builder().set_handler(handler).build();
+        reader.parse_str(DOCUMENT, None).unwrap();
+        let document = reader.handler.document;
+        let ret = document.to_string();
+        assert_eq!(
+            ret,
+            r#"<doc><ch1>abc</ch1><ch2>abcdef</ch2><ch3>abcdef</ch3><ch4>abcdefghi</ch4></doc>"#
+        )
+    }
 }

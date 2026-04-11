@@ -136,9 +136,9 @@ pub fn evaluate(
 /// to specify it in documents that may retrieve external resources.
 pub fn evaluate_str(xpath: &str, xml: &str, uri: Option<&URIStr>) -> Result<XPathObject, XMLError> {
     let mut expression = compile(xpath)?;
-    let mut reader = XMLReader::builder()
-        .set_handler(TreeBuildHandler::default())
-        .build();
+    let mut handler = TreeBuildHandler::default();
+    handler.coalescing = true;
+    let mut reader = XMLReader::builder().set_handler(handler).build();
     reader.parse_str(xml, uri)?;
 
     let document = reader.handler.document;
@@ -160,9 +160,9 @@ pub fn evaluate_uri(
     encoding: Option<&str>,
 ) -> Result<XPathObject, XMLError> {
     let mut expression = compile(xpath)?;
-    let mut reader = XMLReader::builder()
-        .set_handler(TreeBuildHandler::default())
-        .build();
+    let mut handler = TreeBuildHandler::default();
+    handler.coalescing = true;
+    let mut reader = XMLReader::builder().set_handler(handler).build();
     reader.parse_uri(uri, encoding)?;
 
     let document = reader.handler.document;
