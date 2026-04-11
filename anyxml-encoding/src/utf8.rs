@@ -2,8 +2,10 @@ use std::str::{from_utf8, from_utf8_unchecked};
 
 use crate::{DecodeError, Decoder, EncodeError, Encoder};
 
+/// Encoding name for UTF-8.
 pub const UTF8_NAME: &str = "UTF-8";
 
+/// Encoder for UTF-8.
 pub struct UTF8Encoder;
 impl Encoder for UTF8Encoder {
     fn name(&self) -> &'static str {
@@ -34,6 +36,7 @@ impl Encoder for UTF8Encoder {
     }
 }
 
+/// Decoder for UTF-8.
 pub struct UTF8Decoder;
 impl Decoder for UTF8Decoder {
     fn name(&self) -> &'static str {

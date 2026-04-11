@@ -266,7 +266,9 @@ where
     }
 }
 
+/// Encoding name for EUC-JP.
 pub const EUCJP_NAME: &str = "EUC-JP";
+/// Decoder for EUC-JP.
 pub struct EUCJPDecoder {
     decoder: EUCDecoder,
 }
@@ -297,6 +299,7 @@ impl Decoder for EUCJPDecoder {
     }
 }
 
+/// Encoder for EUC-JP.
 pub struct EUCJPEncoder {
     encoder: EUCEncoder<u16, u16, u16, u8, u16, u16, 2, 1, 2>,
 }
@@ -326,7 +329,9 @@ impl Encoder for EUCJPEncoder {
     }
 }
 
+/// Encoding name for EUC-KR.
 pub const EUCKR_NAME: &str = "EUC-KR";
+/// Decoder for EUC-KR.
 pub struct EUCKRDecoder {
     decoder: EUCDecoder,
 }
@@ -356,6 +361,7 @@ impl Decoder for EUCKRDecoder {
     }
 }
 
+/// Encoder for EUC-KR.
 pub struct EUCKREncoder {
     encoder: EUCEncoder<u16, u16, u8, u8, u8, u8, 2, 1, 1>,
 }

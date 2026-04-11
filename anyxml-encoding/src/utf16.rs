@@ -2,8 +2,10 @@ use std::iter::once;
 
 use crate::{DecodeError, Decoder, EncodeError, Encoder};
 
+/// Encoding name for UTF-16.
 pub const UTF16_NAME: &str = "UTF-16";
 
+/// Encoder for UTF-16.
 #[derive(Debug, Default)]
 pub struct UTF16Encoder {
     init: bool,
@@ -37,6 +39,7 @@ impl Encoder for UTF16Encoder {
     }
 }
 
+/// Decoder for UTF-16.
 pub struct UTF16Decoder {
     read: usize,
     top: [u8; 2],
@@ -149,8 +152,10 @@ impl Default for UTF16Decoder {
     }
 }
 
+/// Encoding name for UTF-16BE.
 pub const UTF16BE_NAME: &str = "UTF-16BE";
 
+/// Encoder for UTF-16BE.
 pub struct UTF16BEEncoder;
 impl Encoder for UTF16BEEncoder {
     fn name(&self) -> &'static str {
@@ -192,6 +197,7 @@ impl Encoder for UTF16BEEncoder {
     }
 }
 
+/// Decoder for UTF-16BE.
 pub struct UTF16BEDecoder;
 impl Decoder for UTF16BEDecoder {
     fn name(&self) -> &'static str {
@@ -245,8 +251,10 @@ impl Decoder for UTF16BEDecoder {
     }
 }
 
+/// Encoding name for UTF-16LE.
 pub const UTF16LE_NAME: &str = "UTF-16LE";
 
+/// Encoder for UTF-16LE.
 pub struct UTF16LEEncoder;
 impl Encoder for UTF16LEEncoder {
     fn name(&self) -> &'static str {
@@ -288,6 +296,7 @@ impl Encoder for UTF16LEEncoder {
     }
 }
 
+/// Decoder for UTF-16LE.
 pub struct UTF16LEDecoder;
 impl Decoder for UTF16LEDecoder {
     fn name(&self) -> &'static str {

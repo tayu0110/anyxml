@@ -1,7 +1,9 @@
 use crate::{DecodeError, Decoder, EncodeError, Encoder};
 
+/// Encoding name for UTF-32.
 pub const UTF32_NAME: &str = "UTF-32";
 
+/// Encoder for UTF-32.
 #[derive(Debug, Default)]
 pub struct UTF32Encoder {
     init: bool,
@@ -37,6 +39,7 @@ impl Encoder for UTF32Encoder {
     }
 }
 
+/// Decoder for UTF-32.
 pub struct UTF32Decoder {
     read: usize,
     top: [u8; 4],
@@ -130,8 +133,10 @@ impl Default for UTF32Decoder {
     }
 }
 
+/// Encoding name for UTF-32BE.
 pub const UTF32BE_NAME: &str = "UTF-32BE";
 
+/// Encoder for UTF-32BE.
 pub struct UTF32BEEncoder;
 impl Encoder for UTF32BEEncoder {
     fn name(&self) -> &'static str {
@@ -166,6 +171,7 @@ impl Encoder for UTF32BEEncoder {
     }
 }
 
+/// Decoder for UTF-32BE.
 pub struct UTF32BEDecoder;
 impl Decoder for UTF32BEDecoder {
     fn name(&self) -> &'static str {
@@ -224,8 +230,10 @@ impl Decoder for UTF32BEDecoder {
     }
 }
 
+/// Encoding name for UTF-32LE.
 pub const UTF32LE_NAME: &str = "UTF-32LE";
 
+/// Encoder for UTF-32LE.
 pub struct UTF32LEEncoder;
 impl Encoder for UTF32LEEncoder {
     fn name(&self) -> &'static str {
@@ -260,6 +268,7 @@ impl Encoder for UTF32LEEncoder {
     }
 }
 
+/// Decoder for UTF-32LE.
 pub struct UTF32LEDecoder;
 impl Decoder for UTF32LEDecoder {
     fn name(&self) -> &'static str {

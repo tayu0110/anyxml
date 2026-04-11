@@ -1,7 +1,9 @@
 use crate::{DecodeError, Decoder, EncodeError, Encoder};
 
+/// Encoding name for US-ASCII.
 pub const US_ASCII_NAME: &str = "US-ASCII";
 
+/// Encoder for US-ASCII.
 pub struct USASCIIEncoder;
 impl Encoder for USASCIIEncoder {
     fn name(&self) -> &'static str {
@@ -43,6 +45,7 @@ impl Encoder for USASCIIEncoder {
     }
 }
 
+/// Decoder for US-ASCII.
 pub struct USASCIIDecoder;
 impl Decoder for USASCIIDecoder {
     fn name(&self) -> &'static str {

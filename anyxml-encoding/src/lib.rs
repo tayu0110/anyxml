@@ -38,17 +38,18 @@ pub use us_ascii::*;
 pub use utf8::*;
 pub use utf16::*;
 
+/// Encode error.
 #[derive(Debug, Clone)]
 pub enum EncodeError {
     /// Input buffer is empty.
     InputIsEmpty,
-    /// The length of the output buffer is too short.  
+    /// The length of the output buffer is too short.  \
     /// If this error is returned, it is guaranteed that the encoder is consuming the input buffer.
     OutputTooShort,
     /// A UTF-8 character `c` cannot map any codepoints of the target encoding.
     ///
-    /// The input and output buffer have consumed `read` and `write` bytes respectively.  
-    /// `read` includes the length of `c`. Thus, the correctly read length is `read - c.len_utf8()`.  
+    /// The input and output buffer have consumed `read` and `write` bytes respectively.  \
+    /// `read` includes the length of `c`. Thus, the correctly read length is `read - c.len_utf8()`.  \
     /// `write` does not include the length of `c` because encoder cannot write unmapped characters.
     Unmappable { read: usize, write: usize, c: char },
     /// Other errors.
@@ -74,17 +75,18 @@ pub trait Encoder {
     ) -> Result<(usize, usize), EncodeError>;
 }
 
+/// Decode error.
 #[derive(Debug, Clone)]
 pub enum DecodeError {
     /// Input buffer is empty.
     InputIsEmpty,
-    /// The length of the output buffer is too short.  
+    /// The length of the output buffer is too short.  \
     /// If this error is returned, it is guaranteed that the decoder is consuming the input buffer.
     OutputTooShort,
-    /// Malformed byte sequence is found.  
+    /// Malformed byte sequence is found.
     ///
-    /// The input and output buffer have consumed `read` and `write` bytes respectively.  
-    /// Malformed sequence occurs `input[read-length-offset..read-offset]`.  
+    /// The input and output buffer have consumed `read` and `write` bytes respectively.  \
+    /// Malformed sequence occurs `input[read-length-offset..read-offset]`.
     Malformed {
         read: usize,
         write: usize,
@@ -114,7 +116,7 @@ pub trait Decoder {
     ) -> Result<(usize, usize), DecodeError>;
 }
 
-/// Supported encodings.  
+/// Supported encodings.
 ///
 /// Encoding names are listed in lexical order.
 pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {

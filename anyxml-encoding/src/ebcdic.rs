@@ -2,7 +2,9 @@ use crate::{DecodeError, Decoder, EncodeError, Encoder};
 
 macro_rules! impl_ebcdic_encoder_and_decoder {
     ( $name:ident, $namelit:literal, $encoder:ident, $decoder:ident, $etable:ident, $dtable:ident ) => {
+        #[doc = concat!("Encoding name for ", $namelit, ".")]
         pub const $name: &str = $namelit;
+        #[doc = concat!("Encoder for ", $namelit, ".")]
         #[allow(non_camel_case_types)]
         pub struct $encoder;
         impl Encoder for $encoder {
@@ -45,6 +47,7 @@ macro_rules! impl_ebcdic_encoder_and_decoder {
             }
         }
 
+        #[doc = concat!("Decoder for ", $namelit, ".")]
         #[allow(non_camel_case_types)]
         pub struct $decoder;
         impl Decoder for $decoder {

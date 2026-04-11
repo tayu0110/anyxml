@@ -1,7 +1,9 @@
 use crate::{DecodeError, Decoder, EncodeError, Encoder};
 
+/// Encoding name for Shift_JIS.
 pub const SHIFT_JIS_NAME: &str = "SHIFT_JIS";
 
+/// Encoder for Shift_JIS.
 pub struct ShiftJISEncoder;
 impl Encoder for ShiftJISEncoder {
     fn name(&self) -> &'static str {
@@ -51,6 +53,7 @@ impl Encoder for ShiftJISEncoder {
     }
 }
 
+/// Decoder for Shift_JIS.
 pub struct ShiftJISDecoder;
 impl Decoder for ShiftJISDecoder {
     fn name(&self) -> &'static str {
