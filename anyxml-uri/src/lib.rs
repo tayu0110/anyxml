@@ -1,6 +1,7 @@
 pub mod rfc2396;
 pub mod uri;
 
+/// Parse errors.
 #[derive(Debug, Clone, Copy)]
 pub enum ParseRIError {
     InvalidAuthority,

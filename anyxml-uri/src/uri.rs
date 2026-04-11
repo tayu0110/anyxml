@@ -9,6 +9,7 @@ use std::{
 
 use crate::ParseRIError;
 
+/// A subtype of [`str`] that has been validated as a URI.
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct URIStr {
@@ -161,24 +162,31 @@ impl URIStr {
         &self.uri
     }
 
-    /// Return the unescaped URI string.  \
+    /// Return the unescaped URI string.
+    ///
     /// If unescaping fails, return `None`.
     pub fn as_unescaped_str(&self) -> Option<Cow<'_, str>> {
         unescape(&self.uri).ok()
     }
 
+    /// Check if this URI reference is the absolute URI.
+    ///
     /// # Reference
     /// [4.3.  Absolute URI](https://datatracker.ietf.org/doc/html/rfc3986#section-4.3)
     pub fn is_absolute(&self) -> bool {
         self.scheme().is_some() && self.fragment().is_none()
     }
 
+    /// Check if this URI reference is the relative reference.
+    ///
     /// # Reference
     /// [4.2.  Relative Reference](https://datatracker.ietf.org/doc/html/rfc3986#section-4.2)
     pub fn is_relative(&self) -> bool {
         self.scheme().is_none()
     }
 
+    /// "scheme" part.
+    ///
     /// # Reference
     /// [3.1.  Scheme](https://datatracker.ietf.org/doc/html/rfc3986#section-3.1)
     pub fn scheme(&self) -> Option<&str> {
@@ -186,6 +194,8 @@ impl URIStr {
         (self.uri.as_bytes()[pos] == b':').then_some(&self.uri[..pos])
     }
 
+    /// "authority" part.
+    ///
     /// # Reference
     /// [3.2.  Authority](https://datatracker.ietf.org/doc/html/rfc3986#section-3.2)
     pub fn authority(&self) -> Option<&str> {
@@ -196,12 +206,16 @@ impl URIStr {
         Some(rem.split_once('/').map(|p| p.0).unwrap_or(rem))
     }
 
+    /// "userinfo" part.
+    ///
     /// # Reference
     /// [3.2.1.  User Information](https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.1)
     pub fn userinfo(&self) -> Option<&str> {
         Some(self.authority()?.split_once('@')?.0)
     }
 
+    /// "host" part.
+    ///
     /// # Reference
     /// [3.2.2.  Host](https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.2)
     pub fn host(&self) -> Option<&str> {
@@ -217,6 +231,8 @@ impl URIStr {
         Some(auth)
     }
 
+    /// "port" part.
+    ///
     /// # Reference
     /// [3.2.3.  Port](https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.3)
     pub fn port(&self) -> Option<&str> {
@@ -224,6 +240,8 @@ impl URIStr {
         port.bytes().all(|b| b.is_ascii_digit()).then_some(port)
     }
 
+    /// "path" part.
+    ///
     /// # Reference
     /// [3.3.  Path](https://datatracker.ietf.org/doc/html/rfc3986#section-3.3)
     pub fn path(&self) -> &str {
@@ -241,6 +259,8 @@ impl URIStr {
         path.split_once(['?', '#']).map(|p| p.0).unwrap_or(path)
     }
 
+    /// "query" part.
+    ///
     /// # Reference
     /// [3.4.  Query](https://datatracker.ietf.org/doc/html/rfc3986#section-3.4)
     pub fn query(&self) -> Option<&str> {
@@ -253,6 +273,8 @@ impl URIStr {
         Some(&query[..pos])
     }
 
+    /// "fragment" part.
+    ///
     /// # Reference
     /// [3.5.  Fragment](https://datatracker.ietf.org/doc/html/rfc3986#section-3.5)
     pub fn fragment(&self) -> Option<&str> {
@@ -325,6 +347,7 @@ macro_rules! impl_boxed_convertion_uri_str {
 }
 impl_boxed_convertion_uri_str!(Box, Rc, Arc);
 
+/// A subtype of [`String`] that has been validated as a URI.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct URIString {
@@ -556,10 +579,13 @@ impl URIString {
         _parse_file_path(path.as_ref())
     }
 
+    /// Convert [`URIString`] to [`Box<URIStr>`].
     pub fn into_boxed_uri_str(self) -> Box<URIStr> {
         Box::from(self.as_ref())
     }
 
+    /// Normalize the URI according to the algorithm specified in RFC 3986.
+    ///
     /// # Reference
     /// [6.2.2.  Syntax-Based Normalization](https://datatracker.ietf.org/doc/html/rfc3986#section-6.2.2).
     pub fn normalize(&mut self) {
@@ -1404,14 +1430,18 @@ const LUT: &str = unsafe {
     from_utf8_unchecked(&LUT_BYTES)
 };
 
+/// Return a string in which all characters have been percent-encoded.
 pub fn escape(s: &str) -> Cow<'_, str> {
     escape_except(s, |_| false)
 }
 
+/// Return a byte sequence in which all bytes have been percent-encoded.
 pub fn escape_bytes(b: &[u8]) -> Cow<'_, [u8]> {
     escape_bytes_except(b, |_| false)
 }
 
+/// Return a string in which all characters other than those for which `is_except` returns
+/// `true` are percent-encoded.
 pub fn escape_except(s: &str, is_except: impl Fn(char) -> bool) -> Cow<'_, str> {
     let cap = s
         .chars()
@@ -1436,6 +1466,8 @@ pub fn escape_except(s: &str, is_except: impl Fn(char) -> bool) -> Cow<'_, str> 
     Cow::Owned(buf)
 }
 
+/// Return a byte sequence in which all bytes other than those for which `is_except` returns
+/// `true` are percent-encoded.
 pub fn escape_bytes_except(b: &[u8], is_except: impl Fn(u8) -> bool) -> Cow<'_, [u8]> {
     let cap = b.iter().copied().filter(|&b| !is_except(b)).count() * 2;
     if cap == 0 {
@@ -1453,6 +1485,7 @@ pub fn escape_bytes_except(b: &[u8], is_except: impl Fn(u8) -> bool) -> Cow<'_, 
     Cow::Owned(buf)
 }
 
+/// Percent-encoded string unescaping error
 pub enum URIUnescapeError {
     InvalidEscape,
     Utf8Error(std::str::Utf8Error),
@@ -1464,6 +1497,11 @@ impl From<std::str::Utf8Error> for URIUnescapeError {
     }
 }
 
+/// Return a string with all percent-encoded characters decoded.
+///
+/// Processing assumes that all percent-encoded byte sequences are UTF-8 byte sequences.
+///
+/// If a byte sequence that cannot be decoded is encountered, return [`Err`].
 pub fn unescape(s: &str) -> Result<Cow<'_, str>, URIUnescapeError> {
     if !s.contains('%') {
         return Ok(Cow::Borrowed(s));
@@ -1494,6 +1532,11 @@ pub fn unescape(s: &str) -> Result<Cow<'_, str>, URIUnescapeError> {
     Ok(Cow::Owned(buf))
 }
 
+/// Return a byte sequence with all percent-encoded bytes decoded.
+///
+/// Even if the decoded byte sequence does not form a valid string in any encoding, it is not
+/// an error. However, if the byte sequence is not in the correct format for a percent-encoded
+/// string, return [`Err`].
 pub fn unescape_bytes(b: &[u8]) -> Result<Cow<'_, [u8]>, URIUnescapeError> {
     if !b.contains(&b'%') {
         return Ok(Cow::Borrowed(b));
@@ -1534,6 +1577,7 @@ enum DecomposeState {
     Finish,
 }
 
+/// Iterator for URI components.
 pub struct Components<'a> {
     state: DecomposeState,
     uri: &'a str,
@@ -1636,6 +1680,7 @@ impl<'a> Iterator for Components<'a> {
     }
 }
 
+/// URI component.
 pub enum Component<'a> {
     Scheme(&'a str),
     Authority {

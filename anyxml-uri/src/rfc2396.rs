@@ -1,5 +1,7 @@
 use crate::ParseRIError;
 
+/// Verify whether the URI reference complies with RFC 2396.
+///
 /// ```text
 /// URI-reference = [ absoluteURI | relativeURI ] [ "#" fragment ]
 /// ```
@@ -24,6 +26,8 @@ pub fn validate_rfc2396_uri(mut uri: &str) -> Result<(), ParseRIError> {
     }
 }
 
+/// Verify whether the absolute URI complies with RFC 2396.
+///
 /// ```text
 /// absoluteURI   = scheme ":" ( hier_part | opaque_part )
 /// ```
@@ -49,6 +53,8 @@ fn parse_rfc2396_absolute_uri(uri: &mut &str) -> Result<(), ParseRIError> {
     Ok(())
 }
 
+/// Verify whether the relative URI complies with RFC 2396.
+///
 /// ```text
 /// relativeURI   = ( net_path | abs_path | rel_path ) [ "?" query ]
 /// ```
