@@ -143,6 +143,10 @@ pub struct TreeBuildHandler<H: SAXHandler = DefaultSAXHandler> {
     ///
     /// The default value is `false`.
     pub coalescing: bool,
+    /// If true, the `Comment` node is not created.
+    ///
+    /// The default value is `false`.
+    pub ignoring_comments: bool,
 }
 
 impl<H: SAXHandler> TreeBuildHandler<H> {
@@ -156,6 +160,7 @@ impl<H: SAXHandler> TreeBuildHandler<H> {
             in_cdata: false,
             expand_entity_reference: true,
             coalescing: false,
+            ignoring_comments: false,
         }
     }
 }
@@ -171,6 +176,7 @@ impl Default for TreeBuildHandler {
             in_cdata: false,
             expand_entity_reference: true,
             coalescing: false,
+            ignoring_comments: false,
         }
     }
 }
@@ -252,10 +258,12 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
     }
 
     fn comment(&mut self, data: &str) {
-        self.node
-            .append_child(self.document.create_comment(data))
-            .unwrap();
-        self.handler.comment(data);
+        if !self.ignoring_comments {
+            self.node
+                .append_child(self.document.create_comment(data))
+                .unwrap();
+            self.handler.comment(data);
+        }
     }
 
     fn declaration(&mut self, version: &str, encoding: Option<&str>, standalone: Option<bool>) {
@@ -676,5 +684,20 @@ mod tests {
             ret,
             r#"<doc><ch1>abc</ch1><ch2>abcdef</ch2><ch3>abcdef</ch3><ch4>abcdefghi</ch4></doc>"#
         )
+    }
+
+    #[test]
+    fn ignoring_comments_tests() {
+        const DOCUMENT: &str = r#"<!--comment--><doc><!--comment--><ch1><!--comment--></ch1><!--comment--></doc><!--comment-->"#;
+
+        let handler = TreeBuildHandler {
+            ignoring_comments: true,
+            ..Default::default()
+        };
+        let mut reader = XMLReader::builder().set_handler(handler).build();
+        reader.parse_str(DOCUMENT, None).unwrap();
+        let document = reader.handler.document;
+        let ret = document.to_string();
+        assert_eq!(ret, r#"<doc><ch1 /></doc>"#)
     }
 }
