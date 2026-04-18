@@ -1566,7 +1566,7 @@ impl BuiltinDerivedType {
                 } else if let Some(s) = collapsed.strip_prefix('+') {
                     s.bytes().all(|b| b.is_ascii_digit())
                 } else {
-                    collapsed.bytes().all(|b| b == b'0')
+                    collapsed.bytes().all(|b| b.is_ascii_digit())
                 };
                 if !check {
                     return Err(ParseError::NonNegativeInteger);
