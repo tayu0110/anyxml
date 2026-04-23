@@ -27,13 +27,8 @@ fn catalog_resolution_tests() {
                 .unwrap(),
         )
         .unwrap();
-        let catalog_entry_file = CatalogEntryFile::parse_uri(
-            &catalog_uri,
-            None,
-            None::<DefaultSAXHandler>,
-            None::<DefaultSAXHandler>,
-        )
-        .unwrap();
+        let catalog_entry_file =
+            CatalogEntryFile::parse_uri(&catalog_uri, None, None::<DefaultSAXHandler>).unwrap();
         catalog.add(catalog_entry_file);
 
         let mut test_cases = test_cases.first_child();
@@ -143,13 +138,8 @@ fn catalog_resolution_for_entities_tests() {
                 .unwrap(),
         )
         .unwrap();
-        let catalog_entry_file = CatalogEntryFile::parse_uri(
-            &catalog_uri,
-            None,
-            None::<DefaultSAXHandler>,
-            None::<DefaultSAXHandler>,
-        )
-        .unwrap();
+        let catalog_entry_file =
+            CatalogEntryFile::parse_uri(&catalog_uri, None, None::<DefaultSAXHandler>).unwrap();
         let mut reader = XMLReader::builder()
             .set_handler(TreeBuildHandler::with_handler(DebugHandler::default()))
             .set_parser_config(

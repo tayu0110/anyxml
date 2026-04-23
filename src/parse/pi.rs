@@ -170,13 +170,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Sp
                     .and_then(|value| URIString::parse(value).ok())
                     .map(|catalog| self.base_uri.resolve(&catalog))
                     .and_then(|catalog| {
-                        CatalogEntryFile::parse_uri(
-                            catalog,
-                            None,
-                            None::<DefaultSAXHandler>,
-                            None::<DefaultSAXHandler>,
-                        )
-                        .ok()
+                        CatalogEntryFile::parse_uri(catalog, None, None::<DefaultSAXHandler>).ok()
                     })
             {
                 self.pi_catalog.add(catalog);

@@ -28,7 +28,6 @@
 //! let entry = CatalogEntryFile::parse_str(
 //!     SAMPLE_CATALOG,
 //!     Some(&URIString::parse("file:///home/user/catalog.xml").unwrap()),
-//!     None::<DefaultSAXHandler>,
 //!     None::<DefaultSAXHandler>
 //! ).unwrap();
 //! catalog.add(entry);
@@ -461,13 +460,12 @@ impl CatalogEntryFile {
     ///
     /// # Reference
     /// [8. Resource Failures](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
-    pub fn parse_uri<Resolver: EntityResolver, Reporter: ErrorHandler>(
+    pub fn parse_uri<H: EntityResolver + ErrorHandler>(
         uri: impl AsRef<URIStr>,
         encoding: Option<&str>,
-        entity_resolver: Option<Resolver>,
-        error_handler: Option<Reporter>,
+        handler: Option<H>,
     ) -> Result<CatalogEntryFile, XMLError> {
-        let handler = CatalogParseHandler::with_handler(entity_resolver, error_handler);
+        let handler = CatalogParseHandler::with_handler(handler);
         let mut reader = XMLReader::builder().set_handler(handler).build();
         reader.parse_uri(uri, encoding)?;
         if reader.handler.resource_failure {
@@ -486,14 +484,13 @@ impl CatalogEntryFile {
     ///
     /// # Reference
     /// [8. Resource Failures](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
-    pub fn parse_reader<'a, Resolver: EntityResolver, Reporter: ErrorHandler>(
+    pub fn parse_reader<'a, H: EntityResolver + ErrorHandler>(
         reader: impl Read + 'a,
         encoding: Option<&str>,
         uri: Option<&URIStr>,
-        entity_resolver: Option<Resolver>,
-        error_handler: Option<Reporter>,
+        handler: Option<H>,
     ) -> Result<CatalogEntryFile, XMLError> {
-        let handler = CatalogParseHandler::with_handler(entity_resolver, error_handler);
+        let handler = CatalogParseHandler::with_handler(handler);
         let mut parser = XMLReader::builder().set_handler(handler).build();
         parser.parse_reader(reader, encoding, uri)?;
         if parser.handler.resource_failure {
@@ -512,13 +509,12 @@ impl CatalogEntryFile {
     ///
     /// # Reference
     /// [8. Resource Failures](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
-    pub fn parse_str<Resolver: EntityResolver, Reporter: ErrorHandler>(
+    pub fn parse_str<H: EntityResolver + ErrorHandler>(
         catalog: &str,
         uri: Option<&URIStr>,
-        entity_resolver: Option<Resolver>,
-        error_handler: Option<Reporter>,
+        handler: Option<H>,
     ) -> Result<CatalogEntryFile, XMLError> {
-        let handler = CatalogParseHandler::with_handler(entity_resolver, error_handler);
+        let handler = CatalogParseHandler::with_handler(handler);
         let mut parser = XMLReader::builder().set_handler(handler).build();
         parser.parse_str(catalog, uri)?;
         if parser.handler.resource_failure {
@@ -621,10 +617,7 @@ impl CatalogEntryFile {
     }
 }
 
-struct CatalogParseHandler<
-    Resolver: EntityResolver = DefaultSAXHandler,
-    Reporter: ErrorHandler = DefaultSAXHandler,
-> {
+struct CatalogParseHandler<H: EntityResolver + ErrorHandler = DefaultSAXHandler> {
     entry_file: CatalogEntryFile,
     // (namespace name, local name)
     name_stack: Vec<(Box<str>, Box<str>)>,
@@ -632,18 +625,17 @@ struct CatalogParseHandler<
     prefer_mode_stack: Vec<(PreferMode, usize)>,
     ignored_depth: usize,
     resource_failure: bool,
-    entity_resolver: Option<Resolver>,
-    error_handler: Option<Reporter>,
+    handler: Option<H>,
 }
 
 impl CatalogParseHandler {
     fn new() -> Self {
-        Self::with_handler(None, None)
+        Self::with_handler(None)
     }
 }
 
-impl<Resolver: EntityResolver, Reporter: ErrorHandler> CatalogParseHandler<Resolver, Reporter> {
-    fn with_handler(entity_resolver: Option<Resolver>, error_handler: Option<Reporter>) -> Self {
+impl<H: EntityResolver + ErrorHandler> CatalogParseHandler<H> {
+    fn with_handler(handler: Option<H>) -> Self {
         Self {
             entry_file: CatalogEntryFile::new(),
             name_stack: vec![],
@@ -651,8 +643,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> CatalogParseHandler<Resol
             prefer_mode_stack: vec![],
             ignored_depth: 0,
             resource_failure: false,
-            entity_resolver,
-            error_handler,
+            handler,
         }
     }
 
@@ -693,9 +684,7 @@ impl Default for CatalogParseHandler {
     }
 }
 
-impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
-    for CatalogParseHandler<Resolver, Reporter>
-{
+impl<H: EntityResolver + ErrorHandler> SAXHandler for CatalogParseHandler<H> {
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
         self.entry_file.base_uri = locator.system_id();
         self.base_uri_stack
@@ -1086,9 +1075,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
     }
 }
 
-impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
-    for CatalogParseHandler<Resolver, Reporter>
-{
+impl<H: EntityResolver + ErrorHandler> EntityResolver for CatalogParseHandler<H> {
     fn resolve_entity(
         &mut self,
         name: &str,
@@ -1096,7 +1083,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
         base_uri: &URIStr,
         system_id: &URIStr,
     ) -> Result<InputSource<'static>, XMLError> {
-        if let Some(resolver) = self.entity_resolver.as_mut() {
+        if let Some(resolver) = self.handler.as_mut() {
             resolver.resolve_entity(name, public_id, base_uri, system_id)
         } else {
             DefaultSAXHandler.resolve_entity(name, public_id, base_uri, system_id)
@@ -1108,7 +1095,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
         name: &str,
         base_uri: Option<&URIStr>,
     ) -> Result<InputSource<'static>, XMLError> {
-        (if let Some(resolver) = self.entity_resolver.as_mut() {
+        (if let Some(resolver) = self.handler.as_mut() {
             resolver.get_external_subset(name, base_uri)
         } else {
             DefaultSAXHandler.get_external_subset(name, base_uri)
@@ -1132,23 +1119,21 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
     }
 }
 
-impl<Resolver: EntityResolver, Reporter: ErrorHandler> ErrorHandler
-    for CatalogParseHandler<Resolver, Reporter>
-{
+impl<H: EntityResolver + ErrorHandler> ErrorHandler for CatalogParseHandler<H> {
     fn fatal_error(&mut self, error: SAXParseError) {
-        if let Some(handler) = self.error_handler.as_mut() {
+        if let Some(handler) = self.handler.as_mut() {
             handler.fatal_error(error);
         }
     }
 
     fn error(&mut self, error: SAXParseError) {
-        if let Some(handler) = self.error_handler.as_mut() {
+        if let Some(handler) = self.handler.as_mut() {
             handler.error(error);
         }
     }
 
     fn warning(&mut self, error: SAXParseError) {
-        if let Some(handler) = self.error_handler.as_mut() {
+        if let Some(handler) = self.handler.as_mut() {
             handler.warning(error);
         }
     }
