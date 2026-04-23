@@ -27,6 +27,7 @@ The current implementation supports the following features:
 - merge XML documents using XInclude.
 - canonicalize XML document.
     - [x] C14N 1.0 (only octet stream source is supported now)
+    - [x] C14N 1.1 (only octet stream source is supported now)
 
 ## Parser
 This crate provides multiple styles of XML parsers.
