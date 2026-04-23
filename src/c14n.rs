@@ -1,9 +1,9 @@
 //! XML canonicalization APIs.
 //!
-//! The current implementation supports only C14N 1.0 and can only use octet streams
+//! The current implementation supports C14N 1.0/1.1 and can only use octet streams
 //! as document sources.
 //!
-//! Support for C14N 1.1 and Exclusive XML C14N, as well as support for XPath node set input,
+//! Support for Exclusive XML C14N, as well as support for XPath node set input,
 //! is planned for future expansion.
 //!
 //! # Example
@@ -60,6 +60,7 @@ pub enum CanonicalizeMethod {
     // C14N 1.0
     #[default]
     C14N10,
+    C14N11,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -331,7 +332,9 @@ impl<H: SAXHandler> SAXHandler for CanonicalizeHandler<H> {
     }
 
     fn skipped_entity(&mut self, name: &str) {
-        if let Some(localtor) = self.localtor.as_deref() {
+        if name != "[dtd]"
+            && let Some(localtor) = self.localtor.as_deref()
+        {
             self.fatal_error(SAXParseError {
                 error: XMLError::C14NUnresolvableEntityReference,
                 level: XMLErrorLevel::FatalError,
