@@ -72,8 +72,8 @@ pub trait SAXHandler: EntityResolver + ErrorHandler {
 
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
-    fn start_prefix_mapping(&mut self, prefix: Option<&str>, uri: &str) {
-        let _ = (prefix, uri);
+    fn start_prefix_mapping(&mut self, prefix: Option<&str>, namespace_name: &str) {
+        let _ = (prefix, namespace_name);
     }
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
