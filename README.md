@@ -237,7 +237,8 @@ This crate passes the following tests:
 - some self-made tests
 
 # Performance
-According to preliminary benchmarks, the results show that it is about 1.8 times slower than `quick-xml` but more than 50 times faster than `xml` when processing simple, large XML documents.
+According to preliminary benchmarks, the results show that it is about 1.8 times slower than `quick-xml` but more than 50 times faster than `xml` when processing simple, large XML documents.  \
+Please note that `quick-xml` is not an XML processor in the strict sense, as it performs very few well-formedness checks. For example, `quick-xml` does not check if the character is a valid XML character. Since the performance bottlenecks in the `anyxml` crate lie in decoding UTF-8 byte sequences and checking characters, this feature provides a performance advantage. (However it does accept non-XML data as XML)
 
 When `xmllint` (included with `libxml2`) and `xmlprocess` (included with `anyxml-cli`) are run in SAX mode, their performance is nearly equivalent, but `xmlprocess` is slightly faster and significantly more memory-efficient.
 

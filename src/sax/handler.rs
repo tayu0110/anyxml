@@ -220,7 +220,7 @@ pub trait ErrorHandler {
     }
 }
 
-impl<H: EntityResolver> EntityResolver for &mut H {
+impl<H: EntityResolver + ?Sized> EntityResolver for &mut H {
     fn resolve_entity(
         &mut self,
         name: &str,
@@ -239,7 +239,7 @@ impl<H: EntityResolver> EntityResolver for &mut H {
         (*self).get_external_subset(name, base_uri)
     }
 }
-impl<H: ErrorHandler> ErrorHandler for &mut H {
+impl<H: ErrorHandler + ?Sized> ErrorHandler for &mut H {
     fn error(&mut self, error: SAXParseError) {
         (*self).error(error);
     }
@@ -252,7 +252,7 @@ impl<H: ErrorHandler> ErrorHandler for &mut H {
         (*self).warning(error);
     }
 }
-impl<H: SAXHandler> SAXHandler for &mut H {
+impl<H: SAXHandler + ?Sized> SAXHandler for &mut H {
     fn attribute_decl(
         &mut self,
         element_name: &str,

@@ -106,6 +106,7 @@
 //! - [ISO/IEC 19757-2:2008 Information technology — Document Schema Definition Language (DSDL)Part 2: Regular-grammar-based validation — RELAX NG](https://www.iso.org/standard/52348.html)
 //! - [Guidelines for using W3C XML Schema Datatypes with RELAX NG](https://relaxng.org/xsd-20010907.html)
 
+mod compact;
 mod datatype_library;
 mod grammar;
 mod parse;
@@ -124,6 +125,9 @@ pub use validate::ValidateHandler;
 
 /// RELAX NG namespace
 pub const XML_RELAX_NG_NAMESPACE: &str = "http://relaxng.org/ns/structure/1.0";
+/// RELAX NG annotation namespace
+pub const XML_RELAX_NG_ANNOTATION_NAMESPACE: &str =
+    "http://relaxng.org/ns/compatibility/annotations/1.0";
 
 /// Parsed RELAX NG schema.
 pub struct RelaxNGSchema {

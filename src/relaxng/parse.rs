@@ -294,10 +294,7 @@ impl ContentType {
     }
 }
 
-pub(super) struct RelaxNGParseHandler<H: SAXHandler = DefaultSAXHandler> {
-    handler: H,
-    pub(super) datatype_libraries: RelaxNGDatatypeLibraries,
-
+pub(super) struct RelaxNGParseHandler<H: SAXHandler + ?Sized = DefaultSAXHandler> {
     /// When set to `true`, the context is initialized at the start of parsing.
     ///
     /// When processing `externalRef` or `include`, the context must be preserved,
@@ -315,6 +312,9 @@ pub(super) struct RelaxNGParseHandler<H: SAXHandler = DefaultSAXHandler> {
     node_stack: Vec<usize>,
     text: String,
     defines: HashMap<String, usize>,
+
+    pub(super) datatype_libraries: RelaxNGDatatypeLibraries,
+    handler: H,
 }
 
 impl<H: SAXHandler> RelaxNGParseHandler<H> {
@@ -340,7 +340,9 @@ impl<H: SAXHandler> RelaxNGParseHandler<H> {
             defines: HashMap::new(),
         }
     }
+}
 
+impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
     /// Create a RELAX NG element that does not permit attributes other than `xml:base`,
     /// `ns` and `datatypeLibrary`.
     ///
@@ -2663,7 +2665,7 @@ impl<H: SAXHandler> std::fmt::Display for RelaxNGParseHandler<H> {
     }
 }
 
-impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
+impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
         self.handler.set_document_locator(locator.clone());
 
@@ -3255,7 +3257,7 @@ impl<H: SAXHandler> SAXHandler for RelaxNGParseHandler<H> {
     }
 }
 
-impl<H: SAXHandler> ErrorHandler for RelaxNGParseHandler<H> {
+impl<H: SAXHandler + ?Sized> ErrorHandler for RelaxNGParseHandler<H> {
     fn fatal_error(&mut self, error: SAXParseError) {
         self.handler.fatal_error(error);
     }
@@ -3269,7 +3271,7 @@ impl<H: SAXHandler> ErrorHandler for RelaxNGParseHandler<H> {
     }
 }
 
-impl<H: SAXHandler> EntityResolver for RelaxNGParseHandler<H> {
+impl<H: SAXHandler + ?Sized> EntityResolver for RelaxNGParseHandler<H> {
     fn resolve_entity(
         &mut self,
         name: &str,

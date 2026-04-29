@@ -215,16 +215,7 @@ pub(crate) enum ParserSubState {
 }
 
 /// SAX style XML parser.
-pub struct XMLReader<Spec: ParserSpec, H: SAXHandler = DefaultSAXHandler> {
-    pub(crate) source: Box<Spec::Reader>,
-    pub handler: H,
-    pub(crate) locator: Arc<Locator>,
-    pub(crate) config: ParserConfig,
-    default_base_uri: Option<Arc<URIStr>>,
-    pub(crate) base_uri: Arc<URIStr>,
-    pub(crate) entity_name: Option<Arc<str>>,
-    pub(crate) catalog: Catalog,
-
+pub struct XMLReader<Spec: ParserSpec, H: SAXHandler + ?Sized = DefaultSAXHandler> {
     // Parser Specific Context
     pub(crate) specific_context: Spec::SpecificContext,
 
@@ -266,6 +257,15 @@ pub struct XMLReader<Spec: ParserSpec, H: SAXHandler = DefaultSAXHandler> {
     pub(crate) specified_ids: HashSet<Box<str>>,
     pub(crate) unresolved_ids: HashSet<Box<str>>,
     pub(crate) pi_catalog: Catalog,
+
+    pub(crate) source: Box<Spec::Reader>,
+    pub(crate) locator: Arc<Locator>,
+    pub(crate) config: ParserConfig,
+    default_base_uri: Option<Arc<URIStr>>,
+    pub(crate) base_uri: Arc<URIStr>,
+    pub(crate) entity_name: Option<Arc<str>>,
+    pub(crate) catalog: Catalog,
+    pub handler: H,
 }
 
 impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
@@ -744,7 +744,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
     }
 }
 
-pub struct XMLReaderBuilder<'a, H: SAXHandler = DefaultSAXHandler> {
+pub struct XMLReaderBuilder<'a, H: SAXHandler + ?Sized = DefaultSAXHandler> {
     reader: XMLReader<DefaultParserSpec<'a>, H>,
 }
 
