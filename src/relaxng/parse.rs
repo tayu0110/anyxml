@@ -519,7 +519,12 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 }
             }
             RelaxNGNodeType::Choice(ref mut ty) => {
-                if self.tree[self.cur].r#type.is_name_class() {
+                if self.tree[self.cur].r#type.is_name_class()
+                    || matches!(
+                        self.tree[self.cur].r#type,
+                        RelaxNGNodeType::Except(ExceptType::NameClass)
+                    )
+                {
                     *ty = ChoiceType::NameClass;
                 } else if matches!(
                     self.tree[self.cur].r#type,

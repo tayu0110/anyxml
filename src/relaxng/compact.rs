@@ -30,7 +30,7 @@ use crate::{
     uri::{URIStr, URIString},
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum TokenType {
     Documentation(String),
     LiteralSegment(String),
@@ -553,6 +553,17 @@ struct Node {
     children: Vec<usize>,
 }
 
+impl Node {
+    fn push_attribute(&mut self, mut att: Attribute) -> Result<(), XMLError> {
+        att.set_specified();
+        if att.namespace_name.as_deref() == Some(XML_NS_NAMESPACE) {
+            att.set_nsdecl();
+        }
+        self.atts.push(att).map_err(|err| err.1)?;
+        Ok(())
+    }
+}
+
 fn parse(
     mut source: &[TokenType],
     base_uri: &URIStr,
@@ -580,7 +591,7 @@ fn parse(
                 flag: 0,
             };
             att.set_nsdecl();
-            tree[root].atts.push(att).map_err(|err| err.1)?;
+            tree[root].push_attribute(att)?;
         }
     }
     set_relaxng_namespace(
@@ -604,15 +615,14 @@ fn set_relaxng_namespace(
     name: &str,
 ) -> Result<(), XMLError> {
     if !ns.is_declared("") {
-        let mut att = Attribute {
+        let att = Attribute {
             namespace_name: Some(XML_NS_NAMESPACE.to_owned()),
             local_name: Some("xmlns".to_owned()),
             qname: "xmlns".to_owned(),
             value: name.to_owned(),
             flag: 0,
         };
-        att.set_nsdecl();
-        root.atts.push(att).map_err(|err| err.1)?;
+        root.push_attribute(att)?;
     } else {
         let mut p = pre.to_owned();
         let mut cnt = 0;
@@ -620,15 +630,14 @@ fn set_relaxng_namespace(
             p = format!("{pre}{cnt}");
             cnt += 1;
         }
-        let mut att = Attribute {
+        let att = Attribute {
             namespace_name: Some(XML_NS_NAMESPACE.to_owned()),
             local_name: Some(p.clone()),
             qname: format!("xmlns:{p}"),
             value: name.to_owned(),
             flag: 0,
         };
-        att.set_nsdecl();
-        root.atts.push(att).map_err(|err| err.1)?;
+        root.push_attribute(att)?;
     }
     Ok(())
 }
@@ -854,7 +863,7 @@ fn parse_annotated_component(
     let y = parse_component(source, base_uri, tree, ns, dt)?;
     tree[y].children.extend(children);
     for att in atts.drain() {
-        tree[y].atts.push(att).map_err(|err| err.1)?;
+        tree[y].push_attribute(att)?;
     }
     Ok(y)
 }
@@ -938,7 +947,7 @@ fn parse_start(
         children,
     };
     if let Some(op) = op {
-        node.atts.push(op).map_err(|err| err.1)?;
+        node.push_attribute(op)?;
     }
     let ret = tree.len();
     tree.push(node);
@@ -963,17 +972,15 @@ fn parse_define(
         atts: Attributes::default(),
         children,
     };
-    node.atts
-        .push(Attribute {
-            namespace_name: None,
-            local_name: Some("name".to_owned()),
-            qname: "name".to_owned(),
-            value,
-            flag: 0,
-        })
-        .map_err(|err| err.1)?;
+    node.push_attribute(Attribute {
+        namespace_name: None,
+        local_name: Some("name".to_owned()),
+        qname: "name".to_owned(),
+        value,
+        flag: 0,
+    })?;
     if let Some(op) = op {
-        node.atts.push(op).map_err(|err| err.1)?;
+        node.push_attribute(op)?;
     }
     let ret = tree.len();
     tree.push(node);
@@ -997,17 +1004,15 @@ fn parse_include(
         atts: Attributes::default(),
         children,
     };
-    node.atts
-        .push(Attribute {
-            namespace_name: None,
-            local_name: Some("href".to_owned()),
-            qname: "href".to_owned(),
-            value: uri.to_string(),
-            flag: 0,
-        })
-        .map_err(|err| err.1)?;
+    node.push_attribute(Attribute {
+        namespace_name: None,
+        local_name: Some("href".to_owned()),
+        qname: "href".to_owned(),
+        value: uri.to_string(),
+        flag: 0,
+    })?;
     if let Some(inherit) = inherit {
-        node.atts.push(inherit).map_err(|err| err.1)?;
+        node.push_attribute(inherit)?;
     }
     let ret = tree.len();
     tree.push(node);
@@ -1177,7 +1182,7 @@ fn parse_annotated_include_component(
     let y = parse_include_component(source, base_uri, tree, ns, dt)?;
     tree[y].children.extend(children);
     for att in atts.drain() {
-        tree[y].atts.push(att).map_err(|err| err.1)?;
+        tree[y].push_attribute(att)?;
     }
     Ok(y)
 }
@@ -1240,56 +1245,144 @@ fn parse_inner_pattern(
     anno: Option<(Attributes, Vec<usize>)>,
 ) -> Result<Vec<usize>, XMLError> {
     use TokenType::*;
-    let mut children = parse_particle(source, base_uri, tree, ns, dt)?;
+    // Since both `innerParticle` and `annotatedDataExcept` begin with `annotations`,
+    // we first remove the `annotations`.
+    // Once the `annotations` are removed, either `primary`, `dataExcept`, or a grouped
+    // `innerPattern` will be at the beginning. If `primary` or `dataExcept` is followed
+    // by `optParams` after the leading `datatypeName`, it is necessary to distinguish
+    // between them.
+    let mut x = parse_annotations(source, tree, ns)?;
+    let mut children = match source {
+        [Keyword("string" | "token") | CName(_, _), OpenBlock, ..] => {
+            let data = parse_primary(source, base_uri, tree, ns, dt)?;
+            if matches!(source, [Except, ..]) {
+                // annotatedDataExcept
+                *source = &source[1..];
+                let except = parse_lead_annotated_primary(source, base_uri, tree, ns, dt)?;
+                let pos = tree.len();
+                tree[data].children.push(pos);
+                tree.push(Node {
+                    r#type: NodeType::Except,
+                    atts: Attributes::default(),
+                    children: except,
+                });
+                tree[data].children.extend(x.1);
+                for att in x.0.drain() {
+                    tree[data].push_attribute(att)?;
+                }
+                let mut follow = parse_follow_annotations(source, tree, ns)?;
+                follow.insert(0, data);
+                return if let Some((atts, children)) = anno {
+                    let mut node = Node {
+                        r#type: NodeType::Group,
+                        atts,
+                        children: follow,
+                    };
+                    node.children.extend(children);
+                    let ret = tree.len();
+                    tree.push(node);
+                    Ok(vec![ret])
+                } else {
+                    Ok(follow)
+                };
+            } else {
+                // primary
+                tree[data].children.extend(x.1);
+                for att in x.0.drain() {
+                    tree[data].push_attribute(att)?;
+                }
+                vec![data]
+            }
+        }
+        [OpenGroup, ..] => {
+            *source = &source[1..];
+            let ret = parse_inner_pattern(source, base_uri, tree, ns, dt, Some(x))?;
+            if !matches!(source, [CloseGroup, ..]) {
+                todo!("raise error")
+            }
+            *source = &source[1..];
+            ret
+        }
+        _ => {
+            let prim = parse_primary(source, base_uri, tree, ns, dt)?;
+            tree[prim].children.extend(x.1);
+            for att in x.0.drain() {
+                tree[prim].push_attribute(att)?;
+            }
+            vec![prim]
+        }
+    };
+    let follow = parse_follow_annotations(source, tree, ns)?;
+    children.extend(follow);
+    if let [ty @ (ZeroOrMore | OneOrMore | Optional), ..] = source {
+        // repeatedPrimary followAnnotations
+        *source = &source[1..];
+        let mut node = Node {
+            r#type: match ty {
+                ZeroOrMore => NodeType::ZeroOrMore,
+                OneOrMore => NodeType::OneOrMore,
+                Optional => NodeType::Optional,
+                _ => unreachable!(),
+            },
+            atts: Attributes::default(),
+            children,
+        };
+        let mut follow = parse_follow_annotations(source, tree, ns)?;
+        if !matches!(source, [Choice | Group | Interleave, ..]) {
+            if let Some((mut atts, children)) = anno {
+                node.children.extend(children);
+                for att in atts.drain() {
+                    node.push_attribute(att)?;
+                }
+            }
+            follow.insert(0, tree.len());
+            tree.push(node);
+            return Ok(follow);
+        }
+        follow.insert(0, tree.len());
+        tree.push(node);
+        children = follow;
+    }
     let mut node = match source {
-        [Choice, ..] => {
-            // particleChoice
-            while matches!(source, [Choice, ..]) {
+        [ty @ (Choice | Group | Interleave), ..] => {
+            // particleChoice, particleGroup, particleInterleave
+            while source.first() == Some(ty) {
                 *source = &source[1..];
                 let append = parse_particle(source, base_uri, tree, ns, dt)?;
                 children.extend(append);
             }
             Node {
-                r#type: NodeType::Choice,
-                atts: Attributes::default(),
-                children,
-            }
-        }
-        [Group, ..] => {
-            // particleGroup
-            while matches!(source, [Group, ..]) {
-                *source = &source[1..];
-                let append = parse_particle(source, base_uri, tree, ns, dt)?;
-                children.extend(append);
-            }
-            Node {
-                r#type: NodeType::Group,
-                atts: Attributes::default(),
-                children,
-            }
-        }
-        [Interleave, ..] => {
-            // particleInterleave
-            while matches!(source, [Interleave, ..]) {
-                *source = &source[1..];
-                let append = parse_particle(source, base_uri, tree, ns, dt)?;
-                children.extend(append);
-            }
-            Node {
-                r#type: NodeType::Interleave,
+                r#type: match ty {
+                    Choice => NodeType::Choice,
+                    Group => NodeType::Group,
+                    Interleave => NodeType::Interleave,
+                    _ => unreachable!(),
+                },
                 atts: Attributes::default(),
                 children,
             }
         }
         _ => {
-            // innerParticle
-            todo!("innerParticle")
+            // annotatedPrimary
+            return if let Some((atts, ach)) = anno {
+                let mut node = Node {
+                    r#type: NodeType::Group,
+                    atts,
+                    children,
+                };
+                node.children.extend(ach);
+                let ret = tree.len();
+                tree.push(node);
+                Ok(vec![ret])
+            } else {
+                Ok(children)
+            };
         }
     };
     if let Some((mut atts, children)) = anno {
         node.children.extend(children);
         for att in atts.drain() {
-            node.atts.push(att).map_err(|err| err.1)?;
+            node.push_attribute(att)?;
         }
     }
     let ret = tree.len();
@@ -1316,21 +1409,19 @@ fn parse_inner_particle(
     use TokenType::*;
     let prim = parse_annotated_primary(source, base_uri, tree, ns, dt)?;
     let mut node = match source {
-        [ZeroOrMore, ..] => Node {
-            r#type: NodeType::ZeroOrMore,
-            atts: Attributes::default(),
-            children: prim,
-        },
-        [OneOrMore, ..] => Node {
-            r#type: NodeType::OneOrMore,
-            atts: Attributes::default(),
-            children: prim,
-        },
-        [Optional, ..] => Node {
-            r#type: NodeType::Optional,
-            atts: Attributes::default(),
-            children: prim,
-        },
+        [ty @ (ZeroOrMore | OneOrMore | Optional), ..] => {
+            *source = &source[1..];
+            Node {
+                r#type: match ty {
+                    ZeroOrMore => NodeType::ZeroOrMore,
+                    OneOrMore => NodeType::OneOrMore,
+                    Optional => NodeType::Optional,
+                    _ => unreachable!(),
+                },
+                atts: Attributes::default(),
+                children: prim,
+            }
+        }
         _ => {
             if anno.is_some() {
                 Node {
@@ -1346,7 +1437,7 @@ fn parse_inner_particle(
     if let Some((mut atts, children)) = anno {
         node.children.extend(children);
         for att in atts.drain() {
-            node.atts.push(att).map_err(|err| err.1)?;
+            node.push_attribute(att)?;
         }
     }
     let ret = tree.len();
@@ -1396,7 +1487,7 @@ fn parse_lead_annotated_primary(
             *source = &source[1..];
             let pat = parse_inner_pattern(source, base_uri, tree, ns, dt, Some((atts, children)))?;
             if !matches!(source, [TokenType::CloseGroup, ..]) {
-                todo!("raise error")
+                todo!("raise error: {source:?}")
             }
             *source = &source[1..];
             Ok(pat)
@@ -1405,7 +1496,7 @@ fn parse_lead_annotated_primary(
             let prim = parse_primary(source, base_uri, tree, ns, dt)?;
             tree[prim].children.extend(children);
             for att in atts.drain() {
-                tree[prim].atts.push(att).map_err(|err| err.1)?;
+                tree[prim].push_attribute(att)?;
             }
             Ok(vec![prim])
         }
@@ -1425,12 +1516,12 @@ fn parse_primary(
             *source = &source[1..];
             let mut nc = parse_name_class(source, tree, ns, is_elem)?;
             if !matches!(source, [OpenBlock, ..]) {
-                todo!("raise error")
+                todo!("raise error: {source:?}")
             }
             *source = &source[1..];
             let pat = parse_pattern(source, base_uri, tree, ns, dt)?;
             if !matches!(source, [CloseBlock, ..]) {
-                todo!("raise error")
+                todo!("raise error: {source:?}")
             }
             *source = &source[1..];
             nc.extend(pat);
@@ -1496,15 +1587,13 @@ fn parse_primary(
                     atts: Attributes::default(),
                     children: vec![],
                 };
-                node.atts
-                    .push(Attribute {
-                        namespace_name: None,
-                        local_name: Some("name".to_owned()),
-                        qname: "name".to_owned(),
-                        value: ident.clone(),
-                        flag: 0,
-                    })
-                    .map_err(|err| err.1)?;
+                node.push_attribute(Attribute {
+                    namespace_name: None,
+                    local_name: Some("name".to_owned()),
+                    qname: "name".to_owned(),
+                    value: ident.clone(),
+                    flag: 0,
+                })?;
                 *source = &source[2..];
                 node
             } else {
@@ -1537,17 +1626,15 @@ fn parse_primary(
                 atts: Attributes::default(),
                 children: vec![],
             };
-            node.atts
-                .push(Attribute {
-                    namespace_name: None,
-                    local_name: Some("href".to_owned()),
-                    qname: "href".to_owned(),
-                    value: uri.to_string(),
-                    flag: 0,
-                })
-                .map_err(|err| err.1)?;
+            node.push_attribute(Attribute {
+                namespace_name: None,
+                local_name: Some("href".to_owned()),
+                qname: "href".to_owned(),
+                value: uri.to_string(),
+                flag: 0,
+            })?;
             if let Some(inherit) = inherit {
-                node.atts.push(inherit).map_err(|err| err.1)?;
+                node.push_attribute(inherit)?;
             }
             node
         }
@@ -1573,8 +1660,8 @@ fn parse_primary(
                 atts: Attributes::default(),
                 children,
             };
-            node.atts.push(lib).map_err(|err| err.1)?;
-            node.atts.push(ty).map_err(|err| err.1)?;
+            node.push_attribute(lib)?;
+            node.push_attribute(ty)?;
             node
         }
         [LiteralSegment(_), ..] => {
@@ -1598,15 +1685,13 @@ fn parse_primary(
                 atts: Attributes::default(),
                 children: vec![],
             };
-            node.atts
-                .push(Attribute {
-                    namespace_name: None,
-                    local_name: Some("name".to_owned()),
-                    qname: "name".to_owned(),
-                    value: ident.clone(),
-                    flag: 0,
-                })
-                .map_err(|err| err.1)?;
+            node.push_attribute(Attribute {
+                namespace_name: None,
+                local_name: Some("name".to_owned()),
+                qname: "name".to_owned(),
+                value: ident.clone(),
+                flag: 0,
+            })?;
             *source = &source[1..];
             node
         }
@@ -1694,17 +1779,15 @@ fn parse_opt_params(
                     atts: Attributes::default(),
                     children: [vec![text], children].concat(),
                 };
-                node.atts
-                    .push(Attribute {
-                        namespace_name: None,
-                        local_name: Some("name".to_owned()),
-                        qname: "name".to_owned(),
-                        value: name,
-                        flag: 0,
-                    })
-                    .map_err(|err| err.1)?;
+                node.push_attribute(Attribute {
+                    namespace_name: None,
+                    local_name: Some("name".to_owned()),
+                    qname: "name".to_owned(),
+                    value: name,
+                    flag: 0,
+                })?;
                 for att in atts.drain() {
-                    node.atts.push(att).map_err(|err| err.1)?;
+                    node.push_attribute(att)?;
                 }
             }
             if !matches!(source, [CloseBlock, ..]) {
@@ -1738,7 +1821,7 @@ fn parse_inner_name_class(
             let nc = parse_except_name_class(source, tree, ns, is_elem)?;
             tree[nc].children.extend(children);
             for att in atts.drain() {
-                tree[nc].atts.push(att).map_err(|err| err.1)?;
+                tree[nc].push_attribute(att)?;
             }
             let mut follow = parse_follow_annotations(source, tree, ns)?;
             follow.insert(0, nc);
@@ -1750,7 +1833,7 @@ fn parse_inner_name_class(
                     children: follow,
                 };
                 for att in atts.drain() {
-                    node.atts.push(att).map_err(|err| err.1)?;
+                    node.push_attribute(att)?;
                 }
                 let ret = tree.len();
                 tree.push(node);
@@ -1787,7 +1870,7 @@ fn parse_inner_name_class(
         if let Some((mut atts, children)) = anno {
             node.children.extend(children);
             for att in atts.drain() {
-                node.atts.push(att).map_err(|err| err.1)?;
+                node.push_attribute(att)?;
             }
         }
         node
@@ -1827,13 +1910,18 @@ fn parse_lead_annotated_simple_name_class(
     match source {
         [TokenType::OpenGroup, ..] => {
             *source = &source[1..];
-            parse_inner_name_class(source, tree, ns, is_elem, Some((atts, children)))
+            let ret = parse_inner_name_class(source, tree, ns, is_elem, Some((atts, children)))?;
+            if !matches!(source, [TokenType::CloseGroup, ..]) {
+                todo!("raise error")
+            }
+            *source = &source[1..];
+            Ok(ret)
         }
         _ => {
             let nc = parse_simple_name_class(source, tree, ns, is_elem)?;
             tree[nc].children.extend(children);
             for att in atts.drain() {
-                tree[nc].atts.push(att).map_err(|err| err.1)?;
+                tree[nc].push_attribute(att)?;
             }
             Ok(vec![nc])
         }
@@ -1862,15 +1950,13 @@ fn parse_simple_name_class(
                     .get("")
                     .filter(|ns| ns.namespace_name.as_ref() != URI_INHERIT)
             {
-                node.atts
-                    .push(Attribute {
-                        namespace_name: None,
-                        local_name: Some("ns".to_owned()),
-                        qname: "ns".to_owned(),
-                        value: namespace.namespace_name.to_string(),
-                        flag: 0,
-                    })
-                    .map_err(|err| err.1)?;
+                node.push_attribute(Attribute {
+                    namespace_name: None,
+                    local_name: Some("ns".to_owned()),
+                    qname: "ns".to_owned(),
+                    value: namespace.namespace_name.to_string(),
+                    flag: 0,
+                })?;
             }
             node
         }
@@ -1890,15 +1976,13 @@ fn parse_simple_name_class(
                     .get("")
                     .filter(|ns| ns.namespace_name.as_ref() != URI_INHERIT)
             {
-                node.atts
-                    .push(Attribute {
-                        namespace_name: None,
-                        local_name: Some("ns".to_owned()),
-                        qname: "ns".to_owned(),
-                        value: namespace.namespace_name.to_string(),
-                        flag: 0,
-                    })
-                    .map_err(|err| err.1)?;
+                node.push_attribute(Attribute {
+                    namespace_name: None,
+                    local_name: Some("ns".to_owned()),
+                    qname: "ns".to_owned(),
+                    value: namespace.namespace_name.to_string(),
+                    flag: 0,
+                })?;
             }
             node
         }
@@ -1915,15 +1999,13 @@ fn parse_simple_name_class(
             });
             if let Some(namespace) = ns.get(pre) {
                 if namespace.namespace_name.as_ref() != URI_INHERIT {
-                    node.atts
-                        .push(Attribute {
-                            namespace_name: None,
-                            local_name: Some("ns".to_owned()),
-                            qname: "ns".to_owned(),
-                            value: namespace.namespace_name.to_string(),
-                            flag: 0,
-                        })
-                        .map_err(|err| err.1)?;
+                    node.push_attribute(Attribute {
+                        namespace_name: None,
+                        local_name: Some("ns".to_owned()),
+                        qname: "ns".to_owned(),
+                        value: namespace.namespace_name.to_string(),
+                        flag: 0,
+                    })?;
                 }
             } else {
                 todo!("raise error")
@@ -1938,15 +2020,13 @@ fn parse_simple_name_class(
                     children: vec![],
                 };
                 if namespace.namespace_name.as_ref() != URI_INHERIT {
-                    node.atts
-                        .push(Attribute {
-                            namespace_name: None,
-                            local_name: Some("ns".to_owned()),
-                            qname: "ns".to_owned(),
-                            value: namespace.namespace_name.to_string(),
-                            flag: 0,
-                        })
-                        .map_err(|err| err.1)?;
+                    node.push_attribute(Attribute {
+                        namespace_name: None,
+                        local_name: Some("ns".to_owned()),
+                        qname: "ns".to_owned(),
+                        value: namespace.namespace_name.to_string(),
+                        flag: 0,
+                    })?;
                 }
                 node
             } else {
@@ -1983,15 +2063,13 @@ fn parse_except_name_class(
             };
             if let Some(namespace) = ns.get(pre) {
                 if namespace.namespace_name.as_ref() != URI_INHERIT {
-                    node.atts
-                        .push(Attribute {
-                            namespace_name: None,
-                            local_name: Some("ns".to_owned()),
-                            qname: "ns".to_owned(),
-                            value: namespace.namespace_name.to_string(),
-                            flag: 0,
-                        })
-                        .map_err(|err| err.1)?;
+                    node.push_attribute(Attribute {
+                        namespace_name: None,
+                        local_name: Some("ns".to_owned()),
+                        qname: "ns".to_owned(),
+                        value: namespace.namespace_name.to_string(),
+                        flag: 0,
+                    })?;
                 }
             } else {
                 todo!("raise error")
@@ -2062,14 +2140,18 @@ fn parse_annotation_attributes(
                 let mut value = String::new();
                 parse_literal(source, &mut value)?;
                 if let Some(namespace) = ns.get(pre) {
-                    atts.push(Attribute {
+                    let mut att = Attribute {
                         namespace_name: Some(namespace.namespace_name.to_string()),
                         local_name: Some(loc.clone()),
                         qname: format!("{pre}:{loc}"),
                         value,
                         flag: 0,
-                    })
-                    .map_err(|err| err.1)?;
+                    };
+                    att.set_specified();
+                    if att.namespace_name.as_deref() == Some(XML_NS_NAMESPACE) {
+                        att.set_nsdecl();
+                    }
+                    atts.push(att).map_err(|err| err.1)?;
                 } else {
                     todo!("raise error");
                 }
@@ -2157,13 +2239,17 @@ fn parse_nested_annotation_attributes(
         *source = rest;
         let mut value = String::new();
         parse_literal(source, &mut value)?;
-        let att = Attribute {
+        let mut att = Attribute {
             namespace_name,
             local_name: Some(local_name),
             qname,
             value,
             flag: 0,
         };
+        att.set_specified();
+        if att.namespace_name.as_deref() == Some(XML_NS_NAMESPACE) {
+            att.set_nsdecl();
+        }
         atts.push(att).map_err(|e| e.1)?;
     }
 }
@@ -2387,17 +2473,19 @@ fn walk_nodes<'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::sax::DefaultSAXHandler;
+    use crate::tree::TreeBuildHandler;
 
     use super::*;
 
     #[test]
     fn parse_compact_tests() {
+        let mut handler = TreeBuildHandler::default();
         RelaxNGSchema::parse_compact_uri(
             URIString::parse_file_path("resources/relaxng/schema-of-schema.rnc").unwrap(),
             None,
-            None::<DefaultSAXHandler>,
+            Some(&mut handler),
         )
+        .inspect_err(|err| println!("err: {err}\n{}", handler.document))
         .unwrap();
     }
 }
