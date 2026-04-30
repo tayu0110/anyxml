@@ -1,7 +1,6 @@
 //! APIs for parsing RELAX NG schema document and validate XML document using parsed schema.
 //!
-//! The current implementation supports only RELAX NG schemas using XML syntax.  \
-//! Parsing schemas using Compact Syntax is not supported at this time.
+//! The current implementation supports both Full syntax and Compact Syntax.
 //!
 //! # Streaming validation
 //! This crate supports SAX handler-based validators.  \
@@ -89,6 +88,54 @@
 //! // document subtree validation
 //! let card = element.first_element_child().unwrap();
 //! assert!(schema.validate(&card, DefaultSAXHandler).is_ok());
+//! ```
+//!
+//! # Compact Syntax support
+//! This crate supports schemas in Compact Syntax as well as Full Syntax (XML Syntax).  \
+//! To parse a Compact Syntax schema, use the methods of [`RelaxNGSchema`], just as you
+//! would with Full Syntax.
+//!
+//! Due to technical limitations, the schema is constructed by reading all resources
+//! into memory and building the RELAX NG document tree, rather than parsing them in
+//! a streaming manner.  \
+//! The constructed document tree can be received as an event via a handler.  \
+//! While conversion from Compact Syntax to Full Syntax is not explicitly supported, it is
+//! possible to construct canonicalized XML or an XML document tree by forwarding events
+//! received from the handler to the [`CanonicalizeHandler`](crate::c14n::CanonicalizeHandler)
+//! or [`TreeBuildHandler`](crate::tree::TreeBuildHandler).
+//!
+//! ## Example
+//! ```rust
+//! use anyxml::{
+//!     relaxng::RelaxNGSchema,
+//!     sax::{DefaultSAXHandler, XMLReader},
+//! };
+//!
+//! // conversion of the example of RELAX NG Tutorial 1. Getting started
+//! // https://relaxng.org/tutorial-20011203.html
+//! const SCHEMA: &str = r#"element addressBook {
+//!     element card {
+//!         element name  { text },
+//!         element email { text }
+//!     }*
+//! }"#;
+//! const DOCUMENT: &str = r#"<addressBook>
+//!     <card>
+//!         <name>John Smith</name>
+//!         <email>js@example.com</email>
+//!     </card>
+//!     <card>
+//!         <name>Fred Bloggs</name>
+//!         <email>fb@example.net</email>
+//!     </card>
+//! </addressBook>"#;
+//!
+//! let mut schema = RelaxNGSchema::parse_compact_str(SCHEMA, None, Some(DefaultSAXHandler)).unwrap();
+//! let validator = schema.new_validate_handler(DefaultSAXHandler);
+//! let mut reader = XMLReader::builder().set_handler(validator).build();
+//! reader.parse_str(DOCUMENT, None).unwrap();
+//! // `last_error` holds the last validation error.
+//! assert!(reader.handler.last_error.is_ok());
 //! ```
 //!
 //! # XSD types support

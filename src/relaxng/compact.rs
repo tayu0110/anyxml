@@ -2476,6 +2476,8 @@ impl RelaxNGSchema {
             } else {
                 source.set_system_id(uri);
             }
+        } else {
+            source.set_system_id(default_base_uri()?);
         }
         Self::parse_compact(source, &mut handler)
     }
