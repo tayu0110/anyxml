@@ -1,0 +1,29 @@
+datatypes xsd = "http://www.w3.org/2001/XMLSchema-datatypes"
+namespace ex = "http://example.com"
+## topLevel annotation
+element root {
+	## middle level annotation
+	attribute att {
+		## English before with attribute - 1
+
+		## English before with attribute - 2
+		[ ex:att = "att" ]
+		"en"
+		>> lang ["English after"]
+		|
+		## Japanese
+		"ja"
+		>> lang ["Japanese after"]
+	}
+	>> lang ["middle level following annotation"]
+	,
+	## middle level annotation with attribute - 1
+
+	## middle level annotation with attribute - 2
+	[ ex:att = "att" ]
+	text,
+	element child {
+	    ## middle level annotation
+	    xsd:double "1.23456789"
+	}
+}

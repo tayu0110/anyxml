@@ -1,0 +1,1 @@
+<grammar xmlns="http://relaxng.org/ns/structure/1.0" xmlns:x="http://www.example.com"><start><ref name="foo"></ref></start><x:entity name="picture" notation="jpeg" systemId="picture.jpeg"></x:entity><define name="foo"><element><name>foo</name><empty></empty></element></define></grammar>

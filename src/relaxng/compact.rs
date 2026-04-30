@@ -179,12 +179,12 @@ fn escape_interpretation(source: &str) -> Result<String, XMLError> {
                             'a'..='f' => {
                                 code = code
                                     .saturating_mul(16)
-                                    .saturating_add((d as u8 - b'a') as i32)
+                                    .saturating_add((d as u8 - b'a' + 10) as i32)
                             }
                             'A'..='F' => {
                                 code = code
                                     .saturating_mul(16)
-                                    .saturating_add((d as u8 - b'A') as i32)
+                                    .saturating_add((d as u8 - b'A' + 10) as i32)
                             }
                             '}' => break,
                             _ => {
@@ -244,6 +244,8 @@ fn tokenization(source: &str) -> Result<Vec<TokenType>, XMLError> {
                             source = s.chars();
                             dest.push('\n');
                             documentation_line_content(&mut source, &mut dest);
+                        } else {
+                            break;
                         }
                     }
                     tokens.push(TokenType::Documentation(dest));
@@ -455,6 +457,7 @@ fn ncname(source: &mut Chars, dest: &mut String) -> Result<(), XMLError> {
     Ok(())
 }
 
+#[derive(Debug)]
 enum NodeType {
     AnyName,
     Attribute,
@@ -532,11 +535,15 @@ impl NodeType {
     fn qname(&self, rmap: &BTreeMap<Arc<str>, Arc<str>>) -> Option<Cow<'_, str>> {
         match self {
             Self::Foreign(ns, loc) => {
-                let nsname = rmap.get(ns.as_deref().unwrap_or_default())?;
-                if nsname.is_empty() {
-                    Some(Cow::Borrowed(loc))
+                if let Some(ns) = ns.as_deref() {
+                    let prefix = rmap.get(ns)?;
+                    if !prefix.is_empty() {
+                        Some(Cow::Owned(format!("{prefix}:{loc}")))
+                    } else {
+                        Some(Cow::Borrowed(loc))
+                    }
                 } else {
-                    Some(Cow::Owned(format!("{nsname}:{loc}")))
+                    Some(Cow::Borrowed(loc))
                 }
             }
             Self::TextContent(_) => None,
@@ -596,9 +603,14 @@ fn parse(
     let mut dt_stack = NamespaceStack::default();
     parse_preamble(&mut source, &mut ns_stack, &mut dt_stack)?;
     let mut tree = vec![];
-    let root = parse_top_level_body(&mut source, base_uri, &mut tree, &ns_stack, &dt_stack)?;
+    let root = parse_top_level_body(&mut source, base_uri, &mut tree, &ns_stack, &dt_stack);
+    let root = root?;
+    let mut remove = vec![];
     for ns in &ns_stack {
-        if ns.namespace_name.as_ref() != URI_INHERIT {
+        if !ns.namespace_name.is_empty()
+            && ns.namespace_name.as_ref() != URI_INHERIT
+            && ns.prefix.as_ref() != "xml"
+        {
             let mut att = Attribute {
                 namespace_name: Some(XML_NS_NAMESPACE.to_owned()),
                 local_name: if ns.prefix.is_empty() {
@@ -616,20 +628,48 @@ fn parse(
             };
             att.set_nsdecl();
             tree[root].push_attribute(att)?;
+        } else {
+            remove.push(ns.prefix.clone());
         }
     }
-    set_relaxng_namespace(
-        &mut tree[root],
-        &mut ns_stack,
-        "rng",
-        XML_RELAX_NG_NAMESPACE,
-    )?;
-    set_relaxng_namespace(
-        &mut tree[root],
-        &mut ns_stack,
-        "a",
-        XML_RELAX_NG_ANNOTATION_NAMESPACE,
-    )?;
+    if ns_stack
+        .iter()
+        .all(|ns| ns.namespace_name.as_ref() != XML_RELAX_NG_NAMESPACE)
+    {
+        set_relaxng_namespace(
+            &mut tree[root],
+            &mut ns_stack,
+            "rng",
+            XML_RELAX_NG_NAMESPACE,
+        )?;
+    }
+    if tree
+        .iter()
+        .any(|node| matches!(node.r#type, NodeType::Documentation))
+    {
+        set_relaxng_namespace(
+            &mut tree[root],
+            &mut ns_stack,
+            "a",
+            XML_RELAX_NG_ANNOTATION_NAMESPACE,
+        )?;
+    }
+    // Add a negation to prevent foreign elements without a namespace
+    // from being placed under the default namespace.
+    if ns_stack.is_declared("") {
+        for node in tree
+            .iter_mut()
+            .filter(|n| matches!(n.r#type, NodeType::Foreign(None, _)))
+        {
+            node.push_attribute(Attribute {
+                namespace_name: Some(XML_NS_NAMESPACE.to_owned()),
+                local_name: Some("xmlns".to_owned()),
+                qname: "xmlns".to_owned(),
+                value: "".to_owned(),
+                flag: 0,
+            })?;
+        }
+    }
     Ok((root, tree, ns_stack))
 }
 fn set_relaxng_namespace(
@@ -646,6 +686,7 @@ fn set_relaxng_namespace(
             value: name.to_owned(),
             flag: 0,
         };
+        ns.push("", name);
         root.push_attribute(att)?;
     } else {
         let mut p = pre.to_owned();
@@ -661,6 +702,7 @@ fn set_relaxng_namespace(
             value: name.to_owned(),
             flag: 0,
         };
+        ns.push(&p, name);
         root.push_attribute(att)?;
     }
     Ok(())
@@ -841,16 +883,14 @@ fn parse_top_level_body(
     dt: &NamespaceStack,
 ) -> Result<usize, XMLError> {
     use TokenType::*;
-    let node = match source {
+    let mut tmp = *source;
+    parse_annotations(&mut tmp, &mut vec![], ns)?;
+    let node = match tmp {
         [Keyword("start" | "include" | "div"), ..]
         // 'define'
         | [Ident(_), Assign | ChoiceAssign | InterleaveAssign, ..]
-        // 'annotatedComponent'
-        // Since top-level patterns cannot have annotations,
-        // if an annotation is present, it must be a grammar.
-        | [Documentation(_), ..]
         // 'annotationElementNotKeyword'
-        | [Ident(_) | CName(_, _), OpenAnnot, ..] => {
+        | [Ident(_), CName(_, _), OpenAnnot, ..] => {
             let children = parse_grammar(source, base_uri, tree, ns, dt)?;
             Node {
                 r#type: NodeType::Grammar,
@@ -880,23 +920,11 @@ fn parse_grammar(
 ) -> Result<Vec<usize>, XMLError> {
     use TokenType::*;
     let mut ret = vec![];
-    loop {
-        match source {
-            [Keyword("start" | "include" | "div"), ..]
-            // 'define'
-            | [Ident(_), Assign | ChoiceAssign | InterleaveAssign, ..]
-            // 'annotatedComponent'
-            // Since top-level patterns cannot have annotations,
-            // if an annotation is present, it must be a grammar.
-            | [Documentation(_), ..]
-            // 'annotationElementNotKeyword'
-            | [Ident(_) | CName(_, _), OpenAnnot, ..] => {
-                let ch = parse_member(source, base_uri, tree, ns, dt)?;
-                ret.push(ch);
-            }
-            _ => break Ok(ret),
-        }
+    while !matches!(source, [CloseBlock, ..] | []) {
+        let ch = parse_member(source, base_uri, tree, ns, dt)?;
+        ret.push(ch);
     }
+    Ok(ret)
 }
 fn parse_member(
     source: &mut &[TokenType],
@@ -907,20 +935,11 @@ fn parse_member(
 ) -> Result<usize, XMLError> {
     use TokenType::*;
     match source {
-        [Keyword("start" | "include" | "div"), ..]
-        // 'define'
-        | [Ident(_), Assign | ChoiceAssign | InterleaveAssign, ..]
-        // 'annotatedComponent'
-        // Since top-level patterns cannot have annotations,
-        // if an annotation is present, it must be a grammar.
-        | [Documentation(_), ..] => {
-            parse_annotated_component(source, base_uri, tree, ns, dt)
-        }
         // 'annotationElementNotKeyword'
         [Ident(_) | CName(_, _), OpenAnnot, ..] => {
             parse_annotation_element_not_keyword(source, tree, ns)
         }
-        _ => unreachable!(),
+        _ => parse_annotated_component(source, base_uri, tree, ns, dt),
     }
 }
 fn parse_annotated_component(
@@ -930,12 +949,9 @@ fn parse_annotated_component(
     ns: &NamespaceStack,
     dt: &NamespaceStack,
 ) -> Result<usize, XMLError> {
-    let (mut atts, children) = parse_annotations(source, tree, ns)?;
+    let annot = parse_annotations(source, tree, ns)?;
     let y = parse_component(source, base_uri, tree, ns, dt)?;
-    tree[y].children.extend(children);
-    for att in atts.drain() {
-        tree[y].push_attribute(att)?;
-    }
+    apply_annotations(tree, &mut vec![y], annot)?;
     Ok(y)
 }
 fn parse_annotation_element_not_keyword(
@@ -960,6 +976,7 @@ fn parse_annotation_element_not_keyword(
         }
         _ => return Err(XMLError::RncParseError(RncParseError::UnexpectedToken)),
     };
+    *source = &source[1..];
     let (atts, children) = parse_annotation_attributes_content(source, tree, ns)?;
     let ret = tree.len();
     tree.push(Node {
@@ -973,9 +990,9 @@ fn parse_annotations(
     source: &mut &[TokenType],
     tree: &mut Vec<Node>,
     ns: &NamespaceStack,
-) -> Result<(Attributes, Vec<usize>), XMLError> {
+) -> Result<Option<(Attributes, Vec<usize>)>, XMLError> {
     let mut doc = parse_documentations(source, tree)?;
-    if matches!(source, [TokenType::OpenAnnot, ..]) {
+    let (atts, children) = if matches!(source, [TokenType::OpenAnnot, ..]) {
         *source = &source[1..];
         let atts = parse_annotation_attributes(source, ns)?;
         let children = parse_annotation_elements(source, tree, ns)?;
@@ -984,9 +1001,14 @@ fn parse_annotations(
             return Err(XMLError::RncParseError(RncParseError::UnclosedAnnotation));
         }
         *source = &source[1..];
-        Ok((atts, doc))
+        (atts, doc)
     } else {
-        Ok((Attributes::default(), doc))
+        (Attributes::default(), doc)
+    };
+    if atts.is_empty() && children.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some((atts, children)))
     }
 }
 fn parse_component(
@@ -1254,12 +1276,9 @@ fn parse_annotated_include_component(
     ns: &NamespaceStack,
     dt: &NamespaceStack,
 ) -> Result<usize, XMLError> {
-    let (mut atts, children) = parse_annotations(source, tree, ns)?;
+    let annot = parse_annotations(source, tree, ns)?;
     let y = parse_include_component(source, base_uri, tree, ns, dt)?;
-    tree[y].children.extend(children);
-    for att in atts.drain() {
-        tree[y].push_attribute(att)?;
-    }
+    apply_annotations(tree, &mut vec![y], annot)?;
     Ok(y)
 }
 fn parse_include_component(
@@ -1327,7 +1346,7 @@ fn parse_inner_pattern(
     // `innerPattern` will be at the beginning. If `primary` or `dataExcept` is followed
     // by `optParams` after the leading `datatypeName`, it is necessary to distinguish
     // between them.
-    let mut x = parse_annotations(source, tree, ns)?;
+    let x = parse_annotations(source, tree, ns)?;
     let mut children = match source {
         [Keyword("string" | "token") | CName(_, _), OpenBlock, ..] => {
             let data = parse_primary(source, base_uri, tree, ns, dt)?;
@@ -1342,37 +1361,20 @@ fn parse_inner_pattern(
                     atts: Attributes::default(),
                     children: except,
                 });
-                tree[data].children.extend(x.1);
-                for att in x.0.drain() {
-                    tree[data].push_attribute(att)?;
-                }
+                apply_annotations(tree, &mut vec![data], x)?;
                 let mut follow = parse_follow_annotations(source, tree, ns)?;
                 follow.insert(0, data);
-                return if let Some((atts, children)) = anno {
-                    let mut node = Node {
-                        r#type: NodeType::Group,
-                        atts,
-                        children: follow,
-                    };
-                    node.children.extend(children);
-                    let ret = tree.len();
-                    tree.push(node);
-                    Ok(vec![ret])
-                } else {
-                    Ok(follow)
-                };
+                return apply_annotations_group(tree, follow, anno);
             } else {
                 // primary
-                tree[data].children.extend(x.1);
-                for att in x.0.drain() {
-                    tree[data].push_attribute(att)?;
-                }
-                vec![data]
+                let mut data = vec![data];
+                apply_annotations(tree, &mut data, x)?;
+                data
             }
         }
         [OpenGroup, ..] => {
             *source = &source[1..];
-            let ret = parse_inner_pattern(source, base_uri, tree, ns, dt, Some(x))?;
+            let ret = parse_inner_pattern(source, base_uri, tree, ns, dt, x)?;
             if !matches!(source, [CloseGroup, ..]) {
                 return Err(XMLError::RncParseError(RncParseError::UnclosedParentheses));
             }
@@ -1380,12 +1382,9 @@ fn parse_inner_pattern(
             ret
         }
         _ => {
-            let prim = parse_primary(source, base_uri, tree, ns, dt)?;
-            tree[prim].children.extend(x.1);
-            for att in x.0.drain() {
-                tree[prim].push_attribute(att)?;
-            }
-            vec![prim]
+            let mut prim = vec![parse_primary(source, base_uri, tree, ns, dt)?];
+            apply_annotations(tree, &mut prim, x)?;
+            prim
         }
     };
     let follow = parse_follow_annotations(source, tree, ns)?;
@@ -1393,7 +1392,7 @@ fn parse_inner_pattern(
     if let [ty @ (ZeroOrMore | OneOrMore | Optional), ..] = source {
         // repeatedPrimary followAnnotations
         *source = &source[1..];
-        let mut node = Node {
+        let node = Node {
             r#type: match ty {
                 ZeroOrMore => NodeType::ZeroOrMore,
                 OneOrMore => NodeType::OneOrMore,
@@ -1405,21 +1404,17 @@ fn parse_inner_pattern(
         };
         let mut follow = parse_follow_annotations(source, tree, ns)?;
         if !matches!(source, [Choice | Group | Interleave, ..]) {
-            if let Some((mut atts, children)) = anno {
-                node.children.extend(children);
-                for att in atts.drain() {
-                    node.push_attribute(att)?;
-                }
-            }
-            follow.insert(0, tree.len());
+            let ret = tree.len();
+            follow.insert(0, ret);
             tree.push(node);
+            apply_annotations(tree, &mut vec![ret], anno)?;
             return Ok(follow);
         }
         follow.insert(0, tree.len());
         tree.push(node);
         children = follow;
     }
-    let mut node = match source {
+    let node = match source {
         [ty @ (Choice | Group | Interleave), ..] => {
             // particleChoice, particleGroup, particleInterleave
             while source.first() == Some(ty) {
@@ -1440,30 +1435,13 @@ fn parse_inner_pattern(
         }
         _ => {
             // annotatedPrimary
-            return if let Some((atts, ach)) = anno {
-                let mut node = Node {
-                    r#type: NodeType::Group,
-                    atts,
-                    children,
-                };
-                node.children.extend(ach);
-                let ret = tree.len();
-                tree.push(node);
-                Ok(vec![ret])
-            } else {
-                Ok(children)
-            };
+            return apply_annotations_group(tree, children, anno);
         }
     };
-    if let Some((mut atts, children)) = anno {
-        node.children.extend(children);
-        for att in atts.drain() {
-            node.push_attribute(att)?;
-        }
-    }
-    let ret = tree.len();
+    let mut ret = vec![tree.len()];
     tree.push(node);
-    Ok(vec![ret])
+    apply_annotations(tree, &mut ret, anno)?;
+    Ok(ret)
 }
 fn parse_particle(
     source: &mut &[TokenType],
@@ -1484,7 +1462,7 @@ fn parse_inner_particle(
 ) -> Result<Vec<usize>, XMLError> {
     use TokenType::*;
     let prim = parse_annotated_primary(source, base_uri, tree, ns, dt)?;
-    let mut node = match source {
+    let node = match source {
         [ty @ (ZeroOrMore | OneOrMore | Optional), ..] => {
             *source = &source[1..];
             Node {
@@ -1510,17 +1488,11 @@ fn parse_inner_particle(
             }
         }
     };
-    if let Some((mut atts, children)) = anno {
-        node.children.extend(children);
-        for att in atts.drain() {
-            node.push_attribute(att)?;
-        }
-    }
-    let ret = tree.len();
-    let mut y = parse_follow_annotations(source, tree, ns)?;
-    y.insert(0, ret);
+    let mut ret = vec![tree.len()];
     tree.push(node);
-    Ok(y)
+    apply_annotations(tree, &mut ret, anno)?;
+    ret.extend(parse_follow_annotations(source, tree, ns)?);
+    Ok(ret)
 }
 fn parse_annotated_primary(
     source: &mut &[TokenType],
@@ -1557,11 +1529,11 @@ fn parse_lead_annotated_primary(
     ns: &NamespaceStack,
     dt: &NamespaceStack,
 ) -> Result<Vec<usize>, XMLError> {
-    let (mut atts, children) = parse_annotations(source, tree, ns)?;
+    let annot = parse_annotations(source, tree, ns)?;
     match source {
         [TokenType::OpenGroup, ..] => {
             *source = &source[1..];
-            let pat = parse_inner_pattern(source, base_uri, tree, ns, dt, Some((atts, children)))?;
+            let pat = parse_inner_pattern(source, base_uri, tree, ns, dt, annot)?;
             if !matches!(source, [TokenType::CloseGroup, ..]) {
                 return Err(XMLError::RncParseError(RncParseError::UnclosedParentheses));
             }
@@ -1569,12 +1541,9 @@ fn parse_lead_annotated_primary(
             Ok(pat)
         }
         _ => {
-            let prim = parse_primary(source, base_uri, tree, ns, dt)?;
-            tree[prim].children.extend(children);
-            for att in atts.drain() {
-                tree[prim].push_attribute(att)?;
-            }
-            Ok(vec![prim])
+            let mut prim = vec![parse_primary(source, base_uri, tree, ns, dt)?];
+            apply_annotations(tree, &mut prim, annot)?;
+            Ok(prim)
         }
     }
 }
@@ -1830,7 +1799,7 @@ fn parse_opt_params(
             *source = &source[1..];
             let mut ret = vec![];
             while !matches!(source, [CloseBlock, ..] | []) {
-                let (mut atts, children) = parse_annotations(source, tree, ns)?;
+                let annot = parse_annotations(source, tree, ns)?;
                 let name = match source {
                     [Ident(ident), Assign, ..] => ident.clone(),
                     [Keyword(keyword), Assign, ..] => keyword.to_string(),
@@ -1845,11 +1814,11 @@ fn parse_opt_params(
                     atts: Attributes::default(),
                     children: vec![],
                 });
-                ret.push(tree.len());
+                let mut n = vec![tree.len()];
                 let mut node = Node {
                     r#type: NodeType::Param,
                     atts: Attributes::default(),
-                    children: [vec![text], children].concat(),
+                    children: vec![text],
                 };
                 node.push_attribute(Attribute {
                     namespace_name: None,
@@ -1858,9 +1827,9 @@ fn parse_opt_params(
                     value: name,
                     flag: 0,
                 })?;
-                for att in atts.drain() {
-                    node.push_attribute(att)?;
-                }
+                tree.push(node);
+                apply_annotations(tree, &mut n, annot)?;
+                ret.extend(n);
             }
             if !matches!(source, [CloseBlock, ..]) {
                 return Err(XMLError::RncParseError(RncParseError::UnclosedBlock));
@@ -1887,78 +1856,49 @@ fn parse_inner_name_class(
     anno: Option<(Attributes, Vec<usize>)>,
 ) -> Result<Vec<usize>, XMLError> {
     use TokenType::*;
-    let (mut atts, children) = parse_annotations(source, tree, ns)?;
-    let nc = match source {
+    let x = parse_annotations(source, tree, ns)?;
+    let mut nc = match source {
         [NsName(_) | ZeroOrMore, Except, ..] => {
-            let nc = parse_except_name_class(source, tree, ns, is_elem)?;
-            tree[nc].children.extend(children);
-            for att in atts.drain() {
-                tree[nc].push_attribute(att)?;
-            }
-            let mut follow = parse_follow_annotations(source, tree, ns)?;
-            follow.insert(0, nc);
-            return if let Some((mut atts, children)) = anno {
-                follow.extend(children);
-                let mut node = Node {
-                    r#type: NodeType::Choice,
-                    atts: Attributes::default(),
-                    children: follow,
-                };
-                for att in atts.drain() {
-                    node.push_attribute(att)?;
-                }
-                let ret = tree.len();
-                tree.push(node);
-                Ok(vec![ret])
-            } else {
-                Ok(follow)
-            };
+            // annotatedExceptNameClass
+            let mut nc = vec![parse_except_name_class(source, tree, ns, is_elem)?];
+            apply_annotations(tree, &mut nc, x)?;
+            nc.extend(parse_follow_annotations(source, tree, ns)?);
+            return apply_annotations_choice(tree, nc, anno);
         }
         [OpenGroup, ..] => {
             *source = &source[1..];
-            let nc = parse_simple_name_class(source, tree, ns, is_elem)?;
+            let nc = parse_inner_name_class(source, tree, ns, is_elem, x)?;
             if !matches!(source, [CloseGroup, ..]) {
                 return Err(XMLError::RncParseError(RncParseError::UnclosedParentheses));
             }
             *source = &source[1..];
             nc
         }
-        _ => parse_simple_name_class(source, tree, ns, is_elem)?,
+        _ => {
+            let mut nc = vec![parse_simple_name_class(source, tree, ns, is_elem)?];
+            apply_annotations(tree, &mut nc, x)?;
+            nc
+        }
     };
-    let mut follow = parse_follow_annotations(source, tree, ns)?;
-    follow.insert(0, nc);
-    let node = if matches!(source, [Choice, ..]) {
+    nc.extend(parse_follow_annotations(source, tree, ns)?);
+    if matches!(source, [Choice, ..]) {
         while matches!(source, [Choice, ..]) {
             *source = &source[1..];
-            follow.extend(parse_annotated_simple_name_class(
+            nc.extend(parse_annotated_simple_name_class(
                 source, tree, ns, is_elem,
             )?);
         }
-        let mut node = Node {
+        let mut ret = vec![tree.len()];
+        tree.push(Node {
             r#type: NodeType::Choice,
             atts: Attributes::default(),
-            children: follow,
-        };
-        if let Some((mut atts, children)) = anno {
-            node.children.extend(children);
-            for att in atts.drain() {
-                node.push_attribute(att)?;
-            }
-        }
-        node
-    } else if let Some((atts, children)) = anno {
-        follow.extend(children);
-        Node {
-            r#type: NodeType::Choice,
-            atts,
-            children: follow,
-        }
+            children: nc,
+        });
+        apply_annotations(tree, &mut ret, anno)?;
+        Ok(ret)
     } else {
-        return Ok(follow);
-    };
-    let ret = tree.len();
-    tree.push(node);
-    Ok(vec![ret])
+        apply_annotations_choice(tree, nc, anno)
+    }
 }
 fn parse_annotated_simple_name_class(
     source: &mut &[TokenType],
@@ -1978,11 +1918,11 @@ fn parse_lead_annotated_simple_name_class(
     ns: &NamespaceStack,
     is_elem: bool,
 ) -> Result<Vec<usize>, XMLError> {
-    let (mut atts, children) = parse_annotations(source, tree, ns)?;
+    let annot = parse_annotations(source, tree, ns)?;
     match source {
         [TokenType::OpenGroup, ..] => {
             *source = &source[1..];
-            let ret = parse_inner_name_class(source, tree, ns, is_elem, Some((atts, children)))?;
+            let ret = parse_inner_name_class(source, tree, ns, is_elem, annot)?;
             if !matches!(source, [TokenType::CloseGroup, ..]) {
                 return Err(XMLError::RncParseError(RncParseError::UnclosedParentheses));
             }
@@ -1990,12 +1930,9 @@ fn parse_lead_annotated_simple_name_class(
             Ok(ret)
         }
         _ => {
-            let nc = parse_simple_name_class(source, tree, ns, is_elem)?;
-            tree[nc].children.extend(children);
-            for att in atts.drain() {
-                tree[nc].push_attribute(att)?;
-            }
-            Ok(vec![nc])
+            let mut nc = vec![parse_simple_name_class(source, tree, ns, is_elem)?];
+            apply_annotations(tree, &mut nc, annot)?;
+            Ok(nc)
         }
     }
 }
@@ -2380,7 +2317,9 @@ fn parse_nested_annotation_element(
         }
         [Ident(ident), ..] => NodeType::Foreign(None, ident.clone()),
         [Keyword(keyword), ..] => NodeType::Foreign(None, keyword.to_string()),
-        _ => return Err(XMLError::RncParseError(RncParseError::InvalidPrefix)),
+        _ => {
+            return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
+        }
     };
     *source = &source[1..];
     let (atts, children) = parse_annotation_attributes_content(source, tree, ns)?;
@@ -2391,6 +2330,71 @@ fn parse_nested_annotation_element(
         children,
     });
     Ok(ret)
+}
+fn apply_annotations(
+    tree: &mut [Node],
+    elements: &mut Vec<usize>,
+    annot: Option<(Attributes, Vec<usize>)>,
+) -> Result<(), XMLError> {
+    assert_eq!(elements.len(), 1);
+    let cur = elements[0];
+    if let Some((mut atts, children)) = annot {
+        if tree[cur].atts.is_empty() {
+            tree[cur].atts = atts;
+        } else {
+            for att in atts.drain() {
+                tree[cur].push_attribute(att)?;
+            }
+        }
+        if matches!(
+            tree[cur].r#type,
+            NodeType::Name | NodeType::Param | NodeType::Value
+        ) {
+            elements.extend(children);
+        } else {
+            tree[cur].children = children
+                .into_iter()
+                .chain(tree[cur].children.iter().copied())
+                .collect();
+        }
+    }
+    Ok(())
+}
+fn apply_annotations_group(
+    tree: &mut Vec<Node>,
+    children: Vec<usize>,
+    annot: Option<(Attributes, Vec<usize>)>,
+) -> Result<Vec<usize>, XMLError> {
+    if annot.is_some() {
+        let ret = tree.len();
+        tree.push(Node {
+            r#type: NodeType::Group,
+            atts: Attributes::default(),
+            children,
+        });
+        apply_annotations(tree, &mut vec![ret], annot)?;
+        Ok(vec![ret])
+    } else {
+        Ok(children)
+    }
+}
+fn apply_annotations_choice(
+    tree: &mut Vec<Node>,
+    children: Vec<usize>,
+    annot: Option<(Attributes, Vec<usize>)>,
+) -> Result<Vec<usize>, XMLError> {
+    if annot.is_some() {
+        let ret = tree.len();
+        tree.push(Node {
+            r#type: NodeType::Choice,
+            atts: Attributes::default(),
+            children,
+        });
+        apply_annotations(tree, &mut vec![ret], annot)?;
+        Ok(vec![ret])
+    } else {
+        Ok(children)
+    }
 }
 
 fn default_base_uri() -> Result<URIString, XMLError> {

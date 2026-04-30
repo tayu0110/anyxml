@@ -1,0 +1,2 @@
+default namespace this = inherit
+element foo { element * - this:* { string }* }

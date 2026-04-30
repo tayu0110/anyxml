@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<element name="root" xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0" xmlns:ex="http://example.com" xmlns:xsd="http://www.w3.org/2001/XMLSchema-datatypes" xmlns="http://relaxng.org/ns/structure/1.0" datatypeLibrary="http://www.w3.org/2001/XMLSchema-datatypes">
+  <a:documentation>topLevel annotation</a:documentation>
+  <attribute name="att">
+    <a:documentation>middle level annotation</a:documentation>
+    <choice>
+      <value ex:att="att">en</value>
+      <a:documentation>English before with attribute - 1</a:documentation>
+      <a:documentation>English before with attribute - 2</a:documentation>
+      <lang xmlns="">English after</lang>
+      <value>ja</value>
+      <a:documentation>Japanese</a:documentation>
+      <lang xmlns="">Japanese after</lang>
+    </choice>
+  </attribute>
+  <lang xmlns="">middle level following annotation</lang>
+  <text ex:att="att">
+    <a:documentation>middle level annotation with attribute - 1</a:documentation>
+    <a:documentation>middle level annotation with attribute - 2</a:documentation>
+  </text>
+  <element name="child">
+    <value type="double">1.23456789</value>
+    <a:documentation>middle level annotation</a:documentation>
+  </element>
+</element>

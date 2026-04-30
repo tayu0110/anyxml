@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use anyxml::{
+    c14n::CanonicalizeHandler,
     error::{XMLError, XMLErrorDomain},
     relaxng::RelaxNGSchema,
     sax::{
@@ -326,4 +327,28 @@ fn compact_schema_xml_translation_test() {
     let handler = schema.new_validate_handler(DefaultSAXHandler);
     let mut reader = XMLReader::builder().set_handler(handler).build();
     reader.parse_str(&debug.document.to_string(), None).unwrap();
+}
+
+#[test]
+fn compact_schema_regression_tests() {
+    let uri = URIString::parse("resources/relaxng/schema-of-schema.rng").unwrap();
+    let mut schema = RelaxNGSchema::parse_uri(&uri, None, None::<DefaultSAXHandler>).unwrap();
+    let validator = schema.new_validate_handler(DefaultSAXHandler);
+    let mut reader = XMLReader::builder().set_handler(validator).build();
+    for dir in std::fs::read_dir("resources/relaxng/compact/").unwrap() {
+        let mut path = dir.unwrap().path();
+        if path.extension().unwrap() == "rnc" {
+            let uri = URIString::parse_file_path(path.as_path()).unwrap();
+            path.set_extension("");
+            path.set_extension("out");
+
+            eprintln!("uri: {uri}");
+            let mut debug = CanonicalizeHandler::default();
+            RelaxNGSchema::parse_compact_uri(uri.as_ref(), None, Some(&mut debug)).unwrap();
+            assert_eq!(debug.buffer, std::fs::read_to_string(path).unwrap());
+
+            reader.parse_str(&debug.buffer, Some(&uri)).unwrap();
+            assert!(reader.handler.last_error.is_ok());
+        }
+    }
 }

@@ -1,0 +1,1 @@
+<element xmlns="http://relaxng.org/ns/structure/1.0" xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0"><a:documentation>Represents a language</a:documentation><name>lang</name><choice><value>en</value><a:documentation>English</a:documentation><value>jp</value><a:documentation>Japanese</a:documentation></choice></element>

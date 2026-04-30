@@ -1,0 +1,1 @@
+<rng:element xmlns:rng="http://relaxng.org/ns/structure/1.0"><rng:name ns="http://relaxng.org/ns/structure/1.0">text</rng:name><rng:empty></rng:empty></rng:element>

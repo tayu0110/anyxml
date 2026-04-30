@@ -1,0 +1,1 @@
+<element xmlns="http://relaxng.org/ns/structure/1.0"><name>foo</name><zeroOrMore><attribute><anyName><except><nsName ns=""></nsName></except></anyName><text></text></attribute></zeroOrMore></element>

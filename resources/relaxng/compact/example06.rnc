@@ -1,0 +1,2 @@
+namespace local = ""
+element foo { attribute * - local:* { text }* }
