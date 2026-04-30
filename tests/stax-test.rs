@@ -147,6 +147,7 @@ impl ErrorHandler for XMLConfErrorHandler {
             XMLErrorDomain::Namespace => self.ns_error += 1,
             XMLErrorDomain::DTDValid => self.validity_error += 1,
             XMLErrorDomain::RngParser
+            | XMLErrorDomain::RncParser
             | XMLErrorDomain::RngValid
             | XMLErrorDomain::C14N
             | XMLErrorDomain::XInclude => self.error += 1,

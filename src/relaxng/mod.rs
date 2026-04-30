@@ -121,6 +121,7 @@ use crate::{
     uri::URIStr,
 };
 
+pub use compact::RncParseError;
 pub use validate::ValidateHandler;
 
 /// RELAX NG namespace

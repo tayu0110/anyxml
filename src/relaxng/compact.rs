@@ -30,6 +30,33 @@ use crate::{
     uri::{URIStr, URIString},
 };
 
+#[derive(Debug, Clone)]
+pub enum RncParseError {
+    InvalidCharcter,
+    InvalidToken,
+    InvalidPrefix,
+    InvalidURI,
+    UnacceptablePrefix,
+    UnacceptableNamespaceName,
+    DuplicateDeclaration,
+    DuplicateAttributes,
+    UnqualifiedName,
+    MultipleRootElement,
+    UnclosedParentheses,
+    UnclosedBlock,
+    UnclosedAnnotation,
+    UnexpectedToken,
+    UnexpectedEOF,
+}
+
+impl std::fmt::Display for RncParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for RncParseError {}
+
 #[derive(Debug, PartialEq)]
 enum TokenType {
     Documentation(String),
@@ -115,7 +142,9 @@ fn newline_normalization(source: &mut InputSource) -> Result<String, XMLError> {
                 buf.push('\0');
             }
             '\n' => buf.push('\0'),
-            c if !XMLVersion::XML10.is_char(c) => todo!("raise error"),
+            c if !XMLVersion::XML10.is_char(c) => {
+                return Err(XMLError::RncParseError(RncParseError::InvalidCharcter));
+            }
             _ => buf.push(c),
         }
     }
@@ -169,7 +198,7 @@ fn escape_interpretation(source: &str) -> Result<String, XMLError> {
                         && let Some(c) = char::from_u32(code as u32)
                     {
                         if !XMLVersion::XML10.is_char(c) {
-                            todo!("raise error");
+                            return Err(XMLError::RncParseError(RncParseError::InvalidCharcter));
                         }
                         buf.push(c);
                         source = s;
@@ -283,7 +312,7 @@ fn tokenization(source: &str) -> Result<Vec<TokenType>, XMLError> {
                     source = s.chars();
                     tokens.push(TokenType::FollowAnnot);
                 } else {
-                    todo!("raise error")
+                    return Err(XMLError::RncParseError(RncParseError::InvalidToken));
                 }
             }
             '[' => tokens.push(TokenType::OpenAnnot),
@@ -326,9 +355,7 @@ fn string_no_quot(source: &mut Chars, dest: &mut String) -> Result<(), XMLError>
             // end literal
             Ok(())
         }
-        Some('\0') | None => {
-            todo!("raise error")
-        }
+        Some('\0') | None => Err(XMLError::RncParseError(RncParseError::InvalidToken)),
         Some(c) => {
             dest.push(c);
             source.next();
@@ -342,9 +369,7 @@ fn string_no_apos(source: &mut Chars, dest: &mut String) -> Result<(), XMLError>
             // end literal
             Ok(())
         }
-        Some('\0') | None => {
-            todo!("raise error")
-        }
+        Some('\0') | None => Err(XMLError::RncParseError(RncParseError::InvalidToken)),
         Some(c) => {
             dest.push(c);
             source.next();
@@ -361,7 +386,7 @@ fn string_no_triple_quot(source: &mut Chars, dest: &mut String) -> Result<(), XM
         dest.push(c);
         string_no_triple_quot(source, dest)
     } else {
-        todo!("raise error")
+        Err(XMLError::RncParseError(RncParseError::UnexpectedEOF))
     }
 }
 fn string_no_triple_apos(source: &mut Chars, dest: &mut String) -> Result<(), XMLError> {
@@ -373,7 +398,7 @@ fn string_no_triple_apos(source: &mut Chars, dest: &mut String) -> Result<(), XM
         dest.push(c);
         string_no_triple_apos(source, dest)
     } else {
-        todo!("raise error")
+        Err(XMLError::RncParseError(RncParseError::UnexpectedEOF))
     }
 }
 fn indent(source: &mut Chars) {
@@ -414,10 +439,9 @@ fn rest_of_line(source: &mut Chars, dest: &mut String) {
 fn ncname(source: &mut Chars, dest: &mut String) -> Result<(), XMLError> {
     let mut s = source.as_str().chars();
     match s.next() {
-        Some(':') => todo!("raise error"),
+        Some(':') => return Err(XMLError::RncParseError(RncParseError::InvalidToken)),
         Some(c) if XMLVersion::XML10.is_name_start_char(c) => dest.push(c),
-        Some(c) => todo!("raise error"),
-        None => todo!("raise error"),
+        Some(_) | None => return Err(XMLError::RncParseError(RncParseError::InvalidToken)),
     }
     for c in s {
         if c != ':' && XMLVersion::XML10.is_name_char(c) {
@@ -790,10 +814,11 @@ fn parse_top_level_body(
         }
         _ => {
             let ret = parse_pattern(source, base_uri, tree, ns, dt)?;
-            if ret.len() != 1 {
-                todo!("raise error")
-            }
-            return Ok(ret[0]);
+            return if ret.len() != 1 {
+                Err(XMLError::RncParseError(RncParseError::MultipleRootElement))
+            } else {
+                Ok(ret[0])
+            };
         }
     };
     let ret = tree.len();
@@ -849,7 +874,7 @@ fn parse_member(
         [Ident(_) | CName(_, _), OpenAnnot, ..] => {
             parse_annotation_element_not_keyword(source, tree, ns)
         }
-        _ => todo!("raise error"),
+        _ => unreachable!(),
     }
 }
 fn parse_annotated_component(
@@ -882,7 +907,7 @@ fn parse_annotation_element_not_keyword(
                 NodeType::Foreign(None, loc.clone())
             }
         }
-        _ => todo!("raise error"),
+        _ => return Err(XMLError::RncParseError(RncParseError::UnexpectedToken)),
     };
     let (atts, children) = parse_annotation_attributes_content(source, tree, ns)?;
     let ret = tree.len();
@@ -905,7 +930,7 @@ fn parse_annotations(
         let children = parse_annotation_elements(source, tree, ns)?;
         doc.extend(children);
         if !matches!(source, [TokenType::CloseAnnot, ..]) {
-            todo!("raise error")
+            return Err(XMLError::RncParseError(RncParseError::UnclosedAnnotation));
         }
         *source = &source[1..];
         Ok((atts, doc))
@@ -926,7 +951,7 @@ fn parse_component(
         [Keyword("include"), ..] => parse_include(source, base_uri, tree, ns, dt),
         [Keyword("div"), ..] => parse_div(source, base_uri, tree, ns, dt),
         [Ident(_), ..] => parse_define(source, base_uri, tree, ns, dt),
-        _ => todo!("raise error"),
+        _ => Err(XMLError::RncParseError(RncParseError::UnexpectedToken)),
     }
 }
 fn parse_start(
@@ -1029,7 +1054,7 @@ fn parse_div(
     assert!(matches!(source, [Keyword("div"), ..]));
     *source = &source[1..];
     if !matches!(source, [OpenBlock, ..]) {
-        todo!("raise error")
+        return Err(XMLError::RncParseError(RncParseError::UnexpectedToken));
     }
     *source = &source[1..];
     let children = parse_grammar(source, base_uri, tree, ns, dt)?;
@@ -1059,7 +1084,7 @@ fn parse_assign_op(source: &mut &[TokenType]) -> Result<Option<Attribute>, XMLEr
             value: "interleave".to_owned(),
             flag: 0,
         })),
-        _ => todo!("raise error"),
+        _ => return Err(XMLError::RncParseError(RncParseError::UnexpectedToken)),
     };
     *source = &source[1..];
     op
@@ -1069,7 +1094,7 @@ fn parse_any_uri_literal(source: &mut &[TokenType]) -> Result<URIString, XMLErro
     parse_literal(source, &mut uri)?;
     match URIString::parse(uri) {
         Ok(uri) => Ok(uri),
-        Err(_) => todo!("raise error"),
+        Err(_) => Err(XMLError::RncParseError(RncParseError::InvalidURI)),
     }
 }
 fn parse_opt_inherit(
@@ -1119,7 +1144,7 @@ fn parse_opt_include_body(
             *source = &source[1..];
             let ret = parse_include_body(source, base_uri, tree, ns, dt)?;
             if !matches!(source, [TokenType::CloseBlock, ..]) {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::UnclosedBlock));
             }
             Ok(ret)
         }
@@ -1139,7 +1164,7 @@ fn parse_literal(source: &mut &[TokenType], dest: &mut String) -> Result<(), XML
             *source = rest;
             Ok(())
         }
-        _ => todo!("raise error"),
+        _ => Err(XMLError::RncParseError(RncParseError::UnexpectedToken)),
     }
 }
 fn parse_include_body(
@@ -1211,12 +1236,12 @@ fn parse_include_div(
     assert!(matches!(source, [Keyword("div"), ..]));
     *source = &source[1..];
     if !matches!(source, [OpenBlock, ..]) {
-        todo!("raise error")
+        return Err(XMLError::RncParseError(RncParseError::UnexpectedToken));
     }
     *source = &source[1..];
     let children = parse_include_body(source, base_uri, tree, ns, dt)?;
     if !matches!(source, [CloseBlock, ..]) {
-        todo!("raise error")
+        return Err(XMLError::RncParseError(RncParseError::UnclosedBlock));
     }
     *source = &source[1..];
     let ret = tree.len();
@@ -1298,7 +1323,7 @@ fn parse_inner_pattern(
             *source = &source[1..];
             let ret = parse_inner_pattern(source, base_uri, tree, ns, dt, Some(x))?;
             if !matches!(source, [CloseGroup, ..]) {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::UnclosedParentheses));
             }
             *source = &source[1..];
             ret
@@ -1487,7 +1512,7 @@ fn parse_lead_annotated_primary(
             *source = &source[1..];
             let pat = parse_inner_pattern(source, base_uri, tree, ns, dt, Some((atts, children)))?;
             if !matches!(source, [TokenType::CloseGroup, ..]) {
-                todo!("raise error: {source:?}")
+                return Err(XMLError::RncParseError(RncParseError::UnclosedParentheses));
             }
             *source = &source[1..];
             Ok(pat)
@@ -1516,12 +1541,12 @@ fn parse_primary(
             *source = &source[1..];
             let mut nc = parse_name_class(source, tree, ns, is_elem)?;
             if !matches!(source, [OpenBlock, ..]) {
-                todo!("raise error: {source:?}")
+                return Err(XMLError::RncParseError(RncParseError::UnexpectedToken));
             }
             *source = &source[1..];
             let pat = parse_pattern(source, base_uri, tree, ns, dt)?;
             if !matches!(source, [CloseBlock, ..]) {
-                todo!("raise error: {source:?}")
+                return Err(XMLError::RncParseError(RncParseError::UnclosedBlock));
             }
             *source = &source[1..];
             nc.extend(pat);
@@ -1538,12 +1563,12 @@ fn parse_primary(
         [Keyword(e @ ("mixed" | "list")), ..] => {
             *source = &source[1..];
             if !matches!(source, [OpenBlock, ..]) {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::UnexpectedToken));
             }
             *source = &source[1..];
             let children = parse_pattern(source, base_uri, tree, ns, dt)?;
             if !matches!(source, [CloseBlock, ..]) {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::UnclosedBlock));
             }
             *source = &source[1..];
             Node {
@@ -1580,35 +1605,31 @@ fn parse_primary(
                 children: vec![],
             }
         }
-        [Keyword("parent"), next, ..] => {
-            if let Ident(ident) = next {
-                let mut node = Node {
-                    r#type: NodeType::ParentRef,
-                    atts: Attributes::default(),
-                    children: vec![],
-                };
-                node.push_attribute(Attribute {
-                    namespace_name: None,
-                    local_name: Some("name".to_owned()),
-                    qname: "name".to_owned(),
-                    value: ident.clone(),
-                    flag: 0,
-                })?;
-                *source = &source[2..];
-                node
-            } else {
-                todo!("raise error")
-            }
+        [Keyword("parent"), Ident(ident), ..] => {
+            let mut node = Node {
+                r#type: NodeType::ParentRef,
+                atts: Attributes::default(),
+                children: vec![],
+            };
+            node.push_attribute(Attribute {
+                namespace_name: None,
+                local_name: Some("name".to_owned()),
+                qname: "name".to_owned(),
+                value: ident.clone(),
+                flag: 0,
+            })?;
+            *source = &source[2..];
+            node
         }
         [Keyword("grammar"), ..] => {
             *source = &source[1..];
             if !matches!(source, [OpenBlock, ..]) {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::UnexpectedToken));
             }
             *source = &source[1..];
             let children = parse_grammar(source, base_uri, tree, ns, dt)?;
             if !matches!(source, [CloseBlock, ..]) {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::UnclosedBlock));
             }
             *source = &source[1..];
             Node {
@@ -1695,7 +1716,7 @@ fn parse_primary(
             *source = &source[1..];
             node
         }
-        _ => todo!("raise error: {source:?}"),
+        _ => return Err(XMLError::RncParseError(RncParseError::UnexpectedToken)),
     };
     let ret = tree.len();
     tree.push(node);
@@ -1725,7 +1746,7 @@ fn parse_datatype_name(
                     },
                 ))
             } else {
-                todo!("raise error")
+                Err(XMLError::RncParseError(RncParseError::InvalidPrefix))
             }
         }
         [TokenType::Keyword(k @ ("string" | "token")), ..] => Ok((
@@ -1744,7 +1765,7 @@ fn parse_datatype_name(
                 flag: 0,
             },
         )),
-        _ => todo!("raise error"),
+        _ => Err(XMLError::RncParseError(RncParseError::UnexpectedToken)),
     }
 }
 fn parse_opt_params(
@@ -1762,7 +1783,7 @@ fn parse_opt_params(
                 let name = match source {
                     [Ident(ident), Assign, ..] => ident.clone(),
                     [Keyword(keyword), Assign, ..] => keyword.to_string(),
-                    _ => todo!("raise error"),
+                    _ => return Err(XMLError::RncParseError(RncParseError::UnexpectedToken)),
                 };
                 *source = &source[2..];
                 let mut value = String::new();
@@ -1791,7 +1812,7 @@ fn parse_opt_params(
                 }
             }
             if !matches!(source, [CloseBlock, ..]) {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::UnclosedBlock));
             }
             *source = &source[1..];
             Ok(ret)
@@ -1846,7 +1867,7 @@ fn parse_inner_name_class(
             *source = &source[1..];
             let nc = parse_simple_name_class(source, tree, ns, is_elem)?;
             if !matches!(source, [CloseGroup, ..]) {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::UnclosedParentheses));
             }
             *source = &source[1..];
             nc
@@ -1912,7 +1933,7 @@ fn parse_lead_annotated_simple_name_class(
             *source = &source[1..];
             let ret = parse_inner_name_class(source, tree, ns, is_elem, Some((atts, children)))?;
             if !matches!(source, [TokenType::CloseGroup, ..]) {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::UnclosedParentheses));
             }
             *source = &source[1..];
             Ok(ret)
@@ -2008,7 +2029,7 @@ fn parse_simple_name_class(
                     })?;
                 }
             } else {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
             }
             node
         }
@@ -2030,7 +2051,7 @@ fn parse_simple_name_class(
                 }
                 node
             } else {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
             }
         }
         [TokenType::ZeroOrMore, ..] => Node {
@@ -2038,7 +2059,7 @@ fn parse_simple_name_class(
             atts: Attributes::default(),
             children: vec![],
         },
-        _ => todo!("raise error"),
+        _ => return Err(XMLError::RncParseError(RncParseError::UnexpectedToken)),
     };
     *source = &source[1..];
     let ret = tree.len();
@@ -2072,7 +2093,7 @@ fn parse_except_name_class(
                     })?;
                 }
             } else {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
             }
             (node, ch)
         }
@@ -2088,7 +2109,7 @@ fn parse_except_name_class(
                 ch,
             )
         }
-        _ => todo!("raise error"),
+        _ => return Err(XMLError::RncParseError(RncParseError::UnexpectedToken)),
     };
     tree.push(Node {
         r#type: NodeType::Except,
@@ -2153,7 +2174,7 @@ fn parse_annotation_attributes(
                     }
                     atts.push(att).map_err(|err| err.1)?;
                 } else {
-                    todo!("raise error");
+                    return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
                 }
             }
             _ => break Ok(atts),
@@ -2173,8 +2194,7 @@ fn parse_annotation_elements(
                 if let Some(namespace) = ns.get(pre) {
                     NodeType::Foreign(Some(namespace.namespace_name.to_string()), loc.clone())
                 } else {
-                    todo!("raise error");
-                    NodeType::Foreign(None, loc.clone())
+                    return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
                 }
             }
             [Ident(ident), OpenAnnot, ..] => NodeType::Foreign(None, ident.clone()),
@@ -2198,13 +2218,13 @@ fn parse_annotation_attributes_content(
 ) -> Result<(Attributes, Vec<usize>), XMLError> {
     use TokenType::*;
     if !matches!(source, [OpenAnnot, ..]) {
-        todo!("raise error")
+        return Err(XMLError::RncParseError(RncParseError::UnexpectedToken));
     }
     *source = &source[1..];
     let atts = parse_nested_annotation_attributes(source, ns)?;
     let cont = parse_annotation_content(source, tree, ns)?;
     if !matches!(source, [CloseAnnot, ..]) {
-        todo!("raise error")
+        return Err(XMLError::RncParseError(RncParseError::UnclosedAnnotation));
     }
     *source = &source[1..];
     Ok((atts, cont))
@@ -2226,8 +2246,7 @@ fn parse_nested_annotation_attributes(
                         rest,
                     )
                 } else {
-                    todo!("raise error");
-                    (None, loc.clone(), format!("{pre}:{loc}"), rest)
+                    return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
                 }
             }
             [Ident(ident), Assign, rest @ ..] => (None, ident.clone(), ident.clone(), rest),
@@ -2291,13 +2310,12 @@ fn parse_nested_annotation_element(
             if let Some(namespace) = ns.get(pre) {
                 NodeType::Foreign(Some(namespace.namespace_name.to_string()), loc.clone())
             } else {
-                todo!("raise error");
-                NodeType::Foreign(None, loc.clone())
+                return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
             }
         }
         [Ident(ident), ..] => NodeType::Foreign(None, ident.clone()),
         [Keyword(keyword), ..] => NodeType::Foreign(None, keyword.to_string()),
-        _ => todo!("raise error"),
+        _ => return Err(XMLError::RncParseError(RncParseError::InvalidPrefix)),
     };
     *source = &source[1..];
     let (atts, children) = parse_annotation_attributes_content(source, tree, ns)?;
@@ -2440,10 +2458,10 @@ fn walk_nodes<'a>(
         NodeType::TextContent(text) => handler.characters(text),
         ty => {
             let Some(qname) = ty.qname(rmap) else {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
             };
             let Some(local) = ty.local_name() else {
-                todo!("raise error")
+                return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
             };
             let nsname = ty.namespace_name();
             let mut ns = vec![];

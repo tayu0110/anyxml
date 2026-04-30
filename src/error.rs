@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     encoding::{DecodeError, EncodeError},
+    relaxng::RncParseError,
     tree::XMLTreeError,
     uri::ParseRIError,
     xinclude::XIncludeError,
@@ -40,6 +41,8 @@ pub enum XMLErrorDomain {
     DTDValid,
     /// RELAX NG schema parsing error.
     RngParser,
+    /// RELAX NG Compact Syntax schema parsing error.
+    RncParser,
     /// RELAX NG validation error.
     RngValid,
     /// XML Canonicalization error.
@@ -55,6 +58,7 @@ impl std::fmt::Display for XMLErrorDomain {
             Self::Namespace => write!(f, "namespace"),
             Self::DTDValid => write!(f, "dtd-valid"),
             Self::RngParser => write!(f, "relaxng-parser"),
+            Self::RncParser => write!(f, "relaxng-compact-syntax-parser"),
             Self::RngValid => write!(f, "relaxng-valid"),
             Self::C14N => write!(f, "c14n"),
             Self::XInclude => write!(f, "xinclude"),
@@ -221,6 +225,8 @@ pub enum XMLError {
     RngValidElement,
     RngValidOneOrMore,
     RngValidUnknownError,
+    // RELAX NG Compact Syntax parsing errors
+    RncParseError(RncParseError),
     // XPointer errors
     XPointerParseError(XPointerParseError),
     // XInclude errors
@@ -288,5 +294,11 @@ impl From<XPointerParseError> for XMLError {
 impl From<XIncludeError> for XMLError {
     fn from(value: XIncludeError) -> Self {
         XMLError::XIncludeError(value)
+    }
+}
+
+impl From<RncParseError> for XMLError {
+    fn from(value: RncParseError) -> Self {
+        XMLError::RncParseError(value)
     }
 }
