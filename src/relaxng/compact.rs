@@ -30,6 +30,7 @@ use crate::{
     uri::{URIStr, URIString},
 };
 
+#[derive(Debug)]
 enum TokenType {
     Documentation(String),
     LiteralSegment(String),
@@ -304,6 +305,7 @@ fn tokenization(source: &str) -> Result<Vec<TokenType>, XMLError> {
                         tokens.push(TokenType::CName(pre, loc));
                     }
                     _ => {
+                        source = keep;
                         if let Ok(keyword) =
                             KEYWORD.binary_search(&pre.as_str()).map(|pos| KEYWORD[pos])
                         {
@@ -1036,7 +1038,7 @@ fn parse_div(
 }
 fn parse_assign_op(source: &mut &[TokenType]) -> Result<Option<Attribute>, XMLError> {
     use TokenType::*;
-    match source {
+    let op = match source {
         [Assign, ..] => Ok(None),
         [ChoiceAssign, ..] => Ok(Some(Attribute {
             namespace_name: None,
@@ -1053,7 +1055,9 @@ fn parse_assign_op(source: &mut &[TokenType]) -> Result<Option<Attribute>, XMLEr
             flag: 0,
         })),
         _ => todo!("raise error"),
-    }
+    };
+    *source = &source[1..];
+    op
 }
 fn parse_any_uri_literal(source: &mut &[TokenType]) -> Result<URIString, XMLError> {
     let mut uri = String::new();
@@ -1606,7 +1610,7 @@ fn parse_primary(
             *source = &source[1..];
             node
         }
-        _ => todo!("raise error"),
+        _ => todo!("raise error: {source:?}"),
     };
     let ret = tree.len();
     tree.push(node);
@@ -2379,4 +2383,21 @@ fn walk_nodes<'a>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::sax::DefaultSAXHandler;
+
+    use super::*;
+
+    #[test]
+    fn parse_compact_tests() {
+        RelaxNGSchema::parse_compact_uri(
+            URIString::parse_file_path("resources/relaxng/schema-of-schema.rnc").unwrap(),
+            None,
+            None::<DefaultSAXHandler>,
+        )
+        .unwrap();
+    }
 }
