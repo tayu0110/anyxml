@@ -7,7 +7,7 @@ use anyxml::{
         DefaultSAXHandler, EntityResolver, ErrorHandler, InputSource, SAXHandler, XMLReader,
         error::SAXParseError,
     },
-    tree::{Element, Node, node::InternalNodeSpec},
+    tree::{Element, Node, TreeBuildHandler, node::InternalNodeSpec},
     uri::{URIStr, URIString},
     xpath::evaluate_uri,
 };
@@ -303,4 +303,27 @@ fn schema_of_schema_test() {
     let handler = schema.new_validate_handler(DefaultSAXHandler);
     let mut reader = XMLReader::builder().set_handler(handler).build();
     reader.parse_uri(&uri, None).unwrap();
+}
+
+#[test]
+fn schema_of_compact_schema_test() {
+    let full = URIString::parse("resources/relaxng/schema-of-schema.rng").unwrap();
+    let compact = URIString::parse("resources/relaxng/schema-of-schema.rnc").unwrap();
+    let mut schema =
+        RelaxNGSchema::parse_compact_uri(&compact, None, None::<DefaultSAXHandler>).unwrap();
+
+    let handler = schema.new_validate_handler(DefaultSAXHandler);
+    let mut reader = XMLReader::builder().set_handler(handler).build();
+    reader.parse_uri(&full, None).unwrap();
+}
+
+#[test]
+fn compact_schema_xml_translation_test() {
+    let compact = URIString::parse("resources/relaxng/schema-of-schema.rnc").unwrap();
+    let mut debug = TreeBuildHandler::default();
+    let mut schema = RelaxNGSchema::parse_compact_uri(&compact, None, Some(&mut debug)).unwrap();
+
+    let handler = schema.new_validate_handler(DefaultSAXHandler);
+    let mut reader = XMLReader::builder().set_handler(handler).build();
+    reader.parse_str(&debug.document.to_string(), None).unwrap();
 }

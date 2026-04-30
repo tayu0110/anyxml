@@ -18,7 +18,7 @@
 use std::{borrow::Cow, collections::BTreeMap, io::Read, str::Chars, sync::Arc};
 
 use crate::{
-    XML_NS_NAMESPACE, XMLVersion,
+    XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     relaxng::{
         RelaxNGParseHandler, RelaxNGSchema, XML_RELAX_NG_ANNOTATION_NAMESPACE,
@@ -28,6 +28,7 @@ use crate::{
         Attribute, Attributes, EntityResolver, InputSource, Locator, NamespaceStack, SAXHandler,
     },
     uri::{URIStr, URIString},
+    xsdtypes::XML_SCHEMA_DATATYPES_NAMESPACE,
 };
 
 #[derive(Debug, Clone)]
@@ -39,7 +40,6 @@ pub enum RncParseError {
     UnacceptablePrefix,
     UnacceptableNamespaceName,
     DuplicateDeclaration,
-    DuplicateAttributes,
     UnqualifiedName,
     MultipleRootElement,
     UnclosedParentheses,
@@ -671,6 +671,28 @@ fn parse_preamble(
     dt: &mut NamespaceStack,
 ) -> Result<(), XMLError> {
     use TokenType::*;
+    macro_rules! ns_prefix {
+        ( $prefix:expr, $namespace_name:expr ) => {
+            if ($prefix == "xml" && $namespace_name != XML_XML_NAMESPACE)
+                || ($namespace_name == XML_XML_NAMESPACE && $prefix != "xml")
+            {
+                return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
+            }
+            if $prefix == "xmlns" {
+                return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
+            }
+        };
+    }
+    macro_rules! datatype_prefix {
+        ( $prefix:expr, $namespace_name:expr ) => {
+            if $prefix == "xsd" && $namespace_name != XML_SCHEMA_DATATYPES_NAMESPACE {
+                return Err(XMLError::RncParseError(RncParseError::InvalidPrefix));
+            }
+            if URIString::parse($namespace_name).is_err() {
+                return Err(XMLError::RncParseError(RncParseError::InvalidURI));
+            }
+        };
+    }
     loop {
         match source {
             [
@@ -680,14 +702,16 @@ fn parse_preamble(
                 Keyword("inherit"),
                 rest @ ..,
             ] => {
+                ns_prefix!(pre, URI_INHERIT);
                 *source = rest;
-                ns.push(pre, URI_INHERIT);
+                set_namespace(ns, pre, URI_INHERIT)?;
             }
             [Keyword("namespace"), Ident(pre), Assign, rest @ ..] => {
                 *source = rest;
                 let mut value = String::new();
                 parse_literal(source, &mut value)?;
-                ns.push(pre, &value);
+                ns_prefix!(pre, value);
+                set_namespace(ns, pre, &value)?;
             }
             [
                 Keyword("namespace"),
@@ -696,14 +720,16 @@ fn parse_preamble(
                 Keyword("inherit"),
                 rest @ ..,
             ] => {
+                ns_prefix!(*keyword, URI_INHERIT);
                 *source = rest;
-                ns.push(keyword, URI_INHERIT);
+                set_namespace(ns, keyword, URI_INHERIT)?;
             }
             [Keyword("namespace"), Keyword(keyword), Assign, rest @ ..] => {
                 *source = rest;
                 let mut value = String::new();
                 parse_literal(source, &mut value)?;
-                ns.push(keyword, &value);
+                ns_prefix!(*keyword, value);
+                set_namespace(ns, keyword, &value)?;
             }
             [
                 Keyword("default"),
@@ -713,13 +739,14 @@ fn parse_preamble(
                 rest @ ..,
             ] => {
                 *source = rest;
-                ns.push("", URI_INHERIT);
+                set_namespace(ns, "", URI_INHERIT)?;
             }
             [Keyword("default"), Keyword("namespace"), Assign, rest @ ..] => {
                 *source = rest;
                 let mut value = String::new();
                 parse_literal(source, &mut value)?;
-                ns.push("", &value);
+                ns_prefix!("", value);
+                set_namespace(ns, "", &value)?;
             }
             [
                 Keyword("default"),
@@ -729,9 +756,10 @@ fn parse_preamble(
                 Keyword("inherit"),
                 rest @ ..,
             ] => {
+                ns_prefix!(pre, URI_INHERIT);
                 *source = rest;
-                ns.push(pre, URI_INHERIT);
-                ns.push("", URI_INHERIT);
+                set_namespace(ns, pre, URI_INHERIT)?;
+                set_namespace(ns, "", URI_INHERIT)?;
             }
             [
                 Keyword("default"),
@@ -741,9 +769,10 @@ fn parse_preamble(
                 Keyword("inherit"),
                 rest @ ..,
             ] => {
+                ns_prefix!(*pre, URI_INHERIT);
                 *source = rest;
-                ns.push(pre, URI_INHERIT);
-                ns.push("", URI_INHERIT);
+                set_namespace(ns, pre, URI_INHERIT)?;
+                set_namespace(ns, "", URI_INHERIT)?;
             }
             [
                 Keyword("default"),
@@ -755,8 +784,10 @@ fn parse_preamble(
                 *source = rest;
                 let mut value = String::new();
                 parse_literal(source, &mut value)?;
-                ns.push(pre, &value);
-                ns.push("", &value);
+                ns_prefix!(pre, value);
+                ns_prefix!("", value);
+                set_namespace(ns, pre, &value)?;
+                set_namespace(ns, "", &value)?;
             }
             [
                 Keyword("default"),
@@ -768,24 +799,39 @@ fn parse_preamble(
                 *source = rest;
                 let mut value = String::new();
                 parse_literal(source, &mut value)?;
-                ns.push(pre, &value);
-                ns.push("", &value);
+                ns_prefix!(*pre, value);
+                ns_prefix!("", value);
+                set_namespace(ns, pre, &value)?;
+                set_namespace(ns, "", &value)?;
             }
             [Keyword("datatypes"), Ident(pre), Assign, rest @ ..] => {
                 *source = rest;
                 let mut value = String::new();
                 parse_literal(source, &mut value)?;
-                dt.push(pre, &value);
+                datatype_prefix!(pre, &value);
+                set_namespace(dt, pre, &value)?;
             }
             [Keyword("datatypes"), Keyword(pre), Assign, rest @ ..] => {
                 *source = rest;
                 let mut value = String::new();
                 parse_literal(source, &mut value)?;
-                dt.push(pre, &value);
+                datatype_prefix!(*pre, &value);
+                set_namespace(dt, pre, &value)?;
             }
             _ => break Ok(()),
         }
     }
+}
+fn set_namespace(
+    ns: &mut NamespaceStack,
+    prefix: &str,
+    namespace_name: &str,
+) -> Result<(), XMLError> {
+    if ns.is_declared(prefix) {
+        return Err(XMLError::RncParseError(RncParseError::DuplicateDeclaration));
+    }
+    ns.push(prefix, namespace_name);
+    Ok(())
 }
 fn parse_top_level_body(
     source: &mut &[TokenType],
@@ -902,6 +948,11 @@ fn parse_annotation_element_not_keyword(
         [Ident(ident), ..] => NodeType::Foreign(None, ident.clone()),
         [CName(pre, loc), ..] => {
             if let Some(namespace) = ns.get(pre) {
+                if namespace.namespace_name.as_ref() == XML_RELAX_NG_NAMESPACE {
+                    return Err(XMLError::RncParseError(
+                        RncParseError::UnacceptableNamespaceName,
+                    ));
+                }
                 NodeType::Foreign(Some(namespace.namespace_name.to_string()), loc.clone())
             } else {
                 NodeType::Foreign(None, loc.clone())
@@ -2161,6 +2212,15 @@ fn parse_annotation_attributes(
                 let mut value = String::new();
                 parse_literal(source, &mut value)?;
                 if let Some(namespace) = ns.get(pre) {
+                    if namespace.namespace_name.as_ref() == XML_NS_NAMESPACE
+                        || namespace.namespace_name.as_ref() == XML_RELAX_NG_NAMESPACE
+                    {
+                        return Err(XMLError::RncParseError(
+                            RncParseError::UnacceptableNamespaceName,
+                        ));
+                    } else if namespace.namespace_name.is_empty() {
+                        return Err(XMLError::RncParseError(RncParseError::UnqualifiedName));
+                    }
                     let mut att = Attribute {
                         namespace_name: Some(namespace.namespace_name.to_string()),
                         local_name: Some(loc.clone()),
@@ -2239,6 +2299,11 @@ fn parse_nested_annotation_attributes(
         let (namespace_name, local_name, qname, rest) = match source {
             [CName(pre, loc), Assign, rest @ ..] => {
                 if let Some(namespace) = ns.get(pre) {
+                    if namespace.namespace_name.as_ref() == XML_RELAX_NG_NAMESPACE {
+                        return Err(XMLError::RncParseError(
+                            RncParseError::UnacceptableNamespaceName,
+                        ));
+                    }
                     (
                         Some(namespace.namespace_name.to_string()),
                         loc.clone(),
