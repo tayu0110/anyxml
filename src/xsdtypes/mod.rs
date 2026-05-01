@@ -2441,3 +2441,419 @@ pub fn find_builtin_type_definition(name: &str) -> Option<Arc<SimpleTypeDefiniti
 
     Some(ret)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use BuiltinDerivedType::*;
+    use BuiltinPrimitiveType::*;
+
+    #[test]
+    fn boolean_parse_tests() {
+        assert_eq!(
+            Boolean.parse("true", &NamespaceStack::default()),
+            Ok(SchemaValue::Boolean(true))
+        );
+        assert_eq!(
+            Boolean.parse("false", &NamespaceStack::default()),
+            Ok(SchemaValue::Boolean(false))
+        );
+        assert_eq!(
+            Boolean.parse("1", &NamespaceStack::default()),
+            Ok(SchemaValue::Boolean(true))
+        );
+        assert_eq!(
+            Boolean.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Boolean(false))
+        );
+    }
+
+    #[test]
+    fn decimal_parse_tests() {
+        assert_eq!(
+            Decimal.parse("-1.23", &NamespaceStack::default()),
+            Ok(SchemaValue::Decimal("-1".into(), "23".into()))
+        );
+        assert_eq!(
+            Decimal.parse("12678967.543233", &NamespaceStack::default()),
+            Ok(SchemaValue::Decimal("12678967".into(), "543233".into()))
+        );
+        assert_eq!(
+            Decimal.parse("+100000.00", &NamespaceStack::default()),
+            Ok(SchemaValue::Decimal("100000".into(), "0".into()))
+        );
+        assert_eq!(
+            Decimal.parse("210", &NamespaceStack::default()),
+            Ok(SchemaValue::Decimal("210".into(), "0".into()))
+        );
+    }
+
+    #[test]
+    fn float_parse_tests() {
+        assert_eq!(
+            Float.parse("-1E4", &NamespaceStack::default()),
+            Ok(SchemaValue::Float(-1E4))
+        );
+        assert_eq!(
+            Float.parse("1267.43233E12", &NamespaceStack::default()),
+            Ok(SchemaValue::Float(1.267_432_4E15))
+        );
+        assert_eq!(
+            Float.parse("12.78e-2", &NamespaceStack::default()),
+            Ok(SchemaValue::Float(12.78e-2))
+        );
+        assert_eq!(
+            Float.parse("-0", &NamespaceStack::default()),
+            Ok(SchemaValue::Float(-0.))
+        );
+        assert_eq!(
+            Float.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Float(0.))
+        );
+        assert_eq!(
+            Float.parse("INF", &NamespaceStack::default()),
+            Ok(SchemaValue::Float(f32::INFINITY))
+        );
+    }
+
+    #[test]
+    fn double_parse_tests() {
+        assert_eq!(
+            Double.parse("-1E4", &NamespaceStack::default()),
+            Ok(SchemaValue::Double(-1E4))
+        );
+        assert_eq!(
+            Double.parse("1267.43233E12", &NamespaceStack::default()),
+            Ok(SchemaValue::Double(1267.43233E12))
+        );
+        assert_eq!(
+            Double.parse("12.78e-2", &NamespaceStack::default()),
+            Ok(SchemaValue::Double(12.78e-2))
+        );
+        assert_eq!(
+            Double.parse("-0", &NamespaceStack::default()),
+            Ok(SchemaValue::Double(-0.))
+        );
+        assert_eq!(
+            Double.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Double(0.))
+        );
+        assert_eq!(
+            Double.parse("INF", &NamespaceStack::default()),
+            Ok(SchemaValue::Double(f64::INFINITY))
+        );
+    }
+
+    #[test]
+    fn duration_parse_tests() {
+        assert!(Duration.parse("P1347Y", &NamespaceStack::default()).is_ok());
+        assert!(Duration.parse("P1347M", &NamespaceStack::default()).is_ok());
+        assert!(
+            Duration
+                .parse("P1Y2MT2H", &NamespaceStack::default())
+                .is_ok()
+        );
+        assert!(
+            Duration
+                .parse("P0Y1347M", &NamespaceStack::default())
+                .is_ok()
+        );
+        assert!(
+            Duration
+                .parse("P0Y1347M0D", &NamespaceStack::default())
+                .is_ok()
+        );
+        assert!(
+            Duration
+                .parse("P-1347M", &NamespaceStack::default())
+                .is_err()
+        );
+        assert!(
+            Duration
+                .parse("-P1347M", &NamespaceStack::default())
+                .is_ok()
+        );
+        assert!(
+            Duration
+                .parse("P1Y2MT", &NamespaceStack::default())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn datetime_parse_tests() {
+        assert!(
+            DateTime
+                .parse("2002-10-10T12:00:00-05:00", &NamespaceStack::default())
+                .is_ok()
+        );
+        assert!(
+            DateTime
+                .parse("2002-10-10T17:00:00Z", &NamespaceStack::default())
+                .is_ok()
+        );
+        assert!(
+            DateTime
+                .parse("2002-10-10T12:00:00Z", &NamespaceStack::default())
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn gyearmonth_parse_tests() {
+        assert!(
+            GYearMonth
+                .parse("1999-05", &NamespaceStack::default())
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn gyear_parse_tests() {
+        assert!(GYear.parse("1999", &NamespaceStack::default()).is_ok());
+    }
+
+    #[test]
+    fn hexbinary_parse_tests() {
+        assert_eq!(
+            HexBinary.parse("0FB7", &NamespaceStack::default()),
+            Ok(SchemaValue::HexBinary("0FB7".into()))
+        );
+    }
+
+    #[test]
+    fn integer_parse_tests() {
+        assert_eq!(
+            Integer.parse("-1", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(-1))
+        );
+        assert_eq!(
+            Integer.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(0))
+        );
+        assert_eq!(
+            Integer.parse("2678967543233", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(2678967543233))
+        );
+        assert_eq!(
+            Integer.parse("+100000", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(100000))
+        );
+    }
+
+    #[test]
+    fn non_positive_integer_parse_tests() {
+        assert_eq!(
+            NonPositiveInteger.parse("-1", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(-1))
+        );
+        assert_eq!(
+            NonPositiveInteger.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(0))
+        );
+        assert_eq!(
+            NonPositiveInteger.parse("-12678967543233", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(-12678967543233))
+        );
+        assert_eq!(
+            NonPositiveInteger.parse("-100000", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(-100000))
+        );
+    }
+
+    #[test]
+    fn negative_integer_parse_tests() {
+        assert_eq!(
+            NegativeInteger.parse("-1", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(-1))
+        );
+        assert_eq!(
+            NegativeInteger.parse("-12678967543233", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(-12678967543233))
+        );
+        assert_eq!(
+            NegativeInteger.parse("-100000", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(-100000))
+        );
+    }
+
+    #[test]
+    fn long_parse_tests() {
+        assert_eq!(
+            Long.parse("-1", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(-1))
+        );
+        assert_eq!(
+            Long.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(0))
+        );
+        assert_eq!(
+            Long.parse("12678967543233", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(12678967543233))
+        );
+        assert_eq!(
+            Long.parse("+100000", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(100000))
+        );
+    }
+
+    #[test]
+    fn int_parse_tests() {
+        assert_eq!(
+            Int.parse("-1", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(-1))
+        );
+        assert_eq!(
+            Int.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(0))
+        );
+        assert_eq!(
+            Int.parse("126789675", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(126789675))
+        );
+        assert_eq!(
+            Int.parse("+100000", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(100000))
+        );
+    }
+
+    #[test]
+    fn short_parse_tests() {
+        assert_eq!(
+            Short.parse("-1", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(-1))
+        );
+        assert_eq!(
+            Short.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(0))
+        );
+        assert_eq!(
+            Short.parse("12678", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(12678))
+        );
+        assert_eq!(
+            Short.parse("+10000", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(10000))
+        );
+    }
+
+    #[test]
+    fn byte_parse_tests() {
+        assert_eq!(
+            Short.parse("-1", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(-1))
+        );
+        assert_eq!(
+            Short.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(0))
+        );
+        assert_eq!(
+            Short.parse("126", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(126))
+        );
+        assert_eq!(
+            Short.parse("+100", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(100))
+        );
+    }
+
+    #[test]
+    fn non_negative_integer_parse_tests() {
+        assert_eq!(
+            NonNegativeInteger.parse("1", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(1))
+        );
+        assert_eq!(
+            NonNegativeInteger.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(0))
+        );
+        assert_eq!(
+            NonNegativeInteger.parse("12678967543233", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(12678967543233))
+        );
+        assert_eq!(
+            NonNegativeInteger.parse("+100000", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(100000))
+        );
+    }
+
+    #[test]
+    fn unsigned_long_parse_tests() {
+        assert_eq!(
+            UnsignedLong.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(0))
+        );
+        assert_eq!(
+            UnsignedLong.parse("12678967543233", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(12678967543233))
+        );
+        assert_eq!(
+            UnsignedLong.parse("100000", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(100000))
+        );
+    }
+
+    #[test]
+    fn unsigned_int_parse_tests() {
+        assert_eq!(
+            UnsignedInt.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(0))
+        );
+        assert_eq!(
+            UnsignedInt.parse("1267896754", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(1267896754))
+        );
+        assert_eq!(
+            UnsignedInt.parse("100000", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(100000))
+        );
+    }
+
+    #[test]
+    fn unsigned_short_parse_tests() {
+        assert_eq!(
+            UnsignedShort.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(0))
+        );
+        assert_eq!(
+            UnsignedShort.parse("12678", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(12678))
+        );
+        assert_eq!(
+            UnsignedShort.parse("10000", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(10000))
+        );
+    }
+
+    #[test]
+    fn unsigned_byte_parse_tests() {
+        assert_eq!(
+            UnsignedShort.parse("0", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(0))
+        );
+        assert_eq!(
+            UnsignedShort.parse("126", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(126))
+        );
+        assert_eq!(
+            UnsignedShort.parse("100", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(100))
+        );
+    }
+
+    #[test]
+    fn positive_integer_parse_tests() {
+        assert_eq!(
+            PositiveInteger.parse("1", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(1))
+        );
+        assert_eq!(
+            PositiveInteger.parse("12678967543233", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(12678967543233))
+        );
+        assert_eq!(
+            PositiveInteger.parse("+100000", &NamespaceStack::default()),
+            Ok(SchemaValue::Integer(100000))
+        );
+    }
+}
