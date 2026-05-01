@@ -16,7 +16,7 @@ use crate::{
     uri::URIString,
 };
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
     /// ```text
     /// [28] doctypedecl ::= '<!DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'
     ///                                                             [VC:  Root Element Type]

@@ -11,7 +11,7 @@ use crate::{
     uri::URIString,
 };
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
     /// ```text
     /// [39] element ::= EmptyElemTag | STag content ETag       [WFC: Element Type Match]
     ///                                                         [VC:  Element Valid]

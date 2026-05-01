@@ -2428,7 +2428,10 @@ impl RelaxNGSchema {
         if let Some(encoding) = encoding {
             source.switch_encoding(encoding)?;
         }
-        Self::parse_compact(source, &mut handler)
+        Self::parse_compact(source, &mut handler)?;
+        Ok(Self {
+            grammar: handler.simplification().map_err(|err| err.error)?,
+        })
     }
 
     /// Parse RELAX NG Compact Syntax schema using `reader`, `encoding` and `uri`.
@@ -2453,7 +2456,10 @@ impl RelaxNGSchema {
                 source.set_system_id(uri);
             }
         }
-        Self::parse_compact(source, &mut handler)
+        Self::parse_compact(source, &mut handler)?;
+        Ok(Self {
+            grammar: handler.simplification().map_err(|err| err.error)?,
+        })
     }
 
     /// Parse RELAX NG Compact Syntax schema using `schema` and `uri`.
@@ -2479,13 +2485,16 @@ impl RelaxNGSchema {
         } else {
             source.set_system_id(default_base_uri()?);
         }
-        Self::parse_compact(source, &mut handler)
+        Self::parse_compact(source, &mut handler)?;
+        Ok(Self {
+            grammar: handler.simplification().map_err(|err| err.error)?,
+        })
     }
 
     fn parse_compact<'a>(
         mut source: InputSource,
         handler: &mut RelaxNGParseHandler<dyn SAXHandler + 'a>,
-    ) -> Result<RelaxNGSchema, XMLError> {
+    ) -> Result<(), XMLError> {
         let base_uri = source.system_id().unwrap().to_owned();
         let source = newline_normalization(&mut source)?;
         let source = escape_interpretation(&source)?;
@@ -2503,9 +2512,7 @@ impl RelaxNGSchema {
         handler.start_document();
         walk_nodes(handler, root, &tree, &rmap)?;
         handler.end_document();
-        Ok(RelaxNGSchema {
-            grammar: handler.simplification().map_err(|err| err.error)?,
-        })
+        Ok(())
     }
 }
 

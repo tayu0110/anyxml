@@ -3,7 +3,7 @@ use crate::{
     sax::{InputSource, ParserSpec, SAXHandler, XMLReader, error::fatal_error},
 };
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
     pub(crate) fn is_char(&self, c: char) -> bool {
         self.version.is_char(c)
     }

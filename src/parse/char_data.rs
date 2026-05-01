@@ -4,7 +4,7 @@ use crate::{
     sax::{InputSource, ParserSpec, SAXHandler, XMLReader, error::fatal_error},
 };
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
     /// ```text
     /// [14] CharData ::= [^<&]* - ([^<&]* ']]>' [^<&]*)
     /// ```

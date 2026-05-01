@@ -9,7 +9,7 @@ use crate::{
     uri::URIString,
 };
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
     /// ```text
     /// [43] content ::= CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*
     /// ```

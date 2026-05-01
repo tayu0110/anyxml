@@ -268,7 +268,7 @@ pub struct XMLReader<Spec: ParserSpec, H: SAXHandler + ?Sized = DefaultSAXHandle
     pub handler: H,
 }
 
-impl<Spec: ParserSpec, H: SAXHandler> XMLReader<Spec, H> {
+impl<Spec: ParserSpec, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
     /// Get the default base URI for document entities to be used when no base URI
     /// is specified at parsing start.
     ///
@@ -461,9 +461,11 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
             self.base_uri = base_uri.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
-        self.parse_document().inspect_err(|err| {
-            fatal_error!(self, err, "Unrecoverable error: {}", err);
-        })
+        (self as &mut XMLReader<DefaultParserSpec<'a>, dyn SAXHandler>)
+            .parse_document()
+            .inspect_err(|err| {
+                fatal_error!(self, err, "Unrecoverable error: {}", err);
+            })
     }
 
     /// The data read from `reader` is parsed as an XML document.  \
@@ -489,9 +491,11 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
             self.base_uri = base_uri.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
-        self.parse_document().inspect_err(|err| {
-            fatal_error!(self, err, "Unrecoverable error: {}", err);
-        })
+        (self as &mut XMLReader<DefaultParserSpec<'a>, dyn SAXHandler>)
+            .parse_document()
+            .inspect_err(|err| {
+                fatal_error!(self, err, "Unrecoverable error: {}", err);
+            })
     }
 
     /// Parses `xml` as an XML document.  \
@@ -512,9 +516,11 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
             self.base_uri = base_uri.into();
         }
         self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
-        self.parse_document().inspect_err(|err| {
-            fatal_error!(self, err, "Unrecoverable error: {}", err);
-        })
+        (self as &mut XMLReader<DefaultParserSpec<'a>, dyn SAXHandler>)
+            .parse_document()
+            .inspect_err(|err| {
+                fatal_error!(self, err, "Unrecoverable error: {}", err);
+            })
     }
 
     /// Reset the parser to its initial state.
@@ -531,7 +537,7 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
     }
 }
 
-impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
+impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
     /// Specifies the encoding for the data to be parsed.
     ///
     /// This must be set before parsing begins, specifically between the parser build or
@@ -560,7 +566,9 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
         self.reset_context();
         Ok(())
     }
+}
 
+impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
     /// Parses the `chunk` input from the most recent `self.reset()` execution
     /// (including parser generation) to the present as an XML document fragment.
     ///
@@ -570,32 +578,33 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
     /// After inputting all document fragments, `finish` must be set to `true`.  \
     /// The final document fragment can be empty.
     pub fn parse_chunk(&mut self, chunk: impl AsRef<[u8]>, finish: bool) -> Result<(), XMLError> {
+        let reader = self as &mut XMLReader<ProgressiveParserSpec, dyn SAXHandler>;
         (|| {
-            if self.fatal_error_occurred {
+            if reader.fatal_error_occurred {
                 return Ok(());
             }
             let chunk = chunk.as_ref();
             for bytes in chunk.chunks(INPUT_CHUNK) {
-                self.source.push_bytes(bytes, false)?;
-                while self.parse_event_once(false)? {}
+                reader.source.push_bytes(bytes, false)?;
+                while reader.parse_event_once(false)? {}
             }
-            if !self.fatal_error_occurred && finish {
-                self.source.push_bytes([], true)?;
-                while self.parse_event_once(true)? {}
+            if !reader.fatal_error_occurred && finish {
+                reader.source.push_bytes([], true)?;
+                while reader.parse_event_once(true)? {}
 
-                if self.state != ParserState::Finished {
+                if reader.state != ParserState::Finished {
                     return Err(XMLError::ParserUnexpectedEOF);
                 }
             }
             Ok(())
         })()
         .inspect_err(|err| {
-            fatal_error!(self, err, "Unrecoverable error: {}", err);
+            fatal_error!(reader, err, "Unrecoverable error: {}", err);
         })
     }
 }
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
     pub(crate) fn push_source(
         &mut self,
         source: Box<InputSource<'a>>,

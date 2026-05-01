@@ -6,7 +6,7 @@ use crate::{
     },
 };
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
     /// ```text
     /// [30] extSubset ::= TextDecl? extSubsetDecl
     /// ```

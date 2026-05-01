@@ -9,7 +9,7 @@ use crate::{
     uri::URIString,
 };
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
     fn check_literal_start(&mut self) -> Result<char, XMLError> {
         match self.source.next_char()? {
             Some(c @ ('"' | '\'')) => {

@@ -11,7 +11,7 @@ use crate::{
 
 pub(crate) const CATALOG_PI_TARGET_NAME: &str = "oasis-xml-catalog";
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
     /// ```text
     /// [16] PI       ::= '<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
     /// [17] PITarget ::= Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))

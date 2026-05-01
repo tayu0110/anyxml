@@ -10,7 +10,7 @@ use crate::{
     uri::URIString,
 };
 
-impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
+impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
     /// Returns results based on the following conditions:
     /// - If a single event is successfully parsed, return `Ok(true)`.
     /// - If insufficient data is available to parse a single event, return `Ok(false)`.

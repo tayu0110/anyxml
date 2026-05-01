@@ -9,7 +9,7 @@ use crate::{
     },
 };
 
-impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler> XMLReader<Spec, H> {
+impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
     /// ```text
     /// [45] elementdecl ::= '<!ELEMENT' S Name S contentspec S? '>'
     ///                                                 [VC: Unique Element Type Declaration]
