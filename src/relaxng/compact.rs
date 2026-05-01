@@ -603,8 +603,11 @@ fn parse(
     let mut dt_stack = NamespaceStack::default();
     parse_preamble(&mut source, &mut ns_stack, &mut dt_stack)?;
     let mut tree = vec![];
-    let root = parse_top_level_body(&mut source, base_uri, &mut tree, &ns_stack, &dt_stack);
-    let root = root?;
+    let root = parse_top_level_body(&mut source, base_uri, &mut tree, &ns_stack, &dt_stack)?;
+    // If any extra tokens remain, an error occurs.
+    if !source.is_empty() {
+        return Err(XMLError::RncParseError(RncParseError::UnexpectedToken));
+    }
     let mut remove = vec![];
     for ns in &ns_stack {
         if !ns.namespace_name.is_empty()
