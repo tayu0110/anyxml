@@ -41,6 +41,14 @@ pub enum Base64Error {
     InsufficientPadding,
 }
 
+impl std::fmt::Display for Base64Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for Base64Error {}
+
 /// Base64-encoded byte sequence.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Base64Binary {

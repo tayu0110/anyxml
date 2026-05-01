@@ -24,6 +24,14 @@ pub enum ParseRIError {
     Unknown,
 }
 
+impl std::fmt::Display for ParseRIError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for ParseRIError {}
+
 #[cfg(test)]
 mod tests {
     use crate::uri::URIString;

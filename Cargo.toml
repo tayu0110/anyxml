@@ -16,7 +16,7 @@ package.rust-version = "1.89.0"
 
 [package]
 name = "anyxml"
-version = "0.11.1"
+version = "0.12.0"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -31,10 +31,10 @@ exclude = [
 ]
 
 [dependencies]
-anyxml-uri = { path = "./anyxml-uri", version = "0.1.8" }
-anyxml-automata = { path = "./anyxml-automata", version = "^0.1" }
+anyxml-uri = { path = "./anyxml-uri", version = "0.1.9" }
+anyxml-automata = { path = "./anyxml-automata", version = "0.1.2" }
 anyxml-encoding = { path = "./anyxml-encoding", version = "0.1.2" }
-anyxml-base64 = { path = "./anyxml-base64", version = "^0.1" }
+anyxml-base64 = { path = "./anyxml-base64", version = "0.1.1" }
 anyxml-datetime = { path = "./anyxml-datetime", version = "0.1.1" }
 
 [[test]]
