@@ -15,7 +15,7 @@ The current implementation supports the following features:
     - [x] DTD (parser embeded)
     - [x] RELAX NG
       - [x] XML Syntax
-      - [ ] Compact Syntax
+      - [x] Compact Syntax
       - [x] XSD types
     - [ ] XML Schema
 - handle namespace conforming to XML Namespace 1.0
@@ -170,6 +170,8 @@ Note that internal entity substitution, attribute value normalization and some o
 ### RELAX NG Schema Validation
 This crate fully supports validation using RELAX NG.
 
+From v0.12.0, both Full Syntax and Compact Syntax are available.
+
 It passes all tests in [James Clark's test suite](https://raw.githubusercontent.com/relaxng/jing-trang/refs/heads/master/mod/rng-validate/test/spectest.xml), except for tests related to tests for name characters that have been marked as valid in new XML specifications.
 
 Schemas containing `"externalRef"` or `"include"` require access to external resources. By default, it searches local files, but a custom `EntityResolver` can be provided.
@@ -217,13 +219,16 @@ This crate conforms to the following specifications:
 - [XML Catalogs (OASIS Standard V1.1, 7 October 2005)](https://groups.oasis-open.org/higherlogic/ws/public/download/14810/xml-catalogs.pdf/latest)
 - RELAX NG specifications
   - [ISO/IEC 19757-2:2008 Part 2: Regular-grammar-based validation — RELAX NG](https://www.iso.org/standard/52348.html)
+  - [RELAX NG Compact Syntax Committee Specification 21 November 2002](https://relaxng.org/compact-20021121.html)
   - [Guidelines for using W3C XML Schema Datatypes with RELAX NG](https://relaxng.org/xsd-20010907.html)
 - XPointer specifications
     - [XPointer Framework](https://www.w3.org/TR/xptr-framework/)
     - [XPointer element() Scheme](https://www.w3.org/TR/xptr-element/)
     - [XPointer xmlns() Scheme](https://www.w3.org/TR/xptr-xmlns/)
 - [XML Inclusions (XInclude) Version 1.0 (Second Edition)](https://www.w3.org/TR/2006/REC-xinclude-20061115/)
-- [Canonical XML Version 1.0 W3C Recommendation 15 March 2001](https://www.w3.org/TR/xml-c14n10/)
+- Canonical XML specifications
+  - [Canonical XML Version 1.0 W3C Recommendation 15 March 2001](https://www.w3.org/TR/2001/REC-xml-c14n-20010315)
+  - [Canonical XML Version 1.1 W3C Recommendation 2 May 2008](https://www.w3.org/TR/2008/REC-xml-c14n11-20080502/)
 
 # Tests
 This crate passes the following tests:

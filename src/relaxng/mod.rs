@@ -104,6 +104,16 @@
 //! received from the handler to the [`CanonicalizeHandler`](crate::c14n::CanonicalizeHandler)
 //! or [`TreeBuildHandler`](crate::tree::TreeBuildHandler).
 //!
+//! ## Limitation
+//! Schemas called via `include` or `externalRef` can be either Full Syntax or Compact Syntax.  \
+//! However, the current implementation identifies resources solely based on whether the URI
+//! ends with `.rnc`. Therefore, Compact Syntax schemas whose URIs do not end with `.rnc` will
+//! not be parsed correctly. The same applies to Full Syntax schemas whose URIs end with `.rnc`.  \
+//! As a workaround, it is possible to handle this by converting the resource using a custom
+//! [`EntityResolver`](crate::sax::EntityResolver) beforehand.
+//! In the future, it is planned to provide reliable resource type identification by allowing
+//! the media type to be set on [`InputSource`](crate::sax::InputSource).
+//!
 //! ## Example
 //! ```rust
 //! use anyxml::{

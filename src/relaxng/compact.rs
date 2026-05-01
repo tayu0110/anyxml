@@ -2409,7 +2409,7 @@ fn default_base_uri() -> Result<URIString, XMLError> {
 impl RelaxNGSchema {
     /// Parse RELAX NG Compact Syntax schema using `uri` and `encoding`.
     ///
-    /// If a custom [`EntityResolver`](crate::sax::EntityResolver) or [`ErrorHandler`](crate::sax::ErrorHandler)
+    /// If a custom [`EntityResolver`] or [`ErrorHandler`](crate::sax::ErrorHandler)
     /// is required, it can be specified using `handler`.
     ///
     /// If the document cannot be parsed for any reason,
@@ -2436,7 +2436,7 @@ impl RelaxNGSchema {
 
     /// Parse RELAX NG Compact Syntax schema using `reader`, `encoding` and `uri`.
     ///
-    /// If a custom [`EntityResolver`](crate::sax::EntityResolver) or [`ErrorHandler`](crate::sax::ErrorHandler)
+    /// If a custom [`EntityResolver`] or [`ErrorHandler`](crate::sax::ErrorHandler)
     /// is required, it can be specified using `handler`.
     ///
     /// If the document cannot be parsed for any reason,
@@ -2464,7 +2464,7 @@ impl RelaxNGSchema {
 
     /// Parse RELAX NG Compact Syntax schema using `schema` and `uri`.
     ///
-    /// If a custom [`EntityResolver`](crate::sax::EntityResolver) or [`ErrorHandler`](crate::sax::ErrorHandler)
+    /// If a custom [`EntityResolver`] or [`ErrorHandler`](crate::sax::ErrorHandler)
     /// is required, it can be specified using `handler`.
     ///
     /// If the document cannot be parsed for any reason,
