@@ -7,7 +7,7 @@ use crate::{
     XML_NS_NAMESPACE, XMLVersion,
     error::XMLError,
     relaxng::{
-        XML_RELAX_NG_NAMESPACE,
+        RelaxNGSchema, XML_RELAX_NG_NAMESPACE,
         datatype_library::RelaxNGDatatypeLibraries,
         grammar::{Grammar, NameClass, Pattern},
     },
@@ -972,8 +972,19 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     return;
                 }
 
-                let mut reader = XMLReader::builder().set_handler(&mut *self).build();
-                if let Err(err) = reader.parse_uri(&href, None) {
+                let ret = if href.as_escaped_str().ends_with(".rnc") {
+                    self.resolve_entity("[document]", None, &href, &href)
+                        .and_then(|mut source| {
+                            if source.system_id().is_none() {
+                                source.set_system_id(href.as_ref());
+                            }
+                            RelaxNGSchema::parse_compact(source, &mut *self)
+                        })
+                } else {
+                    let mut reader = XMLReader::builder().set_handler(&mut *self).build();
+                    reader.parse_uri(&href, None)
+                };
+                if let Err(err) = ret {
                     error!(
                         self,
                         RngParseExternalRefParseFailure,

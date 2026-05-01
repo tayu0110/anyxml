@@ -2491,9 +2491,9 @@ impl RelaxNGSchema {
         })
     }
 
-    fn parse_compact<'a>(
+    pub(super) fn parse_compact<H: SAXHandler + ?Sized>(
         mut source: InputSource,
-        handler: &mut RelaxNGParseHandler<dyn SAXHandler + 'a>,
+        handler: &mut RelaxNGParseHandler<H>,
     ) -> Result<(), XMLError> {
         let base_uri = source.system_id().unwrap().to_owned();
         let source = newline_normalization(&mut source)?;
@@ -2526,8 +2526,8 @@ fn new_dyn_handler<'a, H: SAXHandler + 'a>(
     }
 }
 
-fn walk_nodes<'a>(
-    handler: &mut RelaxNGParseHandler<dyn SAXHandler + 'a>,
+fn walk_nodes<H: SAXHandler + ?Sized>(
+    handler: &mut RelaxNGParseHandler<H>,
     cur: usize,
     tree: &[Node],
     rmap: &BTreeMap<Arc<str>, Arc<str>>,
