@@ -19,7 +19,7 @@ use std::str::FromStr;
 pub use subtypes::*;
 
 /// Media type parse error
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaTypeError {
     InvalidTopLevelType,
     InvalidSubtype,
@@ -318,5 +318,59 @@ impl FromStr for PrivateSubtype {
         } else {
             Err(MediaTypeError::InvalidSubtype)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mediatype_parse_tests() {
+        assert_eq!(
+            "text/xml".parse::<MediaType>(),
+            Ok(MediaType::Text(TextSubtype::Xml))
+        );
+        assert_eq!(
+            "application/xml".parse::<MediaType>(),
+            Ok(MediaType::Application(ApplicationSubtype::Xml))
+        );
+        assert_eq!(
+            "application/xml-external-parsed-entity".parse::<MediaType>(),
+            Ok(MediaType::Application(
+                ApplicationSubtype::XmlExternalParsedEntity
+            ))
+        );
+        assert_eq!(
+            "text/xml-external-parsed-entity".parse::<MediaType>(),
+            Ok(MediaType::Text(TextSubtype::XmlExternalParsedEntity))
+        );
+        assert_eq!(
+            "application/xml-dtd".parse::<MediaType>(),
+            Ok(MediaType::Application(ApplicationSubtype::XmlDtd))
+        );
+        assert_eq!(
+            "application/relax-ng-compact-syntax".parse::<MediaType>(),
+            Ok(MediaType::Application(
+                ApplicationSubtype::RelaxNgCompactSyntax
+            ))
+        );
+    }
+
+    #[test]
+    fn xml_mediatype_tests() {
+        let text_xml = "text/xml".parse::<MediaType>().unwrap();
+        assert!(text_xml.is_xml());
+        let app_xml = "application/xml".parse::<MediaType>().unwrap();
+        assert!(app_xml.is_xml());
+
+        let ext_parsed_ent = "application/xml-external-parsed-entity"
+            .parse::<MediaType>()
+            .unwrap();
+        assert!(!ext_parsed_ent.is_xml());
+        let dtd = "application/xml-dtd".parse::<MediaType>().unwrap();
+        assert!(!dtd.is_xml());
+        let text_plain = "text/plain".parse::<MediaType>().unwrap();
+        assert!(!text_plain.is_xml());
     }
 }
