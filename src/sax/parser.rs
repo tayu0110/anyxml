@@ -436,23 +436,18 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         encoding: Option<&str>,
     ) -> Result<(), XMLError> {
         self.encoding = encoding.map(|enc| enc.into());
-        self.base_uri = self.default_base_uri()?;
-        let (mut base_uri, mut source) = if self.config.is_enable(ParserOption::Catalogs)
-            && let Some(uri) = self.catalog_resolve_uri(Some(&self.base_uri.clone()), uri.as_ref())
+        let base_uri = self.default_base_uri()?;
+        let mut uri: Arc<URIStr> = uri.as_ref().into();
+        if self.config.is_enable(ParserOption::Catalogs)
+            && let Some(resolved) = self.catalog_resolve_uri(Some(&base_uri), uri.as_ref())
         {
-            (
-                self.base_uri.resolve(uri.as_ref()),
-                self.handler
-                    .resolve_entity("[document]", None, &self.base_uri, uri.as_ref())?,
-            )
-        } else {
-            (
-                self.base_uri.resolve(uri.as_ref()),
-                self.handler
-                    .resolve_entity("[document]", None, &self.base_uri, uri.as_ref())?,
-            )
-        };
+            uri = resolved;
+        }
+        let mut source =
+            self.handler
+                .resolve_entity("[document]", None, &base_uri, uri.as_ref())?;
         if source.system_id().is_none() {
+            let mut base_uri = base_uri.resolve(&uri);
             base_uri.normalize();
             source.set_system_id(base_uri);
         }
