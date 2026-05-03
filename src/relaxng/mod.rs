@@ -104,15 +104,14 @@
 //! received from the handler to the [`CanonicalizeHandler`](crate::c14n::CanonicalizeHandler)
 //! or [`TreeBuildHandler`](crate::tree::TreeBuildHandler).
 //!
-//! ## Limitation
-//! Schemas called via `include` or `externalRef` can be either Full Syntax or Compact Syntax.  \
-//! However, the current implementation identifies resources solely based on whether the URI
-//! ends with `.rnc`. Therefore, Compact Syntax schemas whose URIs do not end with `.rnc` will
-//! not be parsed correctly. The same applies to Full Syntax schemas whose URIs end with `.rnc`.  \
-//! As a workaround, it is possible to handle this by converting the resource using a custom
-//! [`EntityResolver`](crate::sax::EntityResolver) beforehand.
-//! In the future, it is planned to provide reliable resource type identification by allowing
-//! the media type to be set on [`InputSource`](crate::sax::InputSource).
+//! ## External resource handling
+//! Schemas called via `include` or `externalRef` can be either Full Syntax or Compact Syntax.
+//!
+//! To determine which format an external resource uses, first check the media type of the
+//! [`InputSource`](crate::sax::InputSource). If the media type is "application/relax-ng-compact-syntax",
+//! treat it as Compact Syntax; otherwise, treat it as Full Syntax.  \
+//! If no media type is set, check the URI suffix. If the suffix is ".rnc", treat it as
+//! Compact Syntax; otherwise, treat it as Full Syntax.
 //!
 //! ## Example
 //! ```rust

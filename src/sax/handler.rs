@@ -285,8 +285,8 @@ pub trait EntityResolver {
     /// When handling untrusted XML documents, it is recommended to implement custom logic
     /// to prevent unexpected access to local resources.
     ///
-    /// `name` is the requested entity name. Special entity names such as "[document]" for
-    /// document entities and "[dtd]" for external DTD subsets are used.
+    /// `name` is the requested entity name. Special entity names such as "\[document\]" for
+    /// document entities and "\[dtd\]" for external DTD subsets are used.
     ///
     /// # Reference
     /// [`EntityResolver2` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/EntityResolver2.html)
