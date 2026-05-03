@@ -37,6 +37,7 @@ anyxml-automata = { path = "./anyxml-automata", version = "0.1.2" }
 anyxml-encoding = { path = "./anyxml-encoding", version = "0.1.2" }
 anyxml-base64 = { path = "./anyxml-base64", version = "0.1.1" }
 anyxml-datetime = { path = "./anyxml-datetime", version = "0.1.1" }
+anyxml-mediatype = { path = "./anyxml-mediatype", version = "0.1.0" }
 
 [[test]]
 name = "sax-test"

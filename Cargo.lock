@@ -84,6 +84,7 @@ dependencies = [
  "anyxml-base64",
  "anyxml-datetime",
  "anyxml-encoding",
+ "anyxml-mediatype",
  "anyxml-uri",
 ]
 

@@ -7,6 +7,7 @@ pub mod catalog;
 pub mod datetime;
 pub mod encoding;
 pub mod error;
+pub mod mediatype;
 mod parse;
 pub mod relaxng;
 mod save;

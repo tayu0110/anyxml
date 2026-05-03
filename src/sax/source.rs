@@ -6,6 +6,7 @@ use crate::{
         UTF8Decoder, UTF16BEDecoder, UTF16LEDecoder, UTF32BEDecoder, UTF32LEDecoder, find_decoder,
     },
     error::XMLError,
+    mediatype::MediaType,
     uri::{URIStr, URIString},
 };
 
@@ -46,6 +47,8 @@ pub struct InputSource<'a> {
 
     system_id: Option<Box<URIStr>>,
     public_id: Option<Box<str>>,
+
+    media_type: Option<MediaType>,
 }
 
 impl<'a> InputSource<'a> {
@@ -108,6 +111,7 @@ impl<'a> InputSource<'a> {
             source_id: SOURCE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             system_id: None,
             public_id: None,
+            media_type: None,
         }
     }
 
@@ -437,12 +441,12 @@ impl<'a> InputSource<'a> {
         self.compact = true;
     }
 
-    /// System identifier of the this source.
+    /// System identifier of this source.
     pub fn system_id(&self) -> Option<&URIStr> {
         self.system_id.as_deref()
     }
 
-    /// Public identifier of the this source.
+    /// Public identifier of this source.
     pub fn public_id(&self) -> Option<&str> {
         self.public_id.as_deref()
     }
@@ -455,6 +459,16 @@ impl<'a> InputSource<'a> {
     /// Set `public_id` as public identifier of this source.
     pub fn set_public_id(&mut self, public_id: impl Into<String>) {
         self.public_id = Some(public_id.into().into_boxed_str());
+    }
+
+    /// Media type of this resource.
+    pub fn media_type(&self) -> Option<&MediaType> {
+        self.media_type.as_ref()
+    }
+
+    /// Set `media_type` as the media type of this resource.
+    pub fn set_media_type(&mut self, media_type: MediaType) {
+        self.media_type = Some(media_type);
     }
 
     /// For progressive parser only
@@ -563,6 +577,7 @@ impl Default for InputSource<'_> {
             source_id: SOURCE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             system_id: None,
             public_id: None,
+            media_type: None,
         }
     }
 }

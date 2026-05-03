@@ -1,6 +1,6 @@
 //! APIs for parsing RELAX NG schema document and validate XML document using parsed schema.
 //!
-//! The current implementation supports both Full syntax and Compact Syntax.
+//! The current implementation supports both Full Syntax and Compact Syntax.
 //!
 //! # Streaming validation
 //! This crate supports SAX handler-based validators.  \

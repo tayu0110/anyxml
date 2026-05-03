@@ -435,37 +435,28 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         uri: impl AsRef<URIStr>,
         encoding: Option<&str>,
     ) -> Result<(), XMLError> {
-        self.reset_context();
         self.encoding = encoding.map(|enc| enc.into());
         self.base_uri = self.default_base_uri()?;
-        self.source = if self.config.is_enable(ParserOption::Catalogs)
+        let (mut base_uri, mut source) = if self.config.is_enable(ParserOption::Catalogs)
             && let Some(uri) = self.catalog_resolve_uri(Some(&self.base_uri.clone()), uri.as_ref())
         {
-            Box::new(self.handler.resolve_entity(
-                "[document]",
-                None,
-                &self.base_uri,
-                uri.as_ref(),
-            )?)
+            (
+                self.base_uri.resolve(uri.as_ref()),
+                self.handler
+                    .resolve_entity("[document]", None, &self.base_uri, uri.as_ref())?,
+            )
         } else {
-            Box::new(self.handler.resolve_entity(
-                "[document]",
-                None,
-                &self.base_uri,
-                uri.as_ref(),
-            )?)
+            (
+                self.base_uri.resolve(uri.as_ref()),
+                self.handler
+                    .resolve_entity("[document]", None, &self.base_uri, uri.as_ref())?,
+            )
         };
-        if let Some(system_id) = self.source.system_id() {
-            let mut base_uri = self.base_uri.resolve(system_id);
+        if source.system_id().is_none() {
             base_uri.normalize();
-            self.base_uri = base_uri.into();
+            source.set_system_id(base_uri);
         }
-        self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
-        (self as &mut XMLReader<DefaultParserSpec<'a>, dyn SAXHandler>)
-            .parse_document()
-            .inspect_err(|err| {
-                fatal_error!(self, err, "Unrecoverable error: {}", err);
-            })
+        self.parse_source(Box::new(source))
     }
 
     /// The data read from `reader` is parsed as an XML document.  \
@@ -481,21 +472,14 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         encoding: Option<&str>,
         uri: Option<&URIStr>,
     ) -> Result<(), XMLError> {
-        self.reset_context();
         self.encoding = encoding.map(|enc| enc.into());
-        self.base_uri = self.default_base_uri()?;
-        self.source = Box::new(InputSource::from_reader(reader, encoding)?);
+        let mut source = Box::new(InputSource::from_reader(reader, encoding)?);
         if let Some(uri) = uri {
-            let mut base_uri = self.base_uri.resolve(uri);
+            let mut base_uri = self.default_base_uri()?.resolve(uri);
             base_uri.normalize();
-            self.base_uri = base_uri.into();
+            source.set_system_id(base_uri);
         }
-        self.locator = Arc::new(Locator::new(self.base_uri.clone(), None, 1, 1));
-        (self as &mut XMLReader<DefaultParserSpec<'a>, dyn SAXHandler>)
-            .parse_document()
-            .inspect_err(|err| {
-                fatal_error!(self, err, "Unrecoverable error: {}", err);
-            })
+        self.parse_source(source)
     }
 
     /// Parses `xml` as an XML document.  \
@@ -506,12 +490,22 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
     /// `uri` is treated as the document's base URI. It is optional to set,
     /// but may be required if the document being parsed references external resources.
     pub fn parse_str(&mut self, xml: &str, uri: Option<&URIStr>) -> Result<(), XMLError> {
-        self.reset_context();
         self.encoding = Some(UTF8_NAME.into());
-        self.base_uri = self.default_base_uri()?;
-        self.source = Box::new(InputSource::from_content(xml));
+        let mut source = Box::new(InputSource::from_content(xml));
         if let Some(uri) = uri {
-            let mut base_uri = self.base_uri.resolve(uri);
+            let mut base_uri = self.default_base_uri()?.resolve(uri);
+            base_uri.normalize();
+            source.set_system_id(base_uri);
+        }
+        self.parse_source(source)
+    }
+
+    fn parse_source(&mut self, source: Box<InputSource<'a>>) -> Result<(), XMLError> {
+        self.reset_context();
+        self.source = source;
+        self.base_uri = self.default_base_uri()?;
+        if let Some(system_id) = self.source.system_id() {
+            let mut base_uri = self.base_uri.resolve(system_id);
             base_uri.normalize();
             self.base_uri = base_uri.into();
         }
