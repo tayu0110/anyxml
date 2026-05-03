@@ -3,56 +3,107 @@ use std::{fmt::Write as _, fs::File, sync::Arc};
 use crate::{
     error::XMLError,
     sax::{
-        AttributeType, ContentSpec, DefaultDecl, Locator, attributes::Attributes,
-        error::SAXParseError, source::InputSource,
+        AttributeType, ContentSpec, DOCUMENT_ENTITY_NAME, DefaultDecl, Locator,
+        attributes::Attributes, error::SAXParseError, source::InputSource,
     },
     uri::URIStr,
 };
 
+/// SAX Handler.
+///
+/// The default implementation of all methods does nothing.
 pub trait SAXHandler: EntityResolver + ErrorHandler {
+    /// Text content that appears between elements.
+    ///
+    /// The text may be chunked, and consecutive text content may be passed across multiple events.
+    ///
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn characters(&mut self, data: &str) {
         let _ = data;
     }
 
+    /// XML declaration or Text declaration.
+    ///
+    /// If `encoding` and `standalone` are [`None`], they are not included in the declaration.
+    ///
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn declaration(&mut self, version: &str, encoding: Option<&str>, standalone: Option<bool>) {
         let _ = (version, encoding, standalone);
     }
 
+    /// Whitespace appearing between element contents.
+    ///
+    /// Elements declared in the DTD to have element contents may contain whitespace as
+    /// children. This method can receive such whitespace.
+    ///
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn ignorable_whitespace(&mut self, data: &str) {
         let _ = data;
     }
 
+    /// Processing instruction.
+    ///
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn processing_instruction(&mut self, target: &str, data: Option<&str>) {
         let _ = (target, data);
     }
 
+    /// Comment.
+    ///
+    /// Comment delimiters ("<!--" and "-->") are not included.
+    ///
+    /// The text may be chunked, and consecutive text content may be passed across multiple events.
+    ///
+    /// # Reference
+    /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
+    fn comment(&mut self, data: &str) {
+        let _ = data;
+    }
+
+    /// Locator receive event.
+    ///
+    /// The locator is updated by the parser. The locator allows the handler to determine
+    /// at which position within which entity the received event occurred.
+    ///
+    /// This method is called before any other method after parsing begins.  \
+    /// However, if acquiring the document entity is left to the parser,
+    /// [`EntityResolver::resolve_entity`] may be called first.
+    ///
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
         let _ = locator;
     }
 
+    /// Entity reference that could not be resolved or was not resolved.
+    ///
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn skipped_entity(&mut self, name: &str) {
         let _ = name;
     }
 
+    /// Parse start event.
+    ///
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn start_document(&mut self) {}
+    /// Parse end event.
+    ///
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn end_document(&mut self) {}
 
+    /// Element start event.
+    ///
+    /// If namespace support is disabled, `namespace_name` and `local_name` will always be [`None`].  \
+    /// If namespace support is enabled, `local_name` will always be [`Some`]. `namespace_name`
+    /// depends on whether the element is qualified.
+    ///
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn start_element(
@@ -64,23 +115,45 @@ pub trait SAXHandler: EntityResolver + ErrorHandler {
     ) {
         let _ = (namespace_name, local_name, qname, atts);
     }
+    /// Element end event.
+    ///
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
         let _ = (namespace_name, local_name, qname);
     }
 
+    /// Namespace scope start event.
+    ///
+    /// Whenever a namespace is declared, this method is called immediately before the
+    /// [`SAXHandler::start_element`] event for the element in which the declaration appears.
+    ///
+    /// The order in which events are reported between namespaces declared on the same element
+    /// is undefined.
+    ///
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn start_prefix_mapping(&mut self, prefix: Option<&str>, namespace_name: &str) {
         let _ = (prefix, namespace_name);
     }
+    /// Namespace scope end event.
+    ///
+    /// For each namespace, this is called immediately after the [`SAXHandler::end_element`]
+    /// event of the element in which that namespace was declared.
+    ///
+    /// The order in which events related to namespace declarations defined with the same
+    /// element are reported does not correspond to the order of declaration or the order
+    /// in which [`SAXHandler::start_prefix_mapping`] is called; instead, they are called
+    /// in an arbitrary order.
+    ///
     /// # Reference
     /// [`ContentHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html)
     fn end_prefix_mapping(&mut self, prefix: Option<&str>) {
         let _ = prefix;
     }
 
+    /// Attribute list declaration in DTD.
+    ///
     /// # Reference
     /// [`DeclHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/DeclHandler.html)
     fn attribute_decl(
@@ -93,30 +166,32 @@ pub trait SAXHandler: EntityResolver + ErrorHandler {
         let _ = (element_name, attribute_name, attribute_type, default_decl);
     }
 
+    /// Element declaration in DTD.
+    ///
     /// # Reference
     /// [`DeclHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/DeclHandler.html)
     fn element_decl(&mut self, name: &str, contentspec: &ContentSpec) {
         let _ = (name, contentspec);
     }
 
-    /// # Reference
-    /// [`DeclHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/DeclHandler.html)
-    fn external_entity_decl(&mut self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
-        let _ = (name, public_id, system_id);
-    }
-
+    /// Internal entity declaration in DTD.
+    ///
     /// # Reference
     /// [`DeclHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/DeclHandler.html)
     fn internal_entity_decl(&mut self, name: &str, value: &str) {
         let _ = (name, value);
     }
 
+    /// External entity declaration in DTD.
+    ///
     /// # Reference
-    /// [`DTDHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/DTDHandler.html)
-    fn notation_decl(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
+    /// [`DeclHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/DeclHandler.html)
+    fn external_entity_decl(&mut self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
         let _ = (name, public_id, system_id);
     }
 
+    /// Unparsed external entity declaration in DTD.
+    ///
     /// # Reference
     /// [`DTDHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/DTDHandler.html)
     fn unparsed_entity_decl(
@@ -129,39 +204,67 @@ pub trait SAXHandler: EntityResolver + ErrorHandler {
         let _ = (name, public_id, system_id, notation_name);
     }
 
+    /// Notation declaration in DTD.
+    ///
     /// # Reference
-    /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
-    fn comment(&mut self, data: &str) {
-        let _ = data;
+    /// [`DTDHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/DTDHandler.html)
+    fn notation_decl(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
+        let _ = (name, public_id, system_id);
     }
 
+    /// CDATA section start event.
+    ///
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
     fn start_cdata(&mut self) {}
+    /// CDATA section end event.
+    ///
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
     fn end_cdata(&mut self) {}
 
+    /// DTD start event.
+    ///
+    /// This always occurs in documents that include a DTD, regardless of whether the DTD
+    /// validation option is disabled.
+    ///
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
     fn start_dtd(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
         let _ = (name, public_id, system_id);
     }
+    /// DTD end event.
+    ///
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
     fn end_dtd(&mut self) {}
 
+    /// Parsed entity start event.
+    ///
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
     fn start_entity(&mut self, name: &str) {
         let _ = name;
     }
+    /// Parsed entity end event.
+    ///
     /// # Reference
     /// [`LexicalHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html)
     fn end_entity(&mut self) {}
 }
 
+/// Entity resolver.
+///
+/// This trait provides methods necessary for retrieving external entities. While it is
+/// possible to prevent any entity retrieval by implementing methods that always returns
+/// an error, if document entity retrieval is left to the parser, the document parsing will
+/// fail.
 pub trait EntityResolver {
+    /// This method provides an alternative external DTD subset when no external DTD subset
+    /// is specified in the document type declaration.
+    ///
+    /// `name` is the document element name specified in the document type declaration.
+    ///
     /// # Reference
     /// [`EntityResolver2` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/EntityResolver2.html)
     fn get_external_subset(
@@ -182,6 +285,9 @@ pub trait EntityResolver {
     /// When handling untrusted XML documents, it is recommended to implement custom logic
     /// to prevent unexpected access to local resources.
     ///
+    /// `name` is the requested entity name. Special entity names such as "[document]" for
+    /// document entities and "[dtd]" for external DTD subsets are used.
+    ///
     /// # Reference
     /// [`EntityResolver2` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/EntityResolver2.html)
     fn resolve_entity(
@@ -200,6 +306,9 @@ pub trait EntityResolver {
     }
 }
 
+/// Error handler.
+///
+/// By default, each method does nothing and discards the error.
 pub trait ErrorHandler {
     /// # Reference
     /// [`ErrorHandler` interface in Java SAX API](https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ErrorHandler.html)
@@ -372,7 +481,9 @@ impl<H: SAXHandler + ?Sized> SAXHandler for &mut H {
     }
 }
 
-#[derive(Default)]
+/// Default SAX handler.
+///
+/// It uses the default implementation of each trait, except for printing errors to stderr.
 pub struct DefaultSAXHandler;
 
 impl ErrorHandler for DefaultSAXHandler {
@@ -391,6 +502,9 @@ impl ErrorHandler for DefaultSAXHandler {
 impl EntityResolver for DefaultSAXHandler {}
 impl SAXHandler for DefaultSAXHandler {}
 
+/// Debug handler.
+///
+/// Writes each event to a buffer in a readable format.
 pub struct DebugHandler<Child: SAXHandler = DefaultSAXHandler> {
     /// The buffer where generated events are written.
     pub buffer: String,
@@ -419,7 +533,7 @@ impl<Child: SAXHandler> EntityResolver for DebugHandler<Child> {
         base_uri: &URIStr,
         system_id: &URIStr,
     ) -> Result<InputSource<'static>, XMLError> {
-        if name != "[document]" {
+        if name != DOCUMENT_ENTITY_NAME {
             self.buffer.push_str("resolveEntity(");
             self.buffer.push_str(name);
             self.buffer.push_str(")\n");

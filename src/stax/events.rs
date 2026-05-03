@@ -1,3 +1,5 @@
+//! Provide StAX parser events.
+
 use crate::{XMLVersion, sax::Attributes};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -41,6 +43,7 @@ pub enum XMLEvent<'a> {
     Finished,
 }
 
+/// Start element event.
 pub struct StartElement<'a> {
     pub(super) namespace_name: Option<&'a str>,
     pub(super) local_name: Option<&'a str>,
@@ -77,6 +80,7 @@ impl StartElement<'_> {
     }
 }
 
+/// End element event.
 pub struct EndElement<'a> {
     pub(super) namespace_name: Option<&'a str>,
     pub(super) local_name: Option<&'a str>,
@@ -107,6 +111,7 @@ impl EndElement<'_> {
     }
 }
 
+/// Declaration event.
 pub struct Declaration<'a> {
     pub(super) version: XMLVersion,
     pub(super) encoding: Option<&'a str>,
@@ -138,6 +143,7 @@ impl Declaration<'_> {
     }
 }
 
+/// Processing instruction event.
 pub struct ProcessingInstruction<'a> {
     pub(super) target: &'a str,
     pub(super) data: Option<&'a str>,

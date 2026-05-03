@@ -197,6 +197,9 @@ pub(crate) use parser::{ParserState, ParserSubState};
 pub(crate) use source::INPUT_CHUNK;
 pub use source::InputSource;
 
+pub const DOCUMENT_ENTITY_NAME: &str = "[document]";
+pub const EXTERNAL_DTD_SUBSET_ENTITY_NAME: &str = "[dtd]";
+
 /// Attribute type of attlist declarations.
 ///
 /// # Reference
@@ -563,6 +566,7 @@ impl EntityMap {
 static ARC_XML_XML_NAMESPACE_PREFIX: LazyLock<Arc<str>> = LazyLock::new(|| "xml".into());
 static ARC_XML_XML_NAMESPACE: LazyLock<Arc<str>> = LazyLock::new(|| XML_XML_NAMESPACE.into());
 
+/// Namespace mapping.
 #[derive(Debug, Clone)]
 pub struct Namespace {
     /// Namespace prefix. If no prefix is bound, set `""`.
@@ -571,6 +575,7 @@ pub struct Namespace {
     pub namespace_name: Arc<str>,
 }
 
+/// Namespace declaration stack.
 pub struct NamespaceStack {
     // (namespace, before overwrite)
     // Namespaces declared closer to the document element appear earlier in the list.
@@ -649,6 +654,7 @@ impl NamespaceStack {
         self.truncate(1);
     }
 
+    /// Generate a namespace iterator.
     pub fn iter(&self) -> NsIter<'_> {
         self.into_iter()
     }
@@ -669,6 +675,7 @@ impl Default for NamespaceStack {
     }
 }
 
+/// Namespace iterator.
 pub struct NsIter<'a> {
     iter: std::collections::btree_map::Iter<'a, Arc<str>, usize>,
     stack: &'a NamespaceStack,

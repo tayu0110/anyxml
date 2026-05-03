@@ -15,6 +15,7 @@ const GROW_THRESHOLD: usize = INPUT_CHUNK / 4;
 
 static SOURCE_ID: AtomicUsize = AtomicUsize::new(0);
 
+/// The text resource to be analyzed.
 pub struct InputSource<'a> {
     source: Box<dyn Read + 'a>,
     buffer: Vec<u8>,
@@ -199,16 +200,19 @@ impl<'a> InputSource<'a> {
         Ok(())
     }
 
+    /// Unconsumed decoded byte sequence.
     #[inline(always)]
     pub fn content_bytes(&self) -> &[u8] {
         &self.decoded.as_bytes()[self.decoded_next..]
     }
 
+    /// Unconsumed decoded string.
     #[inline(always)]
     pub fn content_str(&self) -> &str {
         &self.decoded[self.decoded_next..]
     }
 
+    /// Number of bytes consumed.
     pub fn total_read(&self) -> usize {
         self.total_read
     }

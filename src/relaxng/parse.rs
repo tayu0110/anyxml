@@ -14,9 +14,9 @@ use crate::{
         grammar::{Grammar, NameClass, Pattern},
     },
     sax::{
-        Attribute, AttributeType, Attributes, ContentSpec, DefaultDecl, DefaultSAXHandler,
-        EntityResolver, ErrorHandler, InputSource, Locator, NamespaceStack, SAXHandler, XMLReader,
-        error::SAXParseError,
+        Attribute, AttributeType, Attributes, ContentSpec, DOCUMENT_ENTITY_NAME, DefaultDecl,
+        DefaultSAXHandler, EntityResolver, ErrorHandler, InputSource, Locator, NamespaceStack,
+        SAXHandler, XMLReader, error::SAXParseError,
     },
     uri::{URIStr, rfc2396::validate_rfc2396_absolute_uri, uri::URIString},
 };
@@ -974,7 +974,8 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     return;
                 }
 
-                let mut source = match self.resolve_entity("[document]", None, &href, &href) {
+                let mut source = match self.resolve_entity(DOCUMENT_ENTITY_NAME, None, &href, &href)
+                {
                     Ok(source) => source,
                     Err(err) => {
                         error!(
@@ -1092,7 +1093,8 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     return None;
                 }
 
-                let mut source = match self.resolve_entity("[document]", None, &href, &href) {
+                let mut source = match self.resolve_entity(DOCUMENT_ENTITY_NAME, None, &href, &href)
+                {
                     Ok(source) => source,
                     Err(err) => {
                         error!(

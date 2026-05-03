@@ -12,7 +12,8 @@ use crate::{
     encoding::UTF8_NAME,
     error::XMLError,
     sax::{
-        AttlistDeclMap, ElementDeclMap, EntityMap, Locator, NamespaceStack, Notation,
+        AttlistDeclMap, DOCUMENT_ENTITY_NAME, ElementDeclMap, EntityMap, Locator, NamespaceStack,
+        Notation,
         attributes::{Attribute, Attributes},
         contentspec::ContentSpecValidationContext,
         error::fatal_error,
@@ -60,6 +61,7 @@ pub struct ProgressiveParserSpecificContext {
     pub(crate) entity_stack: Vec<(usize, XMLVersion, Option<Box<str>>)>,
 }
 
+/// Parser option.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ParserOption {
     /// Enable loading of external general entities. This option is disabled by default.
@@ -139,10 +141,14 @@ pub struct ParserConfig {
 }
 
 impl ParserConfig {
+    /// Check if `option` is the enabled option.
     pub fn is_enable(&self, option: ParserOption) -> bool {
         self.flags & (1 << option as i32) != 0
     }
 
+    /// Change the state of a parser option.
+    ///
+    /// If `flag` is `true`, set `option` to be enabled, otherwise, set to be disabled.
     pub fn set_option(&mut self, option: ParserOption, flag: bool) {
         if flag {
             self.flags |= 1 << (option as i32);
@@ -191,7 +197,7 @@ impl std::ops::BitOrAssign<Self> for ParserConfig {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParserState {
+pub(crate) enum ParserState {
     BeforeStart,
     InXMLDeclaration,
     InMiscAfterXMLDeclaration,
@@ -265,6 +271,7 @@ pub struct XMLReader<Spec: ParserSpec, H: SAXHandler + ?Sized = DefaultSAXHandle
     pub(crate) base_uri: Arc<URIStr>,
     pub(crate) entity_name: Option<Arc<str>>,
     pub(crate) catalog: Catalog,
+    /// SAX handler.
     pub handler: H,
 }
 
@@ -309,6 +316,7 @@ impl<Spec: ParserSpec, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
         }
     }
 
+    /// The current entity name.
     pub fn entity_name(&self) -> Option<Arc<str>> {
         self.entity_name.clone()
     }
@@ -443,9 +451,9 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         {
             uri = resolved;
         }
-        let mut source = self
-            .handler
-            .resolve_entity("[document]", None, &base_uri, &uri)?;
+        let mut source =
+            self.handler
+                .resolve_entity(DOCUMENT_ENTITY_NAME, None, &base_uri, &uri)?;
         if source.system_id().is_none() {
             let mut base_uri = base_uri.resolve(&uri);
             base_uri.normalize();
@@ -742,6 +750,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
     }
 }
 
+/// Builder for normal style [`XMLReader`].
 pub struct XMLReaderBuilder<'a, H: SAXHandler + ?Sized = DefaultSAXHandler> {
     reader: XMLReader<DefaultParserSpec<'a>, H>,
 }
@@ -755,6 +764,9 @@ impl<'a> XMLReaderBuilder<'a> {
 }
 
 impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
+    /// Set `base_uri` as the default base URI.
+    ///
+    /// `base_uri` must be a absolute URI.
     pub fn set_default_base_uri(
         mut self,
         base_uri: impl Into<Arc<URIStr>>,
@@ -764,6 +776,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
         Ok(self)
     }
 
+    /// Set `handler` as the SAX handler.
     pub fn set_handler<I: SAXHandler>(self, handler: I) -> XMLReaderBuilder<'a, I> {
         XMLReaderBuilder {
             reader: XMLReader {
@@ -807,14 +820,17 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
         }
     }
 
+    /// Set `config` as the parser config.
     pub fn set_parser_config(mut self, config: ParserConfig) -> Self {
         self.reader.config = config;
         self
     }
+    /// Enable a parser option.
     pub fn enable_option(mut self, option: ParserOption) -> Self {
         self.reader.config.set_option(option, true);
         self
     }
+    /// Disable a parser option.
     pub fn disable_option(mut self, option: ParserOption) -> Self {
         self.reader.config.set_option(option, false);
         self
@@ -866,6 +882,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
         }
     }
 
+    /// Finish to build the parser.
     pub fn build(self) -> XMLReader<DefaultParserSpec<'a>, H> {
         self.reader
     }
@@ -877,11 +894,15 @@ impl<'a> Default for XMLReaderBuilder<'a> {
     }
 }
 
+/// Builder for progressive style [`XMLReader`].
 pub struct XMLProgressiveReaderBuilder<H: SAXHandler = DefaultSAXHandler> {
     reader: XMLReader<ProgressiveParserSpec, H>,
 }
 
 impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
+    /// Set `base_uri` as the default base URI.
+    ///
+    /// `base_uri` must be a absolute URI.
     pub fn set_default_base_uri(
         mut self,
         base_uri: impl Into<Arc<URIStr>>,
@@ -891,6 +912,7 @@ impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
         Ok(self)
     }
 
+    /// Set `handler` as the SAX handler.
     pub fn set_handler<I: SAXHandler>(self, handler: I) -> XMLProgressiveReaderBuilder<I> {
         XMLProgressiveReaderBuilder {
             reader: XMLReader {
@@ -934,19 +956,23 @@ impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
         }
     }
 
+    /// Set `config` as the parser config.
     pub fn set_parser_config(mut self, config: ParserConfig) -> Self {
         self.reader.config = config;
         self
     }
+    /// Enable a parser option.
     pub fn enable_option(mut self, option: ParserOption) -> Self {
         self.reader.config.set_option(option, true);
         self
     }
+    /// Disable a parser option.
     pub fn disable_option(mut self, option: ParserOption) -> Self {
         self.reader.config.set_option(option, false);
         self
     }
 
+    /// Finish to build the parser.
     pub fn build(self) -> XMLReader<ProgressiveParserSpec, H> {
         self.reader
     }

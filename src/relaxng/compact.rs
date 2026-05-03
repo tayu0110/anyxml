@@ -25,12 +25,14 @@ use crate::{
         XML_RELAX_NG_NAMESPACE,
     },
     sax::{
-        Attribute, Attributes, EntityResolver, InputSource, Locator, NamespaceStack, SAXHandler,
+        Attribute, Attributes, DOCUMENT_ENTITY_NAME, EntityResolver, InputSource, Locator,
+        NamespaceStack, SAXHandler,
     },
     uri::{URIStr, URIString},
     xsdtypes::XML_SCHEMA_DATATYPES_NAMESPACE,
 };
 
+/// RELAX NG Compact Syntax parse error.
 #[derive(Debug, Clone)]
 pub enum RncParseError {
     InvalidCharcter,
@@ -2424,7 +2426,8 @@ impl RelaxNGSchema {
     ) -> Result<Self, XMLError> {
         let base_uri = default_base_uri()?;
         let mut handler = new_dyn_handler(handler);
-        let mut source = handler.resolve_entity("[document]", None, &base_uri, uri.as_ref())?;
+        let mut source =
+            handler.resolve_entity(DOCUMENT_ENTITY_NAME, None, &base_uri, uri.as_ref())?;
         if source.system_id().is_none() {
             source.set_system_id(base_uri.resolve(uri.as_ref()));
         }

@@ -25,6 +25,7 @@ pub enum ContentSpec {
 }
 
 impl ContentSpec {
+    /// Create a content spec validator.
     pub fn new_validator(&mut self) -> ContentSpecValidationContext {
         let (validator, is_external_element_content) = match self {
             ContentSpec::EMPTY => (ContentSpecValidator::Empty, false),

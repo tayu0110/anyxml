@@ -28,8 +28,8 @@ use std::{io::Read, marker::PhantomData, sync::Arc};
 use crate::{
     error::XMLError,
     sax::{
-        DefaultSAXHandler, EntityResolver, ErrorHandler, INPUT_CHUNK, Locator, NamespaceStack,
-        ParserConfig, ParserOption, ParserState, ProgressiveParserSpec,
+        DOCUMENT_ENTITY_NAME, DefaultSAXHandler, EntityResolver, ErrorHandler, INPUT_CHUNK,
+        Locator, NamespaceStack, ParserConfig, ParserOption, ParserState, ProgressiveParserSpec,
         XMLProgressiveReaderBuilder, XMLReader,
         error::{SAXParseError, fatal_error},
     },
@@ -42,6 +42,7 @@ use crate::{
     uri::URIStr,
 };
 
+/// StAX style XML parser.
 pub struct XMLStreamReader<
     'a,
     Resolver: EntityResolver = DefaultSAXHandler,
@@ -88,14 +89,14 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
                 .catalog_resolve_uri(Some(&self.reader.base_uri.clone()), uri.as_ref())
         {
             Box::new(self.reader.handler.resolve_entity(
-                "[document]",
+                DOCUMENT_ENTITY_NAME,
                 None,
                 &self.reader.base_uri,
                 &uri,
             )?)
         } else {
             Box::new(self.reader.handler.resolve_entity(
-                "[document]",
+                DOCUMENT_ENTITY_NAME,
                 None,
                 &self.reader.base_uri,
                 uri.as_ref(),

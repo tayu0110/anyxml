@@ -48,8 +48,8 @@ use std::{borrow::Cow, collections::HashMap, fmt::Write as _, sync::Arc};
 use crate::{
     error::{XMLError, XMLErrorDomain, XMLErrorLevel},
     sax::{
-        Attributes, DefaultSAXHandler, EntityResolver, ErrorHandler, InputSource, Locator,
-        SAXHandler, error::SAXParseError,
+        Attributes, DefaultSAXHandler, EXTERNAL_DTD_SUBSET_ENTITY_NAME, EntityResolver,
+        ErrorHandler, InputSource, Locator, SAXHandler, error::SAXParseError,
     },
     uri::URIStr,
 };
@@ -332,7 +332,7 @@ impl<H: SAXHandler> SAXHandler for CanonicalizeHandler<H> {
     }
 
     fn skipped_entity(&mut self, name: &str) {
-        if name != "[dtd]"
+        if name != EXTERNAL_DTD_SUBSET_ENTITY_NAME
             && let Some(localtor) = self.localtor.as_deref()
         {
             self.fatal_error(SAXParseError {

@@ -9,8 +9,8 @@ use std::mem::take;
 use crate::{
     error::XMLError,
     sax::{
-        AttributeType, ContentSpec, EntityDecl, InputSource, ParserOption, ParserSpec, ParserState,
-        SAXHandler, XMLReader,
+        AttributeType, ContentSpec, EXTERNAL_DTD_SUBSET_ENTITY_NAME, EntityDecl, InputSource,
+        ParserOption, ParserSpec, ParserState, SAXHandler, XMLReader,
         error::{error, fatal_error, validity_error},
     },
     uri::URIString,
@@ -71,7 +71,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             self.push_source(
                 Box::new(external_subset),
                 self.base_uri.clone(),
-                Some("[dtd]".into()),
+                Some(EXTERNAL_DTD_SUBSET_ENTITY_NAME.into()),
                 system_id
                     .as_deref()
                     .map(From::from)
@@ -80,7 +80,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             )?;
 
             if !self.fatal_error_occurred {
-                self.handler.start_entity("[dtd]");
+                self.handler.start_entity(EXTERNAL_DTD_SUBSET_ENTITY_NAME);
             }
 
             self.parse_ext_subset()?;
@@ -104,7 +104,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             && !self.config.is_enable(ParserOption::ExternalGeneralEntities)
             && !self.fatal_error_occurred
         {
-            self.handler.skipped_entity("[dtd]");
+            self.handler.skipped_entity(EXTERNAL_DTD_SUBSET_ENTITY_NAME);
         }
 
         if !self.fatal_error_occurred {
@@ -264,14 +264,15 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         system_id.as_deref(),
                     )
                 {
-                    external_subset =
-                        Some(
-                            self.handler
-                                .resolve_entity("[dtd]", None, &self.base_uri, &uri)?,
-                        );
+                    external_subset = Some(self.handler.resolve_entity(
+                        EXTERNAL_DTD_SUBSET_ENTITY_NAME,
+                        None,
+                        &self.base_uri,
+                        &uri,
+                    )?);
                 } else {
                     external_subset = Some(self.handler.resolve_entity(
-                        "[dtd]",
+                        EXTERNAL_DTD_SUBSET_ENTITY_NAME,
                         public_id.as_deref(),
                         &self.base_uri,
                         system_id.as_deref().unwrap(),

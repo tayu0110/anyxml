@@ -40,8 +40,9 @@ pub use text::Text;
 use crate::{
     error::XMLError,
     sax::{
-        AttributeType, Attributes, ContentSpec, DefaultDecl, DefaultSAXHandler, EntityResolver,
-        ErrorHandler, InputSource, Locator, SAXHandler, error::SAXParseError,
+        AttributeType, Attributes, ContentSpec, DefaultDecl, DefaultSAXHandler,
+        EXTERNAL_DTD_SUBSET_ENTITY_NAME, EntityResolver, ErrorHandler, InputSource, Locator,
+        SAXHandler, error::SAXParseError,
     },
     tree::{
         convert::NodeKind,
@@ -351,7 +352,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
     }
 
     fn skipped_entity(&mut self, name: &str) {
-        if name != "[dtd]" {
+        if name != EXTERNAL_DTD_SUBSET_ENTITY_NAME {
             // we should create an empty entity reference,
             // so we should use `EntityReference::new`, not but `self.document.create_entity_reference`.
             self.node
@@ -462,7 +463,7 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
     }
 
     fn start_entity(&mut self, name: &str) {
-        if !self.expand_entity_reference && name != "[dtd]" {
+        if !self.expand_entity_reference && name != EXTERNAL_DTD_SUBSET_ENTITY_NAME {
             // we should create an empty entity reference,
             // so we should use `EntityReference::new`, not but `self.document.create_entity_reference`.
             let ent = EntityReference::new(name.into(), self.document.clone());

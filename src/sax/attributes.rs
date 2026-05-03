@@ -2,11 +2,16 @@ use std::ops::Index;
 
 use crate::error::XMLError;
 
+/// Attribute.
 #[derive(Debug, Clone)]
 pub struct Attribute {
+    /// namespace name.
     pub namespace_name: Option<String>,
+    /// local name.
     pub local_name: Option<String>,
+    /// qualified name.
     pub qname: String,
+    /// normalized attribute value.
     pub value: String,
     // 0: is declared in DTD
     // 1: is specified explicitly (in other words, `value` is not the default value provided by DTD)

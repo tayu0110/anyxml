@@ -20,6 +20,7 @@ use crate::{
 
 const VERSION: XMLVersion = XMLVersion::XML10;
 
+/// Parsed XPointer resolver.
 pub struct XPointerResolver {
     parts: Vec<XPointerPart>,
 }
@@ -177,6 +178,7 @@ enum XPointerPart {
     },
 }
 
+/// XPointer parse error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XPointerParseError {
     InvalidNCName,

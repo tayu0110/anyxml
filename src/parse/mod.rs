@@ -15,8 +15,8 @@ use std::{str::from_utf8_unchecked, sync::Arc};
 use crate::{
     error::XMLError,
     sax::{
-        AttributeType, EntityDecl, InputSource, ParserOption, ParserSpec, ParserState, SAXHandler,
-        XMLReader,
+        AttributeType, EXTERNAL_DTD_SUBSET_ENTITY_NAME, EntityDecl, InputSource, ParserOption,
+        ParserSpec, ParserState, SAXHandler, XMLReader,
         error::{error, fatal_error, validity_error},
     },
     uri::URIString,
@@ -294,7 +294,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             } else if self.source.is_empty() {
                 if self
                     .entity_name()
-                    .is_none_or(|name| name.as_ref() == "[dtd]")
+                    .is_none_or(|name| name.as_ref() == EXTERNAL_DTD_SUBSET_ENTITY_NAME)
                 {
                     // Since there's no popping source, exit the loop.
                     break Ok(s);

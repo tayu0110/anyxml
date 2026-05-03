@@ -5,15 +5,24 @@ use crate::{
     uri::URIStr,
 };
 
+/// Parser error received from the event.
 #[derive(Debug, Clone)]
 pub struct SAXParseError {
+    /// Error code.
     pub error: XMLError,
+    /// Error level.
     pub level: XMLErrorLevel,
+    /// Error domain.
     pub domain: XMLErrorDomain,
+    /// Line number where this error occurred.
     pub line: usize,
+    /// Column number where this error occurred.
     pub column: usize,
+    /// System identifier of the resource where this error occurred.
     pub system_id: Arc<URIStr>,
+    /// Public identifier of the resource where this error occurred.
     pub public_id: Option<Arc<str>>,
+    /// Error message.
     pub message: Cow<'static, str>,
 }
 

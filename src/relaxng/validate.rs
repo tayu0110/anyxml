@@ -119,7 +119,9 @@ macro_rules! validity_error {
 pub(super) struct QName(pub(super) Uri, pub(super) LocalName);
 pub(super) struct AttributeNode(pub(super) QName, pub(super) Arc<str>);
 
+/// RELAX NG schema stream validator.
 pub struct ValidateHandler<'a, H: SAXHandler> {
+    /// Child handler.
     pub child: H,
     grammar: &'a mut Grammar,
 
@@ -131,6 +133,7 @@ pub struct ValidateHandler<'a, H: SAXHandler> {
     base_uri: Arc<URIStr>,
     base_uri_stack: Vec<Arc<URIStr>>,
     ns_stack: NamespaceStack,
+    /// The most recent error.
     pub last_error: Result<(), SAXParseError>,
 
     // text buffer
