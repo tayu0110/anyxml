@@ -3,6 +3,8 @@ use std::{
     sync::Arc,
 };
 
+use anyxml_mediatype::{ApplicationSubtype, MediaType};
+
 use crate::{
     XML_NS_NAMESPACE, XMLVersion,
     error::XMLError,
@@ -972,17 +974,33 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     return;
                 }
 
-                let ret = if href.as_escaped_str().ends_with(".rnc") {
-                    self.resolve_entity("[document]", None, &href, &href)
-                        .and_then(|mut source| {
-                            if source.system_id().is_none() {
-                                source.set_system_id(href.as_ref());
-                            }
-                            RelaxNGSchema::parse_compact(source, &mut *self)
-                        })
-                } else {
-                    let mut reader = XMLReader::builder().set_handler(&mut *self).build();
-                    reader.parse_uri(&href, None)
+                let mut source = match self.resolve_entity("[document]", None, &href, &href) {
+                    Ok(source) => source,
+                    Err(err) => {
+                        error!(
+                            self,
+                            RngParseExternalRefParseFailure,
+                            "Failed to get a resource '{}' for 'externalRef' because of {}.",
+                            href,
+                            err
+                        );
+                        return;
+                    }
+                };
+                if source.system_id().is_none() {
+                    source.set_system_id(href.as_ref());
+                }
+                let ret = match source.media_type() {
+                    Some(MediaType::Application(ApplicationSubtype::RelaxNgCompactSyntax)) => {
+                        RelaxNGSchema::parse_compact(source, &mut *self)
+                    }
+                    None if href.as_escaped_str().ends_with(".rnc") => {
+                        RelaxNGSchema::parse_compact(source, &mut *self)
+                    }
+                    _ => {
+                        let mut reader = XMLReader::builder().set_handler(&mut *self).build();
+                        reader.parse_uri(&href, None)
+                    }
                 };
                 if let Err(err) = ret {
                     error!(
@@ -1074,10 +1092,35 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     return None;
                 }
 
-                let mut reader = XMLReader::builder().set_handler(&mut *self).build();
-                if reader.parse_uri(&href, None).is_err()
-                    || self.tree[current].children.len() == old_num_children
-                {
+                let mut source = match self.resolve_entity("[document]", None, &href, &href) {
+                    Ok(source) => source,
+                    Err(err) => {
+                        error!(
+                            self,
+                            RngParseExternalRefParseFailure,
+                            "Failed to get a resource '{}' for 'externalRef' because of {}.",
+                            href,
+                            err
+                        );
+                        return None;
+                    }
+                };
+                if source.system_id().is_none() {
+                    source.set_system_id(href.as_ref());
+                }
+                let ret = match source.media_type() {
+                    Some(MediaType::Application(ApplicationSubtype::RelaxNgCompactSyntax)) => {
+                        RelaxNGSchema::parse_compact(source, &mut *self)
+                    }
+                    None if href.as_escaped_str().ends_with(".rnc") => {
+                        RelaxNGSchema::parse_compact(source, &mut *self)
+                    }
+                    _ => {
+                        let mut reader = XMLReader::builder().set_handler(&mut *self).build();
+                        reader.parse_uri(&href, None)
+                    }
+                };
+                if ret.is_err() || self.tree[current].children.len() == old_num_children {
                     error!(
                         self,
                         RngParseIncludeParseFailure, "Failed to parse '{}' for 'include'.", href

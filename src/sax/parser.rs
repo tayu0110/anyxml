@@ -439,13 +439,13 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         let base_uri = self.default_base_uri()?;
         let mut uri: Arc<URIStr> = uri.as_ref().into();
         if self.config.is_enable(ParserOption::Catalogs)
-            && let Some(resolved) = self.catalog_resolve_uri(Some(&base_uri), uri.as_ref())
+            && let Some(resolved) = self.catalog_resolve_uri(Some(&base_uri), &uri)
         {
             uri = resolved;
         }
-        let mut source =
-            self.handler
-                .resolve_entity("[document]", None, &base_uri, uri.as_ref())?;
+        let mut source = self
+            .handler
+            .resolve_entity("[document]", None, &base_uri, &uri)?;
         if source.system_id().is_none() {
             let mut base_uri = base_uri.resolve(&uri);
             base_uri.normalize();

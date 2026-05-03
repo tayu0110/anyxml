@@ -16,7 +16,7 @@ mod subtypes;
 
 use std::str::FromStr;
 
-use subtypes::*;
+pub use subtypes::*;
 
 /// Media type parse error
 #[derive(Debug, Clone, Copy)]
