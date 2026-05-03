@@ -6,6 +6,7 @@ members = [
     "anyxml-cli",
     "anyxml-datetime",
     "anyxml-encoding",
+    "anyxml-mediatype",
     "anyxml-uri",
 ]
 package.edition = "2024"
