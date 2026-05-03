@@ -5,6 +5,7 @@ use crate::tree::{
     node::{Node, NodeCore, NodeSpec},
 };
 
+/// Processing instruction node spec.
 pub struct ProcessingInstructionSpec {
     target: Rc<str>,
     data: Option<Rc<str>>,

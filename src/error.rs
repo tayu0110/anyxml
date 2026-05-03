@@ -1,3 +1,5 @@
+//! General error types.
+
 use std::sync::Arc;
 
 use crate::{
@@ -13,8 +15,11 @@ use crate::{
 /// Error level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum XMLErrorLevel {
+    /// Fatal error
     FatalError,
+    /// Error
     Error,
+    /// Warning
     Warning,
 }
 

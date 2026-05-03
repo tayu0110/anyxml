@@ -11,6 +11,7 @@ use crate::{
     },
 };
 
+/// Element declaration node spec.
 pub struct ElementDeclSpec {
     name: Rc<str>,
     content_spec: ContentSpec,
@@ -30,6 +31,7 @@ impl NodeSpec for ElementDeclSpec {
     }
 }
 
+/// Element declaration node.
 pub type ElementDecl = Node<ElementDeclSpec>;
 
 impl ElementDecl {

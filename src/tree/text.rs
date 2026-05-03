@@ -11,6 +11,7 @@ use crate::{
     },
 };
 
+/// Text node spec.
 pub struct TextSpec {
     data: String,
 }
@@ -29,6 +30,7 @@ impl NodeSpec for TextSpec {
     }
 }
 
+/// Text node.
 pub type Text = Node<TextSpec>;
 
 impl Text {

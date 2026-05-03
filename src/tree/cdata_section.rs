@@ -8,6 +8,7 @@ use crate::tree::{
     node::{Node, NodeCore, NodeSpec},
 };
 
+/// CDATA section node spec.
 pub struct CDATASectionSpec {
     data: String,
 }
@@ -26,6 +27,7 @@ impl NodeSpec for CDATASectionSpec {
     }
 }
 
+/// CDATA section node.
 pub type CDATASection = Node<CDATASectionSpec>;
 
 impl CDATASection {

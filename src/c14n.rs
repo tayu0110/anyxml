@@ -57,9 +57,10 @@ use crate::{
 /// Canonicalization method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CanonicalizeMethod {
-    // C14N 1.0
+    /// C14N 1.0
     #[default]
     C14N10,
+    /// C14N 1.1
     C14N11,
 }
 

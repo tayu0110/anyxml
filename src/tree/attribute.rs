@@ -17,6 +17,7 @@ use crate::{
     },
 };
 
+/// Attribute node spec.
 pub struct AttributeSpec {
     first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
     last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
@@ -247,6 +248,7 @@ impl Attribute {
         }
     }
 
+    /// Owner element of this attribute node.
     pub fn owner_element(&self) -> Option<Element> {
         Some(Element {
             core: self.core.borrow().spec.owner_element.upgrade()?,
@@ -293,6 +295,7 @@ impl Attribute {
         self.namespace().map(|namespace| namespace.namespace_name())
     }
 
+    /// The normalized valud of this attribute.
     pub fn value(&self) -> String {
         let mut buf = String::new();
         let mut children = self.first_child();

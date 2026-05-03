@@ -141,6 +141,7 @@ impl Attributes {
         self.get_value(index)
     }
 
+    /// Generate attribute iterator.
     pub fn iter(&self) -> std::slice::Iter<'_, Attribute> {
         self.attributes.iter()
     }

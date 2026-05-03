@@ -151,6 +151,7 @@ pub struct TreeBuildHandler<H: SAXHandler = DefaultSAXHandler> {
 }
 
 impl<H: SAXHandler> TreeBuildHandler<H> {
+    /// Create [`TreeBuildHandler`] with the child handler.
     pub fn with_handler(handler: H) -> Self {
         let document = Document::new();
         Self {

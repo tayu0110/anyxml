@@ -9,6 +9,7 @@ use crate::{
     uri::URIStr,
 };
 
+/// Entity declaration node spec.
 pub struct EntityDeclSpec {
     first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
     last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
@@ -66,6 +67,7 @@ impl InternalNodeSpec for EntityDeclSpec {
     }
 }
 
+/// Entity declaration node.
 pub type EntityDecl = Node<EntityDeclSpec>;
 
 impl EntityDecl {

@@ -129,6 +129,7 @@ impl Default for Facets {
     }
 }
 
+/// Facet value constraint error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FacetError {
     TooLargeLength,
@@ -146,7 +147,10 @@ pub enum FacetError {
 /// - [4.3.6 whiteSpace](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#rf-whiteSpace)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Whitespace {
+    /// 'preserve'
     Preserve,
+    /// 'replace'
     Replace,
+    /// 'collapse'
     Collapse,
 }

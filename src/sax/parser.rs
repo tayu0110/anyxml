@@ -27,7 +27,9 @@ use crate::{
 ///
 /// Extension by users is not supported.
 pub trait ParserSpec {
+    /// Resource reader type.
     type Reader;
+    /// Parser spec type.
     type SpecificContext;
 }
 
@@ -697,6 +699,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
 }
 
 impl<'a> XMLReader<DefaultParserSpec<'a>> {
+    /// Generate [`XMLReaderBuilder`].
     pub fn builder() -> XMLReaderBuilder<'a> {
         XMLReaderBuilder::new()
     }

@@ -18,6 +18,7 @@ use crate::{
     uri::{URIStr, URIString},
 };
 
+/// Document node spec.
 pub struct DocumentSpec {
     first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
     last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
@@ -138,6 +139,7 @@ impl InternalNodeSpec for DocumentSpec {
 pub type Document = Node<DocumentSpec>;
 
 impl Document {
+    /// Create new [`Document`] node.
     pub fn new() -> Self {
         let weak: Weak<RefCell<NodeCore<DocumentFragmentSpec>>> = Weak::new();
         let rc = Rc::new(RefCell::new(NodeCore {
@@ -165,6 +167,7 @@ impl Document {
         }
     }
 
+    /// Create [`DocumentType`] node.
     pub fn create_document_type(
         &self,
         name: impl Into<Rc<str>>,
@@ -174,6 +177,7 @@ impl Document {
         DocumentType::new(name.into(), system_id, public_id, self.clone())
     }
 
+    /// Create [`Element`] node.
     pub fn create_element(
         &self,
         qname: impl Into<Rc<str>>,
@@ -182,18 +186,22 @@ impl Document {
         Element::new(qname.into(), namespace_name, self.clone())
     }
 
+    /// Create [`Text`] node.
     pub fn create_text(&self, data: impl Into<String>) -> Text {
         Text::new(data.into(), self.clone())
     }
 
+    /// Create [`CDATASection`] node.
     pub fn create_cdata_section(&self, data: impl Into<String>) -> CDATASection {
         CDATASection::new(data.into(), self.clone())
     }
 
+    /// Create [`Comment`] node.
     pub fn create_comment(&self, data: impl Into<String>) -> Comment {
         Comment::new(data.into(), self.clone())
     }
 
+    /// Create [`ProcessingInstruction`] node.
     pub fn create_processing_instruction(
         &self,
         target: impl Into<Rc<str>>,
@@ -202,15 +210,18 @@ impl Document {
         ProcessingInstruction::new(target.into(), data, self.clone())
     }
 
+    /// Create [`EntityReference`] node.
     pub fn create_entity_reference(&self, name: impl Into<Rc<str>>) -> EntityReference {
         // TODO: try to expand contents
         EntityReference::new(name.into(), self.clone())
     }
 
+    /// Create [`DocumentFragment`] node.
     pub fn create_document_fragment(&self) -> DocumentFragment {
         DocumentFragment::new(self.clone())
     }
 
+    /// Create [`AttlistDecl`] node.
     pub fn create_attlist_decl(
         &self,
         elem_name: impl Into<Rc<str>>,
@@ -227,6 +238,7 @@ impl Document {
         )
     }
 
+    /// Create [`ElementDecl`] node.
     pub fn create_element_decl(
         &self,
         name: impl Into<Rc<str>>,
@@ -235,6 +247,7 @@ impl Document {
         ElementDecl::new(name.into(), content_spec, self.clone())
     }
 
+    /// Create [`EntityDecl`] node.
     pub fn create_internal_entity_decl(
         &self,
         name: impl Into<Rc<str>>,
@@ -243,6 +256,7 @@ impl Document {
         EntityDecl::new_internal_entity_decl(name.into(), value.into(), self.clone())
     }
 
+    /// Create [`EntityDecl`] node.
     pub fn create_external_entity_decl(
         &self,
         name: impl Into<Rc<str>>,
@@ -252,6 +266,7 @@ impl Document {
         EntityDecl::new_external_entity_decl(name.into(), system_id.into(), public_id, self.clone())
     }
 
+    /// Create [`EntityDecl`] node.
     pub fn create_unparsed_entity_decl(
         &self,
         name: impl Into<Rc<str>>,
@@ -268,6 +283,7 @@ impl Document {
         )
     }
 
+    /// Create [`NotationDecl`] node.
     pub fn create_notation_decl(
         &self,
         name: impl Into<Rc<str>>,
@@ -309,6 +325,7 @@ impl Document {
         self.core.borrow().spec.version.clone()
     }
 
+    /// Set or unset XML version of this document.
     pub fn set_version(&mut self, version: Option<&str>) {
         self.core.borrow_mut().spec.version = version.map(|version| version.into());
     }
@@ -320,6 +337,7 @@ impl Document {
         self.core.borrow().spec.encoding.clone()
     }
 
+    /// Set or unset the encoding of this document.
     pub fn set_encoding(&mut self, encoding: Option<&str>) {
         self.core.borrow_mut().spec.encoding = encoding.map(|encoding| encoding.into());
     }
@@ -331,6 +349,7 @@ impl Document {
         self.core.borrow().spec.standalone
     }
 
+    /// Set or unset the value of the standalone declaration of this document.
     pub fn set_standalone(&mut self, standalone: Option<bool>) {
         self.core.borrow_mut().spec.standalone = standalone;
     }

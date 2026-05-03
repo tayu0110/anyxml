@@ -349,6 +349,7 @@ impl Default for XMLStreamReader<'_> {
     }
 }
 
+/// Builder for [`XMLStreamReader`].
 pub struct XMLStreamReaderBuilder<
     'a,
     Resolver: EntityResolver = DefaultSAXHandler,
@@ -361,6 +362,7 @@ pub struct XMLStreamReaderBuilder<
 }
 
 impl<'a> XMLStreamReaderBuilder<'a> {
+    /// Constructor.
     pub fn new() -> Self {
         Self {
             builder: XMLReader::builder()
@@ -376,6 +378,9 @@ impl<'a> XMLStreamReaderBuilder<'a> {
 impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
     XMLStreamReaderBuilder<'a, Resolver, Reporter>
 {
+    /// Set `base_uri` as the default base URI.
+    ///
+    /// `base_uri` must be a absolute URI.
     pub fn set_default_base_uri(self, base_uri: impl Into<Arc<URIStr>>) -> Result<Self, XMLError> {
         Ok(Self {
             builder: self.builder.set_default_base_uri(base_uri)?,
@@ -385,6 +390,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
         })
     }
 
+    /// Set `resolver` as the entity resolver.
     pub fn set_entity_resolver<Other: EntityResolver>(
         self,
         resolver: Other,
@@ -397,6 +403,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
         }
     }
 
+    /// Set `error_handler` as the error handler.
     pub fn set_error_handler<Other: ErrorHandler>(
         self,
         error_handler: Other,
@@ -409,6 +416,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
         }
     }
 
+    /// Set `config` as the parser config.
     pub fn set_parser_config(self, config: ParserConfig) -> Self {
         Self {
             builder: self.builder.set_parser_config(config),
@@ -417,6 +425,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
             _phantom: PhantomData,
         }
     }
+    /// Enable a parser option.
     pub fn enable_option(self, option: ParserOption) -> Self {
         Self {
             builder: self.builder.enable_option(option),
@@ -425,6 +434,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
             _phantom: PhantomData,
         }
     }
+    /// Disable a parser option.
     pub fn disable_option(self, option: ParserOption) -> Self {
         Self {
             builder: self.builder.disable_option(option),
@@ -434,6 +444,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
         }
     }
 
+    /// Finish to build the parser.
     pub fn build(self) -> XMLStreamReader<'a, Resolver, Reporter> {
         let handler = XMLStreamReaderHandler {
             entity_resolver: self.entity_resolver,

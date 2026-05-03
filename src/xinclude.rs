@@ -173,7 +173,9 @@ pub struct XIncludeProcessor<
     H: SAXHandler = DefaultSAXHandler,
     R: XIncludeResourceResolver = XIncludeDefaultResourceResolver,
 > {
+    /// The parser that constructs the post-transformation tree.
     pub reader: XMLReader<DefaultParserSpec<'a>, TreeBuildHandler<H>>,
+    /// XInclude resource resolver.
     pub resolver: R,
     document_cache: HashMap<(URIString, Option<String>, Option<String>), Document>,
     include_stack: Vec<Element>,

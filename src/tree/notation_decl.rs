@@ -9,6 +9,7 @@ use crate::{
     uri::URIStr,
 };
 
+/// Notation declaration node spec.
 pub struct NotationDeclSpec {
     name: Rc<str>,
     system_id: Option<Rc<URIStr>>,
@@ -29,6 +30,7 @@ impl NodeSpec for NotationDeclSpec {
     }
 }
 
+/// Notation declaration node.
 pub type NotationDecl = Node<NotationDeclSpec>;
 
 impl NotationDecl {

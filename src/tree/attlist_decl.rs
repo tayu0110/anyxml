@@ -11,6 +11,7 @@ use crate::{
     },
 };
 
+/// Attribute list declaration node spec.
 pub struct AttlistDeclSpec {
     elem_name: Rc<str>,
     attr_name: Rc<str>,
@@ -32,6 +33,7 @@ impl NodeSpec for AttlistDeclSpec {
     }
 }
 
+/// Attribute list declaration node.
 pub type AttlistDecl = Node<AttlistDeclSpec>;
 
 impl AttlistDecl {

@@ -197,7 +197,9 @@ pub(crate) use parser::{ParserState, ParserSubState};
 pub(crate) use source::INPUT_CHUNK;
 pub use source::InputSource;
 
+/// Pseudo entity name for document entities.
 pub const DOCUMENT_ENTITY_NAME: &str = "[document]";
+/// Pseudo entity name for external DTD subsets.
 pub const EXTERNAL_DTD_SUBSET_ENTITY_NAME: &str = "[dtd]";
 
 /// Attribute type of attlist declarations.

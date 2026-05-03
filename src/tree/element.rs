@@ -15,6 +15,7 @@ use crate::{
     },
 };
 
+/// Element node spec.
 pub struct ElementSpec {
     first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
     last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
@@ -884,6 +885,7 @@ impl AttributeMap {
     }
 }
 
+/// Attribute iterator.
 pub struct AttributeIter<'a> {
     element: Element,
     index: usize,
@@ -975,6 +977,7 @@ impl NamespaceMap {
     }
 }
 
+/// Namespace iterator.
 pub struct NamespaceIter<'a> {
     element: Element,
     index: usize,

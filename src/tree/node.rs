@@ -23,7 +23,9 @@ pub trait NodeSpec: std::any::Any {
     /// For abstract node types, this method guarantees that conversion
     /// to the specified node type will always succeed.
     fn node_type(&self) -> NodeType;
+    /// The pointer of the first child.
     fn first_child(&self) -> Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>;
+    /// The pointer of the last child.
     fn last_child(&self) -> Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>;
 }
 
@@ -31,12 +33,17 @@ pub trait NodeSpec: std::any::Any {
 ///
 /// This trait is not intended to be implemented by library users and should not be implemented.
 pub trait InternalNodeSpec: NodeSpec {
+    /// Set the pointer of the first child.
     fn set_first_child(&mut self, new: Rc<RefCell<NodeCore<dyn NodeSpec>>>);
+    /// Unset the pointer of the first child.
     fn unset_first_child(&mut self);
 
+    /// Set the pointer of the last child.
     fn set_last_child(&mut self, new: Rc<RefCell<NodeCore<dyn NodeSpec>>>);
+    /// Unset the pointer of the last child.
     fn unset_last_child(&mut self);
 
+    /// The process performed immediately before deleting a child.
     fn pre_child_removal(&mut self, removed_child: Node<dyn NodeSpec>) -> Result<(), XMLTreeError> {
         let _ = removed_child;
         Ok(())
@@ -68,6 +75,7 @@ pub trait InternalNodeSpec: NodeSpec {
     }
 }
 
+/// Common node core data.
 pub struct NodeCore<Spec: ?Sized> {
     pub(super) parent_node: Weak<RefCell<NodeCore<dyn InternalNodeSpec>>>,
     pub(super) previous_sibling: Weak<RefCell<NodeCore<dyn NodeSpec>>>,

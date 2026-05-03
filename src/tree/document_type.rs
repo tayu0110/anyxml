@@ -14,6 +14,7 @@ use crate::{
     uri::URIStr,
 };
 
+/// DocumentType node spec.
 pub struct DocumentTypeSpec {
     first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
     last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
@@ -212,6 +213,7 @@ impl InternalNodeSpec for DocumentTypeSpec {
     }
 }
 
+/// DocumentType node.
 pub type DocumentType = Node<DocumentTypeSpec>;
 
 impl DocumentType {
@@ -237,6 +239,7 @@ impl DocumentType {
         )
     }
 
+    /// Lookup an element declaration whose name is `name`.
     pub fn get_element_decl(&self, name: &str) -> Option<ElementDecl> {
         self.core
             .borrow()
@@ -249,6 +252,8 @@ impl DocumentType {
             })
     }
 
+    /// Lookup an attribute list declaration whose element name is `elem_name`
+    /// and attribute name is `attr_name`.
     pub fn get_attlist_decl(&self, elem_name: &str, attr_name: &str) -> Option<AttlistDecl> {
         self.core
             .borrow()
@@ -262,6 +267,7 @@ impl DocumentType {
             })
     }
 
+    /// Lookup an entity declaration whose name is `name`.
     pub fn get_entity_decl(&self, name: &str) -> Option<EntityDecl> {
         self.core
             .borrow()
@@ -274,6 +280,7 @@ impl DocumentType {
             })
     }
 
+    /// Lookup a notation declaration whose name is `name`.
     pub fn get_notation_decl(&self, name: &str) -> Option<NotationDecl> {
         self.core
             .borrow()
@@ -286,14 +293,17 @@ impl DocumentType {
             })
     }
 
+    /// The name of this document type node.
     pub fn name(&self) -> Rc<str> {
         self.core.borrow().spec.name.clone()
     }
 
+    /// The system identifier of this document type node.
     pub fn system_id(&self) -> Option<Rc<URIStr>> {
         self.core.borrow().spec.system_id.clone()
     }
 
+    /// The public identifier of this document type node.
     pub fn public_id(&self) -> Option<Rc<str>> {
         self.core.borrow().spec.public_id.clone()
     }

@@ -1,3 +1,5 @@
+//! Provide SAX parse error data structures.
+
 use std::{borrow::Cow, sync::Arc};
 
 use crate::{

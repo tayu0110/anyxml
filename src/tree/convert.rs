@@ -8,6 +8,7 @@ use crate::tree::{
     node::{InternalNodeSpec, NodeSpec},
 };
 
+/// Downcasted node.
 pub enum NodeKind {
     Element(Element),
     Attribute(Attribute),
@@ -28,6 +29,7 @@ pub enum NodeKind {
 
 macro_rules! impl_unwrap_node_kind {
     ($fn:ident, $type:ident) => {
+        #[doc = concat!("Unwrap if this node is [`", stringify!($type), "`].")]
         pub fn $fn(self) -> Option<$type> {
             if let Self::$type(ret) = self {
                 Some(ret)
@@ -56,6 +58,7 @@ impl NodeKind {
 }
 
 impl Node<dyn NodeSpec> {
+    /// Downcast an abstract node type.
     pub fn downcast(&self) -> NodeKind {
         let ptr = Rc::into_raw(self.core.clone());
 
@@ -127,6 +130,7 @@ impl Node<dyn NodeSpec> {
 }
 
 impl Node<dyn InternalNodeSpec> {
+    /// Downcast an abstract node type.
     pub fn downcast(&self) -> NodeKind {
         Node::<dyn NodeSpec>::from(self.clone()).downcast()
     }
@@ -160,6 +164,7 @@ macro_rules! impl_specific_type_node_conversion {
     ($fn:ident, $type:ident, $( $t:ty ),*) => {
         $(
             impl $t {
+                #[doc = concat!("Downcast this node to [`", stringify!($type), "`].")]
                 pub fn $fn(&self) -> Option<$type> {
                     self.downcast().$fn()
                 }

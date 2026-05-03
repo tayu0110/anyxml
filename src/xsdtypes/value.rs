@@ -8,30 +8,51 @@ use crate::{base64::*, datetime::*, uri::*};
 /// it is guaranteed to belong to the value space of a given type.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SchemaValue {
+    /// String type value.
     String(Arc<str>),
+    /// Boolean type value.
     Boolean(bool),
     // `f64` cannot guarantee at least 18 digits of precision.
     // An arbitrary-precision floating-point library is required, but since comparison
     // operations are sufficient for now, I will treat the values as strings.
+    /// Decimal type value.
     Decimal(Arc<str>, Arc<str>),
+    /// Float type value.
     Float(f32),
+    /// Double type value.
     Double(f64),
     // This is separated from `Decimal` for convenience.
+    /// Integer type value.
     Integer(i128),
+    /// Duration type value.
     Duration(Duration),
+    /// DateTime type value.
     DateTime(DateTime),
+    /// Time type value.
     Time(Time),
+    /// Date type value.
     Date(Date),
+    /// gYearMonth type value.
     GYearMonth(GYearMonth),
+    /// gYear type value.
     GYear(GYear),
+    /// gMonthDay type value.
     GMonthDay(GMonthDay),
+    /// gDay type value.
     GDay(GDay),
+    /// gMonth type value.
     GMonth(GMonth),
+    /// Hex binary type value.
     HexBinary(Arc<str>),
+    /// Base64 binary type value.
     Base64Binary(Base64Binary),
+    /// anyURI type value.
     AnyURI(Arc<URIStr>),
+    /// QName type value.
     QName(Option<Arc<str>>, Arc<str>),
+    /// Notation type value.
     NOTATION(Option<Arc<str>>, Arc<str>),
+    /// List type value.
     List(Arc<[SchemaValue]>),
 }
 

@@ -5,6 +5,7 @@ use crate::tree::{
     node::{InternalNodeSpec, Node, NodeCore, NodeSpec},
 };
 
+/// Entity reference node spec.
 pub struct EntityReferenceSpec {
     first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
     last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
@@ -58,6 +59,7 @@ impl InternalNodeSpec for EntityReferenceSpec {
     }
 }
 
+/// Entity reference node.
 pub type EntityReference = Node<EntityReferenceSpec>;
 
 impl EntityReference {

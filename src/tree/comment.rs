@@ -8,6 +8,7 @@ use crate::tree::{
     node::{Node, NodeCore, NodeSpec},
 };
 
+/// Comment node spec.
 pub struct CommentSpec {
     data: String,
 }

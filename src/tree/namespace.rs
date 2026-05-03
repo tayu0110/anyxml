@@ -19,6 +19,7 @@ enum DeclareType {
     Explicit,
 }
 
+/// Namespace node spec.
 pub struct NamespaceSpec {
     owner_element: Weak<RefCell<NodeCore<ElementSpec>>>,
     pub(super) prefix: Option<Rc<str>>,
@@ -97,10 +98,12 @@ impl Namespace {
         self.core.borrow_mut().parent_node = weak;
     }
 
+    /// Namespace prefix.
     pub fn prefix(&self) -> Option<Rc<str>> {
         self.core.borrow().spec.prefix.clone()
     }
 
+    /// Namespace name.
     pub fn namespace_name(&self) -> Rc<str> {
         self.core.borrow().spec.namespace_name.clone()
     }

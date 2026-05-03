@@ -29,6 +29,7 @@ pub const XML_SCHEMA_NAMESPACE: &str = "http://www.w3.org/2001/XMLSchema";
 /// - [3.1 Namespace considerations](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#namespaces)
 pub const XML_SCHEMA_DATATYPES_NAMESPACE: &str = "http://www.w3.org/2001/XMLSchema-datatypes";
 
+/// Schema type general error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchemaTypeError {
     DerivationFromAnySimpleType,
@@ -50,6 +51,7 @@ impl From<ParseError> for SchemaTypeError {
     }
 }
 
+/// Schema value parse error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseError {
     AnySimpleType,
@@ -102,13 +104,18 @@ pub enum ParseError {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq)]
 pub enum SimpleTypeDefinition {
+    /// `anySimpleType`.
     AnySimpleType,
+    /// Builtin primitive type.
     BuiltinPrimitive(BuiltinPrimitiveType),
+    /// Builtin derived type.
     BuiltinDerived(BuiltinDerivedType),
+    /// User defined type.
     UserDefined(UserDefinedType),
 }
 
 impl SimpleTypeDefinition {
+    /// Generate [`SimpleTypeDefinitionBuilder`] by derived-by-restriction.
     pub fn derive_by_restriction(
         self: Arc<Self>,
     ) -> Result<SimpleTypeDefinitionBuilder, SchemaTypeError> {
@@ -122,6 +129,7 @@ impl SimpleTypeDefinition {
         Ok(Self::derive(self, variety))
     }
 
+    /// Generate [`SimpleTypeDefinitionBuilder`] by derived-by-list.
     pub fn derive_by_list(self: Arc<Self>) -> Result<SimpleTypeDefinitionBuilder, SchemaTypeError> {
         if matches!(*self, SimpleTypeDefinition::AnySimpleType) {
             return Err(SchemaTypeError::DerivationFromAnySimpleType);
@@ -139,6 +147,7 @@ impl SimpleTypeDefinition {
         ))
     }
 
+    /// Generate [`SimpleTypeDefinitionBuilder`] by derived-by-union.
     pub fn derive_by_union(
         member: impl IntoIterator<Item = Arc<Self>>,
     ) -> Result<SimpleTypeDefinitionBuilder, SchemaTypeError> {
@@ -179,6 +188,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// Type name.
     pub fn name(&self) -> &str {
         match self {
             Self::AnySimpleType => "anySimpleType",
@@ -188,6 +198,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// Target namespace.
     pub fn target_namespace(&self) -> Option<&str> {
         match self {
             Self::AnySimpleType => Some(XML_SCHEMA_NAMESPACE),
@@ -328,6 +339,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// The value of 'length' facet.
     pub fn length(&self) -> Option<i32> {
         match self {
             Self::AnySimpleType | Self::BuiltinPrimitive(_) | Self::BuiltinDerived(_) => None,
@@ -335,6 +347,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// The value of 'minLength' facet.
     pub fn min_length(&self) -> Option<i32> {
         match self {
             Self::AnySimpleType | Self::BuiltinPrimitive(_) | Self::BuiltinDerived(_) => None,
@@ -342,6 +355,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// The value of 'maxLength' facet.
     pub fn max_length(&self) -> Option<i32> {
         match self {
             Self::AnySimpleType | Self::BuiltinPrimitive(_) | Self::BuiltinDerived(_) => None,
@@ -349,6 +363,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// The value of 'whiteSpace' facet.
     pub fn whitespace(&self) -> Option<Whitespace> {
         match self {
             Self::AnySimpleType => None,
@@ -358,6 +373,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// The value of 'maxInclusive' facet.
     pub fn max_inclusive(&self) -> Option<&SchemaValue> {
         match self {
             Self::AnySimpleType | Self::BuiltinPrimitive(_) | Self::BuiltinDerived(_) => None,
@@ -365,6 +381,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// The value of 'maxExclusive' facet.
     pub fn max_exclusive(&self) -> Option<&SchemaValue> {
         match self {
             Self::AnySimpleType | Self::BuiltinPrimitive(_) | Self::BuiltinDerived(_) => None,
@@ -372,6 +389,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// The value of 'minInclusive' facet.
     pub fn min_inclusive(&self) -> Option<&SchemaValue> {
         match self {
             Self::AnySimpleType | Self::BuiltinPrimitive(_) | Self::BuiltinDerived(_) => None,
@@ -379,6 +397,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// The value of 'minExclusive' facet.
     pub fn min_exclusive(&self) -> Option<&SchemaValue> {
         match self {
             Self::AnySimpleType | Self::BuiltinPrimitive(_) | Self::BuiltinDerived(_) => None,
@@ -386,6 +405,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// The value of 'totalDigits' facet.
     pub fn total_digits(&self) -> Option<i32> {
         match self {
             Self::AnySimpleType | Self::BuiltinPrimitive(_) | Self::BuiltinDerived(_) => None,
@@ -393,6 +413,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// The value of 'fractionDigits' facet.
     pub fn fraction_digits(&self) -> Option<i32> {
         match self {
             Self::AnySimpleType | Self::BuiltinPrimitive(_) | Self::BuiltinDerived(_) => None,
@@ -400,6 +421,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// The value set of 'final' property.
     pub fn r#final(&self) -> FinalSet {
         match self {
             Self::AnySimpleType | Self::BuiltinPrimitive(_) | Self::BuiltinDerived(_) => {
@@ -420,6 +442,7 @@ impl SimpleTypeDefinition {
         }
     }
 
+    /// Parse `value` as the value of this type.
     pub fn parse(
         &self,
         value: &str,
@@ -521,6 +544,7 @@ pub enum BuiltinPrimitiveType {
 }
 
 impl BuiltinPrimitiveType {
+    /// Type name.
     pub fn name(&self) -> &'static str {
         match self {
             Self::String => "string",
@@ -545,6 +569,7 @@ impl BuiltinPrimitiveType {
         }
     }
 
+    /// Target namespace. This is always `"http://www.w3.org/2001/XMLSchema"`.
     pub fn target_namespace(&self) -> &'static str {
         XML_SCHEMA_NAMESPACE
     }
@@ -643,6 +668,7 @@ impl BuiltinPrimitiveType {
         }
     }
 
+    /// The value set of 'final' property.
     pub fn r#final(&self) -> FinalSet {
         FinalSet::default()
     }
@@ -779,6 +805,7 @@ impl BuiltinPrimitiveType {
         }
     }
 
+    /// Parse `value` as the value of this type.
     pub fn parse(
         &self,
         value: &str,
@@ -1049,6 +1076,7 @@ pub enum BuiltinDerivedType {
 }
 
 impl BuiltinDerivedType {
+    /// Type name.
     pub fn name(&self) -> &'static str {
         match self {
             Self::NormalizedString => "normalizedString",
@@ -1079,6 +1107,7 @@ impl BuiltinDerivedType {
         }
     }
 
+    /// Target namespace.
     pub fn target_namespace(&self) -> &'static str {
         XML_SCHEMA_NAMESPACE
     }
@@ -1284,6 +1313,7 @@ impl BuiltinDerivedType {
         }
     }
 
+    /// The value set of 'final' property.
     pub fn r#final(&self) -> FinalSet {
         FinalSet::default()
     }
@@ -1413,6 +1443,7 @@ impl BuiltinDerivedType {
         }
     }
 
+    /// Parse `value` as the value of this type.
     pub fn parse(
         &self,
         value: &str,
@@ -1663,10 +1694,12 @@ pub struct UserDefinedType {
 }
 
 impl UserDefinedType {
+    /// Type name.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Target namespace.
     pub fn target_namespace(&self) -> Option<&str> {
         self.target_namespace.as_deref()
     }
@@ -1684,6 +1717,8 @@ impl UserDefinedType {
         self.base_type_definition.clone()
     }
 
+    /// # Reference
+    /// - [4.1.1 The Simple Type Definition Schema Component](https://www.w3.org/TR/xmlschema-2/#dc-defn)
     pub fn variety(&self) -> Variety {
         self.variety.clone()
     }
@@ -1869,18 +1904,21 @@ impl UserDefinedType {
         }
     }
 
+    /// The value of 'length' facet.
     pub fn length(&self) -> Option<i32> {
         self.facets
             .length()
             .or_else(|| self.base_type_definition.length())
     }
 
+    /// The value of 'minLength' facet.
     pub fn min_length(&self) -> Option<i32> {
         self.facets
             .min_length()
             .or_else(|| self.base_type_definition.min_length())
     }
 
+    /// The value of 'maxLength' facet.
     pub fn max_length(&self) -> Option<i32> {
         self.facets
             .max_length()
@@ -1901,6 +1939,7 @@ impl UserDefinedType {
         }
     }
 
+    /// The value of 'maxInclusive' facet.
     pub fn max_inclusive(&self) -> Option<&SchemaValue> {
         self.facets
             .max_inclusive
@@ -1908,6 +1947,7 @@ impl UserDefinedType {
             .or_else(|| self.base_type_definition.max_inclusive())
     }
 
+    /// The value of 'maxExclusive' facet.
     pub fn max_exclusive(&self) -> Option<&SchemaValue> {
         self.facets
             .max_exclusive
@@ -1915,6 +1955,7 @@ impl UserDefinedType {
             .or_else(|| self.base_type_definition.max_exclusive())
     }
 
+    /// The value of 'minInclusive' facet.
     pub fn min_inclusive(&self) -> Option<&SchemaValue> {
         self.facets
             .min_inclusive
@@ -1922,6 +1963,7 @@ impl UserDefinedType {
             .or_else(|| self.base_type_definition.min_inclusive())
     }
 
+    /// The value of 'minExclusive' facet.
     pub fn min_exclusive(&self) -> Option<&SchemaValue> {
         self.facets
             .min_exclusive
@@ -1929,18 +1971,21 @@ impl UserDefinedType {
             .or_else(|| self.base_type_definition.min_exclusive())
     }
 
+    /// The value of 'totalDigits' facet.
     pub fn total_digits(&self) -> Option<i32> {
         self.facets
             .total_digits()
             .or_else(|| self.base_type_definition.total_digits())
     }
 
+    /// The value of 'fractionDigits' facet.
     pub fn fraction_digits(&self) -> Option<i32> {
         self.facets
             .fraction_digits()
             .or_else(|| self.base_type_definition.fraction_digits())
     }
 
+    /// The value set of 'final' property.
     pub fn r#final(&self) -> FinalSet {
         self.r#final
     }
@@ -2014,6 +2059,7 @@ impl UserDefinedType {
         true
     }
 
+    /// Parse `value` as the value of this type.
     pub fn parse(
         &self,
         literal: &str,
@@ -2087,8 +2133,11 @@ impl UserDefinedType {
 /// - [4.1.1 The Simple Type Definition Schema Component](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#dc-defn)
 #[derive(Clone, PartialEq)]
 pub enum Variety {
+    /// Atomic type.
     Atomic(BuiltinPrimitiveType),
+    /// List type.
     List(Arc<SimpleTypeDefinition>),
+    /// Union type.
     Union(Arc<[Arc<SimpleTypeDefinition>]>),
 }
 
@@ -2098,8 +2147,11 @@ pub enum Variety {
 /// - [4.2.2 ordered](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#rf-ordered)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ordered {
+    /// Not ordered
     False,
+    /// Partially ordered
     Partial,
+    /// Totally ordered.
     Total,
 }
 
@@ -2109,7 +2161,9 @@ pub enum Ordered {
 /// - [4.2.4 cardinality](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#rf-cardinality)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cardinality {
+    /// Finite
     Finite,
+    /// Countably infinite
     CountablyInfinite,
 }
 
@@ -2121,18 +2175,22 @@ pub enum Cardinality {
 pub struct FinalSet(u8);
 
 impl FinalSet {
+    /// Check if all of 'list', 'union' and 'restriction' are contained.
     pub fn all(&self) -> bool {
         *self == Final::List | Final::Union | Final::Restriction
     }
 
+    /// Check if 'list' is contained.
     pub fn list(&self) -> bool {
         self.0 & Final::List as u8 != 0
     }
 
+    /// Check if 'union' is contained.
     pub fn union(&self) -> bool {
         self.0 & Final::Union as u8 != 0
     }
 
+    /// Check if 'restriction' is contained.
     pub fn restriction(&self) -> bool {
         self.0 & Final::Restriction as u8 != 0
     }
@@ -2151,8 +2209,11 @@ impl std::ops::BitOr<Final> for FinalSet {
 /// - [4.1.1 The Simple Type Definition Schema Component](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#dc-defn)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Final {
+    /// 'list'
     List = 1,
+    /// 'union'
     Union = 2,
+    /// 'restriction'
     Restriction = 4,
 }
 
@@ -2170,6 +2231,7 @@ impl std::ops::BitOr<FinalSet> for Final {
     }
 }
 
+/// Builder of [`SimpleTypeDefinition`].
 pub struct SimpleTypeDefinitionBuilder {
     base: Arc<SimpleTypeDefinition>,
     name: Option<Arc<str>>,
@@ -2180,6 +2242,7 @@ pub struct SimpleTypeDefinitionBuilder {
 }
 
 impl SimpleTypeDefinitionBuilder {
+    /// Finish to build the type definition.
     pub fn build(self) -> Arc<SimpleTypeDefinition> {
         Arc::new(SimpleTypeDefinition::UserDefined(UserDefinedType {
             name: self.name.unwrap_or_default(),
@@ -2191,12 +2254,14 @@ impl SimpleTypeDefinitionBuilder {
         }))
     }
 
+    /// Set the name and target namespace.
     pub fn name(mut self, name: Arc<str>, target_namespace: Option<Arc<str>>) -> Self {
         self.name = Some(name);
         self.target_namespace = target_namespace;
         self
     }
 
+    /// Set the value of 'length' facet.
     pub fn length(mut self, length: usize) -> Result<Self, SchemaTypeError> {
         if !self.base.is_applicable_facets(FacetType::Length) {
             return Err(FacetError::Unacceptable.into());
@@ -2222,6 +2287,7 @@ impl SimpleTypeDefinitionBuilder {
         Ok(self)
     }
 
+    /// Set the value of 'minLength' facet.
     pub fn min_length(mut self, min_length: usize) -> Result<Self, SchemaTypeError> {
         if !self.base.is_applicable_facets(FacetType::MinLength) {
             return Err(FacetError::Unacceptable.into());
@@ -2253,6 +2319,7 @@ impl SimpleTypeDefinitionBuilder {
         Ok(self)
     }
 
+    /// Set the value of 'maxLength' facet.
     pub fn max_length(mut self, max_length: usize) -> Result<Self, SchemaTypeError> {
         if !self.base.is_applicable_facets(FacetType::MaxLength) {
             return Err(FacetError::Unacceptable.into());
@@ -2284,6 +2351,7 @@ impl SimpleTypeDefinitionBuilder {
         Ok(self)
     }
 
+    /// Set the value of 'pattern' facet.
     pub fn pattern(mut self, pattern: impl Into<String>) -> Result<Self, SchemaTypeError> {
         if !self.base.is_applicable_facets(FacetType::Pattern) {
             return Err(FacetError::Unacceptable.into());
@@ -2301,6 +2369,7 @@ impl SimpleTypeDefinitionBuilder {
         Ok(self)
     }
 
+    /// Set the value of 'enumeration' facet.
     pub fn enumeration(mut self, value: SchemaValue) -> Result<Self, SchemaTypeError> {
         if !self.base.is_applicable_facets(FacetType::Enumeration) {
             return Err(FacetError::Unacceptable.into());
@@ -2309,6 +2378,7 @@ impl SimpleTypeDefinitionBuilder {
         Ok(self)
     }
 
+    /// Set the value of 'whiteSpace' facet.
     pub fn whitespace(mut self, value: Whitespace) -> Result<Self, SchemaTypeError> {
         if !self.base.is_applicable_facets(FacetType::WhiteSpace) {
             return Err(FacetError::Unacceptable.into());
@@ -2317,6 +2387,7 @@ impl SimpleTypeDefinitionBuilder {
         Ok(self)
     }
 
+    /// Set the value of 'maxInclusive' facet.
     pub fn max_inclusive(mut self, value: SchemaValue) -> Result<Self, SchemaTypeError> {
         if !self.base.is_applicable_facets(FacetType::MaxInclusive) {
             return Err(FacetError::Unacceptable.into());
@@ -2325,6 +2396,7 @@ impl SimpleTypeDefinitionBuilder {
         Ok(self)
     }
 
+    /// Set the value of 'minInclusive' facet.
     pub fn min_inclusive(mut self, value: SchemaValue) -> Result<Self, SchemaTypeError> {
         if !self.base.is_applicable_facets(FacetType::MinInclusive) {
             return Err(FacetError::Unacceptable.into());
@@ -2333,6 +2405,7 @@ impl SimpleTypeDefinitionBuilder {
         Ok(self)
     }
 
+    /// Set the value of 'maxExclusive' facet.
     pub fn max_exclusive(mut self, value: SchemaValue) -> Result<Self, SchemaTypeError> {
         if !self.base.is_applicable_facets(FacetType::MaxExclusive) {
             return Err(FacetError::Unacceptable.into());
@@ -2341,6 +2414,7 @@ impl SimpleTypeDefinitionBuilder {
         Ok(self)
     }
 
+    /// Set the value of 'minExclusive' facet.
     pub fn min_exclusive(mut self, value: SchemaValue) -> Result<Self, SchemaTypeError> {
         if !self.base.is_applicable_facets(FacetType::MinExclusive) {
             return Err(FacetError::Unacceptable.into());
@@ -2349,6 +2423,7 @@ impl SimpleTypeDefinitionBuilder {
         Ok(self)
     }
 
+    /// Set the value of 'totalDigits' facet.
     pub fn total_digits(mut self, total_digits: NonZeroUsize) -> Result<Self, SchemaTypeError> {
         let total_digits = total_digits.get();
         if !self.base.is_applicable_facets(FacetType::TotalDigits) {
@@ -2365,6 +2440,7 @@ impl SimpleTypeDefinitionBuilder {
         Ok(self)
     }
 
+    /// Set the value of 'fractionDigits' facet.
     pub fn fraction_digits(mut self, fraction_digits: usize) -> Result<Self, SchemaTypeError> {
         if !self.base.is_applicable_facets(FacetType::FractionDigits) {
             return Err(FacetError::Unacceptable.into());
@@ -2380,6 +2456,7 @@ impl SimpleTypeDefinitionBuilder {
         Ok(self)
     }
 
+    /// Set the value set of 'final' property.
     pub fn r#final(mut self, r#final: FinalSet) -> Self {
         self.r#final = r#final;
         self

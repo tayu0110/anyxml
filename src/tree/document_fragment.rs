@@ -22,6 +22,7 @@ enum State {
     AsDocumentType { decl: usize },
 }
 
+/// Document fragment node spec.
 pub struct DocumentFragmentSpec {
     first_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
     last_child: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
@@ -244,6 +245,7 @@ impl InternalNodeSpec for DocumentFragmentSpec {
     }
 }
 
+/// Document fragment node.
 pub type DocumentFragment = Node<DocumentFragmentSpec>;
 
 impl DocumentFragment {
