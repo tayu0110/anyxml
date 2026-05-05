@@ -2,10 +2,8 @@
 
 use std::{borrow::Cow, io::Write};
 
-use anyxml_encoding::find_encoder;
-
 use crate::{
-    encoding::{Encoder, UTF8Encoder},
+    encoding::{Encoder, UTF8Encoder, find_encoder},
     error::XMLError,
     sax::{
         DefaultSAXHandler, INPUT_CHUNK, ParserConfig, ProgressiveParserSpec, SAXHandler, XMLReader,
@@ -54,6 +52,12 @@ enum State {
     Finished,
 }
 
+/// StAX style XML writer.
+///
+/// By default, the writer checks the well-formedness constraints of the XML string
+/// representation corresponding to the written event.  \
+/// By passing a parser configuration to each constructor, it is also possible to perform
+/// DTD validation or retrieve external resources.
 pub struct XMLStreamWriter<'a, H: SAXHandler = DefaultSAXHandler> {
     stream: OutputStream<'a>,
     checker: XMLReader<ProgressiveParserSpec, H>,
@@ -80,6 +84,7 @@ macro_rules! write_tokens {
 }
 
 impl<'a> XMLStreamWriter<'a> {
+    /// Constructor for [`XMLStreamWriter`].
     pub fn new(writer: impl Write + 'a, config: Option<ParserConfig>) -> Self {
         let stream = OutputStream {
             stream: Box::new(writer),
@@ -101,6 +106,10 @@ impl<'a> XMLStreamWriter<'a> {
 }
 
 impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
+    /// Constructor for [`XMLStreamWriter`].
+    ///
+    /// It is possible to pass a custom handler to capture all errors or to sanitize
+    /// external resources accessed by write events.
     pub fn with_handler(writer: impl Write + 'a, handler: H, config: Option<ParserConfig>) -> Self {
         let stream = OutputStream {
             stream: Box::new(writer),
@@ -121,10 +130,18 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         }
     }
 
+    /// Set the base URI of written XML document.
+    ///
+    /// In some cases, such as when retrieving external resources, it may be necessary
+    /// to configure an appropriate base URI.
     pub fn set_base_uri(&mut self, base_uri: impl Into<URIString>) -> Result<(), XMLError> {
         self.checker.set_default_base_uri(base_uri.into())
     }
 
+    /// Write XML declaration.
+    ///
+    /// The writer changes the encoder based on the specified encoding. If no encoder
+    /// corresponding to the specified encoding is registered, an error occurs.
     pub fn write_declaration(
         &mut self,
         version: &str,
@@ -153,6 +170,7 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         Ok(())
     }
 
+    /// Write the beginning of DTD.
     pub fn write_start_dtd(
         &mut self,
         name: &str,
@@ -172,6 +190,7 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         self.state = State::StartDTD;
         Ok(())
     }
+    /// Write the end of DTD.
     pub fn write_end_dtd(&mut self) -> Result<(), XMLError> {
         if matches!(self.state, State::StartDTD) {
             write_tokens!(self, ">");
@@ -180,11 +199,13 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         }
         Ok(())
     }
+    /// Write an element declaration.
     pub fn write_element_decl(&mut self, name: &str, contentspec: &str) -> Result<(), XMLError> {
         self.try_start_internal_subset()?;
         write_tokens!(self, "<!ELEMENT ", name, " ", contentspec, ">");
         Ok(())
     }
+    /// Write an attribute list declaration.
     pub fn write_attribute_decl(
         &mut self,
         element_name: &str,
@@ -207,11 +228,13 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         );
         Ok(())
     }
+    /// Write an internal entity declaration.
     pub fn write_internal_entity_decl(&mut self, name: &str, value: &str) -> Result<(), XMLError> {
         self.try_start_internal_subset()?;
         write_tokens!(self, "<!ENTITY ", name, " \"", value, "\">");
         Ok(())
     }
+    /// Write an external entity declaration.
     pub fn write_external_entity_decl(
         &mut self,
         name: &str,
@@ -228,6 +251,7 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         write_tokens!(self, "<!ENTITY ", name, public_id, &system_id, ">");
         Ok(())
     }
+    /// Write an unparsed entity declaration.
     pub fn write_unparsed_entity_decl(
         &mut self,
         name: &str,
@@ -254,6 +278,7 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         );
         Ok(())
     }
+    /// Write a notation declaration.
     pub fn write_notation_decl(
         &mut self,
         name: &str,
@@ -274,6 +299,9 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         Ok(())
     }
 
+    /// Write a start tag.
+    ///
+    ///
     pub fn write_start_element(&mut self, qname: &str) -> Result<(), XMLError> {
         self.try_close_start_element()?;
         write_tokens!(self, "<", qname);
@@ -281,6 +309,19 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         self.state = State::StartElement;
         Ok(())
     }
+    /// Write a start tag.
+    ///
+    /// Due to implementation limitations, it is not possible to specify a namespace whose
+    /// prefix is determined by the namespace declaration of the element the current write
+    /// operation is targeting.  \
+    /// For example, if using this method to write a document element with a non-null
+    /// namespace name, an error will always occur because the prefix bound to the namespace
+    /// cannot be determined.  \
+    /// To work around this, consider using [`write_start_element`].
+    ///
+    /// If a default namespace has already been declared at the time an element with a NULL
+    /// namespace is written, the writer automatically writes a default namespace override to
+    /// ensure consistency, unless explicitly declared otherwise.
     pub fn write_start_element_ns(
         &mut self,
         namespace_name: Option<&str>,
@@ -307,6 +348,7 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
             Ok(())
         }
     }
+    /// Write an end tag.
     pub fn write_end_element(&mut self) -> Result<(), XMLError> {
         self.try_close_start_element()?;
         while self
@@ -318,6 +360,10 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         write_tokens!(self, "</", &qname, ">");
         Ok(())
     }
+    /// Write an attribute.
+    ///
+    /// This method can only be used between the time the start tag is written and the time
+    /// the element's content is written.
     pub fn write_attribute(&mut self, qname: &str, value: &str) -> Result<(), XMLError> {
         let value = value
             .replace('&', "&amp;")
@@ -326,6 +372,14 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         write_tokens!(self, " ", qname, "=\"", &value, "\"");
         Ok(())
     }
+    /// Write an attribute.
+    ///
+    /// This method can only be used between the time the start tag is written and the time
+    /// the element's content is written.
+    ///
+    /// As with the limitations of [`write_start_element_ns`], using a namespace whose prefix
+    /// is not yet bound at the time this method is called will result in an error.  \
+    /// In such cases, please use [`write_attribute`] instead.
     pub fn write_attribute_ns(
         &mut self,
         namespace_name: Option<&str>,
@@ -347,6 +401,10 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         };
         self.write_attribute(&qname, value)
     }
+    /// Write a namespace declaration.
+    ///
+    /// This method can only be used between the time the start tag is written and the time
+    /// the element's content is written.
     pub fn write_namespace_decl(
         &mut self,
         prefix: Option<&str>,
@@ -366,6 +424,14 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         Ok(())
     }
 
+    /// Write text contents.
+    ///
+    /// As long as it contains only whitespace, using it outside of document elements does
+    /// not result in an error.
+    ///
+    /// Special characters ("&", "<", ">") contained in `data` are escaped by the writer.  \
+    /// Although ">" is a character that does not require escaping, it is escaped because
+    /// consecutive method calls can result in the sequence "]]>".
     pub fn write_characters(&mut self, data: &str) -> Result<(), XMLError> {
         self.try_close_start_element()?;
         let data = data
@@ -375,12 +441,14 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         write_tokens!(self, &data);
         Ok(())
     }
+    /// Write a CDATA section.
     pub fn write_cdata(&mut self, data: &str) -> Result<(), XMLError> {
         self.try_close_start_element()?;
         write_tokens!(self, "<![CDATA[", data, "]]>");
         Ok(())
     }
 
+    /// Write a comment.
     pub fn write_comment(&mut self, data: &str) -> Result<(), XMLError> {
         self.try_start_internal_subset()?;
         self.try_close_start_element()?;
@@ -388,6 +456,7 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         Ok(())
     }
 
+    /// Write a processing instruction.
     pub fn write_processing_instruction(
         &mut self,
         target: &str,
@@ -401,11 +470,17 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         Ok(())
     }
 
+    /// Write a general entity reference.
+    ///
+    /// `name` must not contain `&` or `;`.
     pub fn write_general_entity_reference(&mut self, name: &str) -> Result<(), XMLError> {
         self.try_close_start_element()?;
         write_tokens!(self, "&", name, ";");
         Ok(())
     }
+    /// Write a parameter entity reference.
+    ///
+    /// `name` must not contain `%` or `;`.
     pub fn write_parameter_entity_reference(&mut self, name: &str) -> Result<(), XMLError> {
         self.try_start_internal_subset()?;
         write_tokens!(self, "%", name, ";");
@@ -430,6 +505,8 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         Ok(())
     }
 
+    /// Since some documents may require well-formedness checks upon completion,
+    /// please call this function only once after all events have been written.
     pub fn flush(&mut self) -> Result<(), XMLError> {
         self.checker.parse_chunk([], true)?;
         self.stream.flush()?;
@@ -437,6 +514,7 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         Ok(())
     }
 
+    /// Reset all writer context.
     pub fn reset(&mut self) -> Result<(), XMLError> {
         self.stream = OutputStream::default();
         self.checker.reset()?;
