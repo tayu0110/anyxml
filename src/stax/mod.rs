@@ -22,6 +22,7 @@
 
 pub mod events;
 mod handler;
+pub mod writer;
 
 use std::{io::Read, marker::PhantomData, sync::Arc};
 
