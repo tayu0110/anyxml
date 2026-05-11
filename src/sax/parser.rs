@@ -11,6 +11,7 @@ use crate::{
     catalog::{Catalog, CatalogEntryFile, PreferMode},
     encoding::UTF8_NAME,
     error::XMLError,
+    parse::ParseError,
     sax::{
         AttlistDeclMap, DOCUMENT_ENTITY_NAME, ElementDeclMap, EntityMap, Locator, NamespaceStack,
         Notation,
@@ -592,7 +593,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                 while reader.parse_event_once(true)? {}
 
                 if reader.state != ParserState::Finished {
-                    return Err(XMLError::ParserUnexpectedEOF);
+                    return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF));
                 }
             }
             Ok(())

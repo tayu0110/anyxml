@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     error::XMLError,
+    parse::ParseError,
     sax::{
         AttributeType, DefaultDecl, InputSource, ParserOption, ParserSpec, SAXHandler, XMLReader,
         error::{error, fatal_error, validity_error, warning},
@@ -18,10 +19,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"<!ATTLIST") {
             fatal_error!(
                 self,
-                ParserInvalidAttlistDecl,
+                InvalidAttlistDecl,
                 "Attribute list declration must start with '<!ATTLIST'."
             );
-            return Err(XMLError::ParserInvalidAttlistDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidAttlistDecl));
         }
         // skip '<!ATTLIST'
         self.source.advance(9);
@@ -32,7 +33,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if self.skip_whitespaces_with_handle_peref(true)? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidAttlistDecl,
+                InvalidAttlistDecl,
                 "Whitespaces are required after '<!ATTLIST' in attribute list declaration."
             );
         }
@@ -51,7 +52,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if s == 0 {
                 fatal_error!(
                     self,
-                    ParserInvalidAttlistDecl,
+                    InvalidAttlistDecl,
                     "Whitespaces are required before Name in AttDef."
                 );
             }
@@ -70,7 +71,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             ) {
                 warning!(
                     self,
-                    ParserDuplicateAttlistDecl,
+                    DuplicateAttlistDecl,
                     "An attribute list declaration for the attribute '{}' the element '{}' is duplicated.",
                     att_name,
                     name
@@ -84,7 +85,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: ID Attribute Default]
                             validity_error!(
                                 self,
-                                ParserInvalidIDAttributeValue,
+                                InvalidIDAttributeValue,
                                 "ID attribute default must be '#REQUIRED' or '#IMPLIED'."
                             );
                         }
@@ -94,7 +95,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: One ID per Element Type]
                                 validity_error!(
                                     self,
-                                    ParserMultipleIDAttributePerElement,
+                                    MultipleIDAttributePerElement,
                                     "ID attribute declarations appear multiple times on element '{}'.",
                                     name
                                 );
@@ -112,7 +113,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: IDREF]
                                 validity_error!(
                                     self,
-                                    ParserInvalidIDREFAttributeValue,
+                                    InvalidIDREFAttributeValue,
                                     "IDREF attribute default must match to NCName."
                                 );
                             } else if !self.config.is_enable(ParserOption::Namespaces)
@@ -121,7 +122,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: IDREF]
                                 validity_error!(
                                     self,
-                                    ParserInvalidIDREFAttributeValue,
+                                    InvalidIDREFAttributeValue,
                                     "IDREF attribute default must match to Name."
                                 );
                             }
@@ -142,7 +143,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: IDREF]
                                 validity_error!(
                                     self,
-                                    ParserInvalidIDREFAttributeValue,
+                                    InvalidIDREFAttributeValue,
                                     "IDREFS attribute default must match to Names."
                                 );
                             }
@@ -198,13 +199,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [VC: Proper Declaration/PE Nesting]
             validity_error!(
                 self,
-                ParserEntityIncorrectNesting,
+                EntityIncorrectNesting,
                 "A parameter entity in an attribute declaration is nested incorrectly."
             );
         }
 
         if !self.source.content_bytes().starts_with(b">") {
-            return Err(XMLError::ParserUnexpectedEOF);
+            return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF));
         }
         // skip '>'
         self.source.advance(1);
@@ -224,7 +225,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if need_trim_whitespace && self.skip_whitespaces_with_handle_peref(true)? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidAttlistDecl,
+                InvalidAttlistDecl,
                 "Whitespaces are required before Name in AttDef."
             );
         }
@@ -238,7 +239,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if self.skip_whitespaces_with_handle_peref(true)? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidAttlistDecl,
+                InvalidAttlistDecl,
                 "Whitespaces are required before AttType in AttDef."
             );
         }
@@ -272,7 +273,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: No Duplicate Tokens]
                         validity_error!(
                             self,
-                            ParserDuplicateTokensInAttlistDecl,
+                            DuplicateTokensInAttlistDecl,
                             "'{}' is duplicate in an attlist declaration for the attribute '{}'.",
                             buffer,
                             att_name
@@ -291,7 +292,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: No Duplicate Tokens]
                     validity_error!(
                         self,
-                        ParserDuplicateTokensInAttlistDecl,
+                        DuplicateTokensInAttlistDecl,
                         "'{}' is duplicate in an attlist declaration for the attribute '{}'.",
                         buffer,
                         att_name
@@ -301,19 +302,19 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if self.source.source_id() != enum_source_id {
                     fatal_error!(
                         self,
-                        ParserEntityIncorrectNesting,
+                        EntityIncorrectNesting,
                         "A parameter entity in an AttDef is nested incorrectly."
                     );
-                    return Err(XMLError::ParserEntityIncorrectNesting);
+                    return Err(XMLError::XMLParseError(ParseError::EntityIncorrectNesting));
                 }
 
                 if !self.source.content_bytes().starts_with(b")") {
                     fatal_error!(
                         self,
-                        ParserInvalidAttlistDecl,
+                        InvalidAttlistDecl,
                         "Enumerated Attribute Type declaration does not close with ')'."
                     );
-                    return Err(XMLError::ParserInvalidAttlistDecl);
+                    return Err(XMLError::XMLParseError(ParseError::InvalidAttlistDecl));
                 }
                 // skip ')'
                 self.source.advance(1);
@@ -339,7 +340,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if self.skip_whitespaces_with_handle_peref(true)? == 0 {
                     fatal_error!(
                         self,
-                        ParserInvalidAttlistDecl,
+                        InvalidAttlistDecl,
                         "Whitespaces are required after 'NOTATION' in Notation Attribute Type declaration"
                     );
                 }
@@ -348,10 +349,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if !self.source.content_bytes().starts_with(b"(") {
                     fatal_error!(
                         self,
-                        ParserInvalidAttlistDecl,
+                        InvalidAttlistDecl,
                         "'(' is required after 'NOTATION' in Notation Attribute Type declaration."
                     );
-                    return Err(XMLError::ParserInvalidAttlistDecl);
+                    return Err(XMLError::XMLParseError(ParseError::InvalidAttlistDecl));
                 }
                 // skip '('
                 self.source.advance(1);
@@ -380,7 +381,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: No Duplicate Tokens]
                         validity_error!(
                             self,
-                            ParserDuplicateTokensInAttlistDecl,
+                            DuplicateTokensInAttlistDecl,
                             "'{}' is duplicate in an attlist declaration for the attribute '{}'.",
                             buffer,
                             att_name
@@ -403,7 +404,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: No Duplicate Tokens]
                     validity_error!(
                         self,
-                        ParserDuplicateTokensInAttlistDecl,
+                        DuplicateTokensInAttlistDecl,
                         "'{}' is duplicate in an attlist declaration for the attribute '{}'.",
                         buffer,
                         att_name
@@ -413,19 +414,19 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if self.source.source_id() != enum_source_id {
                     fatal_error!(
                         self,
-                        ParserEntityIncorrectNesting,
+                        EntityIncorrectNesting,
                         "A parameter entity in an AttDef is nested incorrectly."
                     );
-                    return Err(XMLError::ParserEntityIncorrectNesting);
+                    return Err(XMLError::XMLParseError(ParseError::EntityIncorrectNesting));
                 }
 
                 if !self.source.content_bytes().starts_with(b")") {
                     fatal_error!(
                         self,
-                        ParserInvalidAttlistDecl,
+                        InvalidAttlistDecl,
                         "Enumerated Attribute Type declaration does not close with ')'."
                     );
-                    return Err(XMLError::ParserInvalidAttlistDecl);
+                    return Err(XMLError::XMLParseError(ParseError::InvalidAttlistDecl));
                 }
                 // skip ')'
                 self.source.advance(1);
@@ -470,19 +471,15 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 AttributeType::NMTOKEN
             }
             _ => {
-                fatal_error!(
-                    self,
-                    ParserInvalidAttlistDecl,
-                    "AttType cannot be recognized."
-                );
-                return Err(XMLError::ParserInvalidAttlistDecl);
+                fatal_error!(self, InvalidAttlistDecl, "AttType cannot be recognized.");
+                return Err(XMLError::XMLParseError(ParseError::InvalidAttlistDecl));
             }
         };
 
         if self.skip_whitespaces_with_handle_peref(true)? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidAttlistDecl,
+                InvalidAttlistDecl,
                 "Whitespaces are required between AttType and DefaultDecl in Attribute list declaration."
             );
         }
@@ -510,7 +507,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if self.skip_whitespaces_with_handle_peref(true)? == 0 {
                     fatal_error!(
                         self,
-                        ParserInvalidAttlistDecl,
+                        InvalidAttlistDecl,
                         "Whitespaces are required after '#FIXED' in DefaultDecl for attribute list declaration."
                     );
                 }
@@ -541,7 +538,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if att_name == "xml:id" && atttype != AttributeType::ID {
             error!(
                 self,
-                ParserMismatchXMLIDAttributeType, "The attribute type of 'xml:id' must be ID."
+                MismatchXMLIDAttributeType, "The attribute type of 'xml:id' must be ID."
             );
             // overwrite attribute type
             atttype = AttributeType::ID;
@@ -561,7 +558,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: Attribute Default Value Syntactically Correct]
                         validity_error!(
                             self,
-                            ParserSyntaxticallyIncorrectAttributeDefault,
+                            SyntaxticallyIncorrectAttributeDefault,
                             "'{}' is syntaxtically incorrect as {} type attribute value.",
                             def,
                             if matches!(atttype, AttributeType::IDREF) {
@@ -585,7 +582,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: Attribute Default Value Syntactically Correct]
                         validity_error!(
                             self,
-                            ParserSyntaxticallyIncorrectAttributeDefault,
+                            SyntaxticallyIncorrectAttributeDefault,
                             "'{}' is syntaxtically incorrect as {} type attribute value.",
                             def,
                             if matches!(atttype, AttributeType::IDREFS) {
@@ -601,7 +598,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: Attribute Default Value Syntactically Correct]
                         validity_error!(
                             self,
-                            ParserSyntaxticallyIncorrectAttributeDefault,
+                            SyntaxticallyIncorrectAttributeDefault,
                             "'{}' is syntaxtically incorrect as NMTOKEN type attribute value.",
                             def
                         );
@@ -612,7 +609,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: Attribute Default Value Syntactically Correct]
                         validity_error!(
                             self,
-                            ParserSyntaxticallyIncorrectAttributeDefault,
+                            SyntaxticallyIncorrectAttributeDefault,
                             "'{}' is syntaxtically incorrect as NMTOKENS type attribute value.",
                             def
                         );
@@ -623,7 +620,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: Attribute Default Value Syntactically Correct]
                         validity_error!(
                             self,
-                            ParserSyntaxticallyIncorrectAttributeDefault,
+                            SyntaxticallyIncorrectAttributeDefault,
                             "'{}' is syntaxtically incorrect as {} type attribute value.",
                             def,
                             if matches!(atttype, AttributeType::Enumeration(_)) {

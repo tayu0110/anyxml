@@ -22,6 +22,108 @@ use crate::{
     uri::URIString,
 };
 
+/// XML parser errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseError {
+    UnknownError,
+    UnsupportedEncoding,
+    UnsupportedXMLVersion,
+    TooLongXMLVersionNumber,
+    TooLongEncodingName,
+    EmptyNmtoken,
+    EmptyName,
+    EmptyNCName,
+    EmptyQName,
+    EmptyQNamePrefix,
+    EmptyQNameLocalPart,
+    EmptyNmtokens,
+    EmptyNames,
+    InvalidNameStartChar,
+    InvalidNameChar,
+    InvalidNCNameStartChar,
+    InvalidNCNameChar,
+    InvalidQNameSeparator,
+    IncorrectLiteralQuotation,
+    InvalidSystemLiteral,
+    SystemLiteralWithFragment,
+    InvalidPubidLiteral,
+    InvalidAttValue,
+    InvalidExternalID,
+    InvalidCharacter,
+    InvalidXMLDecl,
+    InvalidTextDecl,
+    InvalidXMLVersion,
+    InvalidEncodingDecl,
+    InvalidEncodingName,
+    InvalidSDDecl,
+    InvalidComment,
+    InvalidCDSect,
+    InvalidStandaloneDocument,
+    InvalidProcessingInstruction,
+    UnacceptableCatalogPIPosition,
+    InvalidCatalogPIAttribute,
+    UnacceptablePITarget,
+    UnacceptablePatternInCharData,
+    InvalidDoctypeDecl,
+    InvalidElementDecl,
+    DuplicateElementDecl,
+    AmbiguousElementContentModel,
+    DuplicateMixedContent,
+    InvalidAttlistDecl,
+    MismatchXMLIDAttributeType,
+    DuplicateAttlistDecl,
+    DuplicateTokensInAttlistDecl,
+    MultipleIDAttributePerElement,
+    InvalidIDAttributeValue,
+    InvalidIDREFAttributeValue,
+    NotationAttlistDeclOnEmptyElement,
+    SyntaxticallyIncorrectAttributeDefault,
+    InvalidEntityDecl,
+    IncorrectPredefinedEntityDecl,
+    DuplicateEntityDecl,
+    InvalidNotationDecl,
+    DuplicateNotationDecl,
+    UndeclaredNotation,
+    InvalidConditionalSect,
+    InvalidStartOrEmptyTag,
+    InvalidEndTag,
+    UnclosedStartTag,
+    MismatchElementType,
+    MismatchElementContentModel,
+    UndeclaredElement,
+    InvalidAttribute,
+    UndeclaredAttribute,
+    DuplicateAttributes,
+    DuplicateIDAttribute,
+    UnresolvableIDReference,
+    MultipleNotationAttributePerElement,
+    UnacceptableNotationAttribute,
+    UnacceptableEnumerationAttribute,
+    MismatchFixedDefaultAttributeValue,
+    RequiredAttributeNotFound,
+    UnacceptableXMLSpaceAttribute,
+    InvalidCharacterReference,
+    InvalidEntityReference,
+    EntityNotFound,
+    EntityRecursion,
+    EntityIncorrectNesting,
+    UndeclaredEntityReference,
+    NamespaceNameNotURI,
+    NamespaceNameNotAbsoluteURI,
+    UnacceptableNamespaceName,
+    UndefinedNamespace,
+    UnexpectedDocumentContent,
+    UnexpectedEOF,
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for ParseError {}
+
 impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
     /// ```text
     /// [1] document ::= prolog element Misc*
@@ -41,10 +143,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.is_empty() {
             fatal_error!(
                 self,
-                ParserUnexpectedDocumentContent,
+                UnexpectedDocumentContent,
                 "Unnecessary document content remains. (Elements, character data, etc.)"
             );
-            return Err(XMLError::ParserUnexpectedDocumentContent);
+            return Err(XMLError::XMLParseError(UnexpectedDocumentContent));
         }
 
         self.state = ParserState::Finished;
@@ -56,7 +158,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             for idref in self.unresolved_ids.drain() {
                 validity_error!(
                     self,
-                    ParserUnresolvableIDReference,
+                    UnresolvableIDReference,
                     "IDREF '{}' has no referenced ID.",
                     idref
                 );
@@ -121,10 +223,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b";") {
             fatal_error!(
                 self,
-                ParserInvalidEntityReference,
+                InvalidEntityReference,
                 "A parameter reference does not end with ';'."
             );
-            return Err(XMLError::ParserInvalidEntityReference);
+            return Err(XMLError::XMLParseError(InvalidEntityReference));
         }
         // skip ';'
         self.source.advance(1);
@@ -134,11 +236,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [WFC: No Recursion]
             fatal_error!(
                 self,
-                ParserEntityRecursion,
+                EntityRecursion,
                 "The parameter entity '{}' appears recursively.",
                 name
             );
-            return Err(XMLError::ParserEntityRecursion);
+            return Err(XMLError::XMLParseError(EntityRecursion));
         }
 
         let mut entity_push = false;
@@ -240,7 +342,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [VC: Entity Declared]
                 validity_error!(
                     self,
-                    ParserEntityNotFound,
+                    EntityNotFound,
                     "The parameter entity '{}' is not declared.",
                     name
                 );
@@ -282,10 +384,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if in_decl && self.state == ParserState::InInternalSubset {
                     fatal_error!(
                         self,
-                        ParserInvalidEntityReference,
+                        InvalidEntityReference,
                         "A parameter entity appears in the markup declaration in an internal subset."
                     );
-                    return Err(XMLError::ParserInvalidEntityReference);
+                    return Err(XMLError::XMLParseError(InvalidEntityReference));
                 } else {
                     self.parse_pe_reference(in_decl)?;
                     s += self.skip_whitespaces()?;
@@ -383,10 +485,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             _ => {
                 fatal_error!(
                     self,
-                    ParserInvalidCharacterReference,
+                    InvalidCharacterReference,
                     "A character reference must start with '&#' or '&#x'."
                 );
-                return Err(XMLError::ParserInvalidCharacterReference);
+                return Err(XMLError::XMLParseError(InvalidCharacterReference));
             }
         };
 
@@ -397,32 +499,32 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         self.source.grow()?;
         let content = self.source.content_bytes();
         if content.is_empty() {
-            Err(XMLError::ParserUnexpectedEOF)
+            Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
         } else if (hex && content[0].is_ascii_hexdigit())
             || (!hex && content[0].is_ascii_digit())
             || overflowed
         {
             fatal_error!(
                 self,
-                ParserInvalidCharacterReference,
+                InvalidCharacterReference,
                 "The code point specified by the character reference is too large."
             );
-            Err(XMLError::ParserInvalidCharacterReference)
+            Err(XMLError::XMLParseError(InvalidCharacterReference))
         } else if content[0] != b';' {
             fatal_error!(
                 self,
-                ParserInvalidCharacterReference,
+                InvalidCharacterReference,
                 "The character reference does not end with ';'"
             );
-            Err(XMLError::ParserInvalidCharacterReference)
+            Err(XMLError::XMLParseError(InvalidCharacterReference))
         } else if len == 0 {
             fatal_error!(
                 self,
-                ParserInvalidCharacterReference,
+                InvalidCharacterReference,
                 "'&#{};' is not a correct character reference.",
                 if hex { "x" } else { "" }
             );
-            Err(XMLError::ParserInvalidCharacterReference)
+            Err(XMLError::XMLParseError(InvalidCharacterReference))
         } else if let Some(c) = char::from_u32(code).filter(|c| self.is_char(*c)) {
             // skip ';'
             self.source.advance(1);
@@ -432,11 +534,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         } else {
             fatal_error!(
                 self,
-                ParserInvalidCharacter,
+                InvalidCharacter,
                 "The code point '0x{:X}' does not indicate a character that is allowed in a XML document.",
                 code
             );
-            Err(XMLError::ParserInvalidCharacter)
+            Err(XMLError::XMLParseError(InvalidCharacter))
         }
     }
 

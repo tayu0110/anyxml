@@ -1,6 +1,7 @@
 use crate::{
     CHARDATA_CHUNK_LENGTH,
     error::XMLError,
+    parse::ParseError,
     sax::{InputSource, ParserSpec, SAXHandler, XMLReader, error::fatal_error},
 };
 
@@ -15,12 +16,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         self.grow()?;
 
         if !self.source.content_bytes().starts_with(b"<![CDATA[") {
-            fatal_error!(
-                self,
-                ParserInvalidCDSect,
-                "CDSect must start with '<![CDATA['."
-            );
-            return Err(XMLError::ParserInvalidCDSect);
+            fatal_error!(self, InvalidCDSect, "CDSect must start with '<![CDATA['.");
+            return Err(XMLError::XMLParseError(ParseError::InvalidCDSect));
         }
         // skip '<![CDATA['
         self.source.advance(9);
@@ -60,7 +57,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 Some(c) => {
                     fatal_error!(
                         self,
-                        ParserInvalidCharacter,
+                        InvalidCharacter,
                         "The character '0x{:X}' is not allowed in the XML document.",
                         c as u32
                     );
@@ -87,8 +84,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         }
 
         if !self.source.content_bytes().starts_with(b"]]>") {
-            fatal_error!(self, ParserInvalidCDSect, "CDSect does not end with ']]>'.");
-            return Err(XMLError::ParserInvalidCDSect);
+            fatal_error!(self, InvalidCDSect, "CDSect does not end with ']]>'.");
+            return Err(XMLError::XMLParseError(ParseError::InvalidCDSect));
         }
         // skip ']]>'
         self.source.advance(3);

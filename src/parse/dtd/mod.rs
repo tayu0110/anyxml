@@ -8,6 +8,7 @@ use std::mem::take;
 
 use crate::{
     error::XMLError,
+    parse::ParseError,
     sax::{
         AttributeType, ContentSpec, EXTERNAL_DTD_SUBSET_ENTITY_NAME, EntityDecl, InputSource,
         ParserOption, ParserSpec, ParserState, SAXHandler, XMLReader,
@@ -41,10 +42,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if !self.source.content_bytes().starts_with(b"]") {
                 fatal_error!(
                     self,
-                    ParserInvalidDoctypeDecl,
+                    InvalidDoctypeDecl,
                     "']' for the end of internal DTD subset is not found."
                 );
-                return Err(XMLError::ParserInvalidDoctypeDecl);
+                return Err(XMLError::XMLParseError(ParseError::InvalidDoctypeDecl));
             }
             // skip ']'
             self.source.advance(1);
@@ -57,10 +58,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b">") {
             fatal_error!(
                 self,
-                ParserInvalidDoctypeDecl,
+                InvalidDoctypeDecl,
                 "Document type declaration does not close with '>'."
             );
-            return Err(XMLError::ParserInvalidDoctypeDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidDoctypeDecl));
         }
         // skip '>'
         self.source.advance(1);
@@ -89,7 +90,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if !self.source.is_empty() {
                 fatal_error!(
                     self,
-                    ParserEntityIncorrectNesting,
+                    EntityIncorrectNesting,
                     "The external DTD subset finish incorrectly."
                 );
             }
@@ -120,7 +121,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Notation Declared]
                     validity_error!(
                         self,
-                        ParserUndeclaredNotation,
+                        UndeclaredNotation,
                         "The notation '{}' is undeclared.",
                         notation_name.as_ref()
                     );
@@ -143,7 +144,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // 4.4.9 Error
                                 error!(
                                     self,
-                                    ParserInvalidEntityReference,
+                                    InvalidEntityReference,
                                     "The unparsed entity '{}' appears in EntityValue of the entity '{}'.",
                                     entity,
                                     name
@@ -162,7 +163,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: No Notation on Empty Element]
                         validity_error!(
                             self,
-                            ParserNotationAttlistDeclOnEmptyElement,
+                            NotationAttlistDeclOnEmptyElement,
                             "Notation Type attribute '{}' is declared on the empty type element '{}'.",
                             attr_name,
                             elem_name
@@ -174,7 +175,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: Notation Attributes]
                             validity_error!(
                                 self,
-                                ParserUndeclaredNotation,
+                                UndeclaredNotation,
                                 "The notation '{}' referenced in the notation type list for attribute '{}' of the element '{}' is not declared.",
                                 notation,
                                 attr_name,
@@ -207,10 +208,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"<!DOCTYPE") {
             fatal_error!(
                 self,
-                ParserInvalidDoctypeDecl,
+                InvalidDoctypeDecl,
                 "The document type declaration must start with '<!DOCTYPE'."
             );
-            return Err(XMLError::ParserInvalidDoctypeDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidDoctypeDecl));
         }
         // skip '<!DOCTYPE'
         self.source.advance(9);
@@ -219,7 +220,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if self.skip_whitespaces()? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidDoctypeDecl,
+                InvalidDoctypeDecl,
                 "Whitespaces are required after '<!DOCTYPE'."
             );
         }
@@ -235,7 +236,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         let s = self.skip_whitespaces()?;
         self.grow()?;
         if self.source.is_empty() {
-            return Err(XMLError::ParserUnexpectedEOF);
+            return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF));
         }
 
         // If the following character is neither ‘[’ nor ‘>’, then there is an ExternalID.
@@ -246,7 +247,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if s == 0 {
                 fatal_error!(
                     self,
-                    ParserInvalidDoctypeDecl,
+                    InvalidDoctypeDecl,
                     "Whitespaces are required between Name and ExternalID."
                 );
             }
@@ -361,7 +362,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if s == 0 {
                     fatal_error!(
                         self,
-                        ParserInvalidExternalID,
+                        InvalidExternalID,
                         "Whitespaces are required after 'SYSTEM' in ExternalID."
                     );
                 }
@@ -380,7 +381,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if s == 0 {
                     fatal_error!(
                         self,
-                        ParserInvalidExternalID,
+                        InvalidExternalID,
                         "Whitespaces are required after 'PUBLIC' in ExternalID."
                     );
                 }
@@ -393,7 +394,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if s == 0 {
                     fatal_error!(
                         self,
-                        ParserInvalidExternalID,
+                        InvalidExternalID,
                         "Whitespaces are required after PubidLiteral in ExternalID."
                     );
                 }
@@ -402,10 +403,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             _ => {
                 fatal_error!(
                     self,
-                    ParserInvalidExternalID,
+                    InvalidExternalID,
                     "ExternalID must start with 'SYSTEM' or 'PUBLIC'."
                 );
-                return Err(XMLError::ParserInvalidExternalID);
+                return Err(XMLError::XMLParseError(ParseError::InvalidExternalID));
             }
         }
 
@@ -418,7 +419,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             Ok(uri) if uri.fragment().is_some() => {
                 error!(
                     self,
-                    ParserSystemLiteralWithFragment,
+                    SystemLiteralWithFragment,
                     "The system ID '{}' has a fragment, but it is not allowed.",
                     system_id
                 );

@@ -1,5 +1,6 @@
 use crate::{
     error::XMLError,
+    parse::ParseError,
     sax::{
         InputSource, ParserSpec, ParserState, SAXHandler, XMLReader,
         error::{fatal_error, validity_error},
@@ -42,10 +43,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if self.source.source_id() != source_id {
                         fatal_error!(
                             self,
-                            ParserEntityIncorrectNesting,
+                            EntityIncorrectNesting,
                             "A parameter entity in extSubsetDecl is nested incorrectly."
                         );
-                        return Err(XMLError::ParserEntityIncorrectNesting);
+                        return Err(XMLError::XMLParseError(ParseError::EntityIncorrectNesting));
                     }
                     if entity_push {
                         self.pop_source()?;
@@ -82,10 +83,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"<![") {
             fatal_error!(
                 self,
-                ParserInvalidConditionalSect,
+                InvalidConditionalSect,
                 "A conditional section in DTD does not start with '<!['."
             );
-            return Err(XMLError::ParserInvalidConditionalSect);
+            return Err(XMLError::XMLParseError(ParseError::InvalidConditionalSect));
         }
         // skip '<!['
         self.source.advance(3);
@@ -107,7 +108,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Proper Conditional Section/PE Nesting]
                     validity_error!(
                         self,
-                        ParserEntityIncorrectNesting,
+                        EntityIncorrectNesting,
                         "A parameter entity in the conditional section is nested incorrectly."
                     );
                 }
@@ -115,10 +116,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if !self.source.content_bytes().starts_with(b"[") {
                     fatal_error!(
                         self,
-                        ParserInvalidConditionalSect,
+                        InvalidConditionalSect,
                         "'[' is not found after 'INCLUDE' in a conditional section."
                     );
-                    return Err(XMLError::ParserInvalidConditionalSect);
+                    return Err(XMLError::XMLParseError(ParseError::InvalidConditionalSect));
                 }
                 // skip '['
                 self.source.advance(1);
@@ -129,10 +130,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if !self.source.content_bytes().starts_with(b"]]>") {
                     fatal_error!(
                         self,
-                        ParserInvalidConditionalSect,
+                        InvalidConditionalSect,
                         "The conditional section does not end with ']]>'."
                     );
-                    return Err(XMLError::ParserInvalidConditionalSect);
+                    return Err(XMLError::XMLParseError(ParseError::InvalidConditionalSect));
                 }
                 // skip ']]>'
                 self.source.advance(3);
@@ -149,7 +150,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Proper Conditional Section/PE Nesting]
                     validity_error!(
                         self,
-                        ParserEntityIncorrectNesting,
+                        EntityIncorrectNesting,
                         "A parameter entity in the conditional section is nested incorrectly."
                     );
                 }
@@ -157,10 +158,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if !self.source.content_bytes().starts_with(b"[") {
                     fatal_error!(
                         self,
-                        ParserInvalidConditionalSect,
+                        InvalidConditionalSect,
                         "'[' is not found after 'IGNORE' in a conditional section."
                     );
-                    return Err(XMLError::ParserInvalidConditionalSect);
+                    return Err(XMLError::XMLParseError(ParseError::InvalidConditionalSect));
                 }
                 // skip '['
                 self.source.advance(1);
@@ -195,13 +196,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             Some(c) => {
                                 fatal_error!(
                                     self,
-                                    ParserInvalidCharacter,
+                                    InvalidCharacter,
                                     "The character '0x{:X}' is not allowed in the XML document.",
                                     c as u32
                                 );
                                 self.locator.update_column(|c| c + 1);
                             }
-                            None => return Err(XMLError::ParserUnexpectedEOF),
+                            None => return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF)),
                         }
                     }
                 }
@@ -209,10 +210,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             _ => {
                 fatal_error!(
                     self,
-                    ParserInvalidConditionalSect,
+                    InvalidConditionalSect,
                     "A conditional section does not have neither 'INCLUDE' nor 'IGNORE' parameter."
                 );
-                return Err(XMLError::ParserInvalidConditionalSect);
+                return Err(XMLError::XMLParseError(ParseError::InvalidConditionalSect));
             }
         }
         Ok(())

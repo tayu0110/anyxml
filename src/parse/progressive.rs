@@ -2,6 +2,7 @@ use std::{ops::ControlFlow, sync::Arc};
 
 use crate::{
     error::XMLError,
+    parse::ParseError,
     sax::{
         EntityDecl, InputSource, ParserOption, ParserState, ParserSubState, ProgressiveParserSpec,
         SAXHandler, XMLReader,
@@ -21,7 +22,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                 ParserState::BeforeStart => {
                     if self.source.total_read() < 4 {
                         break if finish {
-                            Err(XMLError::ParserUnexpectedEOF)
+                            Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                         } else {
                             Ok(false)
                         };
@@ -300,7 +301,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                     }
 
                     break if finish {
-                        Err(XMLError::ParserUnexpectedEOF)
+                        Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                     } else {
                         Ok(false)
                     };
@@ -399,11 +400,13 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                             {
                                 fatal_error!(
                                     self,
-                                    ParserEntityIncorrectNesting,
+                                    EntityIncorrectNesting,
                                     "The entity '{}' is nested incorrectly.",
                                     name
                                 );
-                                return Err(XMLError::ParserEntityIncorrectNesting);
+                                return Err(XMLError::XMLParseError(
+                                    ParseError::EntityIncorrectNesting,
+                                ));
                             }
                             self.version = old_version;
                             self.encoding = old_encoding;
@@ -412,7 +415,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                             }
                             Ok(true)
                         } else if finish {
-                            Err(XMLError::ParserUnexpectedEOF)
+                            Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                         } else {
                             Ok(false)
                         };
@@ -422,7 +425,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                         [b'<', ..] => {
                             if self.source.content_bytes().len() < 2 {
                                 break if finish {
-                                    Err(XMLError::ParserUnexpectedEOF)
+                                    Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                                 } else {
                                     Ok(false)
                                 };
@@ -456,7 +459,9 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                                     }
 
                                     if finish {
-                                        return Err(XMLError::ParserUnexpectedEOF);
+                                        return Err(XMLError::XMLParseError(
+                                            ParseError::UnexpectedEOF,
+                                        ));
                                     }
                                 }
                                 b'/' => {
@@ -464,7 +469,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                                         && !self.source.content_bytes().contains(&b'>')
                                     {
                                         return if finish {
-                                            Err(XMLError::ParserUnexpectedEOF)
+                                            Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                                         } else {
                                             Ok(false)
                                         };
@@ -481,11 +486,13 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                                     } else {
                                         fatal_error!(
                                             self,
-                                            ParserInvalidEndTag,
+                                            InvalidEndTag,
                                             "An end tag '{}' is found, but start tag is not found.",
                                             end
                                         );
-                                        return Err(XMLError::ParserInvalidEndTag);
+                                        return Err(XMLError::XMLParseError(
+                                            ParseError::InvalidEndTag,
+                                        ));
                                     }
 
                                     if let Some((old_element_stack_length, _, _)) =
@@ -495,11 +502,13 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                                     {
                                         fatal_error!(
                                             self,
-                                            ParserEntityIncorrectNesting,
+                                            EntityIncorrectNesting,
                                             "The entity '{}' is nested incorrectly.",
                                             self.entity_name().unwrap()
                                         );
-                                        return Err(XMLError::ParserEntityIncorrectNesting);
+                                        return Err(XMLError::XMLParseError(
+                                            ParseError::EntityIncorrectNesting,
+                                        ));
                                     }
 
                                     if self.specific_context.element_stack.is_empty() {
@@ -510,7 +519,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                                 b'!' => {
                                     if self.source.content_bytes().len() < 4 {
                                         return if finish {
-                                            Err(XMLError::ParserUnexpectedEOF)
+                                            Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                                         } else {
                                             Ok(false)
                                         };
@@ -548,13 +557,17 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                                         }
 
                                         if finish {
-                                            return Err(XMLError::ParserUnexpectedEOF);
+                                            return Err(XMLError::XMLParseError(
+                                                ParseError::UnexpectedEOF,
+                                            ));
                                         }
                                     } else {
                                         // CDSect
                                         if self.source.content_bytes().len() < 9 {
                                             return if finish {
-                                                Err(XMLError::ParserUnexpectedEOF)
+                                                Err(XMLError::XMLParseError(
+                                                    ParseError::UnexpectedEOF,
+                                                ))
                                             } else {
                                                 Ok(false)
                                             };
@@ -590,7 +603,9 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                                         }
 
                                         if finish {
-                                            return Err(XMLError::ParserUnexpectedEOF);
+                                            return Err(XMLError::XMLParseError(
+                                                ParseError::UnexpectedEOF,
+                                            ));
                                         }
                                     }
                                 }
@@ -601,7 +616,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                         [b'&', ..] => {
                             if self.source.content_bytes().len() < 2 {
                                 break if finish {
-                                    Err(XMLError::ParserUnexpectedEOF)
+                                    Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                                 } else {
                                     Ok(false)
                                 };
@@ -720,10 +735,12 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                     break if !self.source.content_bytes().is_empty() {
                         fatal_error!(
                             self,
-                            ParserUnexpectedDocumentContent,
+                            UnexpectedDocumentContent,
                             "Unnecessary document content remains. (Elements, character data, etc.)"
                         );
-                        Err(XMLError::ParserUnexpectedDocumentContent)
+                        Err(XMLError::XMLParseError(
+                            ParseError::UnexpectedDocumentContent,
+                        ))
                     } else {
                         if !self.fatal_error_occurred
                             && self.config.is_enable(ParserOption::Validation)
@@ -733,7 +750,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                             for idref in self.unresolved_ids.drain() {
                                 validity_error!(
                                     self,
-                                    ParserUnresolvableIDReference,
+                                    UnresolvableIDReference,
                                     "IDREF '{}' has no referenced ID.",
                                     idref
                                 );
@@ -770,7 +787,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                 // Even the shortest markup requires 4 characters,
                 // so if all data has already been inserted at this point,
                 // it is no longer well-formed.
-                Err(XMLError::ParserUnexpectedEOF)
+                Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
             } else {
                 Ok(ControlFlow::Break(false))
             };
@@ -786,7 +803,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                     self.specific_context.seen += pos;
                     if self.specific_context.seen + 1 == self.source.content_bytes().len() {
                         return if finish {
-                            Err(XMLError::ParserUnexpectedEOF)
+                            Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                         } else {
                             Ok(ControlFlow::Break(false))
                         };
@@ -806,7 +823,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
             [b'<', b'!', ..] => {
                 if self.source.content_bytes().len() < 7 {
                     return if finish {
-                        Err(XMLError::ParserUnexpectedEOF)
+                        Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                     } else {
                         Ok(ControlFlow::Break(false))
                     };
@@ -826,7 +843,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                     self.specific_context.seen += pos;
                     if self.specific_context.seen + 2 >= self.source.content_bytes().len() {
                         return if finish {
-                            Err(XMLError::ParserUnexpectedEOF)
+                            Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                         } else {
                             Ok(ControlFlow::Break(false))
                         };
@@ -860,14 +877,14 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
     fn try_parse_start_or_empty_tag_once(&mut self, finish: bool) -> Result<bool, XMLError> {
         if self.source.content_bytes().len() < 4 {
             return if finish {
-                Err(XMLError::ParserUnexpectedEOF)
+                Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
             } else {
                 Ok(false)
             };
         }
 
         if !self.source.content_bytes().starts_with(b"<") {
-            return Err(XMLError::ParserInvalidStartOrEmptyTag);
+            return Err(XMLError::XMLParseError(ParseError::InvalidStartOrEmptyTag));
         }
 
         self.specific_context.seen = self.specific_context.seen.max(1);
@@ -884,7 +901,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                 } else {
                     self.specific_context.seen = self.source.content_bytes().len();
                     return if finish {
-                        Err(XMLError::ParserUnexpectedEOF)
+                        Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                     } else {
                         Ok(false)
                     };
@@ -933,7 +950,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                 } else {
                     self.specific_context.seen = self.source.content_bytes().len();
                     return if finish {
-                        Err(XMLError::ParserUnexpectedEOF)
+                        Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                     } else {
                         Ok(false)
                     };
@@ -942,7 +959,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
         }
 
         if finish {
-            Err(XMLError::ParserUnexpectedEOF)
+            Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
         } else {
             Ok(false)
         }
@@ -966,7 +983,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
             if !self.source.content_bytes()[self.specific_context.seen..].contains(&b';') {
                 self.specific_context.seen = self.source.content_bytes().len();
                 return if finish {
-                    Err(XMLError::ParserUnexpectedEOF)
+                    Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                 } else {
                     Ok(ControlFlow::Break(false))
                 };
@@ -989,10 +1006,10 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
         if !self.source.content_bytes().starts_with(b";") {
             fatal_error!(
                 self,
-                ParserInvalidEntityReference,
+                InvalidEntityReference,
                 "The entity reference does not end with ';'."
             );
-            return Err(XMLError::ParserInvalidEntityReference);
+            return Err(XMLError::XMLParseError(ParseError::InvalidEntityReference));
         }
 
         // skip ';'
@@ -1004,11 +1021,11 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                 // [WFC: No Recursion]
                 fatal_error!(
                     self,
-                    ParserEntityRecursion,
+                    EntityRecursion,
                     "The entity '{}' appears recursively.",
                     name
                 );
-                return Err(XMLError::ParserEntityRecursion);
+                return Err(XMLError::XMLParseError(ParseError::EntityRecursion));
             }
             match decl {
                 EntityDecl::InternalGeneralEntity {
@@ -1020,7 +1037,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                         // [WFC: Entity Declared]
                         fatal_error!(
                             self,
-                            ParserUndeclaredEntityReference,
+                            UndeclaredEntityReference,
                             "standalone='yes', but it does not reference any entities declared in the internal DTD."
                         );
                     } else {
@@ -1057,7 +1074,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                         // [WFC: Entity Declared]
                         fatal_error!(
                             self,
-                            ParserUndeclaredEntityReference,
+                            UndeclaredEntityReference,
                             "standalone='yes', but it does not reference any entities declared in the internal DTD."
                         );
                     } else if self.config.is_enable(ParserOption::ExternalGeneralEntities)
@@ -1129,7 +1146,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                     // [WFC: Parsed Entity]
                     fatal_error!(
                         self,
-                        ParserInvalidEntityReference,
+                        InvalidEntityReference,
                         "The unparsed entity '{}' cannot be referred.",
                         name
                     );
@@ -1149,7 +1166,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                 // [WFC: Entity Declared]
                 fatal_error!(
                     self,
-                    ParserEntityNotFound,
+                    EntityNotFound,
                     "The entity '{}' is not declared.",
                     name
                 );
@@ -1157,7 +1174,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                 // [VC: Entity Declared]
                 validity_error!(
                     self,
-                    ParserEntityNotFound,
+                    EntityNotFound,
                     "The entity '{}' is not declared.",
                     name
                 );

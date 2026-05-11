@@ -37,7 +37,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if content.starts_with(b"]]>") {
                         fatal_error!(
                             self,
-                            ParserUnacceptablePatternInCharData,
+                            UnacceptablePatternInCharData,
                             "']]>' is not allowed in a character data."
                         );
                     }
@@ -77,7 +77,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         Some(c) => {
                             fatal_error!(
                                 self,
-                                ParserInvalidCharacter,
+                                InvalidCharacter,
                                 "The characeter '0x{:X}' is not allowed in the XML document.",
                                 c as u32
                             );

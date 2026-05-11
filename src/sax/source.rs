@@ -7,6 +7,7 @@ use crate::{
     },
     error::XMLError,
     mediatype::MediaType,
+    parse::ParseError,
     uri::{URIStr, URIString},
 };
 
@@ -66,7 +67,8 @@ impl<'a> InputSource<'a> {
         ret.source = Box::new(reader);
 
         if let Some(encoding) = encoding {
-            ret.decoder = find_decoder(encoding).ok_or(XMLError::ParserUnsupportedEncoding)?;
+            ret.decoder = find_decoder(encoding)
+                .ok_or(XMLError::XMLParseError(ParseError::UnsupportedEncoding))?;
             ret.buffer.shrink_to_fit();
             ret.compact = true;
         } else {
@@ -358,7 +360,8 @@ impl<'a> InputSource<'a> {
         if self.compact {
             return Err(XMLError::InternalError);
         }
-        self.decoder = find_decoder(to).ok_or(XMLError::ParserUnsupportedEncoding)?;
+        self.decoder =
+            find_decoder(to).ok_or(XMLError::XMLParseError(ParseError::UnsupportedEncoding))?;
         self.decoded.clear();
         self.buffer_next = 0;
         if self.decoded.capacity() < 4 {

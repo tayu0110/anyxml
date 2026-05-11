@@ -1,6 +1,7 @@
 use crate::{
     catalog::CatalogEntryFile,
     error::XMLError,
+    parse::ParseError,
     sax::{
         DefaultSAXHandler, InputSource, ParserOption, ParserSpec, ParserState, SAXHandler,
         XMLReader,
@@ -21,10 +22,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"<?") {
             fatal_error!(
                 self,
-                ParserInvalidProcessingInstruction,
+                InvalidProcessingInstruction,
                 "PI does not start with '<?'."
             );
-            return Err(XMLError::ParserInvalidProcessingInstruction);
+            return Err(XMLError::XMLParseError(
+                ParseError::InvalidProcessingInstruction,
+            ));
         }
         // skip '<?'
         self.source.advance(2);
@@ -46,7 +49,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if target.eq_ignore_ascii_case("xml") {
             fatal_error!(
                 self,
-                ParserUnacceptablePITarget,
+                UnacceptablePITarget,
                 "PI target '{}' is not allowed.",
                 target
             );
@@ -60,7 +63,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             {
                 error!(
                     self,
-                    ParserInvalidCatalogPIAttribute,
+                    InvalidCatalogPIAttribute,
                     "The PI '{}' must have a single pseudo-attribute 'catalog'.",
                     CATALOG_PI_TARGET_NAME
                 );
@@ -80,7 +83,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if s == 0 {
             fatal_error!(
                 self,
-                ParserInvalidProcessingInstruction,
+                InvalidProcessingInstruction,
                 "Whitespaces are required between PI target and data."
             );
         }
@@ -110,12 +113,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     data.push(c);
                     fatal_error!(
                         self,
-                        ParserInvalidCharacter,
+                        InvalidCharacter,
                         "A character '0x{:X}' is not allowed in XML document.",
                         c as u32
                     );
                 }
-                None => return Err(XMLError::ParserUnexpectedEOF),
+                None => return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF)),
             }
             if self.source.content_bytes().len() < 2 {
                 self.grow()?;
@@ -126,7 +129,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if self.state != ParserState::InMiscAfterXMLDeclaration {
                 error!(
                     self,
-                    ParserUnacceptableCatalogPIPosition,
+                    UnacceptableCatalogPIPosition,
                     "The PI '{}' must only appear between XML declaration and Documnet Type declaration.",
                     CATALOG_PI_TARGET_NAME
                 );
@@ -138,10 +141,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"?>") {
             fatal_error!(
                 self,
-                ParserInvalidProcessingInstruction,
+                InvalidProcessingInstruction,
                 "PI does not close with '?>'."
             );
-            return Err(XMLError::ParserInvalidProcessingInstruction);
+            return Err(XMLError::XMLParseError(
+                ParseError::InvalidProcessingInstruction,
+            ));
         }
         // skip '?>'
         self.source.advance(2);
@@ -177,7 +182,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             } else {
                 error!(
                     self,
-                    ParserInvalidCatalogPIAttribute,
+                    InvalidCatalogPIAttribute,
                     "The value '{}' of 'catalog' pseudo-attribute for the PI '{}' cannot be parsed.",
                     literal,
                     CATALOG_PI_TARGET_NAME
@@ -186,7 +191,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         } else {
             error!(
                 self,
-                ParserInvalidCatalogPIAttribute,
+                InvalidCatalogPIAttribute,
                 "The PI '{}' must have a single pseudo-attribute 'catalog', but '{}' is specified.",
                 CATALOG_PI_TARGET_NAME,
                 data

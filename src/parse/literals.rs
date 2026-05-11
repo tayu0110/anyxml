@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     error::XMLError,
+    parse::ParseError,
     sax::{
         EntityDecl, InputSource, ParserOption, ParserSpec, ParserState, SAXHandler, XMLReader,
         error::{error, fatal_error, validity_error},
@@ -19,16 +20,18 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             Some(c) => {
                 fatal_error!(
                     self,
-                    ParserIncorrectLiteralQuotation,
+                    IncorrectLiteralQuotation,
                     "A character '0x{:X}' is not correct quotation mark for a literal.",
                     c as u32
                 );
                 self.locator.update_column(|c| c + 1);
-                Err(XMLError::ParserIncorrectLiteralQuotation)
+                Err(XMLError::XMLParseError(
+                    ParseError::IncorrectLiteralQuotation,
+                ))
             }
             None => {
-                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
-                Err(XMLError::ParserUnexpectedEOF)
+                fatal_error!(self, UnexpectedEOF, "Unexpected EOF.");
+                Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
             }
         }
     }
@@ -42,15 +45,17 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             Some(_) => {
                 fatal_error!(
                     self,
-                    ParserIncorrectLiteralQuotation,
+                    IncorrectLiteralQuotation,
                     "The literal does not close with the correct quotation mark."
                 );
                 self.locator.update_column(|c| c + 1);
-                Err(XMLError::ParserIncorrectLiteralQuotation)
+                Err(XMLError::XMLParseError(
+                    ParseError::IncorrectLiteralQuotation,
+                ))
             }
             None => {
-                fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
-                Err(XMLError::ParserUnexpectedEOF)
+                fatal_error!(self, UnexpectedEOF, "Unexpected EOF.");
+                Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
             }
         }
     }
@@ -189,7 +194,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         Some(c) => {
                             fatal_error!(
                                 self,
-                                ParserInvalidCharacter,
+                                InvalidCharacter,
                                 "The character '0x{:X}' is not allowed in the XML document.",
                                 c as u32
                             );
@@ -209,11 +214,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
 
             match self.source.content_bytes()[0] {
                 b'<' => {
-                    fatal_error!(
-                        self,
-                        ParserInvalidAttValue,
-                        "AttValue must not contain '<'."
-                    );
+                    fatal_error!(self, InvalidAttValue, "AttValue must not contain '<'.");
                     buffer.push('<');
                     self.source.advance(1);
                     self.locator.update_column(|c| c + 1);
@@ -243,7 +244,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         }
 
         if self.source.content_bytes().is_empty() && self.source.source_id() == orig_source_id {
-            fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
+            fatal_error!(self, UnexpectedEOF, "Unexpected EOF.");
         }
         Ok(())
     }
@@ -258,10 +259,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"&") {
             fatal_error!(
                 self,
-                ParserInvalidEntityReference,
+                InvalidEntityReference,
                 "An entity reference does not start with '&'."
             );
-            return Err(XMLError::ParserInvalidEntityReference);
+            return Err(XMLError::XMLParseError(ParseError::InvalidEntityReference));
         }
         // skip '&'
         self.source.advance(1);
@@ -278,10 +279,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b";") {
             fatal_error!(
                 self,
-                ParserInvalidEntityReference,
+                InvalidEntityReference,
                 "The entity reference does not end with ';'."
             );
-            return Err(XMLError::ParserInvalidEntityReference);
+            return Err(XMLError::XMLParseError(ParseError::InvalidEntityReference));
         }
         // skip ';'
         self.source.advance(1);
@@ -292,11 +293,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [WFC: No Recursion]
                 fatal_error!(
                     self,
-                    ParserEntityRecursion,
+                    EntityRecursion,
                     "The entity '{}' appears recursively.",
                     name
                 );
-                return Err(XMLError::ParserEntityRecursion);
+                return Err(XMLError::XMLParseError(ParseError::EntityRecursion));
             }
             match decl {
                 EntityDecl::InternalGeneralEntity {
@@ -308,7 +309,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [WFC: Entity Declared]
                         fatal_error!(
                             self,
-                            ParserUndeclaredEntityReference,
+                            UndeclaredEntityReference,
                             "standalone='yes', but it does not reference any entities declared in the internal DTD."
                         );
                     } else {
@@ -335,11 +336,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         if !self.source.is_empty() {
                             fatal_error!(
                                 self,
-                                ParserEntityIncorrectNesting,
+                                EntityIncorrectNesting,
                                 "The entity '{}' is nested incorrectly.",
                                 name
                             );
-                            return Err(XMLError::ParserEntityIncorrectNesting);
+                            return Err(XMLError::XMLParseError(
+                                ParseError::EntityIncorrectNesting,
+                            ));
                         }
 
                         self.pop_source()?;
@@ -357,7 +360,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // 4.4.4 Forbidden
                     fatal_error!(
                         self,
-                        ParserInvalidEntityReference,
+                        InvalidEntityReference,
                         "An external entity reference is not allowed in AttValue"
                     );
                 }
@@ -365,7 +368,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [WFC: Parsed Entity]
                     fatal_error!(
                         self,
-                        ParserInvalidEntityReference,
+                        InvalidEntityReference,
                         "The unparsed entity '{}' cannot be referred.",
                         name
                     );
@@ -386,7 +389,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [WFC: Entity Declared]
                 fatal_error!(
                     self,
-                    ParserEntityNotFound,
+                    EntityNotFound,
                     "The entity '{}' is not declared.",
                     name
                 );
@@ -394,7 +397,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [VC: Entity Declared]
                 error!(
                     self,
-                    ParserEntityNotFound, "The entity '{}' is not declared.", name
+                    EntityNotFound, "The entity '{}' is not declared.", name
                 );
             }
 
@@ -427,10 +430,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [WFC: PEs in Internal Subset]
                         fatal_error!(
                             self,
-                            ParserInvalidEntityReference,
+                            InvalidEntityReference,
                             "A parameter entity appears in the markup declaration in an internal subset."
                         );
-                        return Err(XMLError::ParserInvalidEntityReference);
+                        return Err(XMLError::XMLParseError(ParseError::InvalidEntityReference));
                     }
 
                     // skip '%'
@@ -447,10 +450,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if !self.source.content_bytes().starts_with(b";") {
                         fatal_error!(
                             self,
-                            ParserInvalidEntityReference,
+                            InvalidEntityReference,
                             "The entity reference does not end with ';'."
                         );
-                        return Err(XMLError::ParserInvalidEntityReference);
+                        return Err(XMLError::XMLParseError(ParseError::InvalidEntityReference));
                     }
                     // skip ';'
                     self.source.advance(1);
@@ -461,11 +464,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [WFC: No Recursion]
                             fatal_error!(
                                 self,
-                                ParserEntityRecursion,
+                                EntityRecursion,
                                 "The entity '{}' appears recursively.",
                                 name
                             );
-                            return Err(XMLError::ParserEntityRecursion);
+                            return Err(XMLError::XMLParseError(ParseError::EntityRecursion));
                         }
                         match decl {
                             EntityDecl::InternalGeneralEntity { .. }
@@ -499,11 +502,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 if !self.source.is_empty() {
                                     fatal_error!(
                                         self,
-                                        ParserEntityIncorrectNesting,
+                                        EntityIncorrectNesting,
                                         "The entity '{}' is nested incorrectly.",
                                         name
                                     );
-                                    return Err(XMLError::ParserEntityIncorrectNesting);
+                                    return Err(XMLError::XMLParseError(
+                                        ParseError::EntityIncorrectNesting,
+                                    ));
                                 }
                                 self.pop_source()?;
                             }
@@ -561,11 +566,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                             if !self.source.is_empty() {
                                                 fatal_error!(
                                                     self,
-                                                    ParserEntityIncorrectNesting,
+                                                    EntityIncorrectNesting,
                                                     "The entity '{}' is nested incorrectly.",
                                                     name
                                                 );
-                                                return Err(XMLError::ParserEntityIncorrectNesting);
+                                                return Err(XMLError::XMLParseError(
+                                                    ParseError::EntityIncorrectNesting,
+                                                ));
                                             }
                                             self.pop_source()?;
                                         }
@@ -590,7 +597,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [WFC: Entity Declared] need not be considered.
                         validity_error!(
                             self,
-                            ParserEntityNotFound,
+                            EntityNotFound,
                             "The entity '{}' is not declared.",
                             name
                         );
@@ -615,10 +622,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if !self.source.content_bytes().starts_with(b";") {
                         fatal_error!(
                             self,
-                            ParserInvalidEntityReference,
+                            InvalidEntityReference,
                             "The entity reference does not end with ';'."
                         );
-                        return Err(XMLError::ParserInvalidEntityReference);
+                        return Err(XMLError::XMLParseError(ParseError::InvalidEntityReference));
                     }
                     // skip ';'
                     self.source.advance(1);
@@ -666,7 +673,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     Some(c) => {
                         fatal_error!(
                             self,
-                            ParserInvalidCharacter,
+                            InvalidCharacter,
                             "The character '0x{:X}' is not allowed in the XML document.",
                             c as u32
                         );
@@ -679,8 +686,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if in_entity {
                         break Ok(());
                     }
-                    fatal_error!(self, ParserUnexpectedEOF, "Unexpected EOF.");
-                    break Err(XMLError::ParserUnexpectedEOF);
+                    fatal_error!(self, UnexpectedEOF, "Unexpected EOF.");
+                    break Err(XMLError::XMLParseError(ParseError::UnexpectedEOF));
                 }
             }
         }

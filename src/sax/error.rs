@@ -52,8 +52,10 @@ macro_rules! generic_error {
     ($method:ident, $handler:expr, $code:expr, $level:expr, $domain:expr, $locator:expr, $message:literal, $( $args:expr ),*) => {
         #[allow(unused)]
         use $crate::error::XMLError::*;
+        #[allow(unused)]
+        use $crate::parse::ParseError::*;
         $handler.$method($crate::sax::error::SAXParseError {
-            error: $code,
+            error: $code.into(),
             level: $level,
             domain: $domain,
             line: $locator.line(),
@@ -64,8 +66,11 @@ macro_rules! generic_error {
         })
     };
     ($method:ident, $handler:expr, $code:expr, $level:expr, $domain:expr, $locator:expr, $message:literal) => {
+        #[allow(unused)]
+        use $crate::error::XMLError::*;
+        use $crate::parse::ParseError::*;
         $handler.$method($crate::sax::error::SAXParseError {
-            error: $code,
+            error: $code.into(),
             level: $level,
             domain: $domain,
             line: $locator.line(),
@@ -76,8 +81,11 @@ macro_rules! generic_error {
         })
     };
     ($method:ident, $handler:expr, $code:expr, $level:expr, $domain:expr, $locator:expr, $message:expr) => {
+        #[allow(unused)]
+        use $crate::error::XMLError::*;
+        use $crate::parse::ParseError::*;
         $handler.$method($crate::sax::error::SAXParseError {
-            error: $code,
+            error: $code.into(),
             level: $level,
             domain: $domain,
             line: $locator.line(),
@@ -91,8 +99,6 @@ macro_rules! generic_error {
 
 macro_rules! fatal_error {
     ($reader:expr, $code:ident, $message:literal, $( $args:expr ),*) => {
-        #[allow(unused)]
-        use $crate::error::XMLError::*;
         $crate::sax::error::generic_error!(
             fatal_error,
             $reader.handler,
@@ -112,7 +118,7 @@ macro_rules! fatal_error {
         $crate::sax::error::generic_error!(
             fatal_error,
             $reader.handler,
-            $crate::error::XMLError::$code,
+            $code,
             $crate::error::XMLErrorLevel::FatalError,
             $crate::error::XMLErrorDomain::Parser,
             $reader.locator,
@@ -124,8 +130,6 @@ macro_rules! fatal_error {
 
 macro_rules! error {
     ($reader:expr, $code:ident, $message:literal, $( $args:expr ),*) => {
-        #[allow(unused)]
-        use $crate::error::XMLError::*;
         $crate::sax::error::generic_error!(
             error,
             $reader.handler,
@@ -144,7 +148,7 @@ macro_rules! error {
         $crate::sax::error::generic_error!(
             error,
             $reader.handler,
-            $crate::error::XMLError::$code,
+            $code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::Parser,
             $reader.locator,
@@ -158,7 +162,7 @@ macro_rules! warning {
         $crate::sax::error::generic_error!(
             warning,
             $reader.handler,
-            $crate::error::XMLError::$code,
+            $code,
             $crate::error::XMLErrorLevel::Warning,
             $crate::error::XMLErrorDomain::Parser,
             $reader.locator,
@@ -173,7 +177,7 @@ macro_rules! warning {
         $crate::sax::error::generic_error!(
             warning,
             $reader.handler,
-            $crate::error::XMLError::$code,
+            $code,
             $crate::error::XMLErrorLevel::Warning,
             $crate::error::XMLErrorDomain::Parser,
             $reader.locator,
@@ -184,8 +188,6 @@ macro_rules! warning {
 
 macro_rules! ns_error {
     ($reader:expr, $code:ident, $message:literal, $( $args:expr ),*) => {
-        #[allow(unused)]
-        use $crate::error::XMLError::*;
         $crate::sax::error::generic_error!(
             error,
             $reader.handler,
@@ -204,7 +206,7 @@ macro_rules! ns_error {
         $crate::sax::error::generic_error!(
             error,
             $reader.handler,
-            $crate::error::XMLError::$code,
+            $code,
             $crate::error::XMLErrorLevel::Error,
             $crate::error::XMLErrorDomain::Namespace,
             $reader.locator,

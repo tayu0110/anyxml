@@ -1,6 +1,7 @@
 use crate::{
     CHARDATA_CHUNK_LENGTH,
     error::XMLError,
+    parse::ParseError,
     sax::{InputSource, ParserSpec, SAXHandler, XMLReader, error::fatal_error},
 };
 
@@ -11,12 +12,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
     pub(crate) fn parse_comment(&mut self) -> Result<(), XMLError> {
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"<!--") {
-            fatal_error!(
-                self,
-                ParserInvalidComment,
-                "Comment does not start with '<!--'."
-            );
-            return Err(XMLError::ParserInvalidComment);
+            fatal_error!(self, InvalidComment, "Comment does not start with '<!--'.");
+            return Err(XMLError::XMLParseError(ParseError::InvalidComment));
         }
         // skip '<!--'
         self.source.advance(4);
@@ -37,7 +34,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if self.source.peek_char()? == Some('-') {
                         fatal_error!(
                             self,
-                            ParserInvalidComment,
+                            InvalidComment,
                             "Comment must not contain '--' except for delimiters."
                         );
                     }
@@ -66,13 +63,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     self.locator.update_column(|c| c + 1);
                     fatal_error!(
                         self,
-                        ParserInvalidCharacter,
+                        InvalidCharacter,
                         "A character '0x{:X}' is not allowed in XML documents.",
                         c as u32
                     );
                 }
                 None => {
-                    return Err(XMLError::ParserUnexpectedEOF);
+                    return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF));
                 }
             }
 
@@ -92,12 +89,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         }
 
         if !self.source.content_bytes().starts_with(b"-->") {
-            fatal_error!(
-                self,
-                ParserInvalidComment,
-                "Comment does not end with '-->'."
-            );
-            return Err(XMLError::ParserInvalidComment);
+            fatal_error!(self, InvalidComment, "Comment does not end with '-->'.");
+            return Err(XMLError::XMLParseError(ParseError::InvalidComment));
         }
         // skip '-->'
         self.source.advance(3);

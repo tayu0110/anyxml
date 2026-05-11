@@ -1,6 +1,6 @@
 use std::ops::Index;
 
-use crate::error::XMLError;
+use crate::{error::XMLError, parse::ParseError};
 
 /// Attribute.
 #[derive(Debug, Clone)]
@@ -150,14 +150,20 @@ impl Attributes {
     pub(crate) fn push(&mut self, attribute: Attribute) -> Result<usize, (Attribute, XMLError)> {
         let index = self.attributes.len();
         if self.get_index_by_qname(&attribute.qname).is_some() {
-            return Err((attribute, XMLError::ParserDuplicateAttributes));
+            return Err((
+                attribute,
+                XMLError::XMLParseError(ParseError::DuplicateAttributes),
+            ));
         }
         if let Some(local_name) = attribute.local_name.as_deref()
             && self
                 .get_index_by_expanded_name(attribute.namespace_name.as_deref(), local_name)
                 .is_some()
         {
-            return Err((attribute, XMLError::ParserDuplicateAttributes));
+            return Err((
+                attribute,
+                XMLError::XMLParseError(ParseError::DuplicateAttributes),
+            ));
         }
         self.attributes.push(attribute);
         Ok(index)

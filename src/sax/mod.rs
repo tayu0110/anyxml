@@ -179,6 +179,7 @@ use std::{
     },
 };
 
+pub use crate::parse::ParseError;
 use crate::{
     XML_XML_NAMESPACE,
     error::XMLError,
@@ -389,7 +390,7 @@ impl ElementDeclMap {
         use std::collections::hash_map::Entry::*;
         let name: Box<str> = name.into();
         match self.0.entry(name) {
-            Occupied(_) => Err(XMLError::ParserDuplicateElementDecl),
+            Occupied(_) => Err(XMLError::XMLParseError(ParseError::DuplicateElementDecl)),
             Vacant(entry) => {
                 entry.insert(contentspec);
                 Ok(())
@@ -496,31 +497,37 @@ impl EntityMap {
                 replacement_text, ..
             } = &decl
             else {
-                return Err(XMLError::ParserIncorrectPredefinedEntityDecl);
+                return Err(XMLError::XMLParseError(
+                    ParseError::IncorrectPredefinedEntityDecl,
+                ));
             };
 
-            let c = if let Some(code) = replacement_text
-                .strip_prefix("&#x")
-                .and_then(|t| t.strip_suffix(";"))
-            {
-                u32::from_str_radix(code, 16)
-                    .ok()
-                    .and_then(char::from_u32)
-                    .ok_or(XMLError::ParserIncorrectPredefinedEntityDecl)?
-            } else if let Some(code) = replacement_text
-                .strip_prefix("&#")
-                .and_then(|t| t.strip_suffix(";"))
-            {
-                code.parse::<u32>()
-                    .ok()
-                    .and_then(char::from_u32)
-                    .ok_or(XMLError::ParserIncorrectPredefinedEntityDecl)?
-            } else {
-                if replacement_text.len() != 1 || matches!(name.as_ref(), "lt" | "amp") {
-                    return Err(XMLError::ParserIncorrectPredefinedEntityDecl);
-                }
-                replacement_text.chars().next().unwrap()
-            };
+            let c =
+                if let Some(code) = replacement_text
+                    .strip_prefix("&#x")
+                    .and_then(|t| t.strip_suffix(";"))
+                {
+                    u32::from_str_radix(code, 16)
+                        .ok()
+                        .and_then(char::from_u32)
+                        .ok_or(XMLError::XMLParseError(
+                            ParseError::IncorrectPredefinedEntityDecl,
+                        ))?
+                } else if let Some(code) = replacement_text
+                    .strip_prefix("&#")
+                    .and_then(|t| t.strip_suffix(";"))
+                {
+                    code.parse::<u32>().ok().and_then(char::from_u32).ok_or(
+                        XMLError::XMLParseError(ParseError::IncorrectPredefinedEntityDecl),
+                    )?
+                } else {
+                    if replacement_text.len() != 1 || matches!(name.as_ref(), "lt" | "amp") {
+                        return Err(XMLError::XMLParseError(
+                            ParseError::IncorrectPredefinedEntityDecl,
+                        ));
+                    }
+                    replacement_text.chars().next().unwrap()
+                };
 
             let ret = match name.as_ref() {
                 "lt" => c == '<',
@@ -532,12 +539,14 @@ impl EntityMap {
             };
 
             if !ret {
-                return Err(XMLError::ParserIncorrectPredefinedEntityDecl);
+                return Err(XMLError::XMLParseError(
+                    ParseError::IncorrectPredefinedEntityDecl,
+                ));
             }
         }
 
         match self.0.entry(name) {
-            Occupied(_) => Err(XMLError::ParserDuplicateEntityDecl),
+            Occupied(_) => Err(XMLError::XMLParseError(ParseError::DuplicateEntityDecl)),
             Vacant(entry) => {
                 entry.insert(decl);
                 Ok(())

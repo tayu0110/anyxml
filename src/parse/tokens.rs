@@ -1,5 +1,6 @@
 use crate::{
     error::XMLError,
+    parse::ParseError,
     sax::{InputSource, ParserSpec, SAXHandler, XMLReader, error::fatal_error},
 };
 
@@ -57,8 +58,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         }
 
         if buffer.len() == orig {
-            fatal_error!(self, ParserEmptyName, "Nmtoken is empty.");
-            return Err(XMLError::ParserEmptyName);
+            fatal_error!(self, EmptyName, "Nmtoken is empty.");
+            return Err(XMLError::XMLParseError(ParseError::EmptyName));
         }
         Ok(())
     }
@@ -68,8 +69,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             .source
             .next_char_if(|c| self.version.is_name_start_char(c))?
         else {
-            fatal_error!(self, ParserEmptyName, "Name is empty.");
-            return Err(XMLError::ParserEmptyName);
+            fatal_error!(self, EmptyName, "Name is empty.");
+            return Err(XMLError::XMLParseError(ParseError::EmptyName));
         };
         buffer.push(c);
         self.locator.update_column(|c| c + 1);
@@ -170,8 +171,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         let orig = buffer.len();
         self.parse_ncname_allow_empty(buffer)?;
         if buffer.len() == orig {
-            fatal_error!(self, ParserEmptyName, "Name is empty.");
-            return Err(XMLError::ParserEmptyName);
+            fatal_error!(self, EmptyName, "Name is empty.");
+            return Err(XMLError::XMLParseError(ParseError::EmptyName));
         }
         Ok(())
     }
@@ -183,8 +184,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
 
         if self.source.next_char_if(|c| c == ':')?.is_none() {
             return if buffer.len() == orig {
-                fatal_error!(self, ParserEmptyQName, "QName is empty.");
-                Err(XMLError::ParserEmptyQName)
+                fatal_error!(self, EmptyQName, "QName is empty.");
+                Err(XMLError::XMLParseError(ParseError::EmptyQName))
             } else {
                 Ok(0)
             };
@@ -192,7 +193,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if buffer.len() == orig {
             fatal_error!(
                 self,
-                ParserEmptyQNamePrefix,
+                EmptyQNamePrefix,
                 "':' is found in QName, but its prefix is empty."
             );
         }
@@ -204,12 +205,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if buffer.len() == orig + prefix + 1 {
             fatal_error!(
                 self,
-                ParserEmptyQNameLocalPart,
+                EmptyQNameLocalPart,
                 "':' is found in QName, but its local part is empty."
             );
-            Err(XMLError::ParserEmptyQNameLocalPart)
+            Err(XMLError::XMLParseError(ParseError::EmptyQNameLocalPart))
         } else if prefix == 0 {
-            Err(XMLError::ParserEmptyQNamePrefix)
+            Err(XMLError::XMLParseError(ParseError::EmptyQNamePrefix))
         } else {
             Ok(prefix)
         }
@@ -217,53 +218,53 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
 
     pub(crate) fn validate_nmtoken(&self, nmtoken: &str) -> Result<(), XMLError> {
         if nmtoken.is_empty() {
-            return Err(XMLError::ParserEmptyNmtoken);
+            return Err(XMLError::XMLParseError(ParseError::EmptyNmtoken));
         }
         nmtoken
             .chars()
             .all(|c| self.is_name_char(c))
             .then_some(())
-            .ok_or(XMLError::ParserInvalidNameChar)
+            .ok_or(XMLError::XMLParseError(ParseError::InvalidNameChar))
     }
 
     pub(crate) fn validate_name(&self, name: &str) -> Result<(), XMLError> {
         if name.is_empty() {
-            return Err(XMLError::ParserEmptyName);
+            return Err(XMLError::XMLParseError(ParseError::EmptyName));
         }
 
         name.strip_prefix(|c| self.is_name_start_char(c))
-            .ok_or(XMLError::ParserInvalidNameStartChar)?
+            .ok_or(XMLError::XMLParseError(ParseError::InvalidNameStartChar))?
             .chars()
             .all(|c| self.is_name_char(c))
             .then_some(())
-            .ok_or(XMLError::ParserInvalidNameChar)
+            .ok_or(XMLError::XMLParseError(ParseError::InvalidNameChar))
     }
 
     pub(crate) fn validate_ncname(&self, name: &str) -> Result<(), XMLError> {
         if name.is_empty() {
-            return Err(XMLError::ParserEmptyNCName);
+            return Err(XMLError::XMLParseError(ParseError::EmptyNCName));
         }
 
         name.strip_prefix(|c| c != ':' && self.is_name_start_char(c))
-            .ok_or(XMLError::ParserInvalidNCNameStartChar)?
+            .ok_or(XMLError::XMLParseError(ParseError::InvalidNCNameStartChar))?
             .chars()
             .all(|c| c != ':' && self.is_name_char(c))
             .then_some(())
-            .ok_or(XMLError::ParserInvalidNCNameChar)
+            .ok_or(XMLError::XMLParseError(ParseError::InvalidNCNameChar))
     }
 
     // pub(crate) fn validate_qname(&self, mut name: &str) -> Result<(), XMLError> {
     //     if name.is_empty() {
-    //         return Err(XMLError::ParserEmptyQName);
+    //         return Err(XMLError::XMLParseError(ParseError::EmptyQName));
     //     }
 
     //     if name.starts_with(':') {
-    //         return Err(XMLError::ParserEmptyQNamePrefix);
+    //         return Err(XMLError::XMLParseError(ParseError::EmptyQNamePrefix));
     //     }
 
     //     name = name
     //         .strip_prefix(|c| self.is_name_start_char(c))
-    //         .ok_or(XMLError::ParserInvalidNCNameStartChar)?;
+    //         .ok_or(XMLError::XMLParseError(ParseError::InvalidNCNameStartChar))?;
     //     name = name.trim_start_matches(|c| c != ':' && self.is_name_char(c));
 
     //     if name.is_empty() {
@@ -274,14 +275,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
     //         .strip_prefix(|c| c == ':')
     //         .ok_or(XMLError::ParserInvalidQNameSeparator)?;
     //     if name.is_empty() {
-    //         return Err(XMLError::ParserEmptyQNameLocalPart);
+    //         return Err(XMLError::XMLParseError(ParseError::EmptyQNameLocalPart));
     //     }
     //     self.validate_ncname(name)
     // }
 
     pub(crate) fn validate_nmtokens(&self, nmtokens: &str) -> Result<(), XMLError> {
         if nmtokens.is_empty() {
-            return Err(XMLError::ParserEmptyNmtokens);
+            return Err(XMLError::XMLParseError(ParseError::EmptyNmtokens));
         }
         self.validate_names(nmtokens, |nmtoken| self.validate_nmtoken(nmtoken))
     }
@@ -292,7 +293,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         name_validation: impl Fn(&str) -> Result<(), XMLError>,
     ) -> Result<(), XMLError> {
         if names.is_empty() {
-            return Err(XMLError::ParserEmptyNames);
+            return Err(XMLError::XMLParseError(ParseError::EmptyNames));
         }
         for name in names.split('\x20') {
             name_validation(name)?;

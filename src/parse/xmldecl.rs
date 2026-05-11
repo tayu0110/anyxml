@@ -1,6 +1,7 @@
 use crate::{
     ENCODING_NAME_LIMIT_LENGTH, XML_VERSION_NUM_LIMIT_LENGTH, XMLVersion,
     error::XMLError,
+    parse::ParseError,
     sax::{
         InputSource, ParserSpec, ParserState, SAXHandler, XMLReader,
         error::{fatal_error, warning},
@@ -17,10 +18,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"<?xml") {
             fatal_error!(
                 self,
-                ParserInvalidXMLDecl,
+                InvalidXMLDecl,
                 "XML declaration must start with '<?xml'."
             );
-            return Err(XMLError::ParserInvalidXMLDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidXMLDecl));
         }
         // skip '<?xml'
         self.source.advance(5);
@@ -37,7 +38,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if s == 0 {
                 fatal_error!(
                     self,
-                    ParserInvalidXMLDecl,
+                    InvalidXMLDecl,
                     "Whitespaces are required before 'encoding'."
                 );
             }
@@ -52,7 +53,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if s == 0 {
                 fatal_error!(
                     self,
-                    ParserInvalidXMLDecl,
+                    InvalidXMLDecl,
                     "Whitespaces are required before 'standalone'."
                 );
             }
@@ -62,12 +63,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         }
 
         if !self.source.content_bytes().starts_with(b"?>") {
-            fatal_error!(
-                self,
-                ParserInvalidXMLDecl,
-                "XMLDecl is not closed with '?>'."
-            );
-            return Err(XMLError::ParserInvalidXMLDecl);
+            fatal_error!(self, InvalidXMLDecl, "XMLDecl is not closed with '?>'.");
+            return Err(XMLError::XMLParseError(ParseError::InvalidXMLDecl));
         }
         // skip '?>'
         self.source.advance(2);
@@ -82,7 +79,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         {
             fatal_error!(
                 self,
-                ParserUnsupportedEncoding,
+                UnsupportedEncoding,
                 "The declared encoding '{}' is not supported.",
                 encoding
             );
@@ -112,7 +109,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if need_trim_whitespace && self.skip_whitespaces()? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidEncodingDecl,
+                InvalidEncodingDecl,
                 "Whitespaces are required before 'version' for VersionDecl."
             );
         }
@@ -120,10 +117,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"version") {
             fatal_error!(
                 self,
-                ParserInvalidXMLVersion,
+                InvalidXMLVersion,
                 "VersionInfo must start with 'version'."
             );
-            return Err(XMLError::ParserInvalidXMLVersion);
+            return Err(XMLError::XMLParseError(ParseError::InvalidXMLVersion));
         }
         // skip 'version'
         self.source.advance(7);
@@ -133,10 +130,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"=") {
             fatal_error!(
                 self,
-                ParserInvalidXMLDecl,
+                InvalidXMLDecl,
                 "'=' is not found after 'version' in VersionInfo."
             );
-            return Err(XMLError::ParserInvalidXMLDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidXMLDecl));
         }
         // skip '='
         self.source.advance(1);
@@ -148,10 +145,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             _ => {
                 fatal_error!(
                     self,
-                    ParserInvalidXMLDecl,
+                    InvalidXMLDecl,
                     "The quotation marks in the version number are incorrect."
                 );
-                return Err(XMLError::ParserInvalidXMLDecl);
+                return Err(XMLError::XMLParseError(ParseError::InvalidXMLDecl));
             }
         };
         self.locator.update_column(|c| c + 1);
@@ -166,16 +163,16 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if major > 1 || content[0] != b'1' {
             fatal_error!(
                 self,
-                ParserInvalidXMLVersion,
+                InvalidXMLVersion,
                 "XML major version number must be '1'."
             );
         } else if content[major] != b'.' {
             fatal_error!(
                 self,
-                ParserInvalidXMLVersion,
+                InvalidXMLVersion,
                 "Invalid XML version number is found."
             );
-            return Err(XMLError::ParserInvalidXMLVersion);
+            return Err(XMLError::XMLParseError(ParseError::InvalidXMLVersion));
         }
         let mut minor = major + 1;
         while minor < limit && content[minor].is_ascii_digit() {
@@ -184,10 +181,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if minor == limit {
             fatal_error!(
                 self,
-                ParserTooLongXMLVersionNumber,
+                TooLongXMLVersionNumber,
                 "Too long XML version number is found."
             );
-            return Err(XMLError::ParserTooLongXMLVersionNumber);
+            return Err(XMLError::XMLParseError(ParseError::TooLongXMLVersionNumber));
         }
         let version = if major + 1 < minor {
             match content[..minor] {
@@ -197,15 +194,15 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         } else {
             fatal_error!(
                 self,
-                ParserInvalidXMLVersion,
+                InvalidXMLVersion,
                 "XML minor version number is not found."
             );
-            return Err(XMLError::ParserInvalidXMLVersion);
+            return Err(XMLError::XMLParseError(ParseError::InvalidXMLVersion));
         };
         if text_decl && version != self.version {
             fatal_error!(
                 self,
-                ParserUnsupportedXMLVersion,
+                UnsupportedXMLVersion,
                 "XML {} document must not refer to XML {} entity.",
                 self.version,
                 version
@@ -213,17 +210,17 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         } else if version == XMLVersion::Unknown {
             warning!(
                 self,
-                ParserUnsupportedXMLVersion,
+                UnsupportedXMLVersion,
                 "Unsupported XML version number is found. Fallback to XML 1.0."
             );
         }
         if content[minor] != quote as u8 {
             fatal_error!(
                 self,
-                ParserInvalidXMLDecl,
+                InvalidXMLDecl,
                 "The quotation marks in the version number are incorrect."
             );
-            return Err(XMLError::ParserInvalidXMLDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidXMLDecl));
         }
         let version_str = unsafe {
             // # Safety
@@ -247,7 +244,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if need_trim_whitespace && self.skip_whitespaces()? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidEncodingDecl,
+                InvalidEncodingDecl,
                 "Whitespaces are required before 'encoding' for EncodingDecl."
             );
         }
@@ -255,10 +252,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"encoding") {
             fatal_error!(
                 self,
-                ParserInvalidEncodingDecl,
+                InvalidEncodingDecl,
                 "'encoding' is not found for EncodingDecl."
             );
-            return Err(XMLError::ParserInvalidEncodingDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidEncodingDecl));
         }
         // skip 'encoding'
         self.source.advance(8);
@@ -268,10 +265,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if self.source.next_char()? != Some('=') {
             fatal_error!(
                 self,
-                ParserInvalidEncodingDecl,
+                InvalidEncodingDecl,
                 "'=' is not found after 'encoding' in EncodingDecl."
             );
-            return Err(XMLError::ParserInvalidEncodingDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidEncodingDecl));
         }
         self.locator.update_column(|c| c + 1);
         self.skip_whitespaces()?;
@@ -281,10 +278,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             _ => {
                 fatal_error!(
                     self,
-                    ParserInvalidEncodingDecl,
+                    InvalidEncodingDecl,
                     "The quotation marks in the encoding name are incorrect."
                 );
-                return Err(XMLError::ParserInvalidEncodingDecl);
+                return Err(XMLError::XMLParseError(ParseError::InvalidEncodingDecl));
             }
         };
         self.locator.update_column(|c| c + 1);
@@ -299,23 +296,23 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             Some(_) => {
                 fatal_error!(
                     self,
-                    ParserInvalidEncodingDecl,
+                    InvalidEncodingDecl,
                     "The quotation marks in the encoding name are incorrect."
                 );
-                return Err(XMLError::ParserInvalidEncodingDecl);
+                return Err(XMLError::XMLParseError(ParseError::InvalidEncodingDecl));
             }
             _ => {
                 // If we call `grow` just before and `source` is empty,
                 // `source` has probably reached EOF.
                 return if self.source.is_empty() {
-                    Err(XMLError::ParserUnexpectedEOF)
+                    Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
                 } else {
                     fatal_error!(
                         self,
-                        ParserInvalidEncodingDecl,
+                        InvalidEncodingDecl,
                         "The quotation marks in the encoding name are incorrect."
                     );
-                    Err(XMLError::ParserInvalidEncodingDecl)
+                    Err(XMLError::XMLParseError(ParseError::InvalidEncodingDecl))
                 };
             }
         }
@@ -331,7 +328,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if need_trim_whitespace && self.skip_whitespaces()? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidSDDecl,
+                InvalidSDDecl,
                 "Whitespaces are required before 'standalone' for SDDecl."
             );
         }
@@ -339,12 +336,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         self.grow()?;
         let content = self.source.content_bytes();
         if !content.starts_with(b"standalone") {
-            fatal_error!(
-                self,
-                ParserInvalidSDDecl,
-                "'standalone' is not found for SDDecl."
-            );
-            return Err(XMLError::ParserInvalidSDDecl);
+            fatal_error!(self, InvalidSDDecl, "'standalone' is not found for SDDecl.");
+            return Err(XMLError::XMLParseError(ParseError::InvalidSDDecl));
         }
         // skip 'standalone'
         self.source.advance(10);
@@ -353,8 +346,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         self.skip_whitespaces()?;
         self.grow()?;
         if !self.source.content_bytes().starts_with(b"=") {
-            fatal_error!(self, ParserInvalidSDDecl, "'=' is not found for SDDecl.");
-            return Err(XMLError::ParserInvalidSDDecl);
+            fatal_error!(self, InvalidSDDecl, "'=' is not found for SDDecl.");
+            return Err(XMLError::XMLParseError(ParseError::InvalidSDDecl));
         }
         // skip '='
         self.source.advance(1);
@@ -365,10 +358,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             _ => {
                 fatal_error!(
                     self,
-                    ParserInvalidSDDecl,
+                    InvalidSDDecl,
                     "The quotation marks in the standalone declaration are incorrect."
                 );
-                return Err(XMLError::ParserInvalidSDDecl);
+                return Err(XMLError::XMLParseError(ParseError::InvalidSDDecl));
             }
         };
         self.locator.update_column(|c| c + 1);
@@ -387,20 +380,20 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             _ => {
                 fatal_error!(
                     self,
-                    ParserInvalidSDDecl,
+                    InvalidSDDecl,
                     "The value of SDDecl must be either 'yes' or 'no'."
                 );
-                return Err(XMLError::ParserInvalidXMLDecl);
+                return Err(XMLError::XMLParseError(ParseError::InvalidXMLDecl));
             }
         };
 
         if self.source.next_char()? != Some(quote) {
             fatal_error!(
                 self,
-                ParserInvalidSDDecl,
+                InvalidSDDecl,
                 "The quotation marks in the standalone declaration are incorrect."
             );
-            return Err(XMLError::ParserInvalidSDDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidSDDecl));
         }
         self.locator.update_column(|c| c + 1);
 
@@ -419,21 +412,21 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // If we call `grow` just before and `source` is empty,
             // `source` has probably reached EOF.
             return if self.source.is_empty() {
-                Err(XMLError::ParserUnexpectedEOF)
+                Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
             } else {
                 fatal_error!(
                     self,
-                    ParserInvalidEncodingName,
+                    InvalidEncodingName,
                     "Data that may not be accepted as an encoding name has been detected."
                 );
-                Err(XMLError::ParserInvalidEncodingName)
+                Err(XMLError::XMLParseError(ParseError::InvalidEncodingName))
             };
         }
 
         if !content[0].is_ascii_alphabetic() {
             fatal_error!(
                 self,
-                ParserInvalidEncodingName,
+                InvalidEncodingName,
                 "The first character of an encoding name must be ASCII alphabetic."
             );
         }
@@ -449,20 +442,20 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if cur == ENCODING_NAME_LIMIT_LENGTH {
             fatal_error!(
                 self,
-                PraserTooLongEncodingName,
+                TooLongEncodingName,
                 "Too long encoding name is found."
             );
-            return Err(XMLError::PraserTooLongEncodingName);
+            return Err(XMLError::XMLParseError(ParseError::TooLongEncodingName));
         } else if cur == content.len() {
             return if self.source.is_empty() {
-                Err(XMLError::ParserUnexpectedEOF)
+                Err(XMLError::XMLParseError(ParseError::UnexpectedEOF))
             } else {
                 fatal_error!(
                     self,
-                    ParserInvalidEncodingName,
+                    InvalidEncodingName,
                     "Data that may not be accepted as an encoding name has been detected."
                 );
-                Err(XMLError::ParserInvalidEncodingName)
+                Err(XMLError::XMLParseError(ParseError::InvalidEncodingName))
             };
         }
 
@@ -485,10 +478,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"<?xml") {
             fatal_error!(
                 self,
-                ParserInvalidTextDecl,
+                InvalidTextDecl,
                 "The text declaration does not start '<?xml'."
             );
-            return Err(XMLError::ParserInvalidTextDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidTextDecl));
         }
         // skip '<?xml'
         self.source.advance(5);
@@ -500,7 +493,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if s == 0 {
                 fatal_error!(
                     self,
-                    ParserInvalidTextDecl,
+                    InvalidTextDecl,
                     "Whitespaces are required before 'encoding'."
                 );
             }
@@ -514,7 +507,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if s == 0 {
             fatal_error!(
                 self,
-                ParserInvalidXMLDecl,
+                InvalidXMLDecl,
                 "Whitespaces are required before 'encoding'."
             );
         }
@@ -522,11 +515,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if self.source.switch_encoding(&encoding).is_err() {
             fatal_error!(
                 self,
-                ParserUnsupportedEncoding,
+                UnsupportedEncoding,
                 "Switching encoding to '{}' is failed.",
                 encoding
             );
-            return Err(XMLError::ParserUnsupportedEncoding);
+            return Err(XMLError::XMLParseError(ParseError::UnsupportedEncoding));
         }
         self.encoding = Some(encoding.into());
         self.skip_whitespaces()?;
@@ -535,10 +528,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"?>") {
             fatal_error!(
                 self,
-                ParserInvalidTextDecl,
+                InvalidTextDecl,
                 "The text declaration does not end with '?>'."
             );
-            return Err(XMLError::ParserInvalidTextDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidTextDecl));
         }
         // skip '?>'
         self.source.advance(2);

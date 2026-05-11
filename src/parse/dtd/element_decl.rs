@@ -2,6 +2,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use crate::{
     error::XMLError,
+    parse::ParseError,
     sax::{
         ContentSpec, ElementContent, ElementContentStateID, InputSource, ParserOption, ParserSpec,
         SAXHandler, XMLReader,
@@ -21,10 +22,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"<!ELEMENT") {
             fatal_error!(
                 self,
-                ParserInvalidElementDecl,
+                InvalidElementDecl,
                 "Element declaration must start with '<!ELEMENT'."
             );
-            return Err(XMLError::ParserInvalidElementDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidElementDecl));
         }
         // skip '<!ELEMENT'
         self.source.advance(9);
@@ -36,7 +37,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if self.skip_whitespaces_with_handle_peref(true)? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidElementDecl,
+                InvalidElementDecl,
                 "Whitespaces are required after '<!ELEMENT' in element declaration."
             );
         }
@@ -51,7 +52,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if self.skip_whitespaces_with_handle_peref(true)? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidElementDecl,
+                InvalidElementDecl,
                 "Whitespaces are required after Name in element declaration."
             );
         }
@@ -75,10 +76,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if !self.source.content_bytes().starts_with(b"(") {
                     fatal_error!(
                         self,
-                        ParserInvalidElementDecl,
+                        InvalidElementDecl,
                         "Element or Mixed content must start with '('."
                     );
-                    return Err(XMLError::ParserInvalidElementDecl);
+                    return Err(XMLError::XMLParseError(ParseError::InvalidElementDecl));
                 }
                 // skip '('
                 self.source.advance(1);
@@ -124,7 +125,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: No Duplicate Types]
                                 validity_error!(
                                     self,
-                                    ParserDuplicateMixedContent,
+                                    DuplicateMixedContent,
                                     "'{}' is duplicated as a mixed content of element '{}'.",
                                     buffer,
                                     name
@@ -148,7 +149,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: No Duplicate Types]
                             validity_error!(
                                 self,
-                                ParserDuplicateMixedContent,
+                                DuplicateMixedContent,
                                 "'{}' is duplicated as a mixed content of element '{}'.",
                                 buffer,
                                 name
@@ -159,7 +160,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: Proper Group/PE Nesting]
                         validity_error!(
                             self,
-                            ParserEntityIncorrectNesting,
+                            EntityIncorrectNesting,
                             "A parameter entity in an element declaration is nested incorrectly."
                         );
                     }
@@ -171,7 +172,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         if !ret.is_empty() {
                             fatal_error!(
                                 self,
-                                ParserInvalidElementDecl,
+                                InvalidElementDecl,
                                 "Mixed Content with elements does not end with ')*'."
                             );
                         }
@@ -181,10 +182,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     } else {
                         fatal_error!(
                             self,
-                            ParserInvalidElementDecl,
+                            InvalidElementDecl,
                             "Mixed Content is not wrapped by parentheses correctly."
                         );
-                        return Err(XMLError::ParserInvalidElementDecl);
+                        return Err(XMLError::XMLParseError(ParseError::InvalidElementDecl));
                     }
 
                     ContentSpec::Mixed(Arc::new(ret))
@@ -200,7 +201,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if content.compile().unwrap() {
                         error!(
                             self,
-                            ParserAmbiguousElementContentModel,
+                            AmbiguousElementContentModel,
                             "The element content of '{}' is ambiguous.",
                             name
                         );
@@ -216,14 +217,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [WFC: PE Between Declarations]
                 fatal_error!(
                     self,
-                    ParserEntityIncorrectNesting,
+                    EntityIncorrectNesting,
                     "The replacement text of a PE reference in a DeclSep must be extSubsetDecl."
                 );
             } else {
                 // [VC: Proper Declaration/PE Nesting]
                 validity_error!(
                     self,
-                    ParserEntityIncorrectNesting,
+                    EntityIncorrectNesting,
                     "A parameter entity in an element declaration is nested incorrectly."
                 );
             }
@@ -233,10 +234,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b">") {
             fatal_error!(
                 self,
-                ParserInvalidElementDecl,
+                InvalidElementDecl,
                 "Element declaration does not end with '>'."
             );
-            return Err(XMLError::ParserInvalidElementDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidElementDecl));
         }
         // skip '>'
         self.source.advance(1);
@@ -251,7 +252,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         {
             validity_error!(
                 self,
-                ParserDuplicateElementDecl,
+                DuplicateElementDecl,
                 "An element declaration is duplicated."
             );
         }
@@ -311,19 +312,19 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             [_, ..] => {
                 fatal_error!(
                     self,
-                    ParserInvalidElementDecl,
+                    InvalidElementDecl,
                     "Unexpected character is occurred in an element declaration."
                 );
-                return Err(XMLError::ParserInvalidElementDecl);
+                return Err(XMLError::XMLParseError(ParseError::InvalidElementDecl));
             }
-            _ => return Err(XMLError::ParserUnexpectedEOF),
+            _ => return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF)),
         }
 
         if self.source.source_id() != base_source_id {
             // [VC: Proper Group/PE Nesting]
             validity_error!(
                 self,
-                ParserEntityIncorrectNesting,
+                EntityIncorrectNesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
         }
@@ -331,10 +332,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b")") {
             fatal_error!(
                 self,
-                ParserInvalidElementDecl,
+                InvalidElementDecl,
                 "A choice or seq in contentspec in an element declaration does not end with '('."
             );
-            return Err(XMLError::ParserInvalidElementDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidElementDecl));
         }
         // skip ')'
         self.source.advance(1);
@@ -396,7 +397,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [VC: Proper Group/PE Nesting]
             validity_error!(
                 self,
-                ParserEntityIncorrectNesting,
+                EntityIncorrectNesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
         }
@@ -417,10 +418,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"(") {
             fatal_error!(
                 self,
-                ParserInvalidElementDecl,
+                InvalidElementDecl,
                 "A choice or seq in contentspec in an element declaration does not start with '('."
             );
-            return Err(XMLError::ParserInvalidElementDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidElementDecl));
         }
         // skip '('
         self.source.advance(1);
@@ -463,19 +464,19 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             [_, ..] => {
                 fatal_error!(
                     self,
-                    ParserInvalidElementDecl,
+                    InvalidElementDecl,
                     "Unexpected character is occurred in an element declaration."
                 );
-                return Err(XMLError::ParserInvalidElementDecl);
+                return Err(XMLError::XMLParseError(ParseError::InvalidElementDecl));
             }
-            _ => return Err(XMLError::ParserUnexpectedEOF),
+            _ => return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF)),
         }
 
         if self.source.source_id() != base_source_id {
             // [VC: Proper Group/PE Nesting]
             validity_error!(
                 self,
-                ParserEntityIncorrectNesting,
+                EntityIncorrectNesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
         }
@@ -483,10 +484,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b")") {
             fatal_error!(
                 self,
-                ParserInvalidElementDecl,
+                InvalidElementDecl,
                 "A choice or seq in contentspec in an element declaration does not end with '('."
             );
-            return Err(XMLError::ParserInvalidElementDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidElementDecl));
         }
         // skip ')'
         self.source.advance(1);

@@ -8,7 +8,7 @@ use anyxml::{
     relaxng::RelaxNGSchema,
     sax::{
         AttributeType, Attributes, ContentSpec, DebugHandler, DefaultDecl, DefaultSAXHandler,
-        EntityResolver, ErrorHandler, InputSource, ParserOption, SAXHandler, XMLReader,
+        EntityResolver, ErrorHandler, InputSource, ParseError, ParserOption, SAXHandler, XMLReader,
         error::SAXParseError,
     },
     stax::{XMLStreamReaderBuilder, events::XMLEvent},
@@ -98,7 +98,7 @@ fn do_show_command(document: Option<String>) -> Result<(), XMLError> {
 
     if reader.handler.fatal_error {
         eprintln!("unknown fatal error occured.");
-        return Err(XMLError::ParserUnknownError);
+        return Err(XMLError::XMLParseError(ParseError::UnknownError));
     }
 
     let document = reader.handler.document;

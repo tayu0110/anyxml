@@ -1,5 +1,6 @@
 use crate::{
     error::XMLError,
+    parse::ParseError,
     sax::{
         EntityDecl, InputSource, ParserOption, ParserSpec, SAXHandler, XMLReader,
         error::{error, fatal_error, validity_error},
@@ -21,10 +22,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"<!ENTITY") {
             fatal_error!(
                 self,
-                ParserInvalidEntityDecl,
+                InvalidEntityDecl,
                 "Entity declaration must start with '<!ENTITY'."
             );
-            return Err(XMLError::ParserInvalidEntityDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidEntityDecl));
         }
         // skip '<!ENTITY'
         self.source.advance(8);
@@ -43,7 +44,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if s == 0 {
                 fatal_error!(
                     self,
-                    ParserInvalidEntityDecl,
+                    InvalidEntityDecl,
                     "Whitespaces are required before '%' in a parameter entity declaration."
                 );
             }
@@ -59,7 +60,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if s == 0 {
             fatal_error!(
                 self,
-                ParserInvalidEntityDecl,
+                InvalidEntityDecl,
                 "Whitespaces are required before Name in an entity declaration."
             );
         }
@@ -74,7 +75,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if self.skip_whitespaces_with_handle_peref(true)? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidEntityDecl,
+                InvalidEntityDecl,
                 "Whitespaces are required after Name in entity declaration."
             );
         }
@@ -117,7 +118,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if s == 0 {
                         fatal_error!(
                             self,
-                            ParserInvalidEntityDecl,
+                            InvalidEntityDecl,
                             "Whitespaces are required between ExternalID and NDataDecl."
                         );
                     }
@@ -125,10 +126,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if !self.source.content_bytes().starts_with(b"NDATA") {
                         fatal_error!(
                             self,
-                            ParserInvalidEntityDecl,
+                            InvalidEntityDecl,
                             "NDataDecl must start with 'NDATA'."
                         );
-                        return Err(XMLError::ParserInvalidEntityDecl);
+                        return Err(XMLError::XMLParseError(ParseError::InvalidEntityDecl));
                     }
                     // skip 'NDATA'
                     self.source.advance(5);
@@ -137,7 +138,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if self.skip_whitespaces_with_handle_peref(true)? == 0 {
                         fatal_error!(
                             self,
-                            ParserInvalidEntityDecl,
+                            InvalidEntityDecl,
                             "Whitespaces are required after 'NDATA' in entity declaration."
                         );
                     }
@@ -195,29 +196,29 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             [_, ..] => {
                 fatal_error!(
                     self,
-                    ParserInvalidEntityDecl,
+                    InvalidEntityDecl,
                     "Neither EntityValue nor ExternalID are found in entity declaration."
                 );
-                return Err(XMLError::ParserInvalidEntityDecl);
+                return Err(XMLError::XMLParseError(ParseError::InvalidEntityDecl));
             }
-            [] => return Err(XMLError::ParserUnexpectedEOF),
+            [] => return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF)),
         };
 
         if self.source.source_id() != base_source_id {
             // [VC: Proper Declaration/PE Nesting]
             validity_error!(
                 self,
-                ParserEntityIncorrectNesting,
+                EntityIncorrectNesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
         }
         if !self.source.content_bytes().starts_with(b">") {
             fatal_error!(
                 self,
-                ParserInvalidEntityDecl,
+                InvalidEntityDecl,
                 "Entity declaration does not end with '>'."
             );
-            return Err(XMLError::ParserInvalidEntityDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidEntityDecl));
         }
         // skip '>'
         self.source.advance(1);
@@ -229,12 +230,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         // > If the same entity is declared more than once, the first declaration
         // > encountered is binding; at user option, an XML processor MAY issue a
         // > warning if entities are declared multiple times.
-        if let Err(XMLError::ParserIncorrectPredefinedEntityDecl) =
+        if let Err(XMLError::XMLParseError(ParseError::IncorrectPredefinedEntityDecl)) =
             self.entities.insert(name.as_ref(), decl)
         {
             error!(
                 self,
-                ParserIncorrectPredefinedEntityDecl,
+                IncorrectPredefinedEntityDecl,
                 "Predefined entity '{}' is redefined incorrectly.",
                 name
             );

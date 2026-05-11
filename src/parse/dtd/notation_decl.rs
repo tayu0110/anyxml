@@ -1,5 +1,6 @@
 use crate::{
     error::XMLError,
+    parse::ParseError,
     sax::{
         InputSource, Notation, ParserOption, ParserSpec, SAXHandler, XMLReader,
         error::{fatal_error, validity_error},
@@ -19,10 +20,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"<!NOTATION") {
             fatal_error!(
                 self,
-                ParserInvalidNotationDecl,
+                InvalidNotationDecl,
                 "Notation declration must start with '<!NOTATION'."
             );
-            return Err(XMLError::ParserInvalidNotationDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidNotationDecl));
         }
         // skip '<!NOTATION'
         self.source.advance(10);
@@ -33,7 +34,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if self.skip_whitespaces_with_handle_peref(true)? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidNotationDecl,
+                InvalidNotationDecl,
                 "Whitespaces are required after '<!NOTATION' in Notation declaration."
             );
         }
@@ -48,7 +49,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if self.skip_whitespaces_with_handle_peref(true)? == 0 {
             fatal_error!(
                 self,
-                ParserInvalidNotationDecl,
+                InvalidNotationDecl,
                 "Whitespaces are required after Name in Notation declaration."
             );
         }
@@ -81,7 +82,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if self.skip_whitespaces_with_handle_peref(true)? == 0 {
                     fatal_error!(
                         self,
-                        ParserInvalidPubidLiteral,
+                        InvalidPubidLiteral,
                         "Whitespaces are required after 'PUBLIC' in Notation declaration."
                     );
                 }
@@ -98,7 +99,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if s == 0 {
                         fatal_error!(
                             self,
-                            ParserInvalidPubidLiteral,
+                            InvalidPubidLiteral,
                             "Whitespaces are required before SystemLiteral in Notation declaration."
                         );
                     }
@@ -116,10 +117,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             _ => {
                 fatal_error!(
                     self,
-                    ParserInvalidNotationDecl,
+                    InvalidNotationDecl,
                     "Notation declaration must have either ExternalID or PublicID."
                 );
-                return Err(XMLError::ParserInvalidNotationDecl);
+                return Err(XMLError::XMLParseError(ParseError::InvalidNotationDecl));
             }
         }
 
@@ -128,17 +129,17 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [VC: Proper Declaration/PE Nesting]
             validity_error!(
                 self,
-                ParserEntityIncorrectNesting,
+                EntityIncorrectNesting,
                 "A parameter entity in a notation declaration is nested incorrectly."
             );
         }
         if !self.source.content_bytes().starts_with(b">") {
             fatal_error!(
                 self,
-                ParserInvalidNotationDecl,
+                InvalidNotationDecl,
                 "A notation declaration does not end with '>'."
             );
-            return Err(XMLError::ParserInvalidNotationDecl);
+            return Err(XMLError::XMLParseError(ParseError::InvalidNotationDecl));
         }
         // skip '>'
         self.source.advance(1);
@@ -157,7 +158,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Unique Notation Name]
                     validity_error!(
                         self,
-                        ParserDuplicateNotationDecl,
+                        DuplicateNotationDecl,
                         "The notation '{}' is duplicated.",
                         name
                     );

@@ -3,6 +3,7 @@ use std::mem::take;
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
+    parse::ParseError,
     sax::{
         Attribute, AttributeType, DefaultDecl, EntityDecl, InputSource, ParserOption, ParserSpec,
         ParserState, SAXHandler, XMLReader,
@@ -57,10 +58,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"<") {
             fatal_error!(
                 self,
-                ParserInvalidStartOrEmptyTag,
+                InvalidStartOrEmptyTag,
                 "StartTag or EmptyTag must start with '<'."
             );
-            return Err(XMLError::ParserInvalidStartOrEmptyTag);
+            return Err(XMLError::XMLParseError(ParseError::InvalidStartOrEmptyTag));
         }
         // skip '<'
         self.source.advance(1);
@@ -88,7 +89,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if self.config.is_enable(ParserOption::Validation) && *name != self.dtd_name {
                     validity_error!(
                         self,
-                        ParserMismatchElementType,
+                        MismatchElementType,
                         "The document type declaration name does not match the document element type."
                     );
                 }
@@ -104,7 +105,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [VC: Element Valid]
                 validity_error!(
                     self,
-                    ParserUndeclaredElement,
+                    UndeclaredElement,
                     "The element type '{}' is undeclared.",
                     name
                 );
@@ -115,7 +116,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         let mut s = self.skip_whitespaces()?;
         self.grow()?;
         if self.source.content_bytes().is_empty() {
-            return Err(XMLError::ParserUnexpectedEOF);
+            return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF));
         }
 
         let mut att_name = self
@@ -127,7 +128,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if s == 0 {
                 fatal_error!(
                     self,
-                    ParserInvalidStartOrEmptyTag,
+                    InvalidStartOrEmptyTag,
                     "Whitespaces are required before attribute names."
                 );
             }
@@ -145,10 +146,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if !self.source.content_bytes().starts_with(b"=") {
                 fatal_error!(
                     self,
-                    ParserInvalidAttribute,
+                    InvalidAttribute,
                     "'=' is not found after an attribute name in start or empty tag."
                 );
-                return Err(XMLError::ParserInvalidAttribute);
+                return Err(XMLError::XMLParseError(ParseError::InvalidAttribute));
             }
             // skip '='
             self.source.advance(1);
@@ -182,7 +183,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if self.source.content_bytes().is_empty() {
                 self.grow()?;
                 if self.source.content_bytes().is_empty() {
-                    return Err(XMLError::ParserUnexpectedEOF);
+                    return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF));
                 }
             }
         }
@@ -199,7 +200,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: Required Attribute]
                             validity_error!(
                                 self,
-                                ParserRequiredAttributeNotFound,
+                                RequiredAttributeNotFound,
                                 "#REQUIRED attribute '{}' of the element '{}' is not specified.",
                                 attr,
                                 name
@@ -215,7 +216,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: Standalone Document Declaration]
                                 validity_error!(
                                     self,
-                                    ParserInvalidStandaloneDocument,
+                                    InvalidStandaloneDocument,
                                     "standalone='yes', but an unspecified attribute '{}' of the element '{}' is declared to have a default value in the external markup.",
                                     attr,
                                     name
@@ -269,7 +270,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // but for now, we will do nothing except for report an error.
                         ns_error!(
                             self,
-                            ParserUndefinedNamespace,
+                            UndefinedNamespace,
                             "The namespace name for the prefix '{}' has not been declared.",
                             prefix
                         );
@@ -283,7 +284,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [NSC: Attributes Unique]
                     fatal_error!(
                         self,
-                        ParserDuplicateAttributes,
+                        DuplicateAttributes,
                         "The attribute '{{{}}}{}' is duplicated",
                         att.namespace_name.as_deref().unwrap_or("(null)"),
                         att.local_name.as_deref().unwrap()
@@ -292,7 +293,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [WFC: Unique Att Spec]
                     fatal_error!(
                         self,
-                        ParserDuplicateAttributes,
+                        DuplicateAttributes,
                         "The attribute '{}' is duplicated.",
                         att.qname
                     );
@@ -309,7 +310,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Attribute Value Type]
                     validity_error!(
                         self,
-                        ParserUndeclaredAttribute,
+                        UndeclaredAttribute,
                         "The attribute '{}' is not declared in DTD.",
                         att.qname
                     );
@@ -335,7 +336,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: ID]
                                 validity_error!(
                                     self,
-                                    ParserDuplicateIDAttribute,
+                                    DuplicateIDAttribute,
                                     "ID '{}' is specified multiple times in the document.",
                                     att.value
                                 );
@@ -395,7 +396,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: Entity Name]
                                 validity_error!(
                                     self,
-                                    ParserUndeclaredEntityReference,
+                                    UndeclaredEntityReference,
                                     "The entity '{}' referred by the attribute '{}' is not an unparsed entity.",
                                     att.value,
                                     att.qname
@@ -405,7 +406,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: Entity Name]
                             validity_error!(
                                 self,
-                                ParserUndeclaredEntityReference,
+                                UndeclaredEntityReference,
                                 "ENTITY attribute value '{}' cannot refer to any entities.",
                                 att.value
                             );
@@ -446,7 +447,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                         // [VC: Entity Name]
                                         validity_error!(
                                             self,
-                                            ParserUndeclaredEntityReference,
+                                            UndeclaredEntityReference,
                                             "The entity '{}' referred by the attribute '{}' is not an unparsed entity.",
                                             entity,
                                             att.qname
@@ -456,7 +457,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                     // [VC: Entity Name]
                                     validity_error!(
                                         self,
-                                        ParserUndeclaredEntityReference,
+                                        UndeclaredEntityReference,
                                         "ENTITY attribute value '{}' cannot refer to any entities.",
                                         entity
                                     );
@@ -493,7 +494,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: Notation Attributes]
                             validity_error!(
                                 self,
-                                ParserUnacceptableNotationAttribute,
+                                UnacceptableNotationAttribute,
                                 "'{}' is not allowed as a value for attribute '{}'.",
                                 att.value,
                                 att.qname
@@ -503,7 +504,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: One Notation Per Element Type]
                             validity_error!(
                                 self,
-                                ParserMultipleNotationAttributePerElement,
+                                MultipleNotationAttributePerElement,
                                 "Attribute `{}` appeared as a multiple-occurrence notation attribute in the element '{}'.",
                                 att.qname,
                                 name
@@ -516,7 +517,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: Validity constraint: Enumeration]
                             validity_error!(
                                 self,
-                                ParserUnacceptableEnumerationAttribute,
+                                UnacceptableEnumerationAttribute,
                                 "'{}' is not allowed as a value for attribute '{}'.",
                                 att.value,
                                 att.qname
@@ -534,7 +535,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Fixed Attribute Default]
                     validity_error!(
                         self,
-                        ParserMismatchFixedDefaultAttributeValue,
+                        MismatchFixedDefaultAttributeValue,
                         "The attribute '{}' of the element '{}' is fixed as '{}', but specified '{}'.",
                         att.qname,
                         name,
@@ -551,7 +552,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Standalone Document Declaration]
                     validity_error!(
                         self,
-                        ParserInvalidStandaloneDocument,
+                        InvalidStandaloneDocument,
                         "standalone='yes', but an attribute declaration affecting attribute value normalization was found."
                     );
                 }
@@ -564,10 +565,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         {
             fatal_error!(
                 self,
-                ParserInvalidStartOrEmptyTag,
+                InvalidStartOrEmptyTag,
                 "Start or Empty tag does not end with '>' or '/>'."
             );
-            return Err(XMLError::ParserInvalidStartOrEmptyTag);
+            return Err(XMLError::XMLParseError(ParseError::InvalidStartOrEmptyTag));
         }
 
         if !self.fatal_error_occurred {
@@ -592,7 +593,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     } else {
                         ns_error!(
                             self,
-                            ParserUndefinedNamespace,
+                            UndefinedNamespace,
                             "The prefix '{}' is not bind to any namespaces.",
                             &name[..*prefix_length]
                         );
@@ -652,10 +653,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if !self.source.content_bytes().starts_with(b"</") {
             fatal_error!(
                 self,
-                ParserInvalidEndTag,
+                InvalidEndTag,
                 "'</' is not found at the head of the end tag."
             );
-            return Err(XMLError::ParserInvalidEndTag);
+            return Err(XMLError::XMLParseError(ParseError::InvalidEndTag));
         }
         // skip '</'
         self.source.advance(2);
@@ -676,12 +677,8 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         self.grow()?;
 
         if !self.source.content_bytes().starts_with(b">") {
-            fatal_error!(
-                self,
-                ParserInvalidEndTag,
-                "The end tag does not end with '>'."
-            );
-            return Err(XMLError::ParserInvalidEndTag);
+            fatal_error!(self, InvalidEndTag, "The end tag does not end with '>'.");
+            return Err(XMLError::XMLParseError(ParseError::InvalidEndTag));
         }
         // skip '>'
         self.source.advance(1);
@@ -708,12 +705,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [WFC: Element Type Match]
             fatal_error!(
                 self,
-                ParserMismatchElementType,
+                MismatchElementType,
                 "The start tag ('{}') and end tag ('{}') names do not match.",
                 start,
                 end
             );
-            return Err(XMLError::ParserMismatchElementType);
+            return Err(XMLError::XMLParseError(ParseError::MismatchElementType));
         }
         Ok(())
     }
@@ -731,7 +728,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     } else {
                         ns_error!(
                             self,
-                            ParserUndefinedNamespace,
+                            UndefinedNamespace,
                             "The prefix '{}' is not bind to any namespaces.",
                             &name[..prefix_length]
                         );
@@ -780,7 +777,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [VC: Standalone Document Declaration]
                 validity_error!(
                     self,
-                    ParserInvalidStandaloneDocument,
+                    InvalidStandaloneDocument,
                     "standalone='yes', but the element '{}' containing whitespace is declared to have element content in the external markup.",
                     name
                 );
@@ -788,7 +785,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             if !validator.finish() {
                 validity_error!(
                     self,
-                    ParserMismatchElementContentModel,
+                    MismatchElementContentModel,
                     "The content of element '{}' does not match to its content model.",
                     name
                 );
@@ -820,7 +817,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if att_value == XML_NS_NAMESPACE || att_value == XML_XML_NAMESPACE {
                         ns_error!(
                             self,
-                            ParserUnacceptableNamespaceName,
+                            UnacceptableNamespaceName,
                             "Namespace '{}' cannot be declared as default namespace.",
                             att_value
                         );
@@ -832,13 +829,13 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     {
                         ns_error!(
                             self,
-                            ParserUnacceptableNamespaceName,
+                            UnacceptableNamespaceName,
                             "Empty namespace name is not allowed in Namespace in XML 1.0."
                         );
                     } else if att_value == XML_NS_NAMESPACE {
                         ns_error!(
                             self,
-                            ParserUnacceptableNamespaceName,
+                            UnacceptableNamespaceName,
                             "The namespace '{}' cannot be declared explicitly.",
                             XML_NS_NAMESPACE
                         );
@@ -847,7 +844,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     {
                         ns_error!(
                             self,
-                            ParserUnacceptableNamespaceName,
+                            UnacceptableNamespaceName,
                             "The namespace '{}' cannot bind prefixes other than 'xml'.",
                             att_value
                         );
@@ -856,14 +853,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     {
                         ns_error!(
                             self,
-                            ParserUnacceptableNamespaceName,
+                            UnacceptableNamespaceName,
                             "The namespace '{}' cannot bind the prefix 'xml'.",
                             &att_name[prefix_length + 1..]
                         );
                     } else if &att_name[prefix_length + 1..] == "xmlns" {
                         ns_error!(
                             self,
-                            ParserUnacceptableNamespaceName,
+                            UnacceptableNamespaceName,
                             "Any namespaces cannot bind 'xmlns' explicitly."
                         );
                     }
@@ -884,7 +881,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         if !prefix.is_empty() || !att_value.is_empty() {
                             ns_error!(
                                 self,
-                                ParserNamespaceNameNotAbsoluteURI,
+                                NamespaceNameNotAbsoluteURI,
                                 "The namespace name '{}' is not a valid absolute URI.",
                                 att_value
                             );
@@ -898,7 +895,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         {
                             ns_error!(
                                 self,
-                                ParserNamespaceNameNotURI,
+                                NamespaceNameNotURI,
                                 "The namespace name '{}' is not a URI.",
                                 unescaped
                             );
@@ -907,7 +904,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     Err(_) => {
                         ns_error!(
                             self,
-                            ParserNamespaceNameNotURI,
+                            NamespaceNameNotURI,
                             "The namespace name '{}' is not a valid URI.",
                             att_value
                         );
@@ -958,7 +955,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         if att.qname == "xml:space" && !matches!(att.value.as_str(), "default" | "preserve") {
             error!(
                 self,
-                ParserUnacceptableXMLSpaceAttribute,
+                UnacceptableXMLSpaceAttribute,
                 "The value of 'xml:space' attribute is 'default' or 'preserve', but '{}' is specified.",
                 att.value
             );

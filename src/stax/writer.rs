@@ -5,6 +5,7 @@ use std::{borrow::Cow, io::Write};
 use crate::{
     encoding::{Encoder, UTF8Encoder, find_encoder},
     error::XMLError,
+    parse::ParseError,
     sax::{
         DefaultSAXHandler, INPUT_CHUNK, ParserConfig, ProgressiveParserSpec, SAXHandler, XMLReader,
     },
@@ -149,8 +150,8 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
         standalone: Option<bool>,
     ) -> Result<(), XMLError> {
         let encoding = if let Some(encoding) = encoding {
-            self.stream.encoder =
-                find_encoder(encoding).ok_or(XMLError::ParserUnsupportedEncoding)?;
+            self.stream.encoder = find_encoder(encoding)
+                .ok_or(XMLError::XMLParseError(ParseError::UnsupportedEncoding))?;
             Cow::Owned(format!(" encoding=\"{encoding}\""))
         } else {
             Cow::Borrowed("")
@@ -354,7 +355,10 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
             .pop_if(|l| l.2 == self.name_stack.len())
             .is_some()
         {}
-        let qname = self.name_stack.pop().ok_or(XMLError::ParserInvalidEndTag)?;
+        let qname = self
+            .name_stack
+            .pop()
+            .ok_or(XMLError::XMLParseError(ParseError::InvalidEndTag))?;
         write_tokens!(self, "</", &qname, ">");
         Ok(())
     }

@@ -28,6 +28,7 @@ use std::{io::Read, marker::PhantomData, sync::Arc};
 
 use crate::{
     error::XMLError,
+    parse::ParseError,
     sax::{
         DOCUMENT_ENTITY_NAME, DefaultSAXHandler, EntityResolver, ErrorHandler, INPUT_CHUNK,
         Locator, NamespaceStack, ParserConfig, ParserOption, ParserState, ProgressiveParserSpec,
@@ -191,7 +192,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
             while !self.reader.parse_event_once(self.eof)? || self.reader.handler.in_dtd {
                 if self.eof {
                     if self.reader.state != ParserState::Finished {
-                        return Err(XMLError::ParserUnexpectedEOF);
+                        return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF));
                     } else if self.reader.handler.event == XMLEventType::FatalError {
                         self.reader.handler.event = XMLEventType::Finished;
                     }
@@ -291,7 +292,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
             {
                 if self.eof {
                     if self.reader.state != ParserState::Finished {
-                        return Err(XMLError::ParserUnexpectedEOF);
+                        return Err(XMLError::XMLParseError(ParseError::UnexpectedEOF));
                     } else if self.reader.handler.event == XMLEventType::FatalError {
                         self.reader.handler.event = XMLEventType::Finished;
                     }
