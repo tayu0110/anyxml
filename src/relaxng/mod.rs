@@ -179,6 +179,7 @@ use crate::{
 };
 
 pub use compact::RncParseError;
+pub use parse::RngParseError;
 pub use validate::ValidateHandler;
 
 /// RELAX NG namespace

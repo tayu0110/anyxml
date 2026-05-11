@@ -3,11 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use anyxml_mediatype::{ApplicationSubtype, MediaType};
-
 use crate::{
     XML_NS_NAMESPACE, XMLVersion,
     error::XMLError,
+    mediatype::{ApplicationSubtype, MediaType},
     relaxng::{
         RelaxNGSchema, XML_RELAX_NG_NAMESPACE,
         datatype_library::RelaxNGDatatypeLibraries,
@@ -25,8 +24,9 @@ macro_rules! generic_error {
     ($method:ident, $handler:expr, $code:expr, $level:expr, $message:literal, $( $args:expr ),*) => {
         #[allow(unused)]
         use $crate::error::XMLError::*;
+        use $crate::relaxng::RngParseError::*;
         let ret = $crate::sax::error::SAXParseError {
-            error: $code,
+            error: $code.into(),
             level: $level,
             domain: $crate::error::XMLErrorDomain::RngParser,
             line: $handler.locator.line(),
@@ -41,8 +41,9 @@ macro_rules! generic_error {
     ($method:ident, $handler:expr, $code:expr, $level:expr, $message:literal) => {
         #[allow(unused)]
         use $crate::error::XMLError::*;
+        use $crate::relaxng::RngParseError::*;
         let ret = $crate::sax::error::SAXParseError {
-            error: $code,
+            error: $code.into(),
             level: $level,
             domain: $crate::error::XMLErrorDomain::RngParser,
             line: $handler.locator.line(),
@@ -57,8 +58,9 @@ macro_rules! generic_error {
     ($method:ident, $handler:expr, $code:expr, $level:expr, $message:expr) => {
         #[allow(unused)]
         use $crate::error::XMLError::*;
+        use $crate::relaxng::RngParseError::*;
         let ret = $crate::sax::error::SAXParseError {
-            error: $code,
+            error: $code.into(),
             level: $level,
             domain: $crate::error::XMLErrorDomain::RngParser,
             line: $handler.locator.line(),
@@ -96,6 +98,50 @@ macro_rules! error {
         );
     };
 }
+
+/// RELAX NG parsing errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RngParseError {
+    UnacceptablePattern,
+    UnacceptableCombine,
+    UnacceptableAttribute,
+    UnacceptableString,
+    InvalidNCName,
+    InvalidQName,
+    InvalidAnyURI,
+    UnresolvableNamespacePrefix,
+    UnresolvableDatatype,
+    UnresolvableDatatypeLibrary,
+    UnresolvableRefName,
+    UnresolvableParentRefName,
+    DatatypeLibraryURINotAbsolute,
+    InsufficientAttribute,
+    InsufficientStartInInclude,
+    InsufficientDefineInInclude,
+    ExternalRefParseFailure,
+    ExternalRefLoop,
+    IncludeParseFailure,
+    IncludeLoop,
+    HRefIncludeFragment,
+    MultipleStartWithoutCombine,
+    MultipleDefineWithoutCombine,
+    StartNotFoundInGrammar,
+    RefLoop,
+    ProhibitedPath,
+    UngroupablePattern,
+    ConflictElementNameClass,
+    ConflictAttributeNameClass,
+    UnrepeatedAttributeWithInfiniteNameClass,
+    UnknownError,
+}
+
+impl std::fmt::Display for RngParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for RngParseError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DivContentType {
@@ -383,7 +429,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     } else {
                         error!(
                             self,
-                            RngParseInvalidAnyURI,
+                            InvalidAnyURI,
                             "The value '{}' of 'xml:base' is not a valid URI reference.",
                             value
                         );
@@ -393,7 +439,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     if !value.is_empty() && validate_rfc2396_absolute_uri(value).is_err() {
                         error!(
                             self,
-                            RngParseDatatypeLibraryURINotAbsolute,
+                            DatatypeLibraryURINotAbsolute,
                             "The attribute 'datatypeLibrary' must have an absolute URI value, but '{}' is not.",
                             value
                         );
@@ -418,7 +464,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     {
                         error!(
                             self,
-                            RngParseUnacceptableAttribute,
+                            UnacceptableAttribute,
                             "The attribute '{{{}}}{}' is not allowed on '{}'.",
                             namespace_name,
                             local_name,
@@ -427,7 +473,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     } else {
                         error!(
                             self,
-                            RngParseUnacceptableAttribute,
+                            UnacceptableAttribute,
                             "The attribute '{}' is not allowed on '{}'.",
                             qname,
                             r#type.typename()
@@ -479,7 +525,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     if href.fragment().is_some() {
                         error!(
                             self,
-                            RngParseHRefIncludeFragment,
+                            HRefIncludeFragment,
                             "The URI that refers to an XML external resource must not contain a fragment identifier."
                         );
                         // Recover by removing the fragment identifier.
@@ -496,7 +542,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
             } else {
                 error!(
                     self,
-                    RngParseUnacceptablePattern,
+                    UnacceptablePattern,
                     "'{}' cannot be a root pattern element.",
                     node.r#type.typename()
                 );
@@ -513,7 +559,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 } else {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "'except' cannot be a child of '{}'.",
                         self.tree[self.cur].r#type.typename()
                     );
@@ -553,7 +599,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 ref ty => {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "'div' cannot be a child of '{}'.",
                         ty.typename()
                     );
@@ -568,7 +614,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if !node.r#type.is_name_class() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element '{}' cannot be a first child of 'element' that does not have 'name' attribute.",
                         node.r#type.typename()
                     );
@@ -589,7 +635,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if !node.r#type.is_pattern() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element '{}' cannot be a child of '{}'",
                         node.r#type.typename(),
                         ty.typename()
@@ -601,7 +647,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if !node.r#type.is_pattern() {
                     error!(
                         self,
-                        RngParseExternalRefParseFailure,
+                        ExternalRefParseFailure,
                         "The element '{}' cannot be the root element of the external resource referenced by 'externalRef'.",
                         node.r#type.typename()
                     );
@@ -612,7 +658,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if node.r#type.typename() != "grammar" {
                     error!(
                         self,
-                        RngParseIncludeParseFailure,
+                        IncludeParseFailure,
                         "The element '{}' cannot be the root element of the external resource referenced by 'include'.",
                         node.r#type.typename()
                     );
@@ -627,7 +673,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
             | RelaxNGNodeType::ExternalRef(_)) => {
                 error!(
                     self,
-                    RngParseUnacceptablePattern,
+                    UnacceptablePattern,
                     "'{}' cannot have any children.",
                     ty.typename()
                 );
@@ -638,7 +684,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
             | RelaxNGNodeType::Name(_)) => {
                 error!(
                     self,
-                    RngParseUnacceptablePattern,
+                    UnacceptablePattern,
                     "'{}' cannot have any element children.",
                     ty.typename()
                 );
@@ -653,7 +699,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     {
                         error!(
                             self,
-                            RngParseUnacceptablePattern,
+                            UnacceptablePattern,
                             "The `param` child of `data` cannot be followed by `except`."
                         );
                         return false;
@@ -666,7 +712,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     {
                         error!(
                             self,
-                            RngParseUnacceptablePattern,
+                            UnacceptablePattern,
                             "The element 'data' cannot have more than one 'except' as its last child."
                         );
                         return false;
@@ -674,7 +720,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 } else {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element '{}' cannot be a child of 'data'",
                         node.r#type.typename()
                     );
@@ -686,7 +732,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     if !node.r#type.is_name_class() {
                         error!(
                             self,
-                            RngParseUnacceptablePattern,
+                            UnacceptablePattern,
                             "The element '{}' cannot be a first child of 'attribute' that does not have 'name' attribute.",
                             node.r#type.typename()
                         );
@@ -695,7 +741,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 } else if !node.r#type.is_pattern() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element '{}' cannot be a child of 'attribute'",
                         node.r#type.typename()
                     );
@@ -703,7 +749,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 } else if self.tree[self.cur].children.len() == 2 {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element 'attribute' cannot have more than one pattern child.",
                     );
                     return false;
@@ -718,7 +764,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if !node.r#type.is_pattern() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element '{}' cannot be a child of '{}'",
                         node.r#type.typename(),
                         ty.typename()
@@ -727,7 +773,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 } else if !self.tree[self.cur].children.is_empty() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element '{}' cannot have more than one pattern child.",
                         ty.typename()
                     );
@@ -738,7 +784,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if !node.r#type.is_grammar_content() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element '{}' cannot be a child of '{}'",
                         node.r#type.typename(),
                         ty.typename()
@@ -751,7 +797,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if !node.r#type.is_include_content() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element '{}' cannot be a child of '{}'",
                         node.r#type.typename(),
                         ty.typename()
@@ -763,7 +809,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if !matches!(node.r#type, RelaxNGNodeType::Except(ExceptType::NameClass)) {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element '{}' cannot be a child of '{}'",
                         node.r#type.typename(),
                         ty.typename()
@@ -772,8 +818,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 } else if !self.tree[self.cur].children.is_empty() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
-                        "The element 'start' cannot have more than one child."
+                        UnacceptablePattern, "The element 'start' cannot have more than one child."
                     );
                     return false;
                 }
@@ -783,7 +828,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if !node.r#type.is_name_class() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element '{}' cannot be a child of '{}'",
                         node.r#type.typename(),
                         ty.typename()
@@ -837,7 +882,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if href.fragment().is_some() {
                     error!(
                         self,
-                        RngParseHRefIncludeFragment,
+                        HRefIncludeFragment,
                         "The URI that refers to an XML external resource must not contain a fragment identifier."
                     );
                     // Recover by removing the fragment identifier.
@@ -966,9 +1011,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 {
                     error!(
                         self,
-                        RngParseExternalRefLoop,
-                        "'externalRef' causes reference loop for '{}'.",
-                        href
+                        ExternalRefLoop, "'externalRef' causes reference loop for '{}'.", href
                     );
                     self.unrecoverable = true;
                     return;
@@ -980,7 +1023,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     Err(err) => {
                         error!(
                             self,
-                            RngParseExternalRefParseFailure,
+                            ExternalRefParseFailure,
                             "Failed to get a resource '{}' for 'externalRef' because of {}.",
                             href,
                             err
@@ -1006,7 +1049,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if let Err(err) = ret {
                     error!(
                         self,
-                        RngParseExternalRefParseFailure,
+                        ExternalRefParseFailure,
                         "Failed to parse '{}' for 'externalRef' because of '{}'.",
                         href,
                         err
@@ -1015,9 +1058,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 } else if self.tree[current].children.is_empty() {
                     error!(
                         self,
-                        RngParseExternalRefParseFailure,
-                        "Failed to parse '{}' for 'externalRef'.",
-                        href
+                        ExternalRefParseFailure, "Failed to parse '{}' for 'externalRef'.", href
                     );
                     return;
                 }
@@ -1087,7 +1128,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 {
                     error!(
                         self,
-                        RngParseIncludeLoop, "'include' causes reference loop for '{}'.", href
+                        IncludeLoop, "'include' causes reference loop for '{}'.", href
                     );
                     self.unrecoverable = true;
                     return None;
@@ -1099,7 +1140,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     Err(err) => {
                         error!(
                             self,
-                            RngParseExternalRefParseFailure,
+                            ExternalRefParseFailure,
                             "Failed to get a resource '{}' for 'externalRef' because of {}.",
                             href,
                             err
@@ -1125,7 +1166,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if ret.is_err() || self.tree[current].children.len() == old_num_children {
                     error!(
                         self,
-                        RngParseIncludeParseFailure, "Failed to parse '{}' for 'include'.", href
+                        IncludeParseFailure, "Failed to parse '{}' for 'include'.", href
                     );
                     return None;
                 }
@@ -1140,7 +1181,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     if gstart.is_empty() {
                         error!(
                             self,
-                            RngParseInsufficientStartInInclude,
+                            InsufficientStartInInclude,
                             "'include' contains 'start', but included grammar does not contain."
                         );
                     }
@@ -1167,7 +1208,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                         None => {
                             error!(
                                 self,
-                                RngParseInsufficientDefineInInclude,
+                                InsufficientDefineInInclude,
                                 "'include' contains 'define' whose 'name' is '{}', but included grammar does not contain.",
                                 name
                             );
@@ -1311,7 +1352,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     } else {
                         error!(
                             self,
-                            RngParseUnresolvableNamespacePrefix,
+                            UnresolvableNamespacePrefix,
                             "The namespace prefix '{}' is unresolvable.",
                             prefix
                         );
@@ -1547,7 +1588,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if !allow_anyname {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "An 'except' element that is a child of an 'anyName' element shall not have any 'anyName' descendant elements."
                     );
                     return;
@@ -1561,7 +1602,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if !allow_nsname {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "An 'except' element that is a child of an 'nsName' element shall not have any 'nsName' or 'anyName' descendant elements."
                     );
                     return;
@@ -1579,7 +1620,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     // namespace specification.
                     error!(
                         self,
-                        RngParseUnacceptableAttribute,
+                        UnacceptableAttribute,
                         "A 'name' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
                         XML_NS_NAMESPACE
                     );
@@ -1599,7 +1640,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     {
                         error!(
                             self,
-                            RngParseUnacceptableAttribute,
+                            UnacceptableAttribute,
                             "A 'name' element at the descendant of the first child of an 'attribute' element and that has an 'ns' attribute with empty value shall not have 'xmlns' as its content."
                         );
                     } else if self.tree[current].ns.as_deref().is_some_and(|ns| {
@@ -1613,7 +1654,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                         // namespace specification.
                         error!(
                             self,
-                            RngParseUnacceptableAttribute,
+                            UnacceptableAttribute,
                             "A 'name' element at the descendant of the first child of an 'attribute' element shall not have an 'ns' attribute with value '{}'.",
                             XML_NS_NAMESPACE
                         );
@@ -1640,7 +1681,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                         if !library.contains(type_name) {
                             error!(
                                 self,
-                                RngParseUnresolvableDatatypeLibrary,
+                                UnresolvableDatatypeLibrary,
                                 "The type '{}' of the datatype library '{}' is unresolvabale.",
                                 type_name,
                                 datatype_library
@@ -1658,7 +1699,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                         {
                             error!(
                                 self,
-                                RngParseUnresolvableDatatypeLibrary,
+                                UnresolvableDatatypeLibrary,
                                 "The params for the type '{}' of the datatype library '{}' is invalid.",
                                 type_name,
                                 datatype_library
@@ -1667,7 +1708,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     } else {
                         error!(
                             self,
-                            RngParseUnresolvableDatatypeLibrary,
+                            UnresolvableDatatypeLibrary,
                             "The datatype library '{}' is unresolvabale.",
                             datatype_library
                         );
@@ -1687,7 +1728,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                         if !library.contains(type_name) {
                             error!(
                                 self,
-                                RngParseUnresolvableDatatypeLibrary,
+                                UnresolvableDatatypeLibrary,
                                 "The type '{}' of the datatype library '{}' is unresolvabale.",
                                 type_name,
                                 datatype_library
@@ -1696,7 +1737,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     } else {
                         error!(
                             self,
-                            RngParseUnresolvableDatatypeLibrary,
+                            UnresolvableDatatypeLibrary,
                             "The datatype library '{}' is unresolvabale.",
                             datatype_library
                         );
@@ -1744,7 +1785,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                                 if coms != com {
                                     error!(
                                         self,
-                                        RngParseUnacceptableCombine,
+                                        UnacceptableCombine,
                                         "The 'combine' attribute values of multiple 'start' elements within the 'grammar' element are inconsistent."
                                     );
                                 }
@@ -1756,7 +1797,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                             if num_start_without_combine == 2 {
                                 error!(
                                     self,
-                                    RngParseMultipleStartWithoutCombine,
+                                    MultipleStartWithoutCombine,
                                     "Multiple 'start' element without 'combine' attribute appear."
                                 );
                             }
@@ -1773,7 +1814,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                             {
                                 error!(
                                     self,
-                                    RngParseUnacceptableCombine,
+                                    UnacceptableCombine,
                                     "The 'combine' attribute values of multiple 'define' elements within the 'grammar' element are inconsistent."
                                 );
                             } else {
@@ -1784,7 +1825,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                             if *num_define_without_combine == 2 {
                                 error!(
                                     self,
-                                    RngParseMultipleStartWithoutCombine,
+                                    MultipleStartWithoutCombine,
                                     "Multiple 'define' element without 'combine' attribute appear."
                                 );
                             }
@@ -1834,7 +1875,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
             } else if starts.is_empty() {
                 error!(
                     self,
-                    RngParseStartNotFoundInGrammar, "'start' is not found in 'grammar'"
+                    StartNotFoundInGrammar, "'start' is not found in 'grammar'"
                 );
             }
 
@@ -1918,7 +1959,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     } else {
                         error!(
                             self,
-                            RngParseUnresolvableRefName,
+                            UnresolvableRefName,
                             "The 'name' attribute of 'ref' has a value '{}', but it is unresolvable.",
                             name
                         );
@@ -1931,7 +1972,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                     } else {
                         error!(
                             self,
-                            RngParseUnresolvableRefName,
+                            UnresolvableRefName,
                             "The 'name' attribute of 'parentRef' has a value '{}', but it is unresolvable.",
                             name
                         );
@@ -2075,10 +2116,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 && !matches!(self.tree[chdef].r#type, RelaxNGNodeType::Element(_))
             {
                 if !loop_guard.insert(define) {
-                    error!(
-                        self,
-                        RngParseRefLoop, "A reference loop is detected at 'ref'.",
-                    );
+                    error!(self, RefLoop, "A reference loop is detected at 'ref'.",);
                     return false;
                 }
 
@@ -2304,10 +2342,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
     }
     fn report_prohibited_path(&mut self, cond: bool, path: &'static str) {
         if cond {
-            error!(
-                self,
-                RngParseProhibitedPath, "'{}' path is not allowed.", path
-            );
+            error!(self, ProhibitedPath, "'{}' path is not allowed.", path);
         }
     }
 
@@ -2328,10 +2363,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 let element = self.tree[current].children[0];
                 let top = self.tree[element].children[1];
                 if self.check_content_type(top).is_none() {
-                    error!(
-                        self,
-                        RngParseUngroupablePattern, "Ungropuable pattern is found."
-                    );
+                    error!(self, UngroupablePattern, "Ungropuable pattern is found.");
                 }
                 None
             }
@@ -2622,22 +2654,21 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if names.iter().any(|nc2| nc.overlap(nc2)) {
                     error!(
                         self,
-                        RngParseConflictAttributeNameClass,
-                        "The nameclass of attribute is duplicate."
+                        ConflictAttributeNameClass, "The nameclass of attribute is duplicate."
                     );
                 }
                 if nc.is_infinite() {
                     if !repeat {
                         error!(
                             self,
-                            RngParseUnrepeatedAttributeWithInfiniteNameClass,
+                            UnrepeatedAttributeWithInfiniteNameClass,
                             "Attributes using infinite name classes shall be repeated."
                         );
                     }
                     if !matches!(grammar.patterns[*pattern].as_ref(), Pattern::Text) {
                         error!(
                             self,
-                            RngParseUnacceptablePattern,
+                            UnacceptablePattern,
                             "Attributes using infinite name classes shall have 'text' as their value."
                         );
                     }
@@ -2681,7 +2712,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if names.iter().any(|nc2| nc.overlap(nc2)) {
                     error!(
                         self,
-                        RngParseConflictElementNameClass, "The nameclass of element is duplicate."
+                        ConflictElementNameClass, "The nameclass of element is duplicate."
                     );
                 }
                 names.push(nc.clone());
@@ -2694,7 +2725,7 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 if names.contains(&dum) {
                     error!(
                         self,
-                        RngParseConflictElementNameClass,
+                        ConflictElementNameClass,
                         "A text pattern shall not occur in both children of 'interleave'."
                     );
                 } else {
@@ -2770,7 +2801,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
         if matches!(self.context_node_name(), Some("value" | "param" | "name")) {
             error!(
                 self,
-                RngParseUnacceptablePattern,
+                UnacceptablePattern,
                 "'{}' pattern must not have any data other than text, comment or pi.",
                 self.context_node_name().unwrap()
             );
@@ -2783,7 +2814,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
             if self.tree.is_empty() {
                 error!(
                     self,
-                    RngParseUnacceptablePattern, "The schema root is not RELAX NG element."
+                    UnacceptablePattern, "The schema root is not RELAX NG element."
                 );
             }
             self.ignore_depth += 1;
@@ -2803,7 +2834,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                     if !VERSION.validate_qname(value) {
                         error!(
                             self,
-                            RngParseInvalidQName,
+                            InvalidQName,
                             "The value '{}' of 'name' on '{}' is not a QName.",
                             value,
                             name
@@ -2847,7 +2878,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                     if !VERSION.validate_ncname(value) {
                         error!(
                             self,
-                            RngParseInvalidNCName,
+                            InvalidNCName,
                             "The value '{}' of 'name' on '{}' is not a NCName.",
                             value,
                             name
@@ -2871,7 +2902,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                 } else {
                     error!(
                         self,
-                        RngParseInsufficientAttribute,
+                        InsufficientAttribute,
                         "'{}' must have an attribute 'name', but not found.",
                         name
                     );
@@ -2890,7 +2921,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                     if !VERSION.validate_ncname(value) {
                         error!(
                             self,
-                            RngParseInvalidNCName,
+                            InvalidNCName,
                             "The value '{}' of 'type' on 'value' is not a NCName.",
                             value
                         );
@@ -2925,7 +2956,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                     if !VERSION.validate_ncname(value) {
                         error!(
                             self,
-                            RngParseInvalidNCName,
+                            InvalidNCName,
                             "The value '{}' of 'name' on 'data' is not a NCName.",
                             value
                         );
@@ -2939,7 +2970,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                 } else {
                     error!(
                         self,
-                        RngParseInsufficientAttribute,
+                        InsufficientAttribute,
                         "'data' must have an attribute 'type', but not found."
                     );
                     self.ignore_depth += 1;
@@ -2967,7 +2998,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                         Err(_) => {
                             error!(
                                 self,
-                                RngParseInvalidAnyURI,
+                                InvalidAnyURI,
                                 "The value '{}' of 'href' on '{}' is not a URI.",
                                 value,
                                 name
@@ -2979,7 +3010,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                 } else {
                     error!(
                         self,
-                        RngParseInsufficientAttribute,
+                        InsufficientAttribute,
                         "'{}' must have an attribute 'href', but not found.",
                         name
                     );
@@ -2998,7 +3029,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                     if value != "choice" && value != "interleave" {
                         error!(
                             self,
-                            RngParseUnacceptableCombine,
+                            UnacceptableCombine,
                             "The value of 'combine' of 'start' must be 'choice' or 'interleave', but '{}' is specified.",
                             value
                         );
@@ -3017,7 +3048,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                 let Some(ni) = atts.get_index_by_expanded_name(None, "name") else {
                     error!(
                         self,
-                        RngParseInsufficientAttribute,
+                        InsufficientAttribute,
                         "'define' must have an attribute 'name', but not found."
                     );
                     self.ignore_depth += 1;
@@ -3031,7 +3062,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                 if !VERSION.validate_ncname(name) {
                     error!(
                         self,
-                        RngParseInvalidNCName,
+                        InvalidNCName,
                         "The value '{}' of 'name' on 'define' is not a NCName.",
                         name
                     );
@@ -3045,7 +3076,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                     if combine != "choice" && combine != "interleave" {
                         error!(
                             self,
-                            RngParseUnacceptableCombine,
+                            UnacceptableCombine,
                             "The value of 'combine' of 'define' must be 'choice' or 'interleave', but '{}' is specified.",
                             combine
                         );
@@ -3078,7 +3109,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
             _ => {
                 error!(
                     self,
-                    RngParseUnacceptablePattern,
+                    UnacceptablePattern,
                     "The element '{}' does not match to a pattern element.",
                     local_name
                 );
@@ -3114,7 +3145,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                     if !XMLVersion::default().validate_qname(trimmed) {
                         error!(
                             self,
-                            RngParseInvalidQName,
+                            InvalidQName,
                             "The text content '{}' of 'name' is not a QName.",
                             trimmed
                         );
@@ -3137,7 +3168,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                 {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element 'element' must have exactly one nameClass child and at least one pattern children."
                     );
                 }
@@ -3156,7 +3187,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                 if self.tree[self.cur].children.is_empty() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element '{}' must have at least one pattern children.",
                         ty.typename()
                     );
@@ -3166,7 +3197,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                 if self.tree[self.cur].children.is_empty() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element 'attribute' that does not have 'name' attribute must have exactly one nameClass child."
                     );
                 }
@@ -3175,7 +3206,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                 if self.tree[self.cur].children.is_empty() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element 'start' must have exactly one pattern child."
                     );
                 }
@@ -3185,7 +3216,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
                 if self.tree[self.cur].children.is_empty() {
                     error!(
                         self,
-                        RngParseUnacceptablePattern,
+                        UnacceptablePattern,
                         "The element '{}' must have at least one nameClass children.",
                         ty.typename()
                     );
@@ -3230,7 +3261,7 @@ impl<H: SAXHandler + ?Sized> SAXHandler for RelaxNGParseHandler<H> {
         {
             error!(
                 self,
-                RngParseUnacceptableString,
+                UnacceptableString,
                 "Elements other than 'value', 'param', and 'name' must not contain any non-whitespace characters."
             );
         }

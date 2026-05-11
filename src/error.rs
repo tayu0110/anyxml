@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::{
     encoding::{DecodeError, EncodeError},
-    relaxng::RncParseError,
+    relaxng::{RncParseError, RngParseError},
     tree::XMLTreeError,
     uri::ParseRIError,
     xinclude::XIncludeError,
@@ -185,38 +185,9 @@ pub enum XMLError {
     // Catalog errors
     CatalogInvalidPublicID,
     CatalogResourceFailure,
-    // RELAX NG errors
-    RngParseUnacceptablePattern,
-    RngParseUnacceptableCombine,
-    RngParseUnacceptableAttribute,
-    RngParseUnacceptableString,
-    RngParseInvalidNCName,
-    RngParseInvalidQName,
-    RngParseInvalidAnyURI,
-    RngParseUnresolvableNamespacePrefix,
-    RngParseUnresolvableDatatype,
-    RngParseUnresolvableDatatypeLibrary,
-    RngParseUnresolvableRefName,
-    RngParseUnresolvableParentRefName,
-    RngParseDatatypeLibraryURINotAbsolute,
-    RngParseInsufficientAttribute,
-    RngParseInsufficientStartInInclude,
-    RngParseInsufficientDefineInInclude,
-    RngParseExternalRefParseFailure,
-    RngParseExternalRefLoop,
-    RngParseIncludeParseFailure,
-    RngParseIncludeLoop,
-    RngParseHRefIncludeFragment,
-    RngParseMultipleStartWithoutCombine,
-    RngParseMultipleDefineWithoutCombine,
-    RngParseStartNotFoundInGrammar,
-    RngParseRefLoop,
-    RngParseProhibitedPath,
-    RngParseUngroupablePattern,
-    RngParseConflictElementNameClass,
-    RngParseConflictAttributeNameClass,
-    RngParseUnrepeatedAttributeWithInfiniteNameClass,
-    RngParseUnknownError,
+    // RELAX NG parsing errors
+    RngParseError(RngParseError),
+    // RELAX NG validation errors
     RngValidNotAllowed,
     RngValidEmpty,
     RngValidText,
@@ -299,6 +270,12 @@ impl From<XPointerParseError> for XMLError {
 impl From<XIncludeError> for XMLError {
     fn from(value: XIncludeError) -> Self {
         XMLError::XIncludeError(value)
+    }
+}
+
+impl From<RngParseError> for XMLError {
+    fn from(value: RngParseError) -> Self {
+        XMLError::RngParseError(value)
     }
 }
 

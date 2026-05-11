@@ -300,8 +300,6 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
     }
 
     /// Write a start tag.
-    ///
-    ///
     pub fn write_start_element(&mut self, qname: &str) -> Result<(), XMLError> {
         self.try_close_start_element()?;
         write_tokens!(self, "<", qname);
