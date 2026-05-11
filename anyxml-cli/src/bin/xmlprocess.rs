@@ -65,8 +65,10 @@ pub enum InspectMode {
 pub enum ValidationScheme {
     #[clap(name = "dtd")]
     DTD,
-    #[clap(name = "relaxng")]
-    RELAXNG,
+    #[clap(name = "rng")]
+    RNG,
+    #[clap(name = "rnc")]
+    RNC,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -486,14 +488,18 @@ fn do_validate_command(
                 }
             }
         }
-        ValidationScheme::RELAXNG => {
+        mode @ (ValidationScheme::RNG | ValidationScheme::RNC) => {
             let Some(schema) = schema else {
                 eprintln!("'--schema' flag is missing for RELAX NG validation.");
                 return Err(XMLError::UnsupportedError);
             };
 
             let schema_uri = URIString::parse(schema)?;
-            let mut schema = RelaxNGSchema::parse_uri(schema_uri, None, None::<DefaultSAXHandler>)?;
+            let mut schema = if matches!(mode, ValidationScheme::RNG) {
+                RelaxNGSchema::parse_uri(schema_uri, None, None::<DefaultSAXHandler>)?
+            } else {
+                RelaxNGSchema::parse_compact_uri(schema_uri, None, None::<DefaultSAXHandler>)?
+            };
             let validator = schema.new_validate_handler(DefaultSAXHandler);
             let mut reader = XMLReader::builder().set_handler(validator).build();
             if let Some(document) = document {
