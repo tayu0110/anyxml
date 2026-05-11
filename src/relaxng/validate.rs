@@ -44,8 +44,9 @@ macro_rules! generic_error {
     ($method:ident, $handler:expr, $code:expr, $level:expr, $message:literal, $( $args:expr ),*) => {
         #[allow(unused)]
         use $crate::error::XMLError::*;
+        use $crate::relaxng::RngValidError::*;
         let ret = $crate::sax::error::SAXParseError {
-            error: $code,
+            error: $code.into(),
             level: $level,
             domain: $crate::error::XMLErrorDomain::RngValid,
             line: $handler.locator.line(),
@@ -60,8 +61,9 @@ macro_rules! generic_error {
     ($method:ident, $handler:expr, $code:expr, $level:expr, $message:literal) => {
         #[allow(unused)]
         use $crate::error::XMLError::*;
+        use $crate::relaxng::RngValidError::*;
         let ret = $crate::sax::error::SAXParseError {
-            error: $code,
+            error: $code.into(),
             level: $level,
             domain: $crate::error::XMLErrorDomain::RngValid,
             line: $handler.locator.line(),
@@ -76,8 +78,9 @@ macro_rules! generic_error {
     ($method:ident, $handler:expr, $code:expr, $level:expr, $message:expr) => {
         #[allow(unused)]
         use $crate::error::XMLError::*;
+        use $crate::relaxng::RngValidError::*;
         let ret = $crate::sax::error::SAXParseError {
-            error: $code,
+            error: $code.into(),
             level: $level,
             domain: $crate::error::XMLErrorDomain::RngValid,
             line: $handler.locator.line(),
@@ -115,6 +118,32 @@ macro_rules! validity_error {
         );
     };
 }
+
+/// RELAX NG validation errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RngValidError {
+    NotAllowed,
+    Empty,
+    Text,
+    Data,
+    Value,
+    List,
+    Attribute,
+    Group,
+    Interleave,
+    Ref,
+    Element,
+    OneOrMore,
+    UnknownError,
+}
+
+impl std::fmt::Display for RngValidError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for RngValidError {}
 
 pub(super) struct QName(pub(super) Uri, pub(super) LocalName);
 pub(super) struct AttributeNode(pub(super) QName, pub(super) Arc<str>);
@@ -341,7 +370,7 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
                 if matches!(self.grammar.patterns[pattern].as_ref(), Pattern::NotAllowed) {
                     validity_error!(
                         self,
-                        RngValidText,
+                        Text,
                         "A text content '{}' cannot appear before the element '{}'.",
                         self.text,
                         qname
@@ -359,7 +388,7 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
             } else {
                 validity_error!(
                     self,
-                    RngValidAttribute,
+                    Attribute,
                     "The value '{}' for 'xml:base' attribute is invalid URI reference.",
                     att
                 );
@@ -387,7 +416,7 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
         if matches!(self.grammar.patterns[p].as_ref(), Pattern::NotAllowed) {
             validity_error!(
                 self,
-                RngValidElement,
+                Element,
                 "The element '{}' is not allowed here.",
                 qname
             );
@@ -404,7 +433,7 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
                 if matches!(self.grammar.patterns[np].as_ref(), Pattern::NotAllowed) {
                     validity_error!(
                         self,
-                        RngValidAttribute,
+                        Attribute,
                         "The attribute '{}' is not allowed in the element '{}'.",
                         att.qname,
                         qname
@@ -417,7 +446,7 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
             if matches!(self.grammar.patterns[p3].as_ref(), Pattern::NotAllowed) {
                 validity_error!(
                     self,
-                    RngValidAttribute,
+                    Attribute,
                     "Some attributes are not specified in the element '{}'.",
                     qname
                 );
@@ -448,7 +477,7 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
             } else if matches!(self.grammar.patterns[p].as_ref(), Pattern::NotAllowed) {
                 validity_error!(
                     self,
-                    RngValidText,
+                    Text,
                     "The text content '{}' is not allowed before eng tag '{}'.",
                     self.text,
                     qname
@@ -464,12 +493,7 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
             self.grammar.patterns[self.pattern].as_ref(),
             Pattern::NotAllowed
         ) {
-            validity_error!(
-                self,
-                RngValidElement,
-                "The content of '{}' is insufficient.",
-                qname
-            );
+            validity_error!(self, Element, "The content of '{}' is insufficient.", qname);
         }
         if let Some(base_uri) = self.base_uri_stack.pop() {
             self.base_uri = base_uri;
@@ -487,11 +511,7 @@ impl<'a, H: SAXHandler> SAXHandler for ValidateHandler<'a, H> {
 
     fn end_document(&mut self) {
         if !self.grammar.nullable(self.pattern) && self.last_error.is_ok() {
-            validity_error!(
-                self,
-                RngValidUnknownError,
-                "Finish validation unsuccessfully"
-            );
+            validity_error!(self, UnknownError, "Finish validation unsuccessfully");
         }
         self.child.end_document();
     }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::{
     encoding::{DecodeError, EncodeError},
-    relaxng::{RncParseError, RngParseError},
+    relaxng::{RncParseError, RngParseError, RngValidError},
     tree::XMLTreeError,
     uri::ParseRIError,
     xinclude::XIncludeError,
@@ -188,19 +188,7 @@ pub enum XMLError {
     // RELAX NG parsing errors
     RngParseError(RngParseError),
     // RELAX NG validation errors
-    RngValidNotAllowed,
-    RngValidEmpty,
-    RngValidText,
-    RngValidData,
-    RngValidValue,
-    RngValidList,
-    RngValidAttribute,
-    RngValidGroup,
-    RngValidInterleave,
-    RngValidRef,
-    RngValidElement,
-    RngValidOneOrMore,
-    RngValidUnknownError,
+    RngValidError(RngValidError),
     // RELAX NG Compact Syntax parsing errors
     RncParseError(RncParseError),
     // XPointer errors
@@ -276,6 +264,12 @@ impl From<XIncludeError> for XMLError {
 impl From<RngParseError> for XMLError {
     fn from(value: RngParseError) -> Self {
         XMLError::RngParseError(value)
+    }
+}
+
+impl From<RngValidError> for XMLError {
+    fn from(value: RngValidError) -> Self {
+        XMLError::RngValidError(value)
     }
 }
 

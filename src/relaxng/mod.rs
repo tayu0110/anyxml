@@ -180,7 +180,7 @@ use crate::{
 
 pub use compact::RncParseError;
 pub use parse::RngParseError;
-pub use validate::ValidateHandler;
+pub use validate::{RngValidError, ValidateHandler};
 
 /// RELAX NG namespace
 pub const XML_RELAX_NG_NAMESPACE: &str = "http://relaxng.org/ns/structure/1.0";
