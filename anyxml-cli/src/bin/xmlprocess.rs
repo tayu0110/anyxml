@@ -14,6 +14,7 @@ use anyxml::{
     stax::{XMLStreamReaderBuilder, events::XMLEvent},
     tree::TreeBuildHandler,
     uri::{URIStr, URIString},
+    xinclude::XIncludeProcessor,
     xpath::{XPathObject, evaluate_reader, evaluate_uri},
 };
 use clap::Parser;
@@ -27,6 +28,8 @@ struct Cli {
 #[derive(clap::Subcommand, Debug)]
 enum Command {
     Show {
+        #[clap(long, help = "XInclude processing")]
+        xinclude: bool,
         document: Option<String>,
     },
     Inspect {
@@ -74,7 +77,7 @@ pub enum ValidationScheme {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Show { document } => do_show_command(document)?,
+        Command::Show { xinclude, document } => do_show_command(xinclude, document)?,
         Command::Inspect { mode, document } => do_inspect_command(mode, document)?,
         Command::Validate {
             mode,
@@ -86,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn do_show_command(document: Option<String>) -> Result<(), XMLError> {
+fn do_show_command(xinclude: bool, document: Option<String>) -> Result<(), XMLError> {
     let handler = TreeBuildHandler::default();
     let mut reader = XMLReader::builder().set_handler(handler).build();
     if let Some(document) = document {
@@ -103,7 +106,16 @@ fn do_show_command(document: Option<String>) -> Result<(), XMLError> {
         return Err(XMLError::XMLParseError(ParseError::UnknownError));
     }
 
-    let document = reader.handler.document;
+    let mut document = reader.handler.document;
+    if xinclude {
+        document = match XIncludeProcessor::default().process(document) {
+            Ok(doc) => doc,
+            Err(e) => {
+                eprintln!("Failed to process XInclude because of '{e}'.");
+                return Err(e);
+            }
+        }
+    }
     println!("{document}");
     Ok(())
 }
