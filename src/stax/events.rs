@@ -43,6 +43,82 @@ pub enum XMLEvent<'a> {
     Finished,
 }
 
+impl std::fmt::Debug for XMLEvent<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            XMLEvent::StartDocument => write!(f, "startDocument()"),
+            XMLEvent::EndDocument => write!(f, "endDocument()"),
+            XMLEvent::StartElement(start) => {
+                write!(
+                    f,
+                    "startElement({}, {}, {}, {}",
+                    start.namespace_name().unwrap_or("None"),
+                    start.prefix().unwrap_or("None"),
+                    start.local_name().unwrap_or("None"),
+                    start.name()
+                )?;
+
+                for att in start.attributes() {
+                    write!(f, ", ")?;
+                    if let Some(local_name) = att.local_name.as_deref() {
+                        if let Some(uri) = att.namespace_name.as_deref() {
+                            write!(f, "{{{uri}}}")?;
+                        }
+                        write!(f, "{local_name}='{}'", att.value)?;
+                    } else {
+                        write!(f, "{}='{}'", att.qname, att.value)?;
+                    }
+                }
+                write!(f, ")")
+            }
+            XMLEvent::EndElement(end) => {
+                write!(
+                    f,
+                    "endElement({}, {}, {}, {})",
+                    end.namespace_name().unwrap_or("None"),
+                    end.prefix().unwrap_or("None"),
+                    end.local_name().unwrap_or("None"),
+                    end.name()
+                )
+            }
+            XMLEvent::Declaration(declaration) => {
+                write!(
+                    f,
+                    "declaration({}, {}, ",
+                    declaration.version(),
+                    declaration.encoding().unwrap_or("None")
+                )?;
+                if let Some(standalone) = declaration.standalone() {
+                    if standalone {
+                        write!(f, "yes)")
+                    } else {
+                        write!(f, "no)")
+                    }
+                } else {
+                    write!(f, "None)")
+                }
+            }
+            XMLEvent::DocumentType => write!(f, "documentType()"),
+            XMLEvent::Characters(characters) => {
+                write!(f, "characters({characters})")
+            }
+            XMLEvent::CDATASection(cdata) => write!(f, "cdataSection({cdata})"),
+            XMLEvent::Space(space) => write!(f, "space({space})"),
+            XMLEvent::Comment(comment) => write!(f, "comment({comment})"),
+            XMLEvent::ProcessingInstruction(pi) => write!(
+                f,
+                "processingInstruction({}, '{}')",
+                pi.target(),
+                pi.data().unwrap_or("None")
+            ),
+            XMLEvent::StartEntity(entity) => write!(f, "startEntity({entity})"),
+            XMLEvent::EndEntity => write!(f, "endEntity()"),
+            XMLEvent::FatalError => write!(f, "fatalError()"),
+            XMLEvent::Finished => write!(f, "finished()"),
+        }
+    }
+}
+
 /// Start element event.
 pub struct StartElement<'a> {
     pub(super) namespace_name: Option<&'a str>,

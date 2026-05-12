@@ -356,71 +356,8 @@ fn do_inspect_command(mode: InspectMode, document: Option<String>) -> Result<(),
 
             loop {
                 match reader.next_event()? {
-                    XMLEvent::StartDocument => println!("startDocument()"),
-                    XMLEvent::EndDocument => println!("endDocument()"),
-                    XMLEvent::StartElement(start) => {
-                        print!(
-                            "startElement({}, {}, {}, {}",
-                            start.namespace_name().unwrap_or("None"),
-                            start.prefix().unwrap_or("None"),
-                            start.local_name().unwrap_or("None"),
-                            start.name()
-                        );
-
-                        for att in start.attributes() {
-                            print!(", ");
-                            if let Some(local_name) = att.local_name.as_deref() {
-                                if let Some(uri) = att.namespace_name.as_deref() {
-                                    print!("{{{uri}}}");
-                                }
-                                print!("{local_name}='{}'", att.value);
-                            } else {
-                                print!("{}='{}'", att.qname, att.value);
-                            }
-                        }
-                        println!(")");
-                    }
-                    XMLEvent::EndElement(end) => {
-                        println!(
-                            "endElement({}, {}, {}, {})",
-                            end.namespace_name().unwrap_or("None"),
-                            end.prefix().unwrap_or("None"),
-                            end.local_name().unwrap_or("None"),
-                            end.name()
-                        );
-                    }
-                    XMLEvent::Declaration(declaration) => {
-                        print!(
-                            "declaration({}, {}, ",
-                            declaration.version(),
-                            declaration.encoding().unwrap_or("None")
-                        );
-                        if let Some(standalone) = declaration.standalone() {
-                            if standalone {
-                                println!("yes)");
-                            } else {
-                                println!("no)");
-                            }
-                        } else {
-                            println!("None)");
-                        }
-                    }
-                    XMLEvent::DocumentType => println!("documentType()"),
-                    XMLEvent::Characters(characters) => {
-                        println!("characters({characters})")
-                    }
-                    XMLEvent::CDATASection(cdata) => println!("cdataSection({cdata})"),
-                    XMLEvent::Space(space) => println!("space({space})"),
-                    XMLEvent::Comment(comment) => println!("comment({comment})"),
-                    XMLEvent::ProcessingInstruction(pi) => println!(
-                        "processingInstruction({}, '{}')",
-                        pi.target(),
-                        pi.data().unwrap_or("None")
-                    ),
-                    XMLEvent::StartEntity(entity) => println!("startEntity({entity})"),
-                    XMLEvent::EndEntity => println!("endEntity()"),
-                    XMLEvent::FatalError => println!("fatalError()"),
                     XMLEvent::Finished => break,
+                    e => println!("{e:?}"),
                 }
             }
         }
