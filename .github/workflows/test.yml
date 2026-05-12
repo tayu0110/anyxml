@@ -1,7 +1,7 @@
 name: cargo test --workspace
 on:
   push:
-    branches: 
+    branches:
       - master
       - develop
 
@@ -34,6 +34,9 @@ jobs:
           rustup --version
           rustc --version
           cargo --version
-            
+
+      - name: Run `cargo doc --workspace`
+        run: cargo doc --workspace
+
       - name: Run `cargo test --workspace`
         run: cargo test --workspace ${{ matrix.build }}

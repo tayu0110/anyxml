@@ -325,7 +325,7 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
     /// For example, if using this method to write a document element with a non-null
     /// namespace name, an error will always occur because the prefix bound to the namespace
     /// cannot be determined.  \
-    /// To work around this, consider using [`write_start_element`].
+    /// To work around this, consider using [`write_start_element`](XMLStreamWriter::write_start_element).
     ///
     /// If a default namespace has already been declared at the time an element with a NULL
     /// namespace is written, the writer automatically writes a default namespace override to
@@ -388,9 +388,10 @@ impl<'a, H: SAXHandler> XMLStreamWriter<'a, H> {
     /// This method can only be used between the time the start tag is written and the time
     /// the element's content is written.
     ///
-    /// As with the limitations of [`write_start_element_ns`], using a namespace whose prefix
-    /// is not yet bound at the time this method is called will result in an error.  \
-    /// In such cases, please use [`write_attribute`] instead.
+    /// As with the limitations of [`write_start_element_ns`](XMLStreamWriter::write_start_element_ns),
+    /// using a namespace whose prefix is not yet bound at the time this method is called will
+    /// result in an error.  \
+    /// In such cases, please use [`write_attribute`](XMLStreamWriter::write_attribute) instead.
     pub fn write_attribute_ns(
         &mut self,
         namespace_name: Option<&str>,
