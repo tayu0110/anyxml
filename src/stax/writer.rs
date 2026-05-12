@@ -1,4 +1,13 @@
 //! StAX style XML writer.
+//!
+//! By writing events in the proper sequence, it is possible to obtain a serialized XML document.
+//!
+//! Internally, the serialized representation of the written events is also forwarded to the
+//! parser to prevent the writing of ill-formed XML.  \
+//! If DTD validation is enabled via parser options, the system performs not only well-formedness
+//! checks but also validity checks based on the written DTD.
+//!
+//! To receive all errors, it is necessary to set up an error handler.
 
 use std::{borrow::Cow, io::Write};
 
