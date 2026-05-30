@@ -10,8 +10,8 @@ use std::{
 use anyxml::{
     error::{XMLErrorDomain, XMLErrorLevel},
     sax::{
-        Attributes, DebugHandler, EntityResolver, ErrorHandler, Locator, ParserOption, SAXHandler,
-        XMLReader,
+        Attributes, DebugHandler, EntityResolver, ErrorHandler, Locator, ParserConfig,
+        ParserOption, SAXHandler, XMLReader,
     },
     uri::URIString,
 };
@@ -196,8 +196,6 @@ struct XMLConfWalker {
     progressive: bool,
 }
 
-impl XMLConfWalker {}
-
 impl SAXHandler for XMLConfWalker {
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
         *self.locator.borrow_mut() = Some(locator);
@@ -248,6 +246,8 @@ impl SAXHandler for XMLConfWalker {
                 let mut recommendation = String::new();
                 let mut edition = String::new();
                 let mut entities = String::new();
+                let mut _output = None;
+                let mut namespace = true;
                 for att in atts.iter() {
                     match att.qname.as_ref() {
                         "TYPE" => r#type = att.value.to_string(),
@@ -256,6 +256,8 @@ impl SAXHandler for XMLConfWalker {
                         "RECOMMENDATION" => recommendation = att.value.to_string(),
                         "EDITION" => edition = att.value.to_string(),
                         "ENTITIES" => entities = att.value.to_string(),
+                        "OUTPUT" => _output = Some(att.value.to_string()),
+                        "NAMESPACE" if att.value == "no" => namespace = false,
                         _ => {}
                     }
                 }
@@ -288,13 +290,19 @@ impl SAXHandler for XMLConfWalker {
                     .system_id()
                     .resolve(&URIString::parse(uri).unwrap());
 
-                let mut reader = XMLReader::builder().set_handler(DebugHandler {
-                    child: TestSAXHandler::new(),
-                    buffer: String::new(),
-                });
+                let mut config = ParserConfig::default();
                 if entities != "none" || matches!(r#type.as_ref(), "valid" | "invalid") {
-                    reader = reader.enable_option(ParserOption::Validation)
+                    config |= ParserOption::Validation;
                 }
+                if !namespace {
+                    config.set_option(ParserOption::Namespaces, false);
+                }
+                let reader = XMLReader::builder()
+                    .set_handler(DebugHandler {
+                        child: TestSAXHandler::new(),
+                        buffer: String::new(),
+                    })
+                    .set_parser_config(config.clone());
                 let handler = if !self.progressive {
                     let mut reader = reader.build();
                     reader.parse_uri(uri, None).ok();

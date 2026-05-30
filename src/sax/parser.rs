@@ -139,6 +139,7 @@ impl std::ops::BitOr<ParserConfig> for ParserOption {
 /// config |= Validation;
 /// assert!(config.is_enable(Validation));
 /// ```
+#[derive(Clone)]
 pub struct ParserConfig {
     flags: u64,
 }
