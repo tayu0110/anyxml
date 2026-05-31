@@ -85,7 +85,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: ID Attribute Default]
                             validity_error!(
                                 self,
-                                InvalidIDAttributeValue,
+                                VcIDAttributeDefault,
                                 "ID attribute default must be '#REQUIRED' or '#IMPLIED'."
                             );
                         }
@@ -95,7 +95,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: One ID per Element Type]
                                 validity_error!(
                                     self,
-                                    MultipleIDAttributePerElement,
+                                    VcOneIDPerElementType,
                                     "ID attribute declarations appear multiple times on element '{}'.",
                                     name
                                 );
@@ -113,7 +113,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: IDREF]
                                 validity_error!(
                                     self,
-                                    InvalidIDREFAttributeValue,
+                                    VcIDREF,
                                     "IDREF attribute default must match to NCName."
                                 );
                             } else if !self.config.is_enable(ParserOption::Namespaces)
@@ -122,7 +122,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: IDREF]
                                 validity_error!(
                                     self,
-                                    InvalidIDREFAttributeValue,
+                                    VcIDREF,
                                     "IDREF attribute default must match to Name."
                                 );
                             }
@@ -143,7 +143,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: IDREF]
                                 validity_error!(
                                     self,
-                                    InvalidIDREFAttributeValue,
+                                    VcIDREF,
                                     "IDREFS attribute default must match to Names."
                                 );
                             }
@@ -199,7 +199,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [VC: Proper Declaration/PE Nesting]
             validity_error!(
                 self,
-                EntityIncorrectNesting,
+                VcProperDeclarationPENesting,
                 "A parameter entity in an attribute declaration is nested incorrectly."
             );
         }
@@ -273,7 +273,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: No Duplicate Tokens]
                         validity_error!(
                             self,
-                            DuplicateTokensInAttlistDecl,
+                            VcNoDuplicateTokens,
                             "'{}' is duplicate in an attlist declaration for the attribute '{}'.",
                             buffer,
                             att_name
@@ -292,7 +292,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: No Duplicate Tokens]
                     validity_error!(
                         self,
-                        DuplicateTokensInAttlistDecl,
+                        VcNoDuplicateTokens,
                         "'{}' is duplicate in an attlist declaration for the attribute '{}'.",
                         buffer,
                         att_name
@@ -381,7 +381,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: No Duplicate Tokens]
                         validity_error!(
                             self,
-                            DuplicateTokensInAttlistDecl,
+                            VcNoDuplicateTokens,
                             "'{}' is duplicate in an attlist declaration for the attribute '{}'.",
                             buffer,
                             att_name
@@ -404,7 +404,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: No Duplicate Tokens]
                     validity_error!(
                         self,
-                        DuplicateTokensInAttlistDecl,
+                        VcNoDuplicateTokens,
                         "'{}' is duplicate in an attlist declaration for the attribute '{}'.",
                         buffer,
                         att_name
@@ -558,7 +558,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: Attribute Default Value Syntactically Correct]
                         validity_error!(
                             self,
-                            SyntaxticallyIncorrectAttributeDefault,
+                            VcAttributeDefaultValueSyntacticallyCorrect,
                             "'{}' is syntaxtically incorrect as {} type attribute value.",
                             def,
                             if matches!(atttype, AttributeType::IDREF) {
@@ -582,7 +582,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: Attribute Default Value Syntactically Correct]
                         validity_error!(
                             self,
-                            SyntaxticallyIncorrectAttributeDefault,
+                            VcAttributeDefaultValueSyntacticallyCorrect,
                             "'{}' is syntaxtically incorrect as {} type attribute value.",
                             def,
                             if matches!(atttype, AttributeType::IDREFS) {
@@ -598,7 +598,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: Attribute Default Value Syntactically Correct]
                         validity_error!(
                             self,
-                            SyntaxticallyIncorrectAttributeDefault,
+                            VcAttributeDefaultValueSyntacticallyCorrect,
                             "'{}' is syntaxtically incorrect as NMTOKEN type attribute value.",
                             def
                         );
@@ -609,7 +609,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: Attribute Default Value Syntactically Correct]
                         validity_error!(
                             self,
-                            SyntaxticallyIncorrectAttributeDefault,
+                            VcAttributeDefaultValueSyntacticallyCorrect,
                             "'{}' is syntaxtically incorrect as NMTOKENS type attribute value.",
                             def
                         );
@@ -620,7 +620,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: Attribute Default Value Syntactically Correct]
                         validity_error!(
                             self,
-                            SyntaxticallyIncorrectAttributeDefault,
+                            VcAttributeDefaultValueSyntacticallyCorrect,
                             "'{}' is syntaxtically incorrect as {} type attribute value.",
                             def,
                             if matches!(atttype, AttributeType::Enumeration(_)) {

@@ -42,12 +42,9 @@ pub enum ParseError {
     InvalidNameChar,
     InvalidNCNameStartChar,
     InvalidNCNameChar,
-    InvalidQNameSeparator,
     IncorrectLiteralQuotation,
-    InvalidSystemLiteral,
     SystemLiteralWithFragment,
     InvalidPubidLiteral,
-    InvalidAttValue,
     InvalidExternalID,
     InvalidCharacter,
     InvalidXMLDecl,
@@ -58,7 +55,6 @@ pub enum ParseError {
     InvalidSDDecl,
     InvalidComment,
     InvalidCDSect,
-    InvalidStandaloneDocument,
     InvalidProcessingInstruction,
     UnacceptableCatalogPIPosition,
     InvalidCatalogPIAttribute,
@@ -68,52 +64,105 @@ pub enum ParseError {
     InvalidElementDecl,
     DuplicateElementDecl,
     AmbiguousElementContentModel,
-    DuplicateMixedContent,
     InvalidAttlistDecl,
     MismatchXMLIDAttributeType,
     DuplicateAttlistDecl,
-    DuplicateTokensInAttlistDecl,
-    MultipleIDAttributePerElement,
-    InvalidIDAttributeValue,
-    InvalidIDREFAttributeValue,
-    NotationAttlistDeclOnEmptyElement,
-    SyntaxticallyIncorrectAttributeDefault,
     InvalidEntityDecl,
     IncorrectPredefinedEntityDecl,
     DuplicateEntityDecl,
     InvalidNotationDecl,
-    DuplicateNotationDecl,
-    UndeclaredNotation,
     InvalidConditionalSect,
     InvalidStartOrEmptyTag,
     InvalidEndTag,
-    UnclosedStartTag,
-    MismatchElementType,
     MismatchElementContentModel,
-    UndeclaredElement,
     InvalidAttribute,
-    UndeclaredAttribute,
     DuplicateAttributes,
-    DuplicateIDAttribute,
-    UnresolvableIDReference,
-    MultipleNotationAttributePerElement,
-    UnacceptableNotationAttribute,
-    UnacceptableEnumerationAttribute,
-    MismatchFixedDefaultAttributeValue,
-    RequiredAttributeNotFound,
     UnacceptableXMLSpaceAttribute,
     InvalidCharacterReference,
     InvalidEntityReference,
-    EntityNotFound,
-    EntityRecursion,
     EntityIncorrectNesting,
-    UndeclaredEntityReference,
     NamespaceNameNotURI,
     NamespaceNameNotAbsoluteURI,
     UnacceptableNamespaceName,
     UndefinedNamespace,
     UnexpectedDocumentContent,
     UnexpectedEOF,
+    /// WFC: PEs in Internal Subset
+    WfcPEsInInternalSubset,
+    /// WFC: External Subset
+    WfcExternalSubset,
+    /// WFC: PE Between Declarations
+    WfcPEBetweenDeclarations,
+    /// WFC: Element Type Match
+    WfcElementTypeMatch,
+    /// WFC: Unique Att Spec
+    WfcUniqueAttSpec,
+    /// WFC: No External Entity References
+    WfcNoExternalEntityReferences,
+    /// WFC: No `<` in Attribute Values
+    WfcNoLtInAttributeValues,
+    /// WFC: Legal Character
+    WfcLegalCharacter,
+    /// WFC: Entity Declared
+    WfcEntityDeclared,
+    /// WFC: Parsed Entity
+    WfcParsedEntity,
+    /// WFC: No Recursion
+    WfcNoRecursion,
+    /// WFC: In DTD
+    WfcInDTD,
+    /// VC: Root Element Type
+    VcRootElementType,
+    /// VC: Proper Declaration/PE Nesting
+    VcProperDeclarationPENesting,
+    /// VC: Standalone Document Declaration
+    VcStandaloneDocumentDeclaration,
+    /// VC: Element Valid
+    VcElementValid,
+    /// VC: Attribute Value Type
+    VcAttributeValueType,
+    /// VC: Unique Element Type Declaration
+    VcUniqueElementTypeDeclaration,
+    /// VC: Proper Group/PE Nesting
+    VcProperGroupPENesting,
+    /// VC: No Duplicate Types
+    VcNoDuplicateTypes,
+    /// VC: ID
+    VcID,
+    /// VC: One ID per Element Type
+    VcOneIDPerElementType,
+    /// VC: ID Attribute Default
+    VcIDAttributeDefault,
+    /// VC: IDREF
+    VcIDREF,
+    /// VC: Entity Name
+    VcEntityName,
+    /// VC: Name Token
+    VcNameToken,
+    /// VC: Notation Attributes
+    VcNotationAttributes,
+    /// VC: One Notation Per Element Type
+    VcOneNotationPerElementType,
+    /// VC: No Notation on Empty Element
+    VcNoNotationOnEmptyElement,
+    /// VC: No Duplicate Tokens
+    VcNoDuplicateTokens,
+    /// VC: Enumeration
+    VcEnumeration,
+    /// VC: Required Attribute
+    VcRequiredAttribute,
+    /// VC: Attribute Default Value Syntactically Correct
+    VcAttributeDefaultValueSyntacticallyCorrect,
+    /// VC: Fixed Attribute Default
+    VcFixedAttributeDefault,
+    /// VC: Proper Conditional Section/PE Nesting
+    VcProperConditionalSectionPENesting,
+    /// VC: Entity Declared
+    VcEntityDeclared,
+    /// VC: Notation Declared
+    VcNotationDeclared,
+    /// VC: Unique Notation Name
+    VcUniqueNotationName,
 }
 
 impl std::fmt::Display for ParseError {
@@ -156,12 +205,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         {
             // [VC: IDREF]
             for idref in self.unresolved_ids.drain() {
-                validity_error!(
-                    self,
-                    UnresolvableIDReference,
-                    "IDREF '{}' has no referenced ID.",
-                    idref
-                );
+                validity_error!(self, VcIDREF, "IDREF '{}' has no referenced ID.", idref);
             }
         }
         self.handler.end_document();
@@ -236,11 +280,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [WFC: No Recursion]
             fatal_error!(
                 self,
-                EntityRecursion,
+                WfcNoRecursion,
                 "The parameter entity '{}' appears recursively.",
                 name
             );
-            return Err(XMLError::XMLParseError(EntityRecursion));
+            return Err(XMLError::XMLParseError(WfcNoRecursion));
         }
 
         let mut entity_push = false;
@@ -342,7 +386,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [VC: Entity Declared]
                 validity_error!(
                     self,
-                    EntityNotFound,
+                    VcEntityDeclared,
                     "The parameter entity '{}' is not declared.",
                     name
                 );
@@ -384,10 +428,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if in_decl && self.state == ParserState::InInternalSubset {
                     fatal_error!(
                         self,
-                        InvalidEntityReference,
+                        WfcPEsInInternalSubset,
                         "A parameter entity appears in the markup declaration in an internal subset."
                     );
-                    return Err(XMLError::XMLParseError(InvalidEntityReference));
+                    return Err(XMLError::XMLParseError(WfcPEsInInternalSubset));
                 } else {
                     self.parse_pe_reference(in_decl)?;
                     s += self.skip_whitespaces()?;
@@ -506,10 +550,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         {
             fatal_error!(
                 self,
-                InvalidCharacterReference,
+                WfcLegalCharacter,
                 "The code point specified by the character reference is too large."
             );
-            Err(XMLError::XMLParseError(InvalidCharacterReference))
+            Err(XMLError::XMLParseError(WfcLegalCharacter))
         } else if content[0] != b';' {
             fatal_error!(
                 self,
@@ -534,11 +578,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         } else {
             fatal_error!(
                 self,
-                InvalidCharacter,
+                WfcLegalCharacter,
                 "The code point '0x{:X}' does not indicate a character that is allowed in a XML document.",
                 code
             );
-            Err(XMLError::XMLParseError(InvalidCharacter))
+            Err(XMLError::XMLParseError(WfcLegalCharacter))
         }
     }
 

@@ -121,7 +121,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Notation Declared]
                     validity_error!(
                         self,
-                        UndeclaredNotation,
+                        VcNotationDeclared,
                         "The notation '{}' is undeclared.",
                         notation_name.as_ref()
                     );
@@ -163,7 +163,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: No Notation on Empty Element]
                         validity_error!(
                             self,
-                            NotationAttlistDeclOnEmptyElement,
+                            VcNoNotationOnEmptyElement,
                             "Notation Type attribute '{}' is declared on the empty type element '{}'.",
                             attr_name,
                             elem_name
@@ -175,7 +175,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: Notation Attributes]
                             validity_error!(
                                 self,
-                                UndeclaredNotation,
+                                VcNotationAttributes,
                                 "The notation '{}' referenced in the notation type list for attribute '{}' of the element '{}' is not declared.",
                                 notation,
                                 attr_name,

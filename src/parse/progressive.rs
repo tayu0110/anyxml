@@ -750,7 +750,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                             for idref in self.unresolved_ids.drain() {
                                 validity_error!(
                                     self,
-                                    UnresolvableIDReference,
+                                    VcIDREF,
                                     "IDREF '{}' has no referenced ID.",
                                     idref
                                 );
@@ -1021,11 +1021,11 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                 // [WFC: No Recursion]
                 fatal_error!(
                     self,
-                    EntityRecursion,
+                    WfcNoRecursion,
                     "The entity '{}' appears recursively.",
                     name
                 );
-                return Err(XMLError::XMLParseError(ParseError::EntityRecursion));
+                return Err(XMLError::XMLParseError(ParseError::WfcNoRecursion));
             }
             match decl {
                 EntityDecl::InternalGeneralEntity {
@@ -1037,7 +1037,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                         // [WFC: Entity Declared]
                         fatal_error!(
                             self,
-                            UndeclaredEntityReference,
+                            WfcEntityDeclared,
                             "standalone='yes', but it does not reference any entities declared in the internal DTD."
                         );
                     } else {
@@ -1074,7 +1074,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                         // [WFC: Entity Declared]
                         fatal_error!(
                             self,
-                            UndeclaredEntityReference,
+                            WfcEntityDeclared,
                             "standalone='yes', but it does not reference any entities declared in the internal DTD."
                         );
                     } else if self.config.is_enable(ParserOption::ExternalGeneralEntities)
@@ -1146,7 +1146,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                     // [WFC: Parsed Entity]
                     fatal_error!(
                         self,
-                        InvalidEntityReference,
+                        WfcParsedEntity,
                         "The unparsed entity '{}' cannot be referred.",
                         name
                     );
@@ -1166,7 +1166,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                 // [WFC: Entity Declared]
                 fatal_error!(
                     self,
-                    EntityNotFound,
+                    WfcEntityDeclared,
                     "The entity '{}' is not declared.",
                     name
                 );
@@ -1174,7 +1174,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                 // [VC: Entity Declared]
                 validity_error!(
                     self,
-                    EntityNotFound,
+                    VcEntityDeclared,
                     "The entity '{}' is not declared.",
                     name
                 );

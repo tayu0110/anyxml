@@ -129,7 +129,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [VC: Proper Declaration/PE Nesting]
             validity_error!(
                 self,
-                EntityIncorrectNesting,
+                VcProperDeclarationPENesting,
                 "A parameter entity in a notation declaration is nested incorrectly."
             );
         }
@@ -158,7 +158,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Unique Notation Name]
                     validity_error!(
                         self,
-                        DuplicateNotationDecl,
+                        VcUniqueNotationName,
                         "The notation '{}' is duplicated.",
                         name
                     );

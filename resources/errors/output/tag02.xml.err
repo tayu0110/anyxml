@@ -1,0 +1,2 @@
+tag02.xml[line:1,column:5][parser][fatal error] Start or Empty tag does not end with '>' or '/>'.
+tag02.xml[line:1,column:5][parser][fatal error] Unrecoverable error: XMLParseError(InvalidStartOrEmptyTag)

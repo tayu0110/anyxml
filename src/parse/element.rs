@@ -89,7 +89,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 if self.config.is_enable(ParserOption::Validation) && *name != self.dtd_name {
                     validity_error!(
                         self,
-                        MismatchElementType,
+                        VcRootElementType,
                         "The document type declaration name does not match the document element type."
                     );
                 }
@@ -105,7 +105,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [VC: Element Valid]
                 validity_error!(
                     self,
-                    UndeclaredElement,
+                    VcElementValid,
                     "The element type '{}' is undeclared.",
                     name
                 );
@@ -125,6 +125,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             .unwrap_or_else(|| String::with_capacity(64));
         att_name.clear();
         while !matches!(self.source.content_bytes()[0], b'/' | b'>') {
+            if self
+                .source
+                .peek_char()?
+                .is_some_and(|c| !self.is_name_start_char(c))
+            {
+                // This is not an attribute name, so forward to closing tag error.
+                break;
+            }
             if s == 0 {
                 fatal_error!(
                     self,
@@ -200,7 +208,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: Required Attribute]
                             validity_error!(
                                 self,
-                                RequiredAttributeNotFound,
+                                VcRequiredAttribute,
                                 "#REQUIRED attribute '{}' of the element '{}' is not specified.",
                                 attr,
                                 name
@@ -216,7 +224,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: Standalone Document Declaration]
                                 validity_error!(
                                     self,
-                                    InvalidStandaloneDocument,
+                                    VcStandaloneDocumentDeclaration,
                                     "standalone='yes', but an unspecified attribute '{}' of the element '{}' is declared to have a default value in the external markup.",
                                     attr,
                                     name
@@ -293,7 +301,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [WFC: Unique Att Spec]
                     fatal_error!(
                         self,
-                        DuplicateAttributes,
+                        WfcUniqueAttSpec,
                         "The attribute '{}' is duplicated.",
                         att.qname
                     );
@@ -310,7 +318,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Attribute Value Type]
                     validity_error!(
                         self,
-                        UndeclaredAttribute,
+                        VcAttributeValueType,
                         "The attribute '{}' is not declared in DTD.",
                         att.qname
                     );
@@ -336,7 +344,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: ID]
                                 validity_error!(
                                     self,
-                                    DuplicateIDAttribute,
+                                    VcID,
                                     "ID '{}' is specified multiple times in the document.",
                                     att.value
                                 );
@@ -396,7 +404,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: Entity Name]
                                 validity_error!(
                                     self,
-                                    UndeclaredEntityReference,
+                                    VcEntityName,
                                     "The entity '{}' referred by the attribute '{}' is not an unparsed entity.",
                                     att.value,
                                     att.qname
@@ -406,7 +414,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: Entity Name]
                             validity_error!(
                                 self,
-                                UndeclaredEntityReference,
+                                VcEntityName,
                                 "ENTITY attribute value '{}' cannot refer to any entities.",
                                 att.value
                             );
@@ -447,7 +455,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                         // [VC: Entity Name]
                                         validity_error!(
                                             self,
-                                            UndeclaredEntityReference,
+                                            VcEntityName,
                                             "The entity '{}' referred by the attribute '{}' is not an unparsed entity.",
                                             entity,
                                             att.qname
@@ -457,7 +465,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                     // [VC: Entity Name]
                                     validity_error!(
                                         self,
-                                        UndeclaredEntityReference,
+                                        VcEntityName,
                                         "ENTITY attribute value '{}' cannot refer to any entities.",
                                         entity
                                     );
@@ -494,7 +502,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: Notation Attributes]
                             validity_error!(
                                 self,
-                                UnacceptableNotationAttribute,
+                                VcNotationAttributes,
                                 "'{}' is not allowed as a value for attribute '{}'.",
                                 att.value,
                                 att.qname
@@ -504,7 +512,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: One Notation Per Element Type]
                             validity_error!(
                                 self,
-                                MultipleNotationAttributePerElement,
+                                VcOneNotationPerElementType,
                                 "Attribute `{}` appeared as a multiple-occurrence notation attribute in the element '{}'.",
                                 att.qname,
                                 name
@@ -514,10 +522,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     }
                     AttributeType::Enumeration(set) => {
                         if !set.contains(att.value.as_str()) {
-                            // [VC: Validity constraint: Enumeration]
+                            // [VC: Enumeration]
                             validity_error!(
                                 self,
-                                UnacceptableEnumerationAttribute,
+                                VcEnumeration,
                                 "'{}' is not allowed as a value for attribute '{}'.",
                                 att.value,
                                 att.qname
@@ -535,7 +543,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Fixed Attribute Default]
                     validity_error!(
                         self,
-                        MismatchFixedDefaultAttributeValue,
+                        VcFixedAttributeDefault,
                         "The attribute '{}' of the element '{}' is fixed as '{}', but specified '{}'.",
                         att.qname,
                         name,
@@ -552,7 +560,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Standalone Document Declaration]
                     validity_error!(
                         self,
-                        InvalidStandaloneDocument,
+                        VcStandaloneDocumentDeclaration,
                         "standalone='yes', but an attribute declaration affecting attribute value normalization was found."
                     );
                 }
@@ -705,12 +713,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [WFC: Element Type Match]
             fatal_error!(
                 self,
-                MismatchElementType,
+                WfcElementTypeMatch,
                 "The start tag ('{}') and end tag ('{}') names do not match.",
                 start,
                 end
             );
-            return Err(XMLError::XMLParseError(ParseError::MismatchElementType));
+            return Err(XMLError::XMLParseError(ParseError::WfcElementTypeMatch));
         }
         Ok(())
     }
@@ -777,7 +785,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [VC: Standalone Document Declaration]
                 validity_error!(
                     self,
-                    InvalidStandaloneDocument,
+                    VcStandaloneDocumentDeclaration,
                     "standalone='yes', but the element '{}' containing whitespace is declared to have element content in the external markup.",
                     name
                 );

@@ -174,6 +174,48 @@ fn progressive_well_formed_tests() {
     }
 }
 
+#[test]
+fn errors_tests() {
+    let handler = DebugHandler {
+        child: TestSAXHandler::new(),
+        buffer: String::new(),
+    };
+
+    let mut reader = XMLReader::builder().set_handler(handler).build();
+
+    for ent in read_dir("resources/errors").unwrap() {
+        if let Ok(ent) = ent
+            && ent.metadata().unwrap().is_file()
+        {
+            let path = ent.path();
+            let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
+            reader.parse_uri(&uri, None).ok();
+            assert_ne!(
+                reader.handler.child.fatal_error.get(),
+                0,
+                "uri: {}",
+                uri.as_escaped_str(),
+            );
+
+            let outname = path.file_name().unwrap().to_str().unwrap();
+            let outname = format!("resources/errors/output/{outname}.err");
+            let outname = Path::new(outname.as_str());
+            let output = std::fs::read_to_string(outname).unwrap();
+
+            assert_eq!(
+                output,
+                *reader.handler.child.buffer.borrow(),
+                "uri: {}\n{}",
+                uri.as_escaped_str(),
+                reader.handler.child.buffer.borrow(),
+            );
+
+            reader.handler.buffer.clear();
+            reader.handler.child.reset();
+        }
+    }
+}
+
 // Some tests require unsupported encodings or their types do not match the actual
 // error that occurs, making it difficult to pass all of them, so they are skipped.
 const SKIP_TESTS: &[&str] = &[
