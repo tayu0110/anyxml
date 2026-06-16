@@ -1,0 +1,2 @@
+character_data02.xml[line:1,column:44][parser][fatal error] The code point '0x0' does not indicate a character that is allowed in a XML document.
+character_data02.xml[line:1,column:44][parser][fatal error] Unrecoverable error: XMLParseError(WfcLegalCharacter)
