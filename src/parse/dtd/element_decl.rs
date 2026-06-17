@@ -125,7 +125,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 // [VC: No Duplicate Types]
                                 validity_error!(
                                     self,
-                                    DuplicateMixedContent,
+                                    VcNoDuplicateTypes,
                                     "'{}' is duplicated as a mixed content of element '{}'.",
                                     buffer,
                                     name
@@ -149,7 +149,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             // [VC: No Duplicate Types]
                             validity_error!(
                                 self,
-                                DuplicateMixedContent,
+                                VcNoDuplicateTypes,
                                 "'{}' is duplicated as a mixed content of element '{}'.",
                                 buffer,
                                 name
@@ -160,7 +160,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [VC: Proper Group/PE Nesting]
                         validity_error!(
                             self,
-                            EntityIncorrectNesting,
+                            VcProperGroupPENesting,
                             "A parameter entity in an element declaration is nested incorrectly."
                         );
                     }
@@ -217,14 +217,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [WFC: PE Between Declarations]
                 fatal_error!(
                     self,
-                    EntityIncorrectNesting,
+                    WfcPEBetweenDeclarations,
                     "The replacement text of a PE reference in a DeclSep must be extSubsetDecl."
                 );
             } else {
                 // [VC: Proper Declaration/PE Nesting]
                 validity_error!(
                     self,
-                    EntityIncorrectNesting,
+                    VcProperDeclarationPENesting,
                     "A parameter entity in an element declaration is nested incorrectly."
                 );
             }
@@ -252,7 +252,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         {
             validity_error!(
                 self,
-                DuplicateElementDecl,
+                VcUniqueElementTypeDeclaration,
                 "An element declaration is duplicated."
             );
         }
@@ -324,7 +324,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [VC: Proper Group/PE Nesting]
             validity_error!(
                 self,
-                EntityIncorrectNesting,
+                VcProperGroupPENesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
         }
@@ -397,7 +397,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [VC: Proper Group/PE Nesting]
             validity_error!(
                 self,
-                EntityIncorrectNesting,
+                VcProperGroupPENesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
         }
@@ -476,7 +476,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [VC: Proper Group/PE Nesting]
             validity_error!(
                 self,
-                EntityIncorrectNesting,
+                VcProperGroupPENesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
         }

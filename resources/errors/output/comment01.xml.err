@@ -1,0 +1,1 @@
+comment01.xml[line:1,column:16][parser][fatal error] Comment must not contain '--' except for delimiters.

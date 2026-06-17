@@ -1,0 +1,2 @@
+attr01.xml[line:1,column:14][parser][fatal error] Unexpected EOF.
+attr01.xml[line:1,column:14][parser][fatal error] Unrecoverable error: XMLParseError(UnexpectedEOF)

@@ -197,6 +197,7 @@ pub fn evaluate_reader<'a>(
 }
 
 /// Precompiled XPath expression.
+#[derive(Clone)]
 pub struct XPathExpression {
     root: usize,
     tree: Vec<XPathSyntaxTree>,
@@ -602,7 +603,7 @@ impl XPathExpression {
 /// >   - a set of variable bindings
 /// >   - a function library
 /// >   - the set of namespace declarations in scope for the expression
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct XPathContext {
     node: Option<Node<dyn NodeSpec>>,
     position: usize,
@@ -972,7 +973,7 @@ impl std::ops::Index<usize> for XPathNodeSet {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct VariableSet {
     map: HashMap<Cow<'static, str>, XPathObject>,
 }
@@ -990,6 +991,7 @@ impl VariableSet {
     }
 }
 
+#[derive(Clone)]
 struct NamespaceSet {
     // (prefix, namespace name)
     prefix_map: HashMap<Cow<'static, str>, Cow<'static, str>>,
@@ -1230,7 +1232,7 @@ impl NodeTest {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum XPathSyntaxTree {
     Union(usize, usize),
     Slash(usize, usize),

@@ -189,6 +189,7 @@ pub const XML_RELAX_NG_ANNOTATION_NAMESPACE: &str =
     "http://relaxng.org/ns/compatibility/annotations/1.0";
 
 /// Parsed RELAX NG schema.
+#[derive(Clone)]
 pub struct RelaxNGSchema {
     grammar: Grammar,
 }

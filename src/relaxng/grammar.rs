@@ -127,6 +127,7 @@ pub(super) enum Pattern {
     After(PatternId, PatternId),
 }
 
+#[derive(Clone)]
 pub(super) struct Grammar {
     pub(super) root: PatternId,
     pub(super) libraries: RelaxNGDatatypeLibraries,

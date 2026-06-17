@@ -108,7 +108,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Proper Conditional Section/PE Nesting]
                     validity_error!(
                         self,
-                        EntityIncorrectNesting,
+                        VcProperConditionalSectionPENesting,
                         "A parameter entity in the conditional section is nested incorrectly."
                     );
                 }
@@ -150,7 +150,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [VC: Proper Conditional Section/PE Nesting]
                     validity_error!(
                         self,
-                        EntityIncorrectNesting,
+                        VcProperConditionalSectionPENesting,
                         "A parameter entity in the conditional section is nested incorrectly."
                     );
                 }

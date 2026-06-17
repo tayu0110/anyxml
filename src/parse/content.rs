@@ -96,11 +96,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [WFC: No Recursion]
                 fatal_error!(
                     self,
-                    EntityRecursion,
+                    WfcNoRecursion,
                     "The entity '{}' appears recursively.",
                     name
                 );
-                return Err(XMLError::XMLParseError(ParseError::EntityRecursion));
+                return Err(XMLError::XMLParseError(ParseError::WfcNoRecursion));
             }
             match decl {
                 EntityDecl::InternalGeneralEntity {
@@ -112,7 +112,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [WFC: Entity Declared]
                         fatal_error!(
                             self,
-                            UndeclaredEntityReference,
+                            WfcEntityDeclared,
                             "standalone='yes', but it does not reference any entities declared in the internal DTD."
                         );
                     } else {
@@ -158,7 +158,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // [WFC: Entity Declared]
                         fatal_error!(
                             self,
-                            UndeclaredEntityReference,
+                            WfcEntityDeclared,
                             "standalone='yes', but it does not reference any entities declared in the internal DTD."
                         );
                     } else if self.config.is_enable(ParserOption::ExternalGeneralEntities)
@@ -237,7 +237,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     // [WFC: Parsed Entity]
                     fatal_error!(
                         self,
-                        InvalidEntityReference,
+                        WfcParsedEntity,
                         "The unparsed entity '{}' cannot be referred.",
                         name
                     );
@@ -257,7 +257,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [WFC: Entity Declared]
                 fatal_error!(
                     self,
-                    EntityNotFound,
+                    WfcEntityDeclared,
                     "The entity '{}' is not declared.",
                     name
                 );
@@ -265,7 +265,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // [VC: Entity Declared]
                 validity_error!(
                     self,
-                    EntityNotFound,
+                    VcEntityDeclared,
                     "The entity '{}' is not declared.",
                     name
                 );

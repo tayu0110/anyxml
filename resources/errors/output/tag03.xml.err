@@ -1,0 +1,2 @@
+tag03.xml[line:1,column:7][parser][fatal error] Unnecessary document content remains. (Elements, character data, etc.)
+tag03.xml[line:1,column:7][parser][fatal error] Unrecoverable error: XMLParseError(UnexpectedDocumentContent)

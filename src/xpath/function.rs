@@ -8,6 +8,7 @@ use crate::{
 
 type XPathFunction = fn(&mut XPathContext, usize) -> Result<XPathObject, XPathError>;
 
+#[derive(Clone)]
 pub(super) struct FunctionLibrary {
     map: HashMap<Cow<'static, str>, XPathFunction>,
 }

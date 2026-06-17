@@ -208,7 +208,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             // [VC: Proper Declaration/PE Nesting]
             validity_error!(
                 self,
-                EntityIncorrectNesting,
+                VcProperDeclarationPENesting,
                 "A parameter entity in an element declaration is nested incorrectly."
             );
         }
