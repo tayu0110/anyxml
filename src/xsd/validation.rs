@@ -1,0 +1,1995 @@
+//! XSD validation logic for element and content model validation.
+//!
+//! This module contains the core validation methods on `XsdValidator`:
+//! - `validate()` — entry point: validates an entire document against the schema
+//! - `validate_element()` — validates a single element against its declaration
+//! - `validate_complex_content()` — validates attributes and content model of complex types
+//! - `validate_sequence()` / `validate_choice()` / `validate_all()` — content model validators
+//! - `validate_simple_content()` — validates text content against a simple type
+//! - `validate_attribute_value()` — validates an attribute value against its declared type
+//! - xsi:type resolution and type substitution blocking checks
+//! - Substitution group matching for element declarations
+
+use crate::tree::{Document, Element};
+
+use super::{
+    builtins::{
+        apply_whitespace_normalization, validate_builtin_value, validate_facet,
+        validate_list_facet, whitespace_for_type,
+    },
+    error::XSDValidationError,
+    parser::parse_builtin_type,
+    types::*,
+    wildcard::wildcard_allows_namespace,
+    {XS_NAMESPACE, XSI_NAMESPACE},
+};
+
+/// Result of resolving an `xsi:type` attribute on an element.
+///
+/// When an instance element carries `xsi:type`, the validator resolves it to one of:
+/// - A built-in XSD type (e.g. `xs:int`)
+/// - A named schema type (simple or complex)
+/// - Not found (error case)
+enum XsiTypeResult {
+    /// A built-in XSD type like xs:string, xs:int, etc.
+    BuiltIn(BuiltInType),
+    /// A named type definition from the schema.
+    Named(Box<TypeDef>),
+    /// The xsi:type QName could not be resolved.
+    NotFound(String),
+}
+
+impl XsdValidator {
+    /// Validate a document against this schema.
+    ///
+    /// Finds the root element, looks up its global element declaration, and
+    /// delegates to `validate_element()`. Returns a (possibly empty) list of
+    /// validation errors.
+    pub fn validate(&self, doc: &Document) -> Vec<XSDValidationError> {
+        let mut errors = vec![];
+
+        let elem = match doc.document_element() {
+            Some(e) => e,
+            None => {
+                errors.push(XSDValidationError {
+                    message: "Document has no root element".to_string(),
+                    line: None,
+                    column: None,
+                });
+                return errors;
+            }
+        };
+
+        // Find matching top-level element declaration
+        let key_with_ns = (
+            elem.namespace_name().as_deref().map(|s| s.to_string()),
+            elem.local_name().to_string(),
+        );
+        let key_no_ns = (None, elem.local_name().to_string());
+
+        let decl = self
+            .elements
+            .get(&key_with_ns)
+            .or_else(|| self.elements.get(&key_no_ns));
+
+        match decl {
+            Some(decl) => {
+                self.validate_element(elem, decl, &mut errors);
+            }
+            None => {
+                errors.push(XSDValidationError {
+                    message: format!("No element declaration found for '{}'", elem.local_name()),
+                    line: Some(0),
+                    column: Some(0),
+                });
+            }
+        }
+
+        errors
+    }
+
+    /// Check if an element has any child elements (not just text nodes).
+    fn element_has_child_elements(&self, node: Element) -> bool {
+        node.first_element_child().is_some()
+    }
+
+    /// Get a display name for a built-in type (e.g. "xs:string").
+    fn builtin_type_name(&self, bt: &BuiltInType) -> &'static str {
+        match bt {
+            BuiltInType::String => "xs:string",
+            BuiltInType::Boolean => "xs:boolean",
+            BuiltInType::Decimal => "xs:decimal",
+            BuiltInType::Float => "xs:float",
+            BuiltInType::Double => "xs:double",
+            BuiltInType::Integer => "xs:integer",
+            BuiltInType::Long => "xs:long",
+            BuiltInType::Int => "xs:int",
+            BuiltInType::Short => "xs:short",
+            BuiltInType::Byte => "xs:byte",
+            BuiltInType::NonNegativeInteger => "xs:nonNegativeInteger",
+            BuiltInType::PositiveInteger => "xs:positiveInteger",
+            BuiltInType::NonPositiveInteger => "xs:nonPositiveInteger",
+            BuiltInType::NegativeInteger => "xs:negativeInteger",
+            BuiltInType::UnsignedLong => "xs:unsignedLong",
+            BuiltInType::UnsignedInt => "xs:unsignedInt",
+            BuiltInType::UnsignedShort => "xs:unsignedShort",
+            BuiltInType::UnsignedByte => "xs:unsignedByte",
+            BuiltInType::DateTime => "xs:dateTime",
+            BuiltInType::Date => "xs:date",
+            BuiltInType::Time => "xs:time",
+            BuiltInType::Duration => "xs:duration",
+            BuiltInType::GYear => "xs:gYear",
+            BuiltInType::GYearMonth => "xs:gYearMonth",
+            BuiltInType::GMonth => "xs:gMonth",
+            BuiltInType::GMonthDay => "xs:gMonthDay",
+            BuiltInType::GDay => "xs:gDay",
+            BuiltInType::HexBinary => "xs:hexBinary",
+            BuiltInType::Base64Binary => "xs:base64Binary",
+            BuiltInType::AnyURI => "xs:anyURI",
+            BuiltInType::QName => "xs:QName",
+            BuiltInType::NormalizedString => "xs:normalizedString",
+            BuiltInType::Token => "xs:token",
+            BuiltInType::Language => "xs:language",
+            BuiltInType::Name => "xs:Name",
+            BuiltInType::NCName => "xs:NCName",
+            BuiltInType::ID => "xs:ID",
+            BuiltInType::IDREF => "xs:IDREF",
+            BuiltInType::IDREFS => "xs:IDREFS",
+            BuiltInType::NMTOKEN => "xs:NMTOKEN",
+            BuiltInType::NMTOKENS => "xs:NMTOKENS",
+            BuiltInType::NOTATION => "xs:NOTATION",
+            BuiltInType::ENTITY => "xs:ENTITY",
+            BuiltInType::ENTITIES => "xs:ENTITIES",
+            BuiltInType::AnyType => "xs:anyType",
+            BuiltInType::AnySimpleType => "xs:anySimpleType",
+        }
+    }
+
+    /// Resolve an `xsi:type` attribute on an element.
+    ///
+    /// Looks for `xsi:type` in the element's attributes, parses the QName value,
+    /// resolves the prefix to a namespace URI, and looks up the type in the schema
+    /// or built-in type registry.
+    ///
+    /// Returns `None` if no `xsi:type` is present.
+    fn resolve_xsi_type(&self, elem: Element) -> Option<XsiTypeResult> {
+        // Look for xsi:type attribute
+        let xsi_type_value = elem
+            .get_attribute("type", Some(XSI_NAMESPACE))
+            .or_else(|| {
+                // Also try by prefix match for elements where namespace resolution
+                // hasn't been applied to attributes
+                elem.attributes()
+                    .find(|a| {
+                        a.local_name().as_ref() == "type" && a.prefix().as_deref() == Some("xsi")
+                    })
+                    .map(|a| a.value())
+            })?;
+
+        // Parse the QName value (may be prefixed like "xs:int")
+        let (prefix, local_name) = if let Some(colon_pos) = xsi_type_value.find(':') {
+            (
+                Some(&xsi_type_value[..colon_pos]),
+                &xsi_type_value[colon_pos + 1..],
+            )
+        } else {
+            (None, xsi_type_value.as_str())
+        };
+
+        // Resolve prefix to namespace URI
+        let type_ns = if let Some(pfx) = prefix {
+            // Look up prefix in namespace declarations
+            elem.search_namespace_by_prefix(Some(pfx))
+                .map(|ns| ns.namespace_name().to_string())
+        } else {
+            // No prefix — use default namespace if present
+            // Per XSD spec, an unprefixed QName in xsi:type uses the default namespace
+            elem.search_namespace_by_prefix(None)
+                .map(|ns| ns.namespace_name().to_string())
+        };
+
+        // Check if it's a built-in XSD type
+        if type_ns.as_deref() == Some(XS_NAMESPACE) {
+            if let Some(bt) = parse_builtin_type(local_name) {
+                return Some(XsiTypeResult::BuiltIn(bt));
+            }
+        }
+
+        // Try looking up in schema types
+        let key = (type_ns.clone(), local_name.to_string());
+        if let Some(td) = self.types.get(&key) {
+            return Some(XsiTypeResult::Named(Box::new(td.clone())));
+        }
+        // Also try without namespace
+        let key_no_ns = (None, local_name.to_string());
+        if let Some(td) = self.types.get(&key_no_ns) {
+            return Some(XsiTypeResult::Named(Box::new(td.clone())));
+        }
+
+        Some(XsiTypeResult::NotFound(xsi_type_value.to_string()))
+    }
+
+    /// Check if xsi:type substitution is blocked by element or type block constraints.
+    ///
+    /// Per XSD §3.4.4.2 "Type Derivation OK (Complex)", blocking is checked against:
+    /// 1. The element declaration's block (`decl_block_ext`/`decl_block_rst`) — blocks any
+    ///    derivation step in the entire chain that uses the blocked method.
+    /// 2. The declared type's block (`decl_type_block_ext`/`decl_type_block_rst`) — same rule,
+    ///    applied to the type that the element declaration refers to.
+    ///
+    /// Intermediate types' block constraints do NOT affect xsi:type substitution checking.
+    ///
+    /// Returns `Some(error_message)` if blocked, `None` if allowed.
+    fn check_type_substitution_blocked(
+        &self,
+        xsi_type: &TypeDef,
+        decl_block_ext: bool,
+        decl_block_rst: bool,
+        decl_type_block_ext: bool,
+        decl_type_block_rst: bool,
+    ) -> Option<String> {
+        // Walk up the derivation chain of the xsi:type type.
+        // Track which derivation methods appear in the chain.
+        let mut has_extension_in_chain = false;
+        let mut has_restriction_in_chain = false;
+        let mut current = xsi_type;
+
+        while let TypeDef::Complex(ct) = current {
+            let is_extension = match ct.derived_by_extension {
+                Some(true) => true,
+                Some(false) => false,
+                None => break, // Not derived, we're at a root type
+            };
+
+            if is_extension {
+                has_extension_in_chain = true;
+            } else {
+                has_restriction_in_chain = true;
+            }
+
+            // Check element-level block against accumulated chain
+            if has_extension_in_chain && decl_block_ext {
+                return Some(
+                    "Type substitution blocked: derivation chain includes extension, which is blocked by element declaration".to_string(),
+                );
+            }
+            if has_restriction_in_chain && decl_block_rst {
+                return Some(
+                    "Type substitution blocked: derivation chain includes restriction, which is blocked by element declaration".to_string(),
+                );
+            }
+
+            // Check the declared type's block against accumulated chain
+            if has_extension_in_chain && decl_type_block_ext {
+                return Some(
+                    "Type substitution blocked: derivation chain includes extension, which is blocked by the declared type".to_string(),
+                );
+            }
+            if has_restriction_in_chain && decl_type_block_rst {
+                return Some(
+                    "Type substitution blocked: derivation chain includes restriction, which is blocked by the declared type".to_string(),
+                );
+            }
+
+            // Move up to base type
+            if let Some(ref base_key) = ct.base_type {
+                if let Some(base_td) = self.types.get(base_key) {
+                    current = base_td;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        None
+    }
+
+    /// Check if `xsi_type` is the declared type or derived from it.
+    ///
+    /// The declared element type is given as a `TypeRef`. Returns `true` if the
+    /// xsi:type is valid for substitution (ignoring block constraints).
+    fn is_type_derived_from_decl(&self, xsi_type: &TypeDef, decl_type_ref: &TypeRef) -> bool {
+        // Get the declared type's key (namespace, local_name)
+        let decl_key = match decl_type_ref {
+            TypeRef::Named(ns, name) => (ns.clone(), name.clone()),
+            TypeRef::BuiltIn(bt) => {
+                // xsi:type is always a named type here, AnyType allows everything
+                if *bt == BuiltInType::AnyType {
+                    return true;
+                }
+                // For other built-in types, the xsi:type must match exactly
+                // (named schema types can't derive from built-in complex types normally)
+                return false;
+            }
+            TypeRef::Inline(_) => {
+                // Inline (anonymous) type — xsi:type substitution is not meaningful
+                // since you can't name the declared type. Allow it.
+                return true;
+            }
+        };
+
+        // Check if xsi:type IS the declared type
+        let xsi_key = match xsi_type {
+            TypeDef::Complex(ct) => {
+                if let Some(ref name) = ct.name {
+                    // Try to match: check if namespace+name matches decl_key
+                    // We need the type's namespace. Walk through the types map to find it.
+                    if let Some(found_key) = self.find_type_key_by_typedef(xsi_type) {
+                        if found_key == decl_key {
+                            return true;
+                        }
+                        found_key
+                    } else {
+                        // Anonymous type — can't be the same as a named declared type
+                        (None, name.clone())
+                    }
+                } else {
+                    return false; // anonymous type, can't match
+                }
+            }
+            TypeDef::Simple(st) => {
+                if let Some(ref name) = st.name {
+                    if let Some(found_key) = self.find_type_key_by_typedef(xsi_type) {
+                        if found_key == decl_key {
+                            return true;
+                        }
+                        found_key
+                    } else {
+                        (None, name.clone())
+                    }
+                } else {
+                    return false;
+                }
+            }
+        };
+
+        // Walk the derivation chain of xsi:type to see if it eventually derives from decl_key
+        self.is_derived_from(&xsi_key, &decl_key)
+    }
+
+    /// Find the key in `self.types` that corresponds to a given `TypeDef`.
+    ///
+    /// Searches the types map by matching the type's name field against the map's
+    /// local name component. Returns the full `(Option<namespace>, name)` key.
+    fn find_type_key_by_typedef(&self, td: &TypeDef) -> Option<(Option<String>, String)> {
+        let name = match td {
+            TypeDef::Complex(ct) => ct.name.as_ref()?,
+            TypeDef::Simple(st) => st.name.as_ref()?,
+        };
+        // Look for it in the types map
+        for key in self.types.keys() {
+            if &key.1 == name {
+                return Some(key.clone());
+            }
+        }
+        None
+    }
+
+    /// Check if a type identified by `type_key` is derived (directly or transitively)
+    /// from a type identified by `ancestor_key`.
+    ///
+    /// Walks up the derivation chain (via `base_type` links on complex types) up to
+    /// 50 levels deep to prevent infinite loops.
+    fn is_derived_from(
+        &self,
+        type_key: &(Option<String>, String),
+        ancestor_key: &(Option<String>, String),
+    ) -> bool {
+        let mut current_key = type_key.clone();
+        // Walk up to 50 levels to avoid infinite loops
+        for _ in 0..50 {
+            if let Some(td) = self.types.get(&current_key) {
+                match td {
+                    TypeDef::Complex(ct) => {
+                        if let Some(ref base_key) = ct.base_type {
+                            if base_key == ancestor_key {
+                                return true;
+                            }
+                            current_key = base_key.clone();
+                        } else {
+                            return false; // no base type
+                        }
+                    }
+                    TypeDef::Simple(_st) => {
+                        // Simple types derive from their base built-in type
+                        // For now, we can't easily walk the chain for simple types
+                        // since base is a BuiltInType, not a key
+                        return false;
+                    }
+                }
+            } else {
+                return false;
+            }
+        }
+        false
+    }
+
+    /// Compute the effective attribute wildcard for a complex type.
+    ///
+    /// For types derived by extension, this is the union of the base type's
+    /// effective wildcard and the derived type's own wildcard.
+    /// For restriction types or types not derived, this is just the type's own wildcard.
+    fn compute_effective_wildcard(&self, ct: &ComplexTypeDef) -> Option<AttributeWildcard> {
+        if ct.derived_by_extension == Some(true) {
+            // Get the base type's effective wildcard (recursively)
+            let base_wildcard = if let Some(ref base_key) = ct.base_type {
+                if let Some(TypeDef::Complex(base_ct)) = self.types.get(base_key) {
+                    self.compute_effective_wildcard(base_ct)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Union of base wildcard and derived wildcard
+            match (&base_wildcard, &ct.attribute_wildcard) {
+                (Some(base_wc), Some(derived_wc)) => Some(base_wc.union(derived_wc)),
+                (Some(base_wc), None) => Some(base_wc.clone()),
+                (None, Some(derived_wc)) => Some(derived_wc.clone()),
+                (None, None) => None,
+            }
+        } else {
+            // Restriction or not derived: use the type's own wildcard
+            ct.attribute_wildcard.clone()
+        }
+    }
+
+    /// Compute effective attributes for a complex type, including inherited attributes
+    /// from the base type chain.
+    ///
+    /// - **Extension**: base attributes + derived attributes (derived can add new ones)
+    /// - **Restriction**: derived attributes override base; attributes not mentioned in
+    ///   the restriction are inherited; prohibited attributes are removed
+    /// - **Not derived**: just the type's own attributes
+    fn compute_effective_attributes(&self, ct: &ComplexTypeDef) -> Vec<AttributeDecl> {
+        // Get base type's effective attributes
+        let base_attrs = if let Some(ref base_key) = ct.base_type {
+            if let Some(TypeDef::Complex(base_ct)) = self.types.get(base_key) {
+                self.compute_effective_attributes(base_ct)
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+
+        if base_attrs.is_empty() {
+            return ct.attributes.clone();
+        }
+
+        match ct.derived_by_extension {
+            Some(true) => {
+                // Extension: base attributes + derived attributes
+                let mut result = base_attrs;
+                for attr in &ct.attributes {
+                    if !result.iter().any(|a| a.name == attr.name) {
+                        result.push(attr.clone());
+                    }
+                }
+                result
+            }
+            Some(false) => {
+                // Restriction: start with base attributes, then apply overrides
+                // Attributes explicitly declared in restriction replace base attrs.
+                // Attributes with use="prohibited" remove the attribute.
+                let mut result = Vec::new();
+                for base_attr in &base_attrs {
+                    // Check if the restriction overrides or prohibits this attribute
+                    let override_attr = ct.attributes.iter().find(|a| a.name == base_attr.name);
+                    if let Some(oa) = override_attr {
+                        // Use the overridden version (but check if prohibited)
+                        if !oa.prohibited {
+                            result.push(oa.clone());
+                        }
+                        // If prohibited, skip it (don't add to result)
+                    } else {
+                        // Not mentioned in restriction: inherit from base
+                        result.push(base_attr.clone());
+                    }
+                }
+                // Also add any new attributes from restriction that aren't in base
+                // (unusual but technically possible)
+                for attr in &ct.attributes {
+                    if !attr.prohibited && !result.iter().any(|a| a.name == attr.name) {
+                        result.push(attr.clone());
+                    }
+                }
+                result
+            }
+            None => {
+                // Not derived
+                ct.attributes.clone()
+            }
+        }
+    }
+
+    /// Compute the effective content model for a complex type, merging base type
+    /// particles for extension types.
+    ///
+    /// For a type derived by extension from another complex type with a sequence
+    /// content model, the effective content is the base type's particles followed
+    /// by the extension's particles. This recursively walks the extension chain.
+    ///
+    /// Returns `None` if the type is not an extension or cannot be merged.
+    fn compute_effective_particles(&self, ct: &ComplexTypeDef) -> Option<Vec<Particle>> {
+        if ct.derived_by_extension != Some(true) {
+            return None;
+        }
+        let (base_ns, base_name) = ct.base_type.as_ref()?;
+        let key = (base_ns.clone(), base_name.clone());
+        let base_type = self.types.get(&key)?;
+        if let TypeDef::Complex(base_ct) = base_type {
+            // Recursively get the base type's effective particles
+            let base_particles = if let Some(recursive) = self.compute_effective_particles(base_ct)
+            {
+                recursive
+            } else {
+                // No further merging needed, just get the base type's own particles
+                match &base_ct.content {
+                    ContentModel::Sequence(particles, _, _) => particles.clone(),
+                    ContentModel::Empty => Vec::new(),
+                    _ => return None, // Can't merge non-sequence base content
+                }
+            };
+
+            // Get the extension's own particles
+            let ext_particles = match &ct.content {
+                ContentModel::Sequence(particles, _, _) => particles.clone(),
+                ContentModel::Empty => Vec::new(),
+                _ => return None,
+            };
+
+            // Merge: base particles followed by extension particles
+            let mut merged = base_particles;
+            merged.extend(ext_particles);
+            Some(merged)
+        } else {
+            None
+        }
+    }
+
+    /// Validate a single element against its element declaration.
+    ///
+    /// This is the main per-element validation entry point. It handles:
+    /// 1. Element reference resolution (is_ref → look up global declaration)
+    /// 2. Abstract element rejection
+    /// 3. `xsi:nil` processing (nillable elements with nil=true must be empty)
+    /// 4. `xsi:type` override resolution and type substitution blocking
+    /// 5. Type resolution and dispatch to complex/simple content validation
+    /// 6. Identity constraint evaluation (key/unique/keyref)
+    fn validate_element(
+        &self,
+        node: Element,
+        decl: &ElementDecl,
+        errors: &mut Vec<XSDValidationError>,
+    ) {
+        // If this is an element reference, resolve the actual declaration from the
+        // global elements map to get the real type_ref, nillable, block constraints, etc.
+        if decl.is_ref {
+            let key = (decl.namespace.clone(), decl.name.clone());
+            if let Some(global_decl) = self.elements.get(&key) {
+                let resolved = global_decl.clone();
+                self.validate_element(node, &resolved, errors);
+                return;
+            }
+            // Fall through with the ref decl's AnyType if global not found
+        }
+
+        // Reject abstract elements: they cannot appear directly in instances
+        if decl.is_abstract {
+            errors.push(XSDValidationError {
+                message: format!(
+                    "Element '{}' is abstract and cannot appear in an instance document",
+                    decl.name
+                ),
+                line: Some(0),
+                column: Some(0),
+            });
+            return;
+        }
+
+        // Check for xsi:nil="true"
+        let xsi_nil_value = node.get_attribute("nil", Some(XSI_NAMESPACE)).or_else(|| {
+            node.attributes()
+                .find(|a| a.local_name().as_ref() == "nil" && a.prefix().as_deref() == Some("xsi"))
+                .map(|a| a.value())
+        });
+        if xsi_nil_value.as_deref() == Some("true") || xsi_nil_value.as_deref() == Some("1") {
+            if !decl.nillable {
+                errors.push(XSDValidationError {
+                    message: "xsi:nil='true' on non-nillable element".to_string(),
+                    line: Some(0),
+                    column: Some(0),
+                });
+                return;
+            }
+            // Nillable element with xsi:nil="true": must be empty
+            // (no child elements and no non-whitespace text content)
+            let has_children = self.element_has_child_elements(node.clone());
+            let text = node.text_content();
+            let has_text = !text.trim().is_empty();
+            if has_children || has_text {
+                errors.push(XSDValidationError {
+                    message: "Element with xsi:nil='true' must have no content".to_string(),
+                    line: Some(0),
+                    column: Some(0),
+                });
+            }
+            // Skip all further content validation — nilled element is valid if empty
+            return;
+        }
+
+        // Check for xsi:type override
+        if let Some(xsi_type_ref) = self.resolve_xsi_type(node.clone()) {
+            match xsi_type_ref {
+                XsiTypeResult::BuiltIn(bt) => {
+                    // NOTATION cannot be used as the {type definition} of an element
+                    if bt == BuiltInType::NOTATION {
+                        errors.push(XSDValidationError {
+                            message: "xs:NOTATION cannot be used as the type of an element"
+                                .to_string(),
+                            line: Some(0),
+                            column: Some(0),
+                        });
+                        return;
+                    }
+                    if bt == BuiltInType::AnyType {
+                        self.validate_children_against_global_decls(node, errors);
+                    } else {
+                        // Simple built-in type: element must not have child elements
+                        if self.element_has_child_elements(node.clone()) {
+                            errors.push(XSDValidationError {
+                                message: format!(
+                                    "Element with xsi:type '{}' must not have child elements",
+                                    self.builtin_type_name(&bt)
+                                ),
+                                line: Some(0),
+                                column: Some(0),
+                            });
+                            return;
+                        }
+                        let text = node.text_content();
+                        validate_builtin_value(&text, &bt, node, errors);
+                    }
+                    return;
+                }
+                XsiTypeResult::Named(td) => {
+                    // Check that xsi:type is the declared type or derived from it
+                    if !self.is_type_derived_from_decl(&td, &decl.type_ref) {
+                        let type_name = match td.as_ref() {
+                            TypeDef::Complex(ct) => ct.name.as_deref().unwrap_or("anonymous"),
+                            TypeDef::Simple(st) => st.name.as_deref().unwrap_or("anonymous"),
+                        };
+                        errors.push(XSDValidationError {
+                            message: format!(
+                                "xsi:type '{}' is not derived from the declared element type",
+                                type_name,
+                            ),
+                            line: Some(0),
+                            column: Some(0),
+                        });
+                        return;
+                    }
+                    // Check block constraints
+                    // Get the declared type's block constraints
+                    let (decl_type_block_ext, decl_type_block_rst) = match &decl.type_ref {
+                        TypeRef::Named(ns, name) => {
+                            let key = (ns.clone(), name.clone());
+                            if let Some(TypeDef::Complex(ct)) = self.types.get(&key) {
+                                (ct.block_extension, ct.block_restriction)
+                            } else {
+                                (false, false)
+                            }
+                        }
+                        _ => (false, false),
+                    };
+                    if let Some(block_msg) = self.check_type_substitution_blocked(
+                        &td,
+                        decl.block_extension,
+                        decl.block_restriction,
+                        decl_type_block_ext,
+                        decl_type_block_rst,
+                    ) {
+                        errors.push(XSDValidationError {
+                            message: block_msg,
+                            line: Some(0),
+                            column: Some(0),
+                        });
+                        return;
+                    }
+                    match *td {
+                        TypeDef::Complex(ct) => {
+                            self.validate_complex_content(node, &ct, errors);
+                        }
+                        TypeDef::Simple(st) => {
+                            // Simple type: element must not have child elements
+                            if self.element_has_child_elements(node.clone()) {
+                                errors.push(XSDValidationError {
+                                    message:
+                                        "Element with simple xsi:type must not have child elements"
+                                            .to_string(),
+                                    line: Some(0),
+                                    column: Some(0),
+                                });
+                                return;
+                            }
+                            self.validate_simple_content(node, &st, errors);
+                        }
+                    }
+                    return;
+                }
+                XsiTypeResult::NotFound(type_name) => {
+                    errors.push(XSDValidationError {
+                        message: format!("xsi:type '{}' not found", type_name),
+                        line: Some(0),
+                        column: Some(0),
+                    });
+                    return;
+                }
+            }
+        }
+
+        let type_def = self.resolve_type(&decl.type_ref);
+
+        match type_def {
+            Some(TypeDef::Complex(ct)) => {
+                self.validate_complex_content(node.clone(), ct, errors);
+            }
+            Some(TypeDef::Simple(st)) => {
+                // Simple types cannot have child elements
+                if self.element_has_child_elements(node.clone()) {
+                    let elem_name = node.local_name();
+                    errors.push(XSDValidationError {
+                        message: format!(
+                            "Element '{}' has simple type but contains child elements",
+                            elem_name
+                        ),
+                        line: Some(0),
+                        column: Some(0),
+                    });
+                }
+                self.validate_simple_content(node.clone(), st, errors);
+            }
+            None => {
+                // If type can't be resolved, check if it's a built-in
+                if let TypeRef::BuiltIn(bt) = &decl.type_ref {
+                    match bt {
+                        BuiltInType::AnyType => {
+                            // AnyType allows any content, but we should still
+                            // validate child elements against their own declarations.
+                            self.validate_children_against_global_decls(node.clone(), errors);
+                        }
+                        _ => {
+                            // Built-in simple types cannot have child elements
+                            if self.element_has_child_elements(node.clone()) {
+                                let elem_name = node.local_name();
+                                errors.push(XSDValidationError {
+                                    message: format!(
+                                        "Element '{}' has simple type '{:?}' but contains child elements",
+                                        elem_name, bt
+                                    ),
+                                    line: Some(0),
+                                    column: Some(0),
+                                });
+                            }
+                            let text = node.text_content();
+                            validate_builtin_value(&text, bt, node.clone(), errors);
+                        }
+                    }
+                }
+                // Otherwise, no validation possible (unknown type)
+            }
+        }
+
+        // Check fixed-value constraint (raw lexical comparison, no whitespace normalization)
+        if let Some(ref fixed_value) = decl.fixed {
+            let text = node.text_content();
+            if text != *fixed_value {
+                errors.push(XSDValidationError {
+                    message: format!(
+                        "Element '{}' has fixed value '{}' but content is '{}'",
+                        decl.name, fixed_value, text
+                    ),
+                    line: Some(0),
+                    column: Some(0),
+                });
+            }
+        }
+
+        // Evaluate identity constraints declared on this element
+        if !decl.identity_constraints.is_empty() {
+            self.evaluate_identity_constraints(node, &decl.identity_constraints, errors);
+        }
+    }
+
+    /// Resolve a type reference to a `TypeDef`.
+    ///
+    /// - `TypeRef::Named` → look up in `self.types` by (namespace, name) key
+    /// - `TypeRef::Inline` → return the inline type definition directly
+    /// - `TypeRef::BuiltIn` → return `None` (built-in types are handled separately)
+    fn resolve_type<'a>(&'a self, type_ref: &'a TypeRef) -> Option<&'a TypeDef> {
+        match type_ref {
+            TypeRef::Named(ns, name) => {
+                let key = (ns.clone(), name.clone());
+                self.types.get(&key)
+            }
+            TypeRef::Inline(td) => Some(td.as_ref()),
+            TypeRef::BuiltIn(_) => None,
+        }
+    }
+
+    /// Recursively validate child elements of an AnyType element against
+    /// their global element declarations.
+    ///
+    /// For elements typed as `xs:anyType`, any content is allowed, but child
+    /// elements that have matching global declarations are still validated
+    /// against those declarations.
+    fn validate_children_against_global_decls(
+        &self,
+        node: Element,
+        errors: &mut Vec<XSDValidationError>,
+    ) {
+        let mut children = node.first_element_child();
+        while let Some(child_elem) = children {
+            children = child_elem.next_element_sibling();
+            // Look up child element in global declarations
+            let key_with_ns = (
+                child_elem
+                    .namespace_name()
+                    .as_deref()
+                    .map(|s| s.to_string()),
+                child_elem.local_name().to_string(),
+            );
+            let key_no_ns = (None, child_elem.local_name().to_string());
+
+            let child_decl = self
+                .elements
+                .get(&key_with_ns)
+                .or_else(|| self.elements.get(&key_no_ns));
+
+            if let Some(decl) = child_decl {
+                self.validate_element(child_elem, decl, errors);
+            } else {
+                // No declaration found — for AnyType, that's OK.
+                // Still recurse to validate deeper children.
+                self.validate_children_against_global_decls(child_elem, errors);
+            }
+        }
+    }
+
+    /// Validate the complex content of an element against a complex type definition.
+    ///
+    /// This handles:
+    /// - Required/optional attribute checking
+    /// - Attribute value validation against declared types
+    /// - Attribute wildcard processing (processContents=skip/lax/strict)
+    /// - Rejecting undeclared attributes when no wildcard is present
+    /// - Element-only text content rejection (non-mixed types)
+    /// - Content model validation (sequence/choice/all/empty/simpleContent/any)
+    /// - Extension type particle merging
+    fn validate_complex_content(
+        &self,
+        node: Element,
+        ct: &ComplexTypeDef,
+        errors: &mut Vec<XSDValidationError>,
+    ) {
+        // Compute effective attributes (including inherited from base types)
+        let effective_attrs = self.compute_effective_attributes(ct);
+
+        // Validate attributes
+        for attr_decl in &effective_attrs {
+            if attr_decl.required {
+                let found = node
+                    .attributes()
+                    .any(|a| a.local_name().as_ref() == attr_decl.name);
+                if !found {
+                    errors.push(XSDValidationError {
+                        message: format!("Required attribute '{}' is missing", attr_decl.name),
+                        line: Some(0),
+                        column: Some(0),
+                    });
+                }
+            }
+        }
+
+        // Validate attribute values against their declared types
+        for attr_decl in &effective_attrs {
+            if let Some(attr) = node
+                .attributes()
+                .find(|a| a.local_name().as_ref() == attr_decl.name)
+            {
+                let value = &attr.value();
+                self.validate_attribute_value(value, &attr_decl.type_ref, node.clone(), errors);
+            }
+        }
+
+        // Compute the effective wildcard: for types derived by extension,
+        // merge the base type's wildcard with the derived type's wildcard (union).
+        let effective_wildcard = self.compute_effective_wildcard(ct);
+
+        // Validate unmatched attributes against wildcard or reject if no wildcard
+        if let Some(ref wildcard) = effective_wildcard {
+            for attr in node.attributes() {
+                // Skip namespace declarations
+                if attr.local_name().as_ref() == "xmlns"
+                    || attr.prefix().as_deref() == Some("xmlns")
+                {
+                    continue;
+                }
+                // Skip xsi:* attributes
+                if attr.prefix().as_deref() == Some("xsi")
+                    || attr.namespace_name().as_deref()
+                        == Some("http://www.w3.org/2001/XMLSchema-instance")
+                {
+                    continue;
+                }
+                // Skip if already matched by an explicit attribute declaration
+                let already_declared = effective_attrs
+                    .iter()
+                    .any(|ad| ad.name == attr.local_name().as_ref());
+                if already_declared {
+                    continue;
+                }
+
+                let attr_ns_str = attr.namespace_name().as_deref().map(|s| s.to_string());
+
+                // Check namespace constraint
+                if !wildcard.allows_namespace(attr_ns_str.as_deref()) {
+                    errors.push(XSDValidationError {
+                            message: format!(
+                                "Attribute '{}' in namespace '{}' is not allowed by wildcard constraint",
+                                attr.local_name(),
+                                attr_ns_str.as_deref().unwrap_or("(no namespace)")
+                            ),
+                            line: Some(0),
+                            column: Some(0),
+                        });
+                    continue;
+                }
+
+                // processContents validation
+                match wildcard.process_contents {
+                    ProcessContents::Skip => {
+                        // No validation needed
+                    }
+                    ProcessContents::Lax | ProcessContents::Strict => {
+                        // Look up in global attribute declarations
+                        let key = (attr_ns_str.clone(), attr.local_name().to_string());
+                        let global_decl = self.global_attributes.get(&key).or_else(|| {
+                            let key2 =
+                                (self.target_namespace.clone(), attr.local_name().to_string());
+                            self.global_attributes.get(&key2)
+                        });
+                        match global_decl {
+                            Some(decl) => {
+                                // Validate attribute value against its declared type
+                                self.validate_attribute_value(
+                                    &attr.value(),
+                                    &decl.type_ref,
+                                    node.clone(),
+                                    errors,
+                                );
+                            }
+                            None => {
+                                // For strict: must find a declaration
+                                if wildcard.process_contents == ProcessContents::Strict {
+                                    errors.push(XSDValidationError {
+                                            message: format!(
+                                                "Attribute '{}' in namespace '{}' has no global declaration (strict processContents)",
+                                                attr.local_name(),
+                                                attr_ns_str.as_deref().unwrap_or("(no namespace)")
+                                            ),
+                                            line: Some(0),
+                                            column: Some(0),
+                                        });
+                                }
+                                // For lax: no declaration is OK
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // No wildcard: reject any undeclared attributes
+            for attr in node.attributes() {
+                // Skip namespace declarations
+                if attr.local_name().as_ref() == "xmlns"
+                    || attr.prefix().as_deref() == Some("xmlns")
+                {
+                    continue;
+                }
+                // Skip xsi:* attributes
+                if attr.prefix().as_deref() == Some("xsi")
+                    || attr.namespace_name().as_deref()
+                        == Some("http://www.w3.org/2001/XMLSchema-instance")
+                {
+                    continue;
+                }
+                // Check if declared
+                let already_declared = effective_attrs
+                    .iter()
+                    .any(|ad| ad.name == attr.local_name().as_ref());
+                if !already_declared {
+                    errors.push(XSDValidationError {
+                            message: format!(
+                                "Attribute '{}' is not allowed (no wildcard permits additional attributes)",
+                                attr.local_name(),
+                            ),
+                            line: Some(0),
+                            column: Some(0),
+                        });
+                }
+            }
+        }
+
+        // Validate content model
+        let child_elements = {
+            let mut buf = vec![];
+            let mut children = node.first_element_child();
+            while let Some(child) = children {
+                children = child.next_element_sibling();
+                buf.push(child);
+            }
+            buf
+        };
+
+        // For non-mixed element-only content models, reject non-whitespace text
+        if !ct.mixed {
+            let is_element_only = matches!(
+                ct.content,
+                ContentModel::Sequence(..) | ContentModel::Choice(..) | ContentModel::All(..)
+            );
+            if is_element_only {
+                let mut children = node.first_child();
+                while let Some(child) = children {
+                    children = child.next_sibling();
+                    let text = child.text_content();
+                    if !text.trim().is_empty() {
+                        errors.push(XSDValidationError {
+                            message:
+                                "Non-whitespace text content is not allowed in element-only content"
+                                    .to_string(),
+                            line: Some(0),
+                            column: Some(0),
+                        });
+                        break; // report once
+                    }
+                }
+            }
+        }
+
+        // For extension types, merge base type's particles with extension's particles
+        if let Some(merged_particles) = self.compute_effective_particles(ct) {
+            let consumed = self.validate_sequence(
+                &child_elements,
+                &merged_particles,
+                1,
+                &MaxOccurs::Bounded(1),
+                node,
+                errors,
+            );
+            // Report remaining children as unexpected
+            for elem in &child_elements[consumed..] {
+                errors.push(XSDValidationError {
+                    message: format!("Unexpected element '{}' in sequence", elem.local_name()),
+                    line: Some(0),
+                    column: Some(0),
+                });
+            }
+            return;
+        }
+
+        match &ct.content {
+            ContentModel::Empty => {
+                if !child_elements.is_empty() {
+                    errors.push(XSDValidationError {
+                        message: "Element should have empty content".to_string(),
+                        line: Some(0),
+                        column: Some(0),
+                    });
+                }
+                // Check no text content (unless mixed)
+                if !ct.mixed {
+                    let text = node.text_content();
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        errors.push(XSDValidationError {
+                            message: "Element should have empty content but contains text"
+                                .to_string(),
+                            line: Some(0),
+                            column: Some(0),
+                        });
+                    }
+                }
+            }
+            ContentModel::Sequence(particles, min_occurs, max_occurs) => {
+                let consumed = self.validate_sequence(
+                    &child_elements,
+                    particles,
+                    *min_occurs,
+                    max_occurs,
+                    node,
+                    errors,
+                );
+                // Report remaining children as unexpected
+                for elem in &child_elements[consumed..] {
+                    errors.push(XSDValidationError {
+                        message: format!("Unexpected element '{}' in sequence", elem.local_name()),
+                        line: Some(0),
+                        column: Some(0),
+                    });
+                }
+            }
+            ContentModel::Choice(particles, min_occurs, max_occurs) => {
+                let consumed = self.validate_choice(
+                    &child_elements,
+                    particles,
+                    *min_occurs,
+                    max_occurs,
+                    node,
+                    errors,
+                );
+                // Report remaining children as unexpected
+                for elem in &child_elements[consumed..] {
+                    errors.push(XSDValidationError {
+                        message: format!("Unexpected element '{}' after choice", elem.local_name()),
+                        line: Some(0),
+                        column: Some(0),
+                    });
+                }
+            }
+            ContentModel::All(particles) => {
+                self.validate_all(&child_elements, particles, node, errors);
+            }
+            ContentModel::SimpleContent(type_ref) => {
+                match type_ref.as_ref() {
+                    TypeRef::BuiltIn(bt) => {
+                        let text = node.text_content();
+                        validate_builtin_value(&text, bt, node.into(), errors);
+                    }
+                    TypeRef::Named(ns, local_name) => {
+                        let key = (ns.clone(), local_name.clone());
+                        if let Some(type_def) = self.types.get(&key) {
+                            match type_def {
+                                TypeDef::Simple(st) => {
+                                    self.validate_simple_content(node, st, errors);
+                                }
+                                TypeDef::Complex(_) => {
+                                    // Complex base type for simpleContent — text validated against
+                                    // the complex type's own simpleContent base (recursively)
+                                }
+                            }
+                        }
+                    }
+                    TypeRef::Inline(inner_type_def) => {
+                        if let TypeDef::Simple(st) = inner_type_def.as_ref() {
+                            self.validate_simple_content(node, st, errors);
+                        }
+                    }
+                }
+            }
+            ContentModel::Any => {
+                // Any content is valid
+            }
+        }
+    }
+
+    /// Find a global element declaration by local name and namespace.
+    fn find_global_element(&self, name: &str, ns: Option<&str>) -> Option<ElementDecl> {
+        let key = (ns.map(|s| s.to_string()), name.to_string());
+        self.elements.get(&key).cloned()
+    }
+
+    /// Check if an instance element matches a declared element or is a member of
+    /// its substitution group.
+    ///
+    /// Returns `Some(global_decl)` if the element is a substitution group member
+    /// that should be validated against its own declaration.
+    /// Returns `None` if it's a direct match (caller handles validation) or no match.
+    fn element_matches_with_substitution(
+        &self,
+        elem_name: &str,
+        elem_ns: Option<&str>,
+        decl: &ElementDecl,
+    ) -> Option<ElementDecl> {
+        // Check if the instance element is a member of the substitution group
+        // headed by decl.
+        let head_key = (decl.namespace.clone(), decl.name.clone());
+        if let Some(members) = self.substitution_groups.get(&head_key) {
+            let elem_key = (elem_ns.map(|s| s.to_string()), elem_name.to_string());
+            if members.contains(&elem_key) {
+                // Found: the instance element substitutes for the declared element.
+                // Return the member's own global declaration for type validation.
+                return self.find_global_element(elem_name, elem_ns);
+            }
+        }
+        None
+    }
+
+    /// Validate a sequence content model.
+    ///
+    /// Iterates through the sequence's particles in order, matching child elements.
+    /// The sequence can repeat between `compositor_min` and `compositor_max` times.
+    /// Each particle within the sequence has its own min/max occurs constraints.
+    ///
+    /// Returns the number of child elements consumed.
+    #[allow(clippy::too_many_arguments)]
+    fn validate_sequence(
+        &self,
+        children: &[Element],
+        particles: &[Particle],
+        compositor_min: u64,
+        compositor_max: &MaxOccurs,
+        parent: Element,
+        errors: &mut Vec<XSDValidationError>,
+    ) -> usize {
+        let max_reps = match compositor_max {
+            MaxOccurs::Bounded(n) => *n,
+            MaxOccurs::Unbounded => u64::MAX,
+        };
+
+        let mut child_idx = 0;
+        let mut seq_reps = 0u64;
+
+        // Outer loop: repeat the entire sequence up to max_reps times
+        'outer: while seq_reps < max_reps {
+            let start_idx = child_idx;
+
+            for particle in particles {
+                let mut count = 0u64;
+                let max = match particle.max_occurs {
+                    MaxOccurs::Bounded(n) => n,
+                    MaxOccurs::Unbounded => u64::MAX,
+                };
+
+                match &particle.kind {
+                    ParticleKind::Element(decl) => {
+                        while child_idx < children.len() && count < max {
+                            let elem = children[child_idx].clone();
+                            let name_matches = elem.local_name().as_ref() == decl.name;
+                            let ns_matches =
+                                match (elem.namespace_name().as_deref(), &decl.namespace) {
+                                    (Some(a), Some(b)) => a == b,
+                                    (None, None) => true,
+                                    (Some(_), None) => false,
+                                    (None, Some(_)) => false,
+                                };
+                            if name_matches && ns_matches {
+                                self.validate_element(elem, decl, errors);
+                                count += 1;
+                                child_idx += 1;
+                            } else if let Some(subst_decl) = self.element_matches_with_substitution(
+                                &elem.local_name(),
+                                elem.namespace_name().as_deref(),
+                                decl,
+                            ) {
+                                // Element is a substitution group member;
+                                // validate against its own declaration.
+                                self.validate_element(elem, &subst_decl, errors);
+                                count += 1;
+                                child_idx += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        if count < particle.min_occurs {
+                            if seq_reps >= compositor_min {
+                                // We've already met the minimum repetitions,
+                                // so this is just the sequence not starting another rep.
+                                // Roll back to start_idx for this failed rep.
+                                child_idx = start_idx;
+                                break 'outer;
+                            }
+                            errors.push(XSDValidationError {
+                                message: format!(
+                                    "Expected at least {} occurrence(s) of element '{}', found {}",
+                                    particle.min_occurs, decl.name, count
+                                ),
+                                line: Some(0),
+                                column: Some(0),
+                            });
+                            break 'outer;
+                        }
+                    }
+                    ParticleKind::Sequence(sub_particles) => {
+                        let sub_min = particle.min_occurs;
+                        let sub_max = &particle.max_occurs;
+                        let before = errors.len();
+                        let consumed = self.validate_sequence(
+                            &children[child_idx..],
+                            sub_particles,
+                            sub_min,
+                            sub_max,
+                            parent.clone(),
+                            errors,
+                        );
+                        child_idx += consumed;
+                        if errors.len() > before {
+                            break 'outer;
+                        }
+                    }
+                    ParticleKind::Choice(sub_particles) => {
+                        let sub_min = particle.min_occurs;
+                        let sub_max = &particle.max_occurs;
+                        let consumed = self.validate_choice(
+                            &children[child_idx..],
+                            sub_particles,
+                            sub_min,
+                            sub_max,
+                            parent.clone(),
+                            errors,
+                        );
+                        child_idx += consumed;
+                    }
+                    ParticleKind::Any {
+                        namespace_constraint,
+                        process_contents,
+                    } => {
+                        // xs:any element wildcard: consume matching children
+                        while child_idx < children.len() && count < max {
+                            let elem = children[child_idx].clone();
+                            if wildcard_allows_namespace(
+                                namespace_constraint,
+                                elem.namespace_name().as_deref(),
+                            ) {
+                                // Namespace matches; apply processContents
+                                match process_contents {
+                                    ProcessContents::Skip => {
+                                        // Accept unconditionally
+                                    }
+                                    ProcessContents::Lax => {
+                                        // Try to find global element declaration; validate if found
+                                        if let Some(global_decl) = self.find_global_element(
+                                            &elem.local_name(),
+                                            elem.namespace_name().as_deref(),
+                                        ) {
+                                            self.validate_element(elem, &global_decl, errors);
+                                        }
+                                    }
+                                    ProcessContents::Strict => {
+                                        // Must find global element declaration
+                                        if let Some(global_decl) = self.find_global_element(
+                                            &elem.local_name(),
+                                            elem.namespace_name().as_deref(),
+                                        ) {
+                                            self.validate_element(elem, &global_decl, errors);
+                                        } else {
+                                            errors.push(XSDValidationError {
+                                                    message: format!(
+                                                        "No global element declaration found for '{}' (strict wildcard)",
+                                                        elem.local_name()
+                                                    ),
+                                                    line: Some(0),
+                                                    column: Some(0),
+                                                });
+                                        }
+                                    }
+                                }
+                                count += 1;
+                                child_idx += 1;
+                            } else {
+                                break; // namespace doesn't match
+                            }
+                        }
+                        if count < particle.min_occurs {
+                            if seq_reps >= compositor_min {
+                                child_idx = start_idx;
+                                break 'outer;
+                            }
+                            errors.push(XSDValidationError {
+                                message: format!(
+                                    "Expected at least {} element(s) matching wildcard, found {}",
+                                    particle.min_occurs, count
+                                ),
+                                line: Some(0),
+                                column: Some(0),
+                            });
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+
+            seq_reps += 1;
+
+            // If no progress was made, stop looping
+            if child_idx == start_idx {
+                break;
+            }
+
+            // If all children consumed, stop
+            if child_idx >= children.len() {
+                break;
+            }
+        }
+
+        if seq_reps < compositor_min {
+            errors.push(XSDValidationError {
+                message: format!(
+                    "Sequence must occur at least {} time(s), found {}",
+                    compositor_min, seq_reps
+                ),
+                line: Some(0),
+                column: Some(0),
+            });
+        }
+
+        child_idx
+    }
+
+    /// Validate a choice content model.
+    ///
+    /// Tries to match the current child element against one of the choice alternatives.
+    /// The choice can repeat between `compositor_min` and `compositor_max` times.
+    /// Each repetition picks one matching alternative and consumes its elements.
+    ///
+    /// Returns the number of child elements consumed.
+    #[allow(clippy::too_many_arguments)]
+    fn validate_choice(
+        &self,
+        children: &[Element],
+        particles: &[Particle],
+        compositor_min: u64,
+        compositor_max: &MaxOccurs,
+        parent: Element,
+        errors: &mut Vec<XSDValidationError>,
+    ) -> usize {
+        let max_reps = match compositor_max {
+            MaxOccurs::Bounded(n) => *n,
+            MaxOccurs::Unbounded => u64::MAX,
+        };
+
+        if children.is_empty() {
+            if compositor_min > 0 {
+                // Check if any particle allows 0 occurrences
+                let any_optional = particles.iter().any(|p| p.min_occurs == 0);
+                if !any_optional && !particles.is_empty() {
+                    errors.push(XSDValidationError {
+                        message: "Expected one of the choice alternatives".to_string(),
+                        line: Some(0),
+                        column: Some(0),
+                    });
+                }
+            }
+            return 0;
+        }
+
+        let mut child_idx = 0;
+        let mut choice_reps = 0u64;
+
+        // Outer loop: repeat the choice up to max_reps times.
+        // Each iteration picks one alternative and consumes matching children for it.
+        while choice_reps < max_reps && child_idx < children.len() {
+            let elem = children[child_idx].clone();
+
+            // Try to match the current child against one of the choice alternatives
+            let mut matched_any = false;
+
+            for p in particles {
+                match &p.kind {
+                    ParticleKind::Element(decl) => {
+                        let name_matches = decl.name == elem.local_name().as_ref();
+                        let ns_matches = match (elem.namespace_name().as_deref(), &decl.namespace) {
+                            (Some(a), Some(b)) => a == b,
+                            (None, None) => true,
+                            (Some(_), None) => false,
+                            (None, Some(_)) => false,
+                        };
+                        // Check for direct match or substitution group match
+                        let subst_decl = if !(name_matches && ns_matches) {
+                            self.element_matches_with_substitution(
+                                &elem.local_name(),
+                                elem.namespace_name().as_deref(),
+                                decl,
+                            )
+                        } else {
+                            None
+                        };
+                        if (name_matches && ns_matches) || subst_decl.is_some() {
+                            // Consume as many consecutive elements as allowed by max_occurs
+                            // (matching either the declared element or substitution group members)
+                            let max = match p.max_occurs {
+                                MaxOccurs::Bounded(n) => n as usize,
+                                MaxOccurs::Unbounded => usize::MAX,
+                            };
+                            let mut count = 0usize;
+                            while child_idx < children.len() && count < max {
+                                let child_elem = children[child_idx].clone();
+                                let cn_matches = child_elem.local_name().as_ref() == decl.name;
+                                let cns_matches =
+                                    match (child_elem.namespace_name().as_deref(), &decl.namespace)
+                                    {
+                                        (Some(a), Some(b)) => a == b,
+                                        (None, None) => true,
+                                        _ => false,
+                                    };
+                                if cn_matches && cns_matches {
+                                    self.validate_element(child_elem, decl, errors);
+                                    child_idx += 1;
+                                    count += 1;
+                                } else if let Some(child_subst) = self
+                                    .element_matches_with_substitution(
+                                        &child_elem.local_name(),
+                                        child_elem.namespace_name().as_deref(),
+                                        decl,
+                                    )
+                                {
+                                    self.validate_element(child_elem, &child_subst, errors);
+                                    child_idx += 1;
+                                    count += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                            if count < p.min_occurs as usize {
+                                errors.push(XSDValidationError {
+                                    message: format!(
+                                        "Expected at least {} occurrence(s) of element '{}' in choice, found {}",
+                                        p.min_occurs, decl.name, count
+                                    ),
+                                    line: Some(0),
+                                    column: Some(0),
+                                });
+                            }
+                            matched_any = true;
+                            break;
+                        }
+                    }
+                    ParticleKind::Sequence(sub_particles) => {
+                        let sub_min = p.min_occurs;
+                        let sub_max = &p.max_occurs;
+                        let before_errors = errors.len();
+                        let consumed = self.validate_sequence(
+                            &children[child_idx..],
+                            sub_particles,
+                            sub_min,
+                            sub_max,
+                            parent.clone(),
+                            errors,
+                        );
+                        if consumed > 0 {
+                            child_idx += consumed;
+                            matched_any = true;
+                            // If the nested sequence produced errors, we still consumed
+                            // elements — but we should stop the choice loop
+                            if errors.len() > before_errors {
+                                choice_reps += 1;
+                                break;
+                            }
+                            break;
+                        } else if errors.len() > before_errors {
+                            // Sequence matched nothing but produced errors — try next alternative
+                            // Roll back errors from this failed attempt
+                            errors.truncate(before_errors);
+                        }
+                        // If consumed == 0 and no errors, this alternative didn't match; try next
+                    }
+                    ParticleKind::Choice(sub_particles) => {
+                        let sub_min = p.min_occurs;
+                        let sub_max = &p.max_occurs;
+                        let before_errors = errors.len();
+                        let consumed = self.validate_choice(
+                            &children[child_idx..],
+                            sub_particles,
+                            sub_min,
+                            sub_max,
+                            parent.clone(),
+                            errors,
+                        );
+                        if consumed > 0 {
+                            child_idx += consumed;
+                            matched_any = true;
+                            break;
+                        } else if errors.len() > before_errors {
+                            // Sub-choice matched nothing but produced errors — try next alternative
+                            errors.truncate(before_errors);
+                        }
+                    }
+                    ParticleKind::Any {
+                        namespace_constraint,
+                        process_contents,
+                    } => {
+                        if wildcard_allows_namespace(
+                            namespace_constraint,
+                            elem.namespace_name().as_deref(),
+                        ) {
+                            // Consume as many wildcard-matching elements as allowed
+                            let max = match p.max_occurs {
+                                MaxOccurs::Bounded(n) => n as usize,
+                                MaxOccurs::Unbounded => usize::MAX,
+                            };
+                            let mut count = 0usize;
+                            while child_idx < children.len() && count < max {
+                                let child_elem = children[child_idx].clone();
+                                if wildcard_allows_namespace(
+                                    namespace_constraint,
+                                    child_elem.namespace_name().as_deref(),
+                                ) {
+                                    match process_contents {
+                                        ProcessContents::Skip => {}
+                                        ProcessContents::Lax => {
+                                            if let Some(global_decl) = self.find_global_element(
+                                                &child_elem.local_name(),
+                                                child_elem.namespace_name().as_deref(),
+                                            ) {
+                                                self.validate_element(
+                                                    child_elem,
+                                                    &global_decl,
+                                                    errors,
+                                                );
+                                            }
+                                        }
+                                        ProcessContents::Strict => {
+                                            if let Some(global_decl) = self.find_global_element(
+                                                &child_elem.local_name(),
+                                                child_elem.namespace_name().as_deref(),
+                                            ) {
+                                                self.validate_element(
+                                                    child_elem,
+                                                    &global_decl,
+                                                    errors,
+                                                );
+                                            } else {
+                                                errors.push(XSDValidationError {
+                                                        message: format!(
+                                                            "No global element declaration found for '{}' (strict wildcard)",
+                                                            child_elem.local_name()
+                                                        ),
+                                                        line: Some(0),
+                                                        column: Some(0),
+                                                    });
+                                            }
+                                        }
+                                    }
+                                    child_idx += 1;
+                                    count += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                            matched_any = count > 0;
+                            if matched_any {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !matched_any {
+                // Current child doesn't match any alternative
+                if choice_reps < compositor_min {
+                    errors.push(XSDValidationError {
+                        message: format!(
+                            "Element '{}' does not match any choice alternative",
+                            elem.local_name()
+                        ),
+                        line: Some(0),
+                        column: Some(0),
+                    });
+                }
+                break;
+            }
+
+            choice_reps += 1;
+        }
+
+        if choice_reps < compositor_min && child_idx == 0 && errors.is_empty() {
+            // No children matched and no error was emitted yet
+            let any_optional = particles.iter().any(|p| p.min_occurs == 0);
+            if !any_optional && !particles.is_empty() {
+                errors.push(XSDValidationError {
+                    message: "Expected one of the choice alternatives".to_string(),
+                    line: Some(0),
+                    column: Some(0),
+                });
+            }
+        }
+
+        child_idx
+    }
+
+    /// Validate an `xs:all` content model.
+    ///
+    /// In an all group, each particle can appear at most once, and order doesn't matter.
+    /// Required particles (min_occurs > 0) must all be present.
+    /// Supports both element particles and wildcard particles.
+    fn validate_all(
+        &self,
+        children: &[Element],
+        particles: &[Particle],
+        _parent: Element,
+        errors: &mut Vec<XSDValidationError>,
+    ) {
+        let mut matched = vec![false; particles.len()];
+
+        for elem in children {
+            let mut found = false;
+            for (i, particle) in particles.iter().enumerate() {
+                match &particle.kind {
+                    ParticleKind::Element(decl) => {
+                        let name_matches = decl.name == elem.local_name().as_ref();
+                        let ns_matches = match (elem.namespace_name().as_deref(), &decl.namespace) {
+                            (Some(a), Some(b)) => a == b,
+                            (None, None) => true,
+                            (Some(_), None) => false,
+                            (None, Some(_)) => false,
+                        };
+                        let subst_decl = if !(name_matches && ns_matches) {
+                            self.element_matches_with_substitution(
+                                &elem.local_name(),
+                                elem.namespace_name().as_deref(),
+                                decl,
+                            )
+                        } else {
+                            None
+                        };
+                        if (name_matches && ns_matches) || subst_decl.is_some() {
+                            if matched[i] {
+                                errors.push(XSDValidationError {
+                                    message: format!(
+                                        "Duplicate element '{}' in all group",
+                                        elem.local_name()
+                                    ),
+                                    line: Some(0),
+                                    column: Some(0),
+                                });
+                            } else {
+                                matched[i] = true;
+                                if let Some(ref sd) = subst_decl {
+                                    self.validate_element(elem.clone(), sd, errors);
+                                } else {
+                                    self.validate_element(elem.clone(), decl, errors);
+                                }
+                            }
+                            found = true;
+                            break;
+                        }
+                    }
+                    ParticleKind::Any {
+                        namespace_constraint,
+                        process_contents,
+                    } => {
+                        if wildcard_allows_namespace(
+                            namespace_constraint,
+                            elem.namespace_name().as_deref(),
+                        ) {
+                            matched[i] = true;
+                            match process_contents {
+                                ProcessContents::Skip => {}
+                                ProcessContents::Lax => {
+                                    if let Some(global_decl) = self.find_global_element(
+                                        &elem.local_name(),
+                                        elem.namespace_name().as_deref(),
+                                    ) {
+                                        self.validate_element(elem.clone(), &global_decl, errors);
+                                    }
+                                }
+                                ProcessContents::Strict => {
+                                    if let Some(global_decl) = self.find_global_element(
+                                        &elem.local_name(),
+                                        elem.namespace_name().as_deref(),
+                                    ) {
+                                        self.validate_element(elem.clone(), &global_decl, errors);
+                                    } else {
+                                        errors.push(XSDValidationError {
+                                                message: format!(
+                                                    "No global element declaration found for '{}' (strict wildcard)",
+                                                    elem.local_name()
+                                                ),
+                                                line: Some(0),
+                                                column: Some(0),
+                                            });
+                                    }
+                                }
+                            }
+                            found = true;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if !found {
+                errors.push(XSDValidationError {
+                    message: format!("Unexpected element '{}' in all group", elem.local_name()),
+                    line: Some(0),
+                    column: Some(0),
+                });
+            }
+        }
+
+        // Check required elements
+        for (i, particle) in particles.iter().enumerate() {
+            if particle.min_occurs > 0 && !matched[i] {
+                if let ParticleKind::Element(decl) = &particle.kind {
+                    errors.push(XSDValidationError {
+                        message: format!(
+                            "Required element '{}' is missing in all group",
+                            decl.name
+                        ),
+                        line: Some(0),
+                        column: Some(0),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Validate simple (text) content of an element against a simple type definition.
+    ///
+    /// Handles both list types (whitespace-separated items validated individually)
+    /// and atomic types. Applies XSD whiteSpace normalization before validation.
+    fn validate_simple_content(
+        &self,
+        node: Element,
+        st: &SimpleTypeDef,
+        errors: &mut Vec<XSDValidationError>,
+    ) {
+        let raw_text = node.text_content();
+        // Apply XSD whiteSpace normalization before any validation.
+        let ws_mode = whitespace_for_type(&st.base);
+        let text = apply_whitespace_normalization(&raw_text, &ws_mode);
+
+        if st.is_list {
+            // List type: value is whitespace-separated items
+            let items: Vec<&str> = text.split_whitespace().collect();
+
+            // Validate each item against the item type
+            if let Some(ref item_bt) = st.item_type {
+                for item in &items {
+                    validate_builtin_value(item, item_bt, node.clone().into(), errors);
+                    // Also validate item-level facets (from user-defined item types)
+                    for facet in &st.item_facets {
+                        validate_facet(
+                            item,
+                            facet,
+                            item_bt,
+                            node.clone().into(),
+                            errors,
+                            self.enforce_qname_length_facets,
+                        );
+                    }
+                }
+            }
+
+            // Validate list-level facets (length counts items, not chars)
+            for facet in &st.facets {
+                validate_list_facet(&items, facet, &text, node.clone(), errors);
+            }
+        } else {
+            validate_builtin_value(&text, &st.base, node.clone().into(), errors);
+
+            // Validate facets
+            for facet in &st.facets {
+                validate_facet(
+                    &text,
+                    facet,
+                    &st.base,
+                    node.clone().into(),
+                    errors,
+                    self.enforce_qname_length_facets,
+                );
+            }
+        }
+    }
+
+    /// Validate an attribute value against its declared type reference.
+    ///
+    /// Handles all three forms of type references:
+    /// - `BuiltIn` → validate directly against the built-in type
+    /// - `Inline` → resolve to simple type and validate with facets
+    /// - `Named` → look up in schema types map and validate
+    fn validate_attribute_value(
+        &self,
+        value: &str,
+        type_ref: &TypeRef,
+        node: Element,
+        errors: &mut Vec<XSDValidationError>,
+    ) {
+        match type_ref {
+            TypeRef::BuiltIn(bt) => {
+                validate_builtin_value(value, bt, node.into(), errors);
+            }
+            TypeRef::Inline(td) => {
+                match td.as_ref() {
+                    TypeDef::Simple(st) => {
+                        if st.is_list {
+                            let items: Vec<&str> = value.split_whitespace().collect();
+                            if let Some(ref item_bt) = st.item_type {
+                                for item in &items {
+                                    validate_builtin_value(
+                                        item,
+                                        item_bt,
+                                        node.clone().into(),
+                                        errors,
+                                    );
+                                    for facet in &st.item_facets {
+                                        validate_facet(
+                                            item,
+                                            facet,
+                                            item_bt,
+                                            node.clone().into(),
+                                            errors,
+                                            self.enforce_qname_length_facets,
+                                        );
+                                    }
+                                }
+                            }
+                            for facet in &st.facets {
+                                validate_list_facet(
+                                    &items,
+                                    facet,
+                                    value,
+                                    node.clone().into(),
+                                    errors,
+                                );
+                            }
+                        } else {
+                            validate_builtin_value(value, &st.base, node.clone().into(), errors);
+                            for facet in &st.facets {
+                                validate_facet(
+                                    value,
+                                    facet,
+                                    &st.base,
+                                    node.clone().into(),
+                                    errors,
+                                    self.enforce_qname_length_facets,
+                                );
+                            }
+                        }
+                    }
+                    TypeDef::Complex(_) => {
+                        // Attributes shouldn't have complex types
+                    }
+                }
+            }
+            TypeRef::Named(ns, name) => {
+                // Try to resolve the named type
+                let key = (ns.clone(), name.clone());
+                if let Some(TypeDef::Simple(st)) = self.types.get(&key) {
+                    if st.is_list {
+                        let items: Vec<&str> = value.split_whitespace().collect();
+                        if let Some(ref item_bt) = st.item_type {
+                            for item in &items {
+                                validate_builtin_value(item, item_bt, node.clone().into(), errors);
+                                for facet in &st.item_facets {
+                                    validate_facet(
+                                        item,
+                                        facet,
+                                        item_bt,
+                                        node.clone().into(),
+                                        errors,
+                                        self.enforce_qname_length_facets,
+                                    );
+                                }
+                            }
+                        }
+                        for facet in &st.facets {
+                            validate_list_facet(&items, facet, value, node.clone().into(), errors);
+                        }
+                    } else {
+                        validate_builtin_value(value, &st.base, node.clone().into(), errors);
+                        for facet in &st.facets {
+                            validate_facet(
+                                value,
+                                facet,
+                                &st.base,
+                                node.clone().into(),
+                                errors,
+                                self.enforce_qname_length_facets,
+                            );
+                        }
+                    }
+                } else if ns.as_deref() == Some(XS_NAMESPACE) {
+                    // It's a built-in XSD type
+                    if let Some(bt) = parse_builtin_type(name) {
+                        validate_builtin_value(value, &bt, node.clone().into(), errors);
+                    }
+                }
+            }
+        }
+    }
+}

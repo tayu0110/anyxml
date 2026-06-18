@@ -11,6 +11,7 @@ use crate::{
     xinclude::XIncludeError,
     xpath::{XPathCompileError, XPathError},
     xpointer::XPointerParseError,
+    xsd::XSDValidationError,
 };
 
 /// Error level.
@@ -104,6 +105,8 @@ pub enum XMLError {
     RngValidError(RngValidError),
     // RELAX NG Compact Syntax parsing errors
     RncParseError(RncParseError),
+    // XSD errors
+    XSDError(XSDValidationError),
     // XPointer errors
     XPointerParseError(XPointerParseError),
     // XInclude errors
@@ -195,5 +198,11 @@ impl From<RngValidError> for XMLError {
 impl From<RncParseError> for XMLError {
     fn from(value: RncParseError) -> Self {
         XMLError::RncParseError(value)
+    }
+}
+
+impl From<XSDValidationError> for XMLError {
+    fn from(value: XSDValidationError) -> Self {
+        Self::XSDError(value)
     }
 }

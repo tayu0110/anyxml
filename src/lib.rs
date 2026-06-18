@@ -18,6 +18,7 @@ pub mod uri;
 pub mod xinclude;
 pub mod xpath;
 pub mod xpointer;
+pub mod xsd;
 pub mod xsdtypes;
 
 use std::{convert::Infallible, str::FromStr};
