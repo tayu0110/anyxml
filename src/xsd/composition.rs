@@ -23,8 +23,11 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use anyxml_uri::uri::URIString;
+
 use crate::error::XMLError;
-use crate::tree::{Document, Element};
+use crate::sax::XMLReader;
+use crate::tree::{Element, TreeBuildHandler};
 use crate::xsd::XSDValidationError;
 
 use super::XS_NAMESPACE;
@@ -61,10 +64,10 @@ impl CompositionState {
     /// the very first include won't try to re-load the outer document.
     pub(super) fn new(base_path: Option<&Path>) -> Self {
         let mut visited = HashSet::new();
-        if let Some(p) = base_path {
-            if let Ok(c) = p.canonicalize() {
-                visited.insert(c);
-            }
+        if let Some(p) = base_path
+            && let Ok(c) = p.canonicalize()
+        {
+            visited.insert(c);
         }
         CompositionState { visited, depth: 0 }
     }
@@ -105,25 +108,25 @@ fn resolve_include_path(
     // that would never have loaded.
     match (canonical_base, canonical.as_ref()) {
         (Some(cb), Some(c)) if !c.starts_with(cb) => {
-            return Err(XMLError::XSDError(XSDValidationError {
+            return Err(XMLError::XSDError(Box::new(XSDValidationError {
                 message: format!(
                     "Cannot resolve {} schemaLocation '{}': path escapes the schema's base directory",
                     kind, schema_location
                 ),
                 line: None,
                 column: None,
-            }));
+            })));
         }
         (Some(_), None) => {
             if is_absolute_uri(schema_location) {
-                return Err(XMLError::XSDError(XSDValidationError {
+                return Err(XMLError::XSDError(Box::new(XSDValidationError {
                     message: format!(
                         "Cannot resolve {} schemaLocation '{}': absolute URI not supported",
                         kind, schema_location
                     ),
                     line: None,
                     column: None,
-                }));
+                })));
             }
             return Ok(None);
         }
@@ -131,10 +134,10 @@ fn resolve_include_path(
     }
 
     // F-11 cycle detection keyed on the canonical path.
-    if let Some(ref c) = canonical {
-        if !state.visited.insert(c.clone()) {
-            return Ok(None);
-        }
+    if let Some(ref c) = canonical
+        && !state.visited.insert(c.clone())
+    {
+        return Ok(None);
     }
 
     // Prefer the canonical path for the subsequent read — that path has
@@ -155,21 +158,20 @@ fn resolve_include_path(
 /// `state` carries the visited-paths set and depth counter so circular
 /// includes terminate cleanly and pathological chains cannot stack-overflow.
 pub(super) fn process_schema_composition(
-    schema_doc: &Document,
     schema_elem: Element,
     validator: &mut XsdValidator,
     base_path: Option<&Path>,
     state: &mut CompositionState,
 ) -> Result<(), XMLError> {
     if state.depth >= MAX_INCLUDE_DEPTH {
-        return Err(XMLError::XSDError(XSDValidationError {
+        return Err(XMLError::XSDError(Box::new(XSDValidationError {
             message: format!(
                 "Schema include/import/redefine nesting exceeds maximum depth of {}",
                 MAX_INCLUDE_DEPTH
             ),
             line: None,
             column: None,
-        }));
+        })));
     }
 
     let base_dir = base_path.and_then(|p| p.parent());
@@ -183,7 +185,7 @@ pub(super) fn process_schema_composition(
     // arbitrary-file-read window F-10 closed.
     let canonical_base = match base_dir {
         Some(b) => Some(b.canonicalize().map_err(|e| {
-            XMLError::XSDError(XSDValidationError {
+            XMLError::XSDError(Box::new(XSDValidationError {
                 message: format!(
                     "Failed to canonicalize schema base directory '{}': {}",
                     b.display(),
@@ -191,7 +193,7 @@ pub(super) fn process_schema_composition(
                 ),
                 line: None,
                 column: None,
-            })
+            }))
         })?),
         None => None,
     };
@@ -233,12 +235,20 @@ pub(super) fn process_schema_composition(
                 // Load and parse the external schema from the
                 // canonicalized path — symlinks already resolved,
                 // so the read can't be redirected after the check.
-                let Ok(ext_str) = std::fs::read_to_string(canonical_path.as_path()) else {
+                let mut handler = TreeBuildHandler::default();
+                handler.coalescing = true;
+                handler.expand_entity_reference = true;
+                handler.ignoring_comments = true;
+                let mut reader = XMLReader::builder().set_handler(handler).build();
+                if URIString::parse_file_path(canonical_path.as_path())
+                    .ok()
+                    .and_then(|uri| reader.parse_uri(uri, None).ok())
+                    .filter(|_| !reader.handler.fatal_error)
+                    .is_none()
+                {
                     continue;
-                };
-                let Ok(ext_doc) = crate::parse(&ext_str) else {
-                    continue;
-                };
+                }
+                let ext_doc = reader.handler.document;
 
                 // Build a sub-validator from the external schema,
                 // propagating the visited set and incrementing depth.
@@ -293,12 +303,20 @@ pub(super) fn process_schema_composition(
                 };
 
                 // Load and parse the external schema.
-                let Ok(ext_str) = std::fs::read_to_string(canonical_path.as_path()) else {
+                let mut handler = TreeBuildHandler::default();
+                handler.coalescing = true;
+                handler.expand_entity_reference = true;
+                handler.ignoring_comments = true;
+                let mut reader = XMLReader::builder().set_handler(handler).build();
+                if URIString::parse_file_path(canonical_path.as_path())
+                    .ok()
+                    .and_then(|uri| reader.parse_uri(uri, None).ok())
+                    .filter(|_| !reader.handler.fatal_error)
+                    .is_none()
+                {
                     continue;
-                };
-                let Ok(ext_doc) = crate::parse(&ext_str) else {
-                    continue;
-                };
+                }
+                let ext_doc = reader.handler.document;
 
                 // Build a sub-validator from the external schema.
                 // Same balanced-decrement pattern as the include /
@@ -419,10 +437,10 @@ fn chameleon_fixup_type_def(td: &mut TypeDef, target_ns: &Option<String>) {
     match td {
         TypeDef::Complex(ct) => {
             // Fix base_type reference
-            if let Some((ref mut ns, _)) = ct.base_type {
-                if ns.is_none() {
-                    *ns = target_ns.clone();
-                }
+            if let Some((ref mut ns, _)) = ct.base_type
+                && ns.is_none()
+            {
+                *ns = target_ns.clone();
             }
             chameleon_fixup_content_model(&mut ct.content, target_ns);
         }
@@ -490,11 +508,11 @@ fn process_redefine_children(
         match child_elem.local_name().as_ref() {
             "simpleType" => {
                 let type_def = parse_simple_type(child_elem)?;
-                if let TypeDef::Simple(ref st) = type_def {
-                    if let Some(name) = &st.name {
-                        let key = (target_ns.clone(), name.clone());
-                        validator.types.insert(key, type_def);
-                    }
+                if let TypeDef::Simple(ref st) = type_def
+                    && let Some(name) = &st.name
+                {
+                    let key = (target_ns.clone(), name.clone());
+                    validator.types.insert(key, type_def);
                 }
             }
             "complexType" => {
@@ -513,30 +531,29 @@ fn process_redefine_children(
                     validator.block_default_extension,
                     validator.block_default_restriction,
                 )?;
-                if let TypeDef::Complex(ref ct) = type_def {
-                    if let Some(name) = &ct.name {
-                        let key = (target_ns.clone(), name.clone());
-                        // If the base_type references itself (same name), it's a
-                        // self-referencing redefine: save old def under a unique key.
-                        if let Some(ref base) = ct.base_type {
-                            if base.1 == *name && base.0 == target_ns {
-                                let old_key =
-                                    (target_ns.clone(), format!("__redefine_base_{}", name));
-                                if let Some(old_td) = validator.types.get(&key).cloned() {
-                                    validator.types.insert(old_key.clone(), old_td);
-                                }
-                                // Update the new definition's base_type to point to the renamed old def
-                                let mut new_td = type_def.clone();
-                                if let TypeDef::Complex(ref mut new_ct) = new_td {
-                                    new_ct.base_type = Some((old_key.0.clone(), old_key.1.clone()));
-                                }
-                                validator.types.insert(key, new_td);
-                            } else {
-                                validator.types.insert(key, type_def);
+                if let TypeDef::Complex(ref ct) = type_def
+                    && let Some(name) = &ct.name
+                {
+                    let key = (target_ns.clone(), name.clone());
+                    // If the base_type references itself (same name), it's a
+                    // self-referencing redefine: save old def under a unique key.
+                    if let Some(ref base) = ct.base_type {
+                        if base.1 == *name && base.0 == target_ns {
+                            let old_key = (target_ns.clone(), format!("__redefine_base_{}", name));
+                            if let Some(old_td) = validator.types.get(&key).cloned() {
+                                validator.types.insert(old_key.clone(), old_td);
                             }
+                            // Update the new definition's base_type to point to the renamed old def
+                            let mut new_td = type_def.clone();
+                            if let TypeDef::Complex(ref mut new_ct) = new_td {
+                                new_ct.base_type = Some((old_key.0.clone(), old_key.1.clone()));
+                            }
+                            validator.types.insert(key, new_td);
                         } else {
                             validator.types.insert(key, type_def);
                         }
+                    } else {
+                        validator.types.insert(key, type_def);
                     }
                 }
             }
@@ -600,10 +617,10 @@ fn reresolve_types_after_redefine(validator: &mut XsdValidator) {
         .types
         .iter()
         .filter_map(|(key, td)| {
-            if let TypeDef::Complex(ct) = td {
-                if ct.group_ref.is_some() || !ct.attribute_group_refs.is_empty() {
-                    return Some(key.clone());
-                }
+            if let TypeDef::Complex(ct) = td
+                && (ct.group_ref.is_some() || !ct.attribute_group_refs.is_empty())
+            {
+                return Some(key.clone());
             }
             None
         })
@@ -616,10 +633,10 @@ fn reresolve_types_after_redefine(validator: &mut XsdValidator) {
         };
         if let TypeDef::Complex(mut ct) = td {
             // Re-resolve model group reference
-            if let Some(ref mg_key) = ct.group_ref {
-                if let Some(mg) = validator.model_groups.get(mg_key) {
-                    ct.content = mg.content.clone();
-                }
+            if let Some(ref mg_key) = ct.group_ref
+                && let Some(mg) = validator.model_groups.get(mg_key)
+            {
+                ct.content = mg.content.clone();
             }
             // Re-resolve attribute group references
             if !ct.attribute_group_refs.is_empty() {

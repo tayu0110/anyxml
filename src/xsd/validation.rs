@@ -189,10 +189,10 @@ impl XsdValidator {
         };
 
         // Check if it's a built-in XSD type
-        if type_ns.as_deref() == Some(XS_NAMESPACE) {
-            if let Some(bt) = parse_builtin_type(local_name) {
-                return Some(XsiTypeResult::BuiltIn(bt));
-            }
+        if type_ns.as_deref() == Some(XS_NAMESPACE)
+            && let Some(bt) = parse_builtin_type(local_name)
+        {
+            return Some(XsiTypeResult::BuiltIn(bt));
         }
 
         // Try looking up in schema types
@@ -1147,7 +1147,7 @@ impl XsdValidator {
                 match type_ref.as_ref() {
                     TypeRef::BuiltIn(bt) => {
                         let text = node.text_content();
-                        validate_builtin_value(&text, bt, node.into(), errors);
+                        validate_builtin_value(&text, bt, node, errors);
                     }
                     TypeRef::Named(ns, local_name) => {
                         let key = (ns.clone(), local_name.clone());
@@ -1803,17 +1803,15 @@ impl XsdValidator {
 
         // Check required elements
         for (i, particle) in particles.iter().enumerate() {
-            if particle.min_occurs > 0 && !matched[i] {
-                if let ParticleKind::Element(decl) = &particle.kind {
-                    errors.push(XSDValidationError {
-                        message: format!(
-                            "Required element '{}' is missing in all group",
-                            decl.name
-                        ),
-                        line: Some(0),
-                        column: Some(0),
-                    });
-                }
+            if particle.min_occurs > 0
+                && !matched[i]
+                && let ParticleKind::Element(decl) = &particle.kind
+            {
+                errors.push(XSDValidationError {
+                    message: format!("Required element '{}' is missing in all group", decl.name),
+                    line: Some(0),
+                    column: Some(0),
+                });
             }
         }
     }
@@ -1840,14 +1838,14 @@ impl XsdValidator {
             // Validate each item against the item type
             if let Some(ref item_bt) = st.item_type {
                 for item in &items {
-                    validate_builtin_value(item, item_bt, node.clone().into(), errors);
+                    validate_builtin_value(item, item_bt, node.clone(), errors);
                     // Also validate item-level facets (from user-defined item types)
                     for facet in &st.item_facets {
                         validate_facet(
                             item,
                             facet,
                             item_bt,
-                            node.clone().into(),
+                            node.clone(),
                             errors,
                             self.enforce_qname_length_facets,
                         );
@@ -1860,7 +1858,7 @@ impl XsdValidator {
                 validate_list_facet(&items, facet, &text, node.clone(), errors);
             }
         } else {
-            validate_builtin_value(&text, &st.base, node.clone().into(), errors);
+            validate_builtin_value(&text, &st.base, node.clone(), errors);
 
             // Validate facets
             for facet in &st.facets {
@@ -1868,7 +1866,7 @@ impl XsdValidator {
                     &text,
                     facet,
                     &st.base,
-                    node.clone().into(),
+                    node.clone(),
                     errors,
                     self.enforce_qname_length_facets,
                 );
@@ -1891,7 +1889,7 @@ impl XsdValidator {
     ) {
         match type_ref {
             TypeRef::BuiltIn(bt) => {
-                validate_builtin_value(value, bt, node.into(), errors);
+                validate_builtin_value(value, bt, node, errors);
             }
             TypeRef::Inline(td) => {
                 match td.as_ref() {
@@ -1900,18 +1898,13 @@ impl XsdValidator {
                             let items: Vec<&str> = value.split_whitespace().collect();
                             if let Some(ref item_bt) = st.item_type {
                                 for item in &items {
-                                    validate_builtin_value(
-                                        item,
-                                        item_bt,
-                                        node.clone().into(),
-                                        errors,
-                                    );
+                                    validate_builtin_value(item, item_bt, node.clone(), errors);
                                     for facet in &st.item_facets {
                                         validate_facet(
                                             item,
                                             facet,
                                             item_bt,
-                                            node.clone().into(),
+                                            node.clone(),
                                             errors,
                                             self.enforce_qname_length_facets,
                                         );
@@ -1919,22 +1912,16 @@ impl XsdValidator {
                                 }
                             }
                             for facet in &st.facets {
-                                validate_list_facet(
-                                    &items,
-                                    facet,
-                                    value,
-                                    node.clone().into(),
-                                    errors,
-                                );
+                                validate_list_facet(&items, facet, value, node.clone(), errors);
                             }
                         } else {
-                            validate_builtin_value(value, &st.base, node.clone().into(), errors);
+                            validate_builtin_value(value, &st.base, node.clone(), errors);
                             for facet in &st.facets {
                                 validate_facet(
                                     value,
                                     facet,
                                     &st.base,
-                                    node.clone().into(),
+                                    node.clone(),
                                     errors,
                                     self.enforce_qname_length_facets,
                                 );
@@ -1954,13 +1941,13 @@ impl XsdValidator {
                         let items: Vec<&str> = value.split_whitespace().collect();
                         if let Some(ref item_bt) = st.item_type {
                             for item in &items {
-                                validate_builtin_value(item, item_bt, node.clone().into(), errors);
+                                validate_builtin_value(item, item_bt, node.clone(), errors);
                                 for facet in &st.item_facets {
                                     validate_facet(
                                         item,
                                         facet,
                                         item_bt,
-                                        node.clone().into(),
+                                        node.clone(),
                                         errors,
                                         self.enforce_qname_length_facets,
                                     );
@@ -1968,16 +1955,16 @@ impl XsdValidator {
                             }
                         }
                         for facet in &st.facets {
-                            validate_list_facet(&items, facet, value, node.clone().into(), errors);
+                            validate_list_facet(&items, facet, value, node.clone(), errors);
                         }
                     } else {
-                        validate_builtin_value(value, &st.base, node.clone().into(), errors);
+                        validate_builtin_value(value, &st.base, node.clone(), errors);
                         for facet in &st.facets {
                             validate_facet(
                                 value,
                                 facet,
                                 &st.base,
-                                node.clone().into(),
+                                node.clone(),
                                 errors,
                                 self.enforce_qname_length_facets,
                             );
@@ -1986,7 +1973,7 @@ impl XsdValidator {
                 } else if ns.as_deref() == Some(XS_NAMESPACE) {
                     // It's a built-in XSD type
                     if let Some(bt) = parse_builtin_type(name) {
-                        validate_builtin_value(value, &bt, node.clone().into(), errors);
+                        validate_builtin_value(value, &bt, node.clone(), errors);
                     }
                 }
             }

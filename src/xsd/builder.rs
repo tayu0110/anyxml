@@ -92,11 +92,11 @@ impl XsdValidator {
         };
 
         let schema_elem = schema_doc.document_element().ok_or_else(|| {
-            XMLError::XSDError(XSDValidationError {
+            XMLError::XSDError(Box::new(XSDValidationError {
                 message: "Schema document has no root element".into(),
                 line: None,
                 column: None,
-            })
+            }))
         })?;
 
         // Get target namespace and elementFormDefault
@@ -130,13 +130,7 @@ impl XsdValidator {
 
         // Pass 0: Process xs:include and xs:redefine to merge external schema declarations
         if base_path.is_some() {
-            process_schema_composition(
-                schema_doc,
-                schema_elem.clone(),
-                &mut validator,
-                base_path,
-                state,
-            )?;
+            process_schema_composition(schema_elem.clone(), &mut validator, base_path, state)?;
         }
 
         // Pass 0.5: Parse global attribute declarations first, since attributeGroup
@@ -150,36 +144,36 @@ impl XsdValidator {
             if !is_xs {
                 continue;
             }
-            if elem.local_name().as_ref() == "attribute" {
-                if let Some(name) = elem.get_attribute("name", None) {
-                    let type_ref = if let Some(type_attr) = elem.get_attribute("type", None) {
-                        resolve_type_name(type_attr.as_str(), &validator.target_namespace)
-                    } else {
-                        // Check for inline simpleType child
-                        let mut inline_type = None;
-                        let mut gchildren = elem.first_element_child();
-                        while let Some(ge) = gchildren {
-                            gchildren = ge.next_element_sibling();
-                            if ge.local_name().as_ref() == "simpleType" {
-                                if let Ok(td) = parse_simple_type(ge) {
-                                    inline_type = Some(TypeRef::Inline(Box::new(td)));
-                                }
-                            }
+            if elem.local_name().as_ref() == "attribute"
+                && let Some(name) = elem.get_attribute("name", None)
+            {
+                let type_ref = if let Some(type_attr) = elem.get_attribute("type", None) {
+                    resolve_type_name(type_attr.as_str(), &validator.target_namespace)
+                } else {
+                    // Check for inline simpleType child
+                    let mut inline_type = None;
+                    let mut gchildren = elem.first_element_child();
+                    while let Some(ge) = gchildren {
+                        gchildren = ge.next_element_sibling();
+                        if ge.local_name().as_ref() == "simpleType"
+                            && let Ok(td) = parse_simple_type(ge)
+                        {
+                            inline_type = Some(TypeRef::Inline(Box::new(td)));
                         }
-                        inline_type.unwrap_or(TypeRef::BuiltIn(BuiltInType::String))
-                    };
-                    let required = elem.get_attribute("use", None).as_deref() == Some("required");
-                    let default = elem.get_attribute("default", None);
-                    let decl = AttributeDecl {
-                        name: name.to_string(),
-                        type_ref,
-                        required,
-                        default,
-                        prohibited: false,
-                    };
-                    let key = (validator.target_namespace.clone(), name.to_string());
-                    validator.global_attributes.insert(key, decl);
-                }
+                    }
+                    inline_type.unwrap_or(TypeRef::BuiltIn(BuiltInType::String))
+                };
+                let required = elem.get_attribute("use", None).as_deref() == Some("required");
+                let default = elem.get_attribute("default", None);
+                let decl = AttributeDecl {
+                    name: name.to_string(),
+                    type_ref,
+                    required,
+                    default,
+                    prohibited: false,
+                };
+                let key = (validator.target_namespace.clone(), name.to_string());
+                validator.global_attributes.insert(key, decl);
             }
         }
 
@@ -195,32 +189,32 @@ impl XsdValidator {
             if !is_xs {
                 continue;
             }
-            if elem.local_name().as_ref() == "attributeGroup" {
-                if let Some(name) = elem.get_attribute("name", None) {
-                    let ag_def = parse_attribute_group_def(
-                        elem.clone(),
-                        &validator.target_namespace,
-                        &validator.global_attributes,
-                        &validator.attribute_groups,
-                    )?;
-                    let key = (validator.target_namespace.clone(), name.to_string());
-                    validator.attribute_groups.insert(key, ag_def);
-                }
+            if elem.local_name().as_ref() == "attributeGroup"
+                && let Some(name) = elem.get_attribute("name", None)
+            {
+                let ag_def = parse_attribute_group_def(
+                    elem.clone(),
+                    &validator.target_namespace,
+                    &validator.global_attributes,
+                    &validator.attribute_groups,
+                )?;
+                let key = (validator.target_namespace.clone(), name.to_string());
+                validator.attribute_groups.insert(key, ag_def);
             }
-            if elem.local_name().as_ref() == "group" {
-                if let Some(name) = elem.get_attribute("name", None) {
-                    let mg_def = parse_model_group_def(
-                        elem,
-                        &local_elem_ns,
-                        &validator.target_namespace,
-                        &validator.attribute_groups,
-                        &validator.model_groups,
-                        validator.block_default_extension,
-                        validator.block_default_restriction,
-                    )?;
-                    let key = (validator.target_namespace.clone(), name.to_string());
-                    validator.model_groups.insert(key, mg_def);
-                }
+            if elem.local_name().as_ref() == "group"
+                && let Some(name) = elem.get_attribute("name", None)
+            {
+                let mg_def = parse_model_group_def(
+                    elem,
+                    &local_elem_ns,
+                    &validator.target_namespace,
+                    &validator.attribute_groups,
+                    &validator.model_groups,
+                    validator.block_default_extension,
+                    validator.block_default_restriction,
+                )?;
+                let key = (validator.target_namespace.clone(), name.to_string());
+                validator.model_groups.insert(key, mg_def);
             }
         }
 
@@ -264,20 +258,20 @@ impl XsdValidator {
                         validator.block_default_extension,
                         validator.block_default_restriction,
                     )?;
-                    if let TypeDef::Complex(ref ct) = type_def {
-                        if let Some(name) = &ct.name {
-                            let key = (validator.target_namespace.clone(), name.clone());
-                            validator.types.insert(key, type_def);
-                        }
+                    if let TypeDef::Complex(ref ct) = type_def
+                        && let Some(name) = &ct.name
+                    {
+                        let key = (validator.target_namespace.clone(), name.clone());
+                        validator.types.insert(key, type_def);
                     }
                 }
                 "simpleType" => {
                     let type_def = parse_simple_type(elem)?;
-                    if let TypeDef::Simple(ref st) = type_def {
-                        if let Some(name) = &st.name {
-                            let key = (validator.target_namespace.clone(), name.clone());
-                            validator.types.insert(key, type_def);
-                        }
+                    if let TypeDef::Simple(ref st) = type_def
+                        && let Some(name) = &st.name
+                    {
+                        let key = (validator.target_namespace.clone(), name.clone());
+                        validator.types.insert(key, type_def);
                     }
                 }
                 "attribute" => {
@@ -291,10 +285,10 @@ impl XsdValidator {
                             let mut gchildren = elem.first_element_child();
                             while let Some(ge) = gchildren {
                                 gchildren = ge.next_element_sibling();
-                                if ge.local_name().as_ref() == "simpleType" {
-                                    if let Ok(td) = parse_simple_type(ge) {
-                                        inline_type = Some(TypeRef::Inline(Box::new(td)));
-                                    }
+                                if ge.local_name().as_ref() == "simpleType"
+                                    && let Ok(td) = parse_simple_type(ge)
+                                {
+                                    inline_type = Some(TypeRef::Inline(Box::new(td)));
                                 }
                             }
                             inline_type.unwrap_or(TypeRef::BuiltIn(BuiltInType::String))
@@ -379,12 +373,10 @@ impl XsdValidator {
                         (false, None)
                     }
                 };
-                if is_list {
-                    if let Some(TypeDef::Simple(st)) = validator.types.get_mut(key) {
-                        st.is_list = true;
-                        if st.item_type.is_none() {
-                            st.item_type = item_type;
-                        }
+                if is_list && let Some(TypeDef::Simple(st)) = validator.types.get_mut(key) {
+                    st.is_list = true;
+                    if st.item_type.is_none() {
+                        st.item_type = item_type;
                     }
                 }
             }
@@ -411,11 +403,11 @@ impl XsdValidator {
                         None
                     }
                 };
-                if let Some((item_base, item_facets)) = resolved {
-                    if let Some(TypeDef::Simple(st)) = validator.types.get_mut(key) {
-                        st.item_type = Some(item_base);
-                        st.item_facets = item_facets;
-                    }
+                if let Some((item_base, item_facets)) = resolved
+                    && let Some(TypeDef::Simple(st)) = validator.types.get_mut(key)
+                {
+                    st.item_type = Some(item_base);
+                    st.item_facets = item_facets;
                 }
             }
         }

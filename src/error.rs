@@ -106,7 +106,7 @@ pub enum XMLError {
     // RELAX NG Compact Syntax parsing errors
     RncParseError(RncParseError),
     // XSD errors
-    XSDError(XSDValidationError),
+    XSDError(Box<XSDValidationError>),
     // XPointer errors
     XPointerParseError(XPointerParseError),
     // XInclude errors

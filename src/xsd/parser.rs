@@ -54,11 +54,11 @@ pub(super) fn parse_element_decl(
     let name = elem
         .get_attribute("name", None)
         .ok_or_else(|| {
-            XMLError::XSDError(XSDValidationError {
+            XMLError::XSDError(Box::new(XSDValidationError {
                 message: "Element declaration missing 'name' attribute".into(),
                 line: None,
                 column: None,
-            })
+            }))
         })?
         .to_string();
 
@@ -258,19 +258,17 @@ pub(super) fn resolve_type_name(type_name: &str, target_ns: &Option<String>) -> 
 
     let is_builtin = prefix == "xs" || prefix == "xsd";
 
-    if is_builtin {
-        if let Some(bt) = parse_builtin_type(local) {
-            return TypeRef::BuiltIn(bt);
-        }
+    if is_builtin && let Some(bt) = parse_builtin_type(local) {
+        return TypeRef::BuiltIn(bt);
     }
 
     // Even without an xs:/xsd: prefix, check if the local name matches a built-in type.
     // This handles schemas where the XSD namespace is the default namespace
     // (e.g., xmlns="http://www.w3.org/2001/XMLSchema").
-    if prefix.is_empty() {
-        if let Some(bt) = parse_builtin_type(local) {
-            return TypeRef::BuiltIn(bt);
-        }
+    if prefix.is_empty()
+        && let Some(bt) = parse_builtin_type(local)
+    {
+        return TypeRef::BuiltIn(bt);
     }
 
     // Named type reference
@@ -1109,11 +1107,11 @@ fn parse_attribute_decl(elem: Element) -> Result<AttributeDecl, XMLError> {
     } else if let Some(ref_name) = elem.get_attribute("ref", None) {
         strip_prefix(&ref_name).to_string()
     } else {
-        return Err(XMLError::XSDError(XSDValidationError {
+        return Err(XMLError::XSDError(Box::new(XSDValidationError {
             message: "Attribute declaration missing 'name' or 'ref' attribute".into(),
             line: None,
             column: None,
-        }));
+        })));
     };
 
     let type_ref = if let Some(type_name) = elem.get_attribute("type", None) {

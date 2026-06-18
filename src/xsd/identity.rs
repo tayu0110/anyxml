@@ -251,15 +251,15 @@ fn idc_select_nodes(context: Element, selector: &str) -> Vec<Element> {
                 for cand in &candidates {
                     let mut children = cand.first_child();
                     while let Some(child) = children {
-                        if let Some(child) = child.as_element() {
-                            if idc_step_matches(child.clone(), step) {
-                                if i == steps.len() - 1 {
-                                    if results.iter().all(|r| !r.is_same_node(&child)) {
-                                        results.push(child);
-                                    }
-                                } else {
-                                    next_candidates.push(child);
+                        if let Some(child) = child.as_element()
+                            && idc_step_matches(child.clone(), step)
+                        {
+                            if i == steps.len() - 1 {
+                                if results.iter().all(|r| !r.is_same_node(&child)) {
+                                    results.push(child);
                                 }
+                            } else {
+                                next_candidates.push(child);
                             }
                         }
                         children = child.next_sibling();
@@ -434,10 +434,10 @@ fn idc_evaluate_field(node: Element, field: &str) -> (Option<String>, usize, Opt
         for cn in &current_nodes {
             let mut children = cn.first_child();
             while let Some(child) = children {
-                if let Some(child) = child.as_element() {
-                    if idc_step_matches(child.clone(), part) {
-                        next_nodes.push(child.clone());
-                    }
+                if let Some(child) = child.as_element()
+                    && idc_step_matches(child.clone(), part)
+                {
+                    next_nodes.push(child.clone());
                 }
                 children = child.next_sibling();
             }

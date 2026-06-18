@@ -22,13 +22,13 @@ pub(super) fn resolve_inline_list_item_facets(
     if let TypeRef::Inline(td) = type_ref {
         match td.as_mut() {
             TypeDef::Simple(st) => {
-                if st.is_list {
-                    if let Some(item_name) = &st._item_type_local {
-                        let item_key = (schema_ns.clone(), item_name.clone());
-                        if let Some((item_base, item_facets)) = resolved_items.get(&item_key) {
-                            st.item_type = Some(item_base.clone());
-                            st.item_facets = item_facets.clone();
-                        }
+                if st.is_list
+                    && let Some(item_name) = &st._item_type_local
+                {
+                    let item_key = (schema_ns.clone(), item_name.clone());
+                    if let Some((item_base, item_facets)) = resolved_items.get(&item_key) {
+                        st.item_type = Some(item_base.clone());
+                        st.item_facets = item_facets.clone();
                     }
                 }
             }

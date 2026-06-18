@@ -730,14 +730,14 @@ pub(crate) fn validate_list_facet(
         }
         Facet::Pattern(pattern) => {
             // Pattern facets on lists apply to the whole collapsed space-separated value
-            if let Ok(re) = XSRegexp::compile(pattern) {
-                if !re.is_match(text) {
-                    errors.push(XSDValidationError {
-                        message: format!("Value '{}' does not match pattern '{}'", text, pattern),
-                        line: Some(0),
-                        column: Some(0),
-                    });
-                }
+            if let Ok(re) = XSRegexp::compile(pattern)
+                && !re.is_match(text)
+            {
+                errors.push(XSDValidationError {
+                    message: format!("Value '{}' does not match pattern '{}'", text, pattern),
+                    line: Some(0),
+                    column: Some(0),
+                });
             }
         }
         Facet::WhiteSpace(_) => {}
@@ -939,14 +939,14 @@ pub(crate) fn validate_facet(
             }
         }
         Facet::Pattern(pattern) => {
-            if let Ok(re) = XSRegexp::compile(pattern) {
-                if !re.is_match(text) {
-                    errors.push(XSDValidationError {
-                        message: format!("Value '{}' does not match pattern '{}'", text, pattern),
-                        line: Some(0),
-                        column: Some(0),
-                    });
-                }
+            if let Ok(re) = XSRegexp::compile(pattern)
+                && !re.is_match(text)
+            {
+                errors.push(XSDValidationError {
+                    message: format!("Value '{}' does not match pattern '{}'", text, pattern),
+                    line: Some(0),
+                    column: Some(0),
+                });
             }
             // If the pattern fails to compile, we silently accept
             // (graceful degradation for unsupported regex features)
