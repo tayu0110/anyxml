@@ -24,7 +24,7 @@ use super::{
     parser::parse_builtin_type,
     types::*,
     wildcard::wildcard_allows_namespace,
-    {XS_NAMESPACE, XSI_NAMESPACE},
+    {XML_SCHEMA_INSTANCE_NAMESPACE, XML_SCHEMA_NAMESPACE},
 };
 
 /// Result of resolving an `xsi:type` attribute on an element.
@@ -158,7 +158,7 @@ impl XSDValidator {
     fn resolve_xsi_type(&self, elem: Element) -> Option<XsiTypeResult> {
         // Look for xsi:type attribute
         let xsi_type_value = elem
-            .get_attribute("type", Some(XSI_NAMESPACE))
+            .get_attribute("type", Some(XML_SCHEMA_INSTANCE_NAMESPACE))
             .or_else(|| {
                 // Also try by prefix match for elements where namespace resolution
                 // hasn't been applied to attributes
@@ -192,7 +192,7 @@ impl XSDValidator {
         };
 
         // Check if it's a built-in XSD type
-        if type_ns.as_deref() == Some(XS_NAMESPACE)
+        if type_ns.as_deref() == Some(XML_SCHEMA_NAMESPACE)
             && let Some(bt) = parse_builtin_type(local_name)
         {
             return Some(XsiTypeResult::BuiltIn(bt));
@@ -594,11 +594,15 @@ impl XSDValidator {
         }
 
         // Check for xsi:nil="true"
-        let xsi_nil_value = node.get_attribute("nil", Some(XSI_NAMESPACE)).or_else(|| {
-            node.attributes()
-                .find(|a| a.local_name().as_ref() == "nil" && a.prefix().as_deref() == Some("xsi"))
-                .map(|a| a.value())
-        });
+        let xsi_nil_value = node
+            .get_attribute("nil", Some(XML_SCHEMA_INSTANCE_NAMESPACE))
+            .or_else(|| {
+                node.attributes()
+                    .find(|a| {
+                        a.local_name().as_ref() == "nil" && a.prefix().as_deref() == Some("xsi")
+                    })
+                    .map(|a| a.value())
+            });
         if xsi_nil_value.as_deref() == Some("true") || xsi_nil_value.as_deref() == Some("1") {
             if !decl.nillable {
                 errors.push(XSDValidationError {
@@ -1983,7 +1987,7 @@ impl XSDValidator {
                             );
                         }
                     }
-                } else if ns.as_deref() == Some(XS_NAMESPACE) {
+                } else if ns.as_deref() == Some(XML_SCHEMA_NAMESPACE) {
                     // It's a built-in XSD type
                     if let Some(bt) = parse_builtin_type(name) {
                         validate_builtin_value(value, &bt, node.clone(), errors);

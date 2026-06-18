@@ -30,7 +30,7 @@ use crate::sax::XMLReader;
 use crate::tree::{Element, TreeBuildHandler};
 use crate::xsd::XSDValidationError;
 
-use super::XS_NAMESPACE;
+use super::XML_SCHEMA_NAMESPACE;
 use super::parser::{
     parse_attribute_group_def, parse_complex_type, parse_model_group_def, parse_simple_type,
 };
@@ -201,7 +201,7 @@ pub(super) fn process_schema_composition(
     let mut children = schema_elem.first_element_child();
     while let Some(elem) = children {
         children = elem.next_element_sibling();
-        let is_xs = elem.namespace_name().as_deref() == Some(XS_NAMESPACE)
+        let is_xs = elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
             || elem.prefix().as_deref() == Some("xs")
             || elem.prefix().as_deref() == Some("xsd");
         if !is_xs {
@@ -498,7 +498,7 @@ fn process_redefine_children(
     let mut children = redefine_node.first_element_child();
     while let Some(child_elem) = children {
         children = child_elem.next_element_sibling();
-        let is_xs = child_elem.namespace_name().as_deref() == Some(XS_NAMESPACE)
+        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
             || child_elem.prefix().as_deref() == Some("xs")
             || child_elem.prefix().as_deref() == Some("xsd");
         if !is_xs {

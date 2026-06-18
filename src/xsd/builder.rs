@@ -19,7 +19,7 @@ use crate::error::XMLError;
 use crate::tree::Document;
 use crate::xsd::XSDValidationError;
 
-use super::XS_NAMESPACE;
+use super::XML_SCHEMA_NAMESPACE;
 use super::composition::{CompositionState, process_schema_composition};
 use super::facet_resolution::{
     resolve_content_model_list_item_facets, resolve_inline_list_item_facets,
@@ -138,7 +138,7 @@ impl XSDValidator {
         let mut children = schema_elem.first_element_child();
         while let Some(elem) = children {
             children = elem.next_element_sibling();
-            let is_xs = elem.namespace_name().as_deref() == Some(XS_NAMESPACE)
+            let is_xs = elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
                 || elem.prefix().as_deref() == Some("xs")
                 || elem.prefix().as_deref() == Some("xsd");
             if !is_xs {
@@ -183,7 +183,7 @@ impl XSDValidator {
         while let Some(elem) = children {
             children = elem.next_element_sibling();
 
-            let is_xs = elem.namespace_name().as_deref() == Some(XS_NAMESPACE)
+            let is_xs = elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
                 || elem.prefix().as_deref() == Some("xs")
                 || elem.prefix().as_deref() == Some("xsd");
             if !is_xs {
@@ -224,7 +224,7 @@ impl XSDValidator {
             children = elem.next_element_sibling();
 
             let local = elem.local_name();
-            let is_xs = elem.namespace_name().as_deref() == Some(XS_NAMESPACE)
+            let is_xs = elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
                 || elem.prefix().as_deref() == Some("xs")
                 || elem.prefix().as_deref() == Some("xsd");
 

@@ -30,7 +30,7 @@ pub use error::XSDValidationError;
 pub use types::XSDValidator;
 
 /// The XML Schema namespace URI (`xs:` / `xsd:`).
-pub const XS_NAMESPACE: &str = "http://www.w3.org/2001/XMLSchema";
+pub const XML_SCHEMA_NAMESPACE: &str = "http://www.w3.org/2001/XMLSchema";
 
 /// The XML Schema Instance namespace URI (`xsi:`).
-pub const XSI_NAMESPACE: &str = "http://www.w3.org/2001/XMLSchema-instance";
+pub const XML_SCHEMA_INSTANCE_NAMESPACE: &str = "http://www.w3.org/2001/XMLSchema-instance";
