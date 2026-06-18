@@ -1,83 +1,94 @@
 //! Unit tests for the XSD validator.
 
-#[cfg(test)]
-mod tests {
-    use crate::parse;
-    use crate::xsd::types::XsdValidator;
+use crate::{
+    sax::XMLReader,
+    tree::{Document, TreeBuildHandler},
+    xsd::types::XSDValidator,
+};
 
-    #[test]
-    fn test_validate_string_element() {
-        let schema_xml = r#"
+fn parse(xml: &str) -> Document {
+    let mut handler = TreeBuildHandler::default();
+    handler.coalescing = true;
+    handler.expand_entity_reference = true;
+    handler.ignoring_comments = true;
+    let mut reader = XMLReader::builder().set_handler(handler).build();
+    reader.parse_str(xml, None).unwrap();
+    reader.handler.document
+}
+
+#[test]
+fn test_validate_string_element() {
+    let schema_xml = r#"
         <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
             <xs:element name="root" type="xs:string"/>
         </xs:schema>
         "#;
-        let doc_xml = "<root>hello</root>";
+    let doc_xml = "<root>hello</root>";
 
-        let schema = parse(schema_xml).unwrap();
-        let doc = parse(doc_xml).unwrap();
-        let validator = XsdValidator::from_schema(&schema).unwrap();
-        let errors = validator.validate(&doc);
-        assert!(errors.is_empty(), "Errors: {:?}", errors);
-    }
+    let schema = parse(schema_xml);
+    let doc = parse(doc_xml);
+    let validator = XSDValidator::from_schema(&schema).unwrap();
+    let errors = validator.validate(&doc);
+    assert!(errors.is_empty(), "Errors: {:?}", errors);
+}
 
-    #[test]
-    fn test_validate_integer_valid() {
-        let schema_xml = r#"
+#[test]
+fn test_validate_integer_valid() {
+    let schema_xml = r#"
         <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
             <xs:element name="count" type="xs:integer"/>
         </xs:schema>
         "#;
-        let doc_xml = "<count>42</count>";
+    let doc_xml = "<count>42</count>";
 
-        let schema = parse(schema_xml).unwrap();
-        let doc = parse(doc_xml).unwrap();
-        let validator = XsdValidator::from_schema(&schema).unwrap();
-        let errors = validator.validate(&doc);
-        assert!(errors.is_empty(), "Errors: {:?}", errors);
-    }
+    let schema = parse(schema_xml);
+    let doc = parse(doc_xml);
+    let validator = XSDValidator::from_schema(&schema).unwrap();
+    let errors = validator.validate(&doc);
+    assert!(errors.is_empty(), "Errors: {:?}", errors);
+}
 
-    #[test]
-    fn test_validate_integer_invalid() {
-        let schema_xml = r#"
+#[test]
+fn test_validate_integer_invalid() {
+    let schema_xml = r#"
         <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
             <xs:element name="count" type="xs:integer"/>
         </xs:schema>
         "#;
-        let doc_xml = "<count>not-a-number</count>";
+    let doc_xml = "<count>not-a-number</count>";
 
-        let schema = parse(schema_xml).unwrap();
-        let doc = parse(doc_xml).unwrap();
-        let validator = XsdValidator::from_schema(&schema).unwrap();
-        let errors = validator.validate(&doc);
-        assert!(!errors.is_empty());
-    }
+    let schema = parse(schema_xml);
+    let doc = parse(doc_xml);
+    let validator = XSDValidator::from_schema(&schema).unwrap();
+    let errors = validator.validate(&doc);
+    assert!(!errors.is_empty());
+}
 
-    #[test]
-    fn test_validate_boolean() {
-        let schema_xml = r#"
+#[test]
+fn test_validate_boolean() {
+    let schema_xml = r#"
         <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
             <xs:element name="flag" type="xs:boolean"/>
         </xs:schema>
         "#;
 
-        let schema = parse(schema_xml).unwrap();
+    let schema = parse(schema_xml);
 
-        for val in &["true", "false", "1", "0"] {
-            let input = format!("<flag>{}</flag>", val);
-            let doc = parse(&input).unwrap();
-            let validator = XsdValidator::from_schema(&schema).unwrap();
-            assert!(validator.validate(&doc).is_empty(), "Failed for {}", val);
-        }
-
-        let doc = parse("<flag>yes</flag>").unwrap();
-        let validator = XsdValidator::from_schema(&schema).unwrap();
-        assert!(!validator.validate(&doc).is_empty());
+    for val in &["true", "false", "1", "0"] {
+        let input = format!("<flag>{}</flag>", val);
+        let doc = parse(&input);
+        let validator = XSDValidator::from_schema(&schema).unwrap();
+        assert!(validator.validate(&doc).is_empty(), "Failed for {}", val);
     }
 
-    #[test]
-    fn test_validate_complex_type_sequence() {
-        let schema_xml = r#"
+    let doc = parse("<flag>yes</flag>");
+    let validator = XSDValidator::from_schema(&schema).unwrap();
+    assert!(!validator.validate(&doc).is_empty());
+}
+
+#[test]
+fn test_validate_complex_type_sequence() {
+    let schema_xml = r#"
         <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
             <xs:element name="person">
                 <xs:complexType>
@@ -90,17 +101,17 @@ mod tests {
         </xs:schema>
         "#;
 
-        let doc_xml = "<person><name>Alice</name><age>30</age></person>";
-        let schema = parse(schema_xml).unwrap();
-        let doc = parse(doc_xml).unwrap();
-        let validator = XsdValidator::from_schema(&schema).unwrap();
-        let errors = validator.validate(&doc);
-        assert!(errors.is_empty(), "Errors: {:?}", errors);
-    }
+    let doc_xml = "<person><name>Alice</name><age>30</age></person>";
+    let schema = parse(schema_xml);
+    let doc = parse(doc_xml);
+    let validator = XSDValidator::from_schema(&schema).unwrap();
+    let errors = validator.validate(&doc);
+    assert!(errors.is_empty(), "Errors: {:?}", errors);
+}
 
-    #[test]
-    fn test_validate_required_attribute() {
-        let schema_xml = r#"
+#[test]
+fn test_validate_required_attribute() {
+    let schema_xml = r#"
         <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
             <xs:element name="item">
                 <xs:complexType>
@@ -111,23 +122,23 @@ mod tests {
         </xs:schema>
         "#;
 
-        let schema = parse(schema_xml).unwrap();
+    let schema = parse(schema_xml);
 
-        // Missing required attribute
-        let doc = parse("<item/>").unwrap();
-        let validator = XsdValidator::from_schema(&schema).unwrap();
-        let errors = validator.validate(&doc);
-        assert!(!errors.is_empty());
+    // Missing required attribute
+    let doc = parse("<item/>");
+    let validator = XSDValidator::from_schema(&schema).unwrap();
+    let errors = validator.validate(&doc);
+    assert!(!errors.is_empty());
 
-        // With required attribute
-        let doc = parse(r#"<item id="123"/>"#).unwrap();
-        let errors = validator.validate(&doc);
-        assert!(errors.is_empty(), "Errors: {:?}", errors);
-    }
+    // With required attribute
+    let doc = parse(r#"<item id="123"/>"#);
+    let errors = validator.validate(&doc);
+    assert!(errors.is_empty(), "Errors: {:?}", errors);
+}
 
-    #[test]
-    fn test_validate_min_max_inclusive() {
-        let schema_xml = r#"
+#[test]
+fn test_validate_min_max_inclusive() {
+    let schema_xml = r#"
         <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
             <xs:element name="score">
                 <xs:simpleType>
@@ -140,22 +151,22 @@ mod tests {
         </xs:schema>
         "#;
 
-        let schema = parse(schema_xml).unwrap();
-        let validator = XsdValidator::from_schema(&schema).unwrap();
+    let schema = parse(schema_xml);
+    let validator = XSDValidator::from_schema(&schema).unwrap();
 
-        let doc = parse("<score>50</score>").unwrap();
-        assert!(validator.validate(&doc).is_empty());
+    let doc = parse("<score>50</score>");
+    assert!(validator.validate(&doc).is_empty());
 
-        let doc = parse("<score>150</score>").unwrap();
-        assert!(!validator.validate(&doc).is_empty());
+    let doc = parse("<score>150</score>");
+    assert!(!validator.validate(&doc).is_empty());
 
-        let doc = parse("<score>-1</score>").unwrap();
-        assert!(!validator.validate(&doc).is_empty());
-    }
+    let doc = parse("<score>-1</score>");
+    assert!(!validator.validate(&doc).is_empty());
+}
 
-    #[test]
-    fn test_validate_enumeration() {
-        let schema_xml = r#"
+#[test]
+fn test_validate_enumeration() {
+    let schema_xml = r#"
         <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
             <xs:element name="color">
                 <xs:simpleType>
@@ -169,13 +180,12 @@ mod tests {
         </xs:schema>
         "#;
 
-        let schema = parse(schema_xml).unwrap();
-        let validator = XsdValidator::from_schema(&schema).unwrap();
+    let schema = parse(schema_xml);
+    let validator = XSDValidator::from_schema(&schema).unwrap();
 
-        let doc = parse("<color>red</color>").unwrap();
-        assert!(validator.validate(&doc).is_empty());
+    let doc = parse("<color>red</color>");
+    assert!(validator.validate(&doc).is_empty());
 
-        let doc = parse("<color>yellow</color>").unwrap();
-        assert!(!validator.validate(&doc).is_empty());
-    }
+    let doc = parse("<color>yellow</color>");
+    assert!(!validator.validate(&doc).is_empty());
 }

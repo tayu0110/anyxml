@@ -203,6 +203,6 @@ impl From<RncParseError> for XMLError {
 
 impl From<XSDValidationError> for XMLError {
     fn from(value: XSDValidationError) -> Self {
-        Self::XSDError(value)
+        Self::XSDError(Box::new(value))
     }
 }

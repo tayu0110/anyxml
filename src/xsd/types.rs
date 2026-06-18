@@ -23,7 +23,7 @@ pub(super) type SubstitutionGroupMap =
 /// [`XsdValidator::from_schema_with_base_path`]. Holds all top-level declarations
 /// (elements, types, attributes, groups) and provides the [`validate`](XsdValidator::validate)
 /// method to check instance documents.
-pub struct XsdValidator {
+pub struct XSDValidator {
     /// Top-level element declarations: (namespace_uri, local_name) -> ElementDecl
     pub(super) elements: HashMap<(Option<String>, String), ElementDecl>,
     /// Named type definitions: (namespace_uri, local_name) -> TypeDef

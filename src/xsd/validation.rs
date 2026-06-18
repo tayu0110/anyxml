@@ -10,7 +10,10 @@
 //! - xsi:type resolution and type substitution blocking checks
 //! - Substitution group matching for element declarations
 
-use crate::tree::{Document, Element};
+use crate::{
+    XMLVersion,
+    tree::{Document, Element, convert::NodeKind},
+};
 
 use super::{
     builtins::{
@@ -39,7 +42,7 @@ enum XsiTypeResult {
     NotFound(String),
 }
 
-impl XsdValidator {
+impl XSDValidator {
     /// Validate a document against this schema.
     ///
     /// Finds the root element, looks up its global element declaration, and
@@ -1045,8 +1048,18 @@ impl XsdValidator {
                 let mut children = node.first_child();
                 while let Some(child) = children {
                     children = child.next_sibling();
-                    let text = child.text_content();
-                    if !text.trim().is_empty() {
+                    let empty = match child.downcast() {
+                        NodeKind::CDATASection(data) => data
+                            .data()
+                            .trim_matches(|c| XMLVersion::XML10.is_whitespace(c))
+                            .is_empty(),
+                        NodeKind::Text(data) => data
+                            .data()
+                            .trim_matches(|c| XMLVersion::XML10.is_whitespace(c))
+                            .is_empty(),
+                        _ => true,
+                    };
+                    if !empty {
                         errors.push(XSDValidationError {
                             message:
                                 "Non-whitespace text content is not allowed in element-only content"

@@ -28,9 +28,9 @@ use super::parser::{
     parse_attribute_group_def, parse_complex_type, parse_element_decl, parse_model_group_def,
     parse_simple_type, resolve_type_name,
 };
-use super::types::{AttributeDecl, BuiltInType, Facet, TypeDef, TypeRef, XsdValidator};
+use super::types::{AttributeDecl, BuiltInType, Facet, TypeDef, TypeRef, XSDValidator};
 
-impl XsdValidator {
+impl XSDValidator {
     /// Build a validator from a parsed XSD schema document.
     ///
     /// Equivalent to `from_schema_with_base_path(schema_doc, None)`.
@@ -78,7 +78,7 @@ impl XsdValidator {
         base_path: Option<&Path>,
         state: &mut CompositionState,
     ) -> Result<Self, XMLError> {
-        let mut validator = XsdValidator {
+        let mut validator = XSDValidator {
             elements: HashMap::new(),
             types: HashMap::new(),
             global_attributes: HashMap::new(),

@@ -11,10 +11,10 @@ use crate::tree::Element;
 
 use super::{
     error::XSDValidationError,
-    types::{IdentityConstraint, IdentityConstraintKind, XsdValidator},
+    types::{IdentityConstraint, IdentityConstraintKind, XSDValidator},
 };
 
-impl XsdValidator {
+impl XSDValidator {
     /// Evaluate identity constraints declared on an element.
     /// `context_node` is the element that declares the constraints (the scope).
     pub(super) fn evaluate_identity_constraints(
