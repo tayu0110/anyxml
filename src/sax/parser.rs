@@ -447,7 +447,6 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         uri: impl AsRef<URIStr>,
         encoding: Option<&str>,
     ) -> Result<(), XMLError> {
-        self.encoding = encoding.map(|enc| enc.into());
         let base_uri = self.default_base_uri()?;
         let mut uri: Arc<URIStr> = uri.as_ref().into();
         if self.config.is_enable(ParserOption::Catalogs)
@@ -463,7 +462,7 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
             base_uri.normalize();
             source.set_system_id(base_uri);
         }
-        self.parse_source(Box::new(source))
+        self.parse_source(Box::new(source), encoding.map(|enc| enc.into()))
     }
 
     /// The data read from `reader` is parsed as an XML document.  \
@@ -479,14 +478,13 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         encoding: Option<&str>,
         uri: Option<&URIStr>,
     ) -> Result<(), XMLError> {
-        self.encoding = encoding.map(|enc| enc.into());
         let mut source = Box::new(InputSource::from_reader(reader, encoding)?);
         if let Some(uri) = uri {
             let mut base_uri = self.default_base_uri()?.resolve(uri);
             base_uri.normalize();
             source.set_system_id(base_uri);
         }
-        self.parse_source(source)
+        self.parse_source(source, encoding.map(|enc| enc.into()))
     }
 
     /// Parses `xml` as an XML document.  \
@@ -497,19 +495,23 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
     /// `uri` is treated as the document's base URI. It is optional to set,
     /// but may be required if the document being parsed references external resources.
     pub fn parse_str(&mut self, xml: &str, uri: Option<&URIStr>) -> Result<(), XMLError> {
-        self.encoding = Some(UTF8_NAME.into());
         let mut source = Box::new(InputSource::from_content(xml));
         if let Some(uri) = uri {
             let mut base_uri = self.default_base_uri()?.resolve(uri);
             base_uri.normalize();
             source.set_system_id(base_uri);
         }
-        self.parse_source(source)
+        self.parse_source(source, Some(UTF8_NAME.into()))
     }
 
-    fn parse_source(&mut self, source: Box<InputSource<'a>>) -> Result<(), XMLError> {
+    fn parse_source(
+        &mut self,
+        source: Box<InputSource<'a>>,
+        encoding: Option<Box<str>>,
+    ) -> Result<(), XMLError> {
         self.reset_context();
         self.source = source;
+        self.encoding = encoding;
         self.base_uri = self.default_base_uri()?;
         if let Some(system_id) = self.source.system_id() {
             let mut base_uri = self.base_uri.resolve(system_id);
@@ -980,5 +982,39 @@ impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
     /// Finish to build the parser.
     pub fn build(self) -> XMLReader<ProgressiveParserSpec, H> {
         self.reader
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_reader_with_explicit_encoding_and_encoding_decl_test() {
+        const XML_UTF8: &str = r#"<?xml version="1.0" encoding="UTF-8"?><doc/>"#;
+        const XML_LATIN1: &str = r#"<?xml version="1.0" encoding="ISO-8859-1"?><doc/>"#;
+
+        let mut reader = XMLReader::builder().build();
+        reader
+            .parse_reader(XML_UTF8.as_bytes(), Some("UTF-8"), None)
+            .unwrap();
+
+        let mut reader = XMLReader::builder().build();
+        // UTF-8 and ISO-8859-1 are compatible.
+        reader
+            .parse_reader(XML_LATIN1.as_bytes(), Some("UTF-8"), None)
+            .unwrap();
+    }
+
+    #[test]
+    fn parse_str_with_encoding_decl_test() {
+        const XML_UTF8: &str = r#"<?xml version="1.0" encoding="UTF-8"?><doc/>"#;
+        const XML_LATIN1: &str = r#"<?xml version="1.0" encoding="ISO-8859-1"?><doc/>"#;
+
+        let mut reader = XMLReader::builder().build();
+        reader.parse_str(XML_UTF8, None).unwrap();
+
+        let mut reader = XMLReader::builder().build();
+        reader.parse_str(XML_LATIN1, None).unwrap();
     }
 }
