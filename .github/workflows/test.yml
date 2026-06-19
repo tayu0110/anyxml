@@ -23,17 +23,18 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Download test suite
-        run: |
-          deno run -A resources/get-xmlconf.ts
-          deno run -A resources/get-xslt-testsuite.ts
-          deno run -A resources/get-xinclude-testsuite.ts
-
       - name: Check Rust version
         run: |
           rustup --version
           rustc --version
           cargo --version
+
+      - name: Download test suite
+        run: |
+          deno run -A resources/get-xmlconf.ts
+          deno run -A resources/get-xslt-testsuite.ts
+          deno run -A resources/get-xinclude-testsuite.ts
+          ./resources/get-xsts.rs
 
       - name: Run `cargo doc --workspace`
         run: cargo doc --workspace
