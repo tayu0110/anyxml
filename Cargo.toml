@@ -75,6 +75,10 @@ path = "tests/relaxng-test.rs"
 name = "c14n-test"
 path = "tests/c14n-test.rs"
 
+[[test]]
+name = "xsd-test"
+path = "tests/xsd-test.rs"
+
 [lints.clippy]
 type_complexity = "allow"
 too_many_arguments = "allow"
