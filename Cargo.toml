@@ -33,7 +33,7 @@ exclude = [
 
 [dependencies]
 anyxml-uri = { path = "./anyxml-uri", version = "0.1.9" }
-anyxml-automata = { path = "./anyxml-automata", version = "0.1.2" }
+anyxml-automata = { path = "./anyxml-automata", version = "0.1.3" }
 anyxml-encoding = { path = "./anyxml-encoding", version = "0.1.2" }
 anyxml-base64 = { path = "./anyxml-base64", version = "0.1.1" }
 anyxml-datetime = { path = "./anyxml-datetime", version = "0.1.1" }

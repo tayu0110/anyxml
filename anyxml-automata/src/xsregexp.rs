@@ -125,14 +125,19 @@ fn parse_quantifier(regexp: &mut &str, atom: ASTNode<char>) -> Result<ASTNode<ch
         }
         [b'{', ..] => {
             *regexp = &regexp[1..];
-            match parse_quantity(regexp)? {
+            let ret = match parse_quantity(regexp)? {
                 Quantity::QuantRange(at_least, at_most) => Ok(ASTNode::Repeat {
                     node: Box::new(atom),
                     at_least,
                     at_most,
                 }),
                 Quantity::QuantExact(exact) => Ok(ASTNode::RepeatExact(Box::new(atom), exact)),
+            };
+            if !regexp.starts_with("}") {
+                return Err(RegexpError::SyntaxError);
             }
+            *regexp = &regexp[1..];
+            ret
         }
         _ => Ok(atom),
     }
@@ -143,7 +148,10 @@ enum Quantity {
     QuantExact(usize),
 }
 
-/// [5] quantity ::= quantRange | quantMin | QuantExact
+/// [5] quantity   ::= quantRange | quantMin | QuantExact
+/// [6] quantRange ::= QuantExact ',' QuantExact
+/// [7] quantMin   ::= QuantExact ','
+/// [8] QuantExact ::= [0-9]+
 fn parse_quantity(regexp: &mut &str) -> Result<Quantity, RegexpError> {
     let pos = regexp
         .as_bytes()
@@ -181,6 +189,7 @@ fn parse_quantity(regexp: &mut &str) -> Result<Quantity, RegexpError> {
             let q = regexp[..pos]
                 .parse::<usize>()
                 .or(Err(RegexpError::TooLargeQuantity))?;
+            *regexp = &regexp[pos..];
 
             if p > q {
                 Err(RegexpError::InvalidQuantifier)
@@ -920,6 +929,43 @@ mod tests {
         assert!(re.is_match("k"));
         assert!(!re.is_match("l"));
         assert!(re.is_match("m"));
+    }
+
+    #[test]
+    fn repeat_exactly_tests() {
+        let re = XSRegexp::compile("[a-z]{5}").unwrap();
+        eprintln!("{:?}", *re.fa);
+        assert!(re.is_match("aaaaa"));
+        assert!(re.is_match("abcde"));
+        assert!(!re.is_match("abc"));
+        assert!(!re.is_match("abcdef"));
+        assert!(!re.is_match("aaaa0"));
+    }
+
+    #[test]
+    fn repeat_range_tests() {
+        let re = XSRegexp::compile("[a-z]{2,5}").unwrap();
+        eprintln!("{:?}", *re.fa);
+        assert!(!re.is_match("a"));
+        assert!(re.is_match("aa"));
+        assert!(re.is_match("aaa"));
+        assert!(re.is_match("aaaa"));
+        assert!(re.is_match("aaaaa"));
+        assert!(!re.is_match("aaaaaa"));
+        assert!(!re.is_match("aa0"));
+    }
+
+    #[test]
+    fn repeat_at_least_tests() {
+        let re = XSRegexp::compile("[a-z]{2,}").unwrap();
+        eprintln!("{:?}", *re.fa);
+        assert!(!re.is_match("a"));
+        assert!(re.is_match("aa"));
+        assert!(re.is_match("aaa"));
+        assert!(re.is_match("aaaa"));
+        assert!(re.is_match("aaaaa"));
+        assert!(re.is_match("aaaaaa"));
+        assert!(!re.is_match("aa0"));
     }
 
     #[test]
