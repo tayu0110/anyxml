@@ -21,20 +21,22 @@
 //!    group or attributeGroup references may have changed.
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
 
-use anyxml_uri::uri::URIString;
-
-use crate::error::XMLError;
-use crate::sax::XMLReader;
-use crate::tree::{Element, TreeBuildHandler};
-use crate::xsd::{XSDSchema, XSDValidationError};
-
-use super::XML_SCHEMA_NAMESPACE;
-use super::parser::{
-    parse_attribute_group_def, parse_complex_type, parse_model_group_def, parse_simple_type,
+use crate::{
+    error::XMLError,
+    sax::XMLReader,
+    tree::{Element, TreeBuildHandler},
+    uri::{URIStr, URIString},
+    xsd::{XSDSchema, XSDValidationError},
 };
-use super::types::{ContentModel, ElementDecl, Particle, ParticleKind, TypeDef, TypeRef};
+
+use super::{
+    XML_SCHEMA_NAMESPACE,
+    parser::{
+        parse_attribute_group_def, parse_complex_type, parse_model_group_def, parse_simple_type,
+    },
+    types::{ContentModel, ElementDecl, Particle, ParticleKind, TypeDef, TypeRef},
+};
 
 /// Maximum depth of `xs:include` / `xs:redefine` / `xs:import` nesting.
 ///
@@ -51,7 +53,7 @@ pub(super) struct CompositionState {
     /// Canonicalized absolute paths that have already been loaded during
     /// this `from_schema_with_base_path` call. Reloads short-circuit so
     /// `a.xsd` including `b.xsd` including `a.xsd` terminates cleanly.
-    pub(super) visited: HashSet<PathBuf>,
+    pub(super) visited: HashSet<URIString>,
     /// Current recursion depth. Incremented on each external schema
     /// build; errors out when it reaches [`MAX_INCLUDE_DEPTH`].
     pub(super) depth: u8,
@@ -60,12 +62,10 @@ pub(super) struct CompositionState {
 impl CompositionState {
     /// Fresh state, seeded with the top-level schema's canonical path so
     /// the very first include won't try to re-load the outer document.
-    pub(super) fn new(base_path: Option<&Path>) -> Self {
+    pub(super) fn new(base_uri: Option<&URIStr>) -> Self {
         let mut visited = HashSet::new();
-        if let Some(p) = base_path
-            && let Ok(c) = p.canonicalize()
-        {
-            visited.insert(c);
+        if let Some(p) = base_uri {
+            visited.insert(p.to_owned());
         }
         CompositionState { visited, depth: 0 }
     }
@@ -88,62 +88,21 @@ impl CompositionState {
 ///   support (`http://`, `ftp://`, ...).
 fn resolve_include_path(
     schema_location: &str,
-    base_dir: Option<&Path>,
-    canonical_base: Option<&Path>,
+    base_uri: Option<&URIStr>,
     state: &mut CompositionState,
-    kind: &str,
-) -> Result<Option<PathBuf>, XMLError> {
-    let resolved_path = match base_dir {
-        Some(dir) => dir.join(schema_location),
-        None => PathBuf::from(schema_location),
+) -> Result<Option<URIString>, XMLError> {
+    let schema_location = URIString::parse(schema_location)?;
+    let resolved_path = match base_uri {
+        Some(base_uri) => base_uri.resolve(&schema_location),
+        None => schema_location,
     };
-    let canonical = resolved_path.canonicalize().ok();
 
-    // F-10 containment check. When both canonicalized paths exist we
-    // require the resolved path to live under the base directory. When
-    // the target canonicalize fails we treat it as missing; the old
-    // `is_absolute_uri` error is still surfaced for http/ftp/... values
-    // that would never have loaded.
-    match (canonical_base, canonical.as_ref()) {
-        (Some(cb), Some(c)) if !c.starts_with(cb) => {
-            return Err(XMLError::XSDError(Box::new(XSDValidationError {
-                message: format!(
-                    "Cannot resolve {} schemaLocation '{}': path escapes the schema's base directory",
-                    kind, schema_location
-                ),
-                line: None,
-                column: None,
-            })));
-        }
-        (Some(_), None) => {
-            if is_absolute_uri(schema_location) {
-                return Err(XMLError::XSDError(Box::new(XSDValidationError {
-                    message: format!(
-                        "Cannot resolve {} schemaLocation '{}': absolute URI not supported",
-                        kind, schema_location
-                    ),
-                    line: None,
-                    column: None,
-                })));
-            }
-            return Ok(None);
-        }
-        _ => {}
-    }
-
-    // F-11 cycle detection keyed on the canonical path.
-    if let Some(ref c) = canonical
-        && !state.visited.insert(c.clone())
-    {
+    // Prevent resource loop
+    if !state.visited.insert(resolved_path.clone()) {
         return Ok(None);
     }
 
-    // Prefer the canonical path for the subsequent read — that path has
-    // had its symlinks resolved, so a concurrent symlink swap cannot
-    // redirect the read outside the containment check we just passed.
-    // Fall back to the lexical `resolved_path` only when there's no
-    // containment to enforce (no base_dir), which is the pre-fix shape.
-    Ok(Some(canonical.unwrap_or(resolved_path)))
+    Ok(Some(resolved_path))
 }
 
 /// Process `xs:include`, `xs:redefine`, and `xs:import` elements in a schema
@@ -158,7 +117,7 @@ fn resolve_include_path(
 pub(super) fn process_schema_composition(
     schema_elem: Element,
     validator: &mut XSDSchema,
-    base_path: Option<&Path>,
+    base_uri: Option<&URIStr>,
     state: &mut CompositionState,
 ) -> Result<(), XMLError> {
     if state.depth >= MAX_INCLUDE_DEPTH {
@@ -171,30 +130,6 @@ pub(super) fn process_schema_composition(
             column: None,
         })));
     }
-
-    let base_dir = base_path.and_then(|p| p.parent());
-    // Canonicalize the base once per call; reused as the containment
-    // anchor for every schemaLocation resolved in the loop below.
-    //
-    // Fail closed when the caller supplied a base directory we cannot
-    // canonicalize (permission denied, missing, race with `rm -rf`,
-    // etc.). Falling through to `canonical_base = None` would skip the
-    // containment check inside `resolve_include_path` and re-open the
-    // arbitrary-file-read window F-10 closed.
-    let canonical_base = match base_dir {
-        Some(b) => Some(b.canonicalize().map_err(|e| {
-            XMLError::XSDError(Box::new(XSDValidationError {
-                message: format!(
-                    "Failed to canonicalize schema base directory '{}': {}",
-                    b.display(),
-                    e
-                ),
-                line: None,
-                column: None,
-            }))
-        })?),
-        None => None,
-    };
 
     let mut children = schema_elem.first_element_child();
     while let Some(elem) = children {
@@ -218,14 +153,7 @@ pub(super) fn process_schema_composition(
                 // enforcing F-10 containment, F-11 cycle detection,
                 // and closing the TOCTOU window against concurrent
                 // symlink swaps (F-12) in a single helper.
-                let kind = if is_redefine { "redefine" } else { "include" };
-                let Some(canonical_path) = resolve_include_path(
-                    &schema_location,
-                    base_dir,
-                    canonical_base.as_deref(),
-                    state,
-                    kind,
-                )?
+                let Some(canonical_path) = resolve_include_path(&schema_location, base_uri, state)?
                 else {
                     continue;
                 };
@@ -238,9 +166,9 @@ pub(super) fn process_schema_composition(
                 handler.expand_entity_reference = true;
                 handler.ignoring_comments = true;
                 let mut reader = XMLReader::builder().set_handler(handler).build();
-                if URIString::parse_file_path(canonical_path.as_path())
+                if reader
+                    .parse_uri(&canonical_path, None)
                     .ok()
-                    .and_then(|uri| reader.parse_uri(uri, None).ok())
                     .filter(|_| !reader.handler.fatal_error)
                     .is_none()
                 {
@@ -289,13 +217,7 @@ pub(super) fn process_schema_composition(
                 };
 
                 // Same resolve-then-read sequence as include/redefine.
-                let Some(canonical_path) = resolve_include_path(
-                    &schema_location,
-                    base_dir,
-                    canonical_base.as_deref(),
-                    state,
-                    "import",
-                )?
+                let Some(canonical_path) = resolve_include_path(&schema_location, base_uri, state)?
                 else {
                     continue;
                 };
@@ -306,9 +228,9 @@ pub(super) fn process_schema_composition(
                 handler.expand_entity_reference = true;
                 handler.ignoring_comments = true;
                 let mut reader = XMLReader::builder().set_handler(handler).build();
-                if URIString::parse_file_path(canonical_path.as_path())
+                if reader
+                    .parse_uri(&canonical_path, None)
                     .ok()
-                    .and_then(|uri| reader.parse_uri(uri, None).ok())
                     .filter(|_| !reader.handler.fatal_error)
                     .is_none()
                 {
@@ -663,22 +585,4 @@ fn reresolve_types_after_redefine(validator: &mut XSDSchema) {
             validator.types.insert(key, TypeDef::Complex(ct));
         }
     }
-}
-
-/// Check if a string looks like an absolute URI (starts with a scheme per RFC 3986:
-/// `ALPHA *(ALPHA / DIGIT / "+" / "-" / ".") ":"`).
-fn is_absolute_uri(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    if bytes.is_empty() || !bytes[0].is_ascii_alphabetic() {
-        return false;
-    }
-    for &b in &bytes[1..] {
-        if b == b':' {
-            return true;
-        }
-        if !b.is_ascii_alphanumeric() && b != b'+' && b != b'-' && b != b'.' {
-            return false;
-        }
-    }
-    false
 }

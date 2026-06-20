@@ -13,11 +13,13 @@
 //!      inline list-type facets in elements and content-model particles)
 
 use std::collections::HashMap;
-use std::path::Path;
 
-use crate::error::XMLError;
-use crate::tree::Document;
-use crate::xsd::{XSDSchema, XSDValidationError};
+use crate::{
+    error::XMLError,
+    tree::Document,
+    uri::URIStr,
+    xsd::{XSDSchema, XSDValidationError},
+};
 
 use super::XML_SCHEMA_NAMESPACE;
 use super::composition::{CompositionState, process_schema_composition};
@@ -59,14 +61,14 @@ impl XSDSchema {
     ///    and `item_facets` through the type graph and into inline declarations
     pub fn from_schema_with_base_path(
         schema_doc: &Document,
-        base_path: Option<&Path>,
+        base_uri: Option<&URIStr>,
     ) -> Result<Self, XMLError> {
         // Public entry creates fresh composition state (visited paths +
         // depth counter) and delegates to the internal variant. The
         // state is what lets `xs:include` / `xs:import` chains detect
         // cycles and enforce a nesting cap.
-        let mut state = CompositionState::new(base_path);
-        Self::from_schema_with_composition_state(schema_doc, base_path, &mut state)
+        let mut state = CompositionState::new(base_uri);
+        Self::from_schema_with_composition_state(schema_doc, base_uri, &mut state)
     }
 
     /// Internal entry used by `from_schema_with_base_path` and by
@@ -75,7 +77,7 @@ impl XSDSchema {
     /// calls.
     pub(super) fn from_schema_with_composition_state(
         schema_doc: &Document,
-        base_path: Option<&Path>,
+        base_uri: Option<&URIStr>,
         state: &mut CompositionState,
     ) -> Result<Self, XMLError> {
         let mut validator = XSDSchema {
@@ -129,8 +131,8 @@ impl XSDSchema {
         };
 
         // Pass 0: Process xs:include and xs:redefine to merge external schema declarations
-        if base_path.is_some() {
-            process_schema_composition(schema_elem.clone(), &mut validator, base_path, state)?;
+        if base_uri.is_some() {
+            process_schema_composition(schema_elem.clone(), &mut validator, base_uri, state)?;
         }
 
         // Pass 0.5: Parse global attribute declarations first, since attributeGroup

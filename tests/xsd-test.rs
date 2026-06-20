@@ -117,7 +117,7 @@ fn run_schema_test(base: &URIStr, element: Element, fail: &mut usize) -> Option<
     reader.parse_uri(&schema_path, None).unwrap();
     assert!(!reader.handler.fatal_error);
     let schema = reader.handler.document;
-    match XSDSchema::from_schema_with_base_path(&schema, Some(Path::new(schema_path.path()))) {
+    match XSDSchema::from_schema_with_base_path(&schema, Some(&schema_path)) {
         Ok(validator) => {
             if validity != "valid" {
                 eprintln!("Unexpected success to parse schema {}", schema_path);
