@@ -62,11 +62,9 @@ pub(super) struct CompositionState {
 impl CompositionState {
     /// Fresh state, seeded with the top-level schema's canonical path so
     /// the very first include won't try to re-load the outer document.
-    pub(super) fn new(base_uri: Option<&URIStr>) -> Self {
+    pub(super) fn new(base_uri: &URIStr) -> Self {
         let mut visited = HashSet::new();
-        if let Some(p) = base_uri {
-            visited.insert(p.to_owned());
-        }
+        visited.insert(base_uri.to_owned());
         CompositionState { visited, depth: 0 }
     }
 }
@@ -88,14 +86,11 @@ impl CompositionState {
 ///   support (`http://`, `ftp://`, ...).
 fn resolve_include_path(
     schema_location: &str,
-    base_uri: Option<&URIStr>,
+    base_uri: &URIStr,
     state: &mut CompositionState,
 ) -> Result<Option<URIString>, XMLError> {
     let schema_location = URIString::parse(schema_location)?;
-    let resolved_path = match base_uri {
-        Some(base_uri) => base_uri.resolve(&schema_location),
-        None => schema_location,
-    };
+    let resolved_path = base_uri.resolve(&schema_location);
 
     // Prevent resource loop
     if !state.visited.insert(resolved_path.clone()) {
@@ -117,7 +112,7 @@ fn resolve_include_path(
 pub(super) fn process_schema_composition(
     schema_elem: Element,
     validator: &mut XSDSchema,
-    base_uri: Option<&URIStr>,
+    base_uri: &URIStr,
     state: &mut CompositionState,
 ) -> Result<(), XMLError> {
     if state.depth >= MAX_INCLUDE_DEPTH {
@@ -183,11 +178,8 @@ pub(super) fn process_schema_composition(
                 // `state.depth` desynced for any later sibling
                 // includes.
                 state.depth += 1;
-                let ext_validator_res = XSDSchema::from_schema_with_composition_state(
-                    &ext_doc,
-                    Some(&canonical_path),
-                    state,
-                );
+                let ext_validator_res =
+                    XSDSchema::from_schema_with_composition_state(&ext_doc, &canonical_path, state);
                 state.depth -= 1;
                 let ext_validator = ext_validator_res?;
 
@@ -244,11 +236,8 @@ pub(super) fn process_schema_composition(
                 // Err alike, so a failure inside the import chain
                 // cannot desync `state.depth` for sibling imports.
                 state.depth += 1;
-                let ext_validator_res = XSDSchema::from_schema_with_composition_state(
-                    &ext_doc,
-                    Some(&canonical_path),
-                    state,
-                );
+                let ext_validator_res =
+                    XSDSchema::from_schema_with_composition_state(&ext_doc, &canonical_path, state);
                 state.depth -= 1;
                 let ext_validator = ext_validator_res?;
 
