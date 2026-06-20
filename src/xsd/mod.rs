@@ -246,9 +246,7 @@ impl XSDSchema {
             children = elem.next_element_sibling();
 
             let local = elem.local_name();
-            let is_xs = elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
-                || elem.prefix().as_deref() == Some("xs")
-                || elem.prefix().as_deref() == Some("xsd");
+            let is_xs = elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
 
             if !is_xs {
                 continue;

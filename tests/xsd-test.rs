@@ -215,7 +215,7 @@ fn run_instance_test(base: &URIStr, element: Element, validator: &XSDSchema, fai
     }
 }
 
-fn test_set(path: &URIStr) {
+fn test_set(path: &URIStr) -> usize {
     let mut reader = XMLReader::builder()
         .set_handler(TreeBuildHandler::with_handler(NSErrorSuppressingHandler))
         .build();
@@ -254,7 +254,8 @@ fn test_set(path: &URIStr) {
             run_instance_test(path, instance_test, &validator, &mut fail);
         }
     }
-    assert_eq!(fail, 0);
+    eprintln!("\nComplete testset {testset_name}: fail={fail}\n");
+    fail
 }
 
 #[test]
@@ -270,11 +271,13 @@ fn test_suite() {
     assert!(!reader.handler.fatal_error);
 
     let suite = reader.handler.document;
+    let mut fail = 0;
     for testset_ref in suite.get_elements_by_expanded_name("testSetRef", Some(XSTS_NAMESPACE)) {
         let href = testset_ref
             .get_attribute("href", Some(XLINK_NAMESPACE))
             .unwrap();
         let href = base.resolve(&URIString::parse(&href).unwrap());
-        test_set(&href);
+        fail += test_set(&href);
     }
+    assert_eq!(fail, 0);
 }
