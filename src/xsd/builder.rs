@@ -17,7 +17,7 @@ use std::path::Path;
 
 use crate::error::XMLError;
 use crate::tree::Document;
-use crate::xsd::XSDValidationError;
+use crate::xsd::{XSDSchema, XSDValidationError};
 
 use super::XML_SCHEMA_NAMESPACE;
 use super::composition::{CompositionState, process_schema_composition};
@@ -28,9 +28,9 @@ use super::parser::{
     parse_attribute_group_def, parse_complex_type, parse_element_decl, parse_model_group_def,
     parse_simple_type, resolve_type_name,
 };
-use super::types::{AttributeDecl, BuiltInType, Facet, TypeDef, TypeRef, XSDValidator};
+use super::types::{AttributeDecl, BuiltInType, Facet, TypeDef, TypeRef};
 
-impl XSDValidator {
+impl XSDSchema {
     /// Build a validator from a parsed XSD schema document.
     ///
     /// Equivalent to `from_schema_with_base_path(schema_doc, None)`.
@@ -78,7 +78,7 @@ impl XSDValidator {
         base_path: Option<&Path>,
         state: &mut CompositionState,
     ) -> Result<Self, XMLError> {
-        let mut validator = XSDValidator {
+        let mut validator = XSDSchema {
             elements: HashMap::new(),
             types: HashMap::new(),
             global_attributes: HashMap::new(),

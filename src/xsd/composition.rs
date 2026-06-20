@@ -28,15 +28,13 @@ use anyxml_uri::uri::URIString;
 use crate::error::XMLError;
 use crate::sax::XMLReader;
 use crate::tree::{Element, TreeBuildHandler};
-use crate::xsd::XSDValidationError;
+use crate::xsd::{XSDSchema, XSDValidationError};
 
 use super::XML_SCHEMA_NAMESPACE;
 use super::parser::{
     parse_attribute_group_def, parse_complex_type, parse_model_group_def, parse_simple_type,
 };
-use super::types::{
-    ContentModel, ElementDecl, Particle, ParticleKind, TypeDef, TypeRef, XSDValidator,
-};
+use super::types::{ContentModel, ElementDecl, Particle, ParticleKind, TypeDef, TypeRef};
 
 /// Maximum depth of `xs:include` / `xs:redefine` / `xs:import` nesting.
 ///
@@ -159,7 +157,7 @@ fn resolve_include_path(
 /// includes terminate cleanly and pathological chains cannot stack-overflow.
 pub(super) fn process_schema_composition(
     schema_elem: Element,
-    validator: &mut XSDValidator,
+    validator: &mut XSDSchema,
     base_path: Option<&Path>,
     state: &mut CompositionState,
 ) -> Result<(), XMLError> {
@@ -257,7 +255,7 @@ pub(super) fn process_schema_composition(
                 // `state.depth` desynced for any later sibling
                 // includes.
                 state.depth += 1;
-                let ext_validator_res = XSDValidator::from_schema_with_composition_state(
+                let ext_validator_res = XSDSchema::from_schema_with_composition_state(
                     &ext_doc,
                     Some(&canonical_path),
                     state,
@@ -324,7 +322,7 @@ pub(super) fn process_schema_composition(
                 // Err alike, so a failure inside the import chain
                 // cannot desync `state.depth` for sibling imports.
                 state.depth += 1;
-                let ext_validator_res = XSDValidator::from_schema_with_composition_state(
+                let ext_validator_res = XSDSchema::from_schema_with_composition_state(
                     &ext_doc,
                     Some(&canonical_path),
                     state,
@@ -346,7 +344,7 @@ pub(super) fn process_schema_composition(
 /// Merge declarations from an external (included) schema validator into the main validator.
 /// If `chameleon` is true, re-key declarations from `None` namespace to the main validator's
 /// target namespace (chameleon include behavior).
-fn merge_external_declarations(validator: &mut XSDValidator, ext: &XSDValidator, chameleon: bool) {
+fn merge_external_declarations(validator: &mut XSDSchema, ext: &XSDSchema, chameleon: bool) {
     let target_ns = validator.target_namespace.clone();
 
     // Helper to re-key a (namespace, name) pair for chameleon includes
@@ -491,7 +489,7 @@ fn chameleon_fixup_particles(particles: &mut [Particle], target_ns: &Option<Stri
 /// definition's `base_type` is updated to point to it.
 fn process_redefine_children(
     redefine_node: Element,
-    validator: &mut XSDValidator,
+    validator: &mut XSDSchema,
 ) -> Result<(), XMLError> {
     let target_ns = validator.target_namespace.clone();
 
@@ -611,7 +609,7 @@ fn process_redefine_children(
 /// This is necessary because the external schema's types were parsed with the
 /// OLD group/attributeGroup definitions eagerly inlined; after redefine replaces
 /// those definitions, we need to update the types to reflect the new definitions.
-fn reresolve_types_after_redefine(validator: &mut XSDValidator) {
+fn reresolve_types_after_redefine(validator: &mut XSDSchema) {
     // Collect keys that need re-resolution to avoid borrow issues
     let keys_to_update: Vec<(Option<String>, String)> = validator
         .types

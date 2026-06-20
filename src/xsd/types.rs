@@ -7,47 +7,9 @@
 //! These types are used throughout the XSD validation pipeline — from schema
 //! parsing (builder/parser) through validation.
 
-use std::collections::HashMap;
-
 use super::wildcard::{
     intersect_namespace_constraints, stricter_process_contents, union_namespace_constraints,
 };
-
-/// Type alias for substitution group maps: head element key -> vec of member element keys.
-pub(super) type SubstitutionGroupMap =
-    HashMap<(Option<String>, String), Vec<(Option<String>, String)>>;
-
-/// An XSD validator that holds a compiled schema and validates documents against it.
-///
-/// Built from a parsed XSD schema document via [`XsdValidator::from_schema`] or
-/// [`XsdValidator::from_schema_with_base_path`]. Holds all top-level declarations
-/// (elements, types, attributes, groups) and provides the [`validate`](XsdValidator::validate)
-/// method to check instance documents.
-pub struct XSDValidator {
-    /// Top-level element declarations: (namespace_uri, local_name) -> ElementDecl
-    pub(super) elements: HashMap<(Option<String>, String), ElementDecl>,
-    /// Named type definitions: (namespace_uri, local_name) -> TypeDef
-    pub(super) types: HashMap<(Option<String>, String), TypeDef>,
-    /// Global attribute declarations: (namespace_uri, local_name) -> AttributeDecl
-    pub(super) global_attributes: HashMap<(Option<String>, String), AttributeDecl>,
-    /// Attribute group definitions: (namespace_uri, local_name) -> AttributeGroupDef
-    pub(super) attribute_groups: HashMap<(Option<String>, String), AttributeGroupDef>,
-    /// Model group definitions: (namespace_uri, local_name) -> ModelGroupDef
-    pub(super) model_groups: HashMap<(Option<String>, String), ModelGroupDef>,
-    /// Target namespace of the schema.
-    pub(super) target_namespace: Option<String>,
-    /// Schema-level blockDefault for extension.
-    pub(super) block_default_extension: bool,
-    /// Schema-level blockDefault for restriction.
-    pub(super) block_default_restriction: bool,
-    /// Whether to enforce length/minLength/maxLength facets on QName and NOTATION types.
-    /// NIST tests expect these to be ignored (Bug #4009), MS tests expect enforcement.
-    /// Default: true (enforce).
-    pub(super) enforce_qname_length_facets: bool,
-    /// Substitution group membership: head_key -> vec of member keys (transitive).
-    /// Each key is (namespace, local_name).
-    pub(super) substitution_groups: SubstitutionGroupMap,
-}
 
 /// An element declaration parsed from the schema.
 ///

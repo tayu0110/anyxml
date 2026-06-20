@@ -7,14 +7,14 @@
 
 use std::collections::HashMap;
 
-use crate::tree::Element;
+use crate::{tree::Element, xsd::XSDSchema};
 
 use super::{
     error::XSDValidationError,
-    types::{IdentityConstraint, IdentityConstraintKind, XSDValidator},
+    types::{IdentityConstraint, IdentityConstraintKind},
 };
 
-impl XSDValidator {
+impl XSDSchema {
     /// Evaluate identity constraints declared on an element.
     /// `context_node` is the element that declares the constraints (the scope).
     pub(super) fn evaluate_identity_constraints(

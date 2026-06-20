@@ -13,6 +13,7 @@
 use crate::{
     XMLVersion,
     tree::{Document, Element, convert::NodeKind},
+    xsd::XSDSchema,
 };
 
 use super::{
@@ -42,7 +43,7 @@ enum XsiTypeResult {
     NotFound(String),
 }
 
-impl XSDValidator {
+impl XSDSchema {
     /// Validate a document against this schema.
     ///
     /// Finds the root element, looks up its global element declaration, and

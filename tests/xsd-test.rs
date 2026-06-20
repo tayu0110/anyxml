@@ -8,7 +8,7 @@ use anyxml::{
     },
     tree::{Element, TreeBuildHandler},
     uri::{URIStr, URIString},
-    xsd::XSDValidator,
+    xsd::XSDSchema,
 };
 
 const XSTS_BASE_DIRNAME: &str = "resources/xmlschema2006-11-06/";
@@ -73,7 +73,7 @@ impl ErrorHandler for NSErrorSuppressingHandler {
     }
 }
 
-fn run_schema_test(base: &URIStr, element: Element, fail: &mut usize) -> Option<XSDValidator> {
+fn run_schema_test(base: &URIStr, element: Element, fail: &mut usize) -> Option<XSDSchema> {
     let name = element.get_attribute("name", None).unwrap();
     eprintln!("....... Start schema test: {name} .......");
     // Although a test suite schema may contain multiple `schemaDocument` elements,
@@ -117,7 +117,7 @@ fn run_schema_test(base: &URIStr, element: Element, fail: &mut usize) -> Option<
     reader.parse_uri(&schema_path, None).unwrap();
     assert!(!reader.handler.fatal_error);
     let schema = reader.handler.document;
-    match XSDValidator::from_schema_with_base_path(&schema, Some(Path::new(schema_path.path()))) {
+    match XSDSchema::from_schema_with_base_path(&schema, Some(Path::new(schema_path.path()))) {
         Ok(validator) => {
             if validity != "valid" {
                 eprintln!("Unexpected success to parse schema {}", schema_path);
@@ -138,7 +138,7 @@ fn run_schema_test(base: &URIStr, element: Element, fail: &mut usize) -> Option<
     }
 }
 
-fn run_instance_test(base: &URIStr, element: Element, validator: &XSDValidator, fail: &mut usize) {
+fn run_instance_test(base: &URIStr, element: Element, validator: &XSDSchema, fail: &mut usize) {
     let name = element.get_attribute("name", None).unwrap();
     eprintln!("....... Start instance test: {name} .......");
     // Although a test suite schema may contain multiple `schemaDocument` elements,
