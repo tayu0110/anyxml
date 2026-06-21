@@ -445,7 +445,7 @@ fn parse_char_class_esc<'a>(
 fn parse_single_char_esc<'a>(
     regexp: &mut &str,
 ) -> Result<impl Iterator<Item = (char, char)> + 'a, RegexpError> {
-    if regexp.starts_with('\\') {
+    if !regexp.starts_with('\\') {
         return Err(RegexpError::SyntaxError);
     }
     *regexp = &regexp[1..];
@@ -966,6 +966,45 @@ mod tests {
         assert!(re.is_match("aaaaa"));
         assert!(re.is_match("aaaaaa"));
         assert!(!re.is_match("aa0"));
+    }
+
+    #[test]
+    fn single_escaped_character_tests() {
+        let re = XSRegexp::compile("\\n").unwrap();
+        assert!(re.is_match("\n"));
+        let re = XSRegexp::compile("\\r").unwrap();
+        assert!(re.is_match("\r"));
+        let re = XSRegexp::compile("\\t").unwrap();
+        assert!(re.is_match("\t"));
+        let re = XSRegexp::compile("\\\\").unwrap();
+        assert!(re.is_match("\\"));
+        let re = XSRegexp::compile("\\|").unwrap();
+        assert!(re.is_match("|"));
+        let re = XSRegexp::compile("\\.").unwrap();
+        assert!(re.is_match("."));
+        assert!(!re.is_match("a"));
+        let re = XSRegexp::compile("\\-").unwrap();
+        assert!(re.is_match("-"));
+        let re = XSRegexp::compile("\\^").unwrap();
+        assert!(re.is_match("^"));
+        let re = XSRegexp::compile("\\?").unwrap();
+        assert!(re.is_match("?"));
+        let re = XSRegexp::compile("\\*").unwrap();
+        assert!(re.is_match("*"));
+        let re = XSRegexp::compile("\\+").unwrap();
+        assert!(re.is_match("+"));
+        let re = XSRegexp::compile("\\{").unwrap();
+        assert!(re.is_match("{"));
+        let re = XSRegexp::compile("\\}").unwrap();
+        assert!(re.is_match("}"));
+        let re = XSRegexp::compile("\\(").unwrap();
+        assert!(re.is_match("("));
+        let re = XSRegexp::compile("\\)").unwrap();
+        assert!(re.is_match(")"));
+        let re = XSRegexp::compile("\\[").unwrap();
+        assert!(re.is_match("["));
+        let re = XSRegexp::compile("\\]").unwrap();
+        assert!(re.is_match("]"));
     }
 
     #[test]
