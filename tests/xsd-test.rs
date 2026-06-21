@@ -97,11 +97,11 @@ fn run_schema_test(base: &URIStr, element: Element, fail: &mut usize) -> Option<
         );
         return None;
     }
-    let current = element
+    let status = element
         .get_elements_by_expanded_name("current", Some(XSTS_NAMESPACE))
         .next()
-        .unwrap();
-    let status = current.get_attribute("status", None).unwrap();
+        .and_then(|current| current.get_attribute("status", None))
+        .unwrap_or_else(|| "accepted".into());
     if !matches!(status.as_str(), "accepted" | "stable") {
         eprintln!(
             "Skip schema test '{}' because status is neither 'acepted' nor 'stable' (actual='{}')",
@@ -155,11 +155,11 @@ fn run_instance_test(base: &URIStr, element: Element, validator: &XSDSchema, fai
         .next()
         .unwrap();
     let validity = expected.get_attribute("validity", None).unwrap();
-    let current = element
+    let status = element
         .get_elements_by_expanded_name("current", Some(XSTS_NAMESPACE))
         .next()
-        .unwrap();
-    let status = current.get_attribute("status", None).unwrap();
+        .and_then(|current| current.get_attribute("status", None))
+        .unwrap_or_else(|| "accepted".into());
     if !matches!(status.as_str(), "accepted" | "stable") {
         eprintln!(
             "Skip instance test '{}' because status is neither 'acepted' nor 'stable' (actual='{}')",
