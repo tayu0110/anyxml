@@ -595,15 +595,7 @@ impl XSDSchema {
         }
 
         // Check for xsi:nil="true"
-        let xsi_nil_value = node
-            .get_attribute("nil", Some(XML_SCHEMA_INSTANCE_NAMESPACE))
-            .or_else(|| {
-                node.attributes()
-                    .find(|a| {
-                        a.local_name().as_ref() == "nil" && a.prefix().as_deref() == Some("xsi")
-                    })
-                    .map(|a| a.value())
-            });
+        let xsi_nil_value = node.get_attribute("nil", Some(XML_SCHEMA_INSTANCE_NAMESPACE));
         if xsi_nil_value.as_deref() == Some("true") || xsi_nil_value.as_deref() == Some("1") {
             if !decl.nillable {
                 errors.push(XSDValidationError {

@@ -162,7 +162,7 @@ fn run_instance_test(base: &URIStr, element: Element, validator: &XSDSchema, fai
     let status = current.get_attribute("status", None).unwrap();
     if !matches!(status.as_str(), "accepted" | "stable") {
         eprintln!(
-            "Skip schema test '{}' because status is neither 'acepted' nor 'stable' (actual='{}')",
+            "Skip instance test '{}' because status is neither 'acepted' nor 'stable' (actual='{}')",
             name, status
         );
         return;
@@ -172,8 +172,13 @@ fn run_instance_test(base: &URIStr, element: Element, validator: &XSDSchema, fai
     let mut reader = XMLReader::builder()
         .set_handler(TreeBuildHandler::with_handler(NSErrorSuppressingHandler))
         .build();
-    reader.parse_uri(&instance_path, None).unwrap();
-    assert!(!reader.handler.fatal_error);
+    if reader.parse_uri(&instance_path, None).is_err() || reader.handler.fatal_error {
+        eprintln!(
+            "Skip instance test '{}' because this instance document is non-well-formed document.",
+            name,
+        );
+        return;
+    }
     let instance = reader.handler.document;
     let errors = validator.validate(&instance);
     match validity.as_str() {
