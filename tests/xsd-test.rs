@@ -1,12 +1,12 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use anyxml::{
     error::{XMLError, XMLErrorDomain},
     sax::{
-        DefaultSAXHandler, EntityResolver, ErrorHandler, InputSource, ParseError, SAXHandler,
-        XMLReader, error::SAXParseError,
+        Attributes, DefaultParserSpec, DefaultSAXHandler, EntityResolver, ErrorHandler,
+        InputSource, Locator, ParseError, SAXHandler, XMLReader, error::SAXParseError,
     },
-    tree::{Element, TreeBuildHandler},
+    tree::{Document, TreeBuildHandler},
     uri::{URIStr, URIString},
     xsd::XSDSchema,
 };
@@ -73,194 +73,237 @@ impl ErrorHandler for NSErrorSuppressingHandler {
     }
 }
 
-fn run_schema_test(base: &URIStr, element: Element, fail: &mut usize) -> Option<XSDSchema> {
-    let name = element.get_attribute("name", None).unwrap();
-    eprintln!("....... Start schema test: {name} .......");
-    // Although a test suite schema may contain multiple `schemaDocument` elements,
-    // the current API can only accept a single schema document, so only the first one is used.
-    let schema_document = element
-        .get_elements_by_expanded_name("schemaDocument", Some(XSTS_NAMESPACE))
-        .next()
-        .unwrap();
-    let href = schema_document
-        .get_attribute("href", Some(XLINK_NAMESPACE))
-        .unwrap();
-    let expected = element
-        .get_elements_by_expanded_name("expected", Some(XSTS_NAMESPACE))
-        .next()
-        .unwrap();
-    let validity = expected.get_attribute("validity", None).unwrap();
-    if !matches!(validity.as_str(), "valid" | "invalid") {
-        eprintln!(
-            "Skip schema test '{}' because validity is neither 'valid' nor 'invalid' (actual={})",
-            name, validity
-        );
-        return None;
-    }
-    let status = element
-        .get_elements_by_expanded_name("current", Some(XSTS_NAMESPACE))
-        .next()
-        .and_then(|current| current.get_attribute("status", None))
-        .unwrap_or_else(|| "accepted".into());
-    if !matches!(status.as_str(), "accepted" | "stable") {
-        eprintln!(
-            "Skip schema test '{}' because status is neither 'acepted' nor 'stable' (actual='{}')",
-            name, status
-        );
-        return None;
-    }
+struct XSTSWalker<'a> {
+    reader: XMLReader<DefaultParserSpec<'a>, TreeBuildHandler<NSErrorSuppressingHandler>>,
+    locator: Arc<Locator>,
 
-    let schema_path = base.resolve(&URIString::parse(&href).unwrap());
-    let mut reader = XMLReader::builder()
-        .set_handler(TreeBuildHandler::with_handler(NSErrorSuppressingHandler))
-        .build();
-    reader.parse_uri(&schema_path, None).unwrap();
-    assert!(!reader.handler.fatal_error);
-    let schema = reader.handler.document;
-    match XSDSchema::from_schema(&schema) {
-        Ok(validator) => {
-            if validity != "valid" {
-                eprintln!("Unexpected success to parse schema {}", schema_path);
-                *fail += 1;
-            }
-            Some(validator)
-        }
-        Err(err) => {
-            if validity != "invalid" {
-                eprintln!(
-                    "Unexpected fail to parse schema {} because {}",
-                    schema_path, err
-                );
-                *fail += 1;
-            }
-            None
+    schema: Option<XSDSchema>,
+    instance: Option<Document>,
+    validity: String,
+    status: String,
+
+    schema_test_case: usize,
+    schema_test_failure: usize,
+    instance_test_case: usize,
+    instance_test_failure: usize,
+}
+
+impl XSTSWalker<'_> {
+    fn new() -> Self {
+        Self {
+            reader: XMLReader::builder()
+                .set_handler(TreeBuildHandler::with_handler(NSErrorSuppressingHandler))
+                .build(),
+            locator: Arc::new(Locator::default()),
+            schema: None,
+            instance: None,
+            validity: String::new(),
+            status: String::new(),
+            schema_test_case: 0,
+            schema_test_failure: 0,
+            instance_test_case: 0,
+            instance_test_failure: 0,
         }
     }
 }
 
-fn run_instance_test(base: &URIStr, element: Element, validator: &XSDSchema, fail: &mut usize) {
-    let name = element.get_attribute("name", None).unwrap();
-    eprintln!("....... Start instance test: {name} .......");
-    // Although a test suite schema may contain multiple `schemaDocument` elements,
-    // the current API can only accept a single schema document, so only the first one is used.
-    let instance_document = element
-        .get_elements_by_expanded_name("instanceDocument", Some(XSTS_NAMESPACE))
-        .next()
-        .unwrap();
-    let href = instance_document
-        .get_attribute("href", Some(XLINK_NAMESPACE))
-        .unwrap();
-    let expected = element
-        .get_elements_by_expanded_name("expected", Some(XSTS_NAMESPACE))
-        .next()
-        .unwrap();
-    let validity = expected.get_attribute("validity", None).unwrap();
-    let status = element
-        .get_elements_by_expanded_name("current", Some(XSTS_NAMESPACE))
-        .next()
-        .and_then(|current| current.get_attribute("status", None))
-        .unwrap_or_else(|| "accepted".into());
-    if !matches!(status.as_str(), "accepted" | "stable") {
-        eprintln!(
-            "Skip instance test '{}' because status is neither 'acepted' nor 'stable' (actual='{}')",
-            name, status
-        );
-        return;
+impl ErrorHandler for XSTSWalker<'_> {}
+impl EntityResolver for XSTSWalker<'_> {}
+impl SAXHandler for XSTSWalker<'_> {
+    fn set_document_locator(&mut self, locator: Arc<Locator>) {
+        self.locator = locator;
+        self.schema = None;
+        self.instance = None;
+        self.schema_test_case = 0;
+        self.schema_test_failure = 0;
+        self.instance_test_case = 0;
+        self.instance_test_failure = 0;
     }
 
-    let instance_path = base.resolve(&URIString::parse(&href).unwrap());
-    let mut reader = XMLReader::builder()
-        .set_handler(TreeBuildHandler::with_handler(NSErrorSuppressingHandler))
-        .build();
-    if reader.parse_uri(&instance_path, None).is_err() || reader.handler.fatal_error {
-        eprintln!(
-            "Skip instance test '{}' because this instance document is non-well-formed document.",
-            name,
-        );
-        return;
-    }
-    let instance = reader.handler.document;
-    let errors = validator.validate(&instance);
-    match validity.as_str() {
-        "valid" => {
-            if !errors.is_empty() {
-                eprintln!("Unexpected fail to validate instance '{}'", instance_path);
-                eprintln!("    errors: {:?}", errors);
-                *fail += 1;
-            }
+    fn start_element(
+        &mut self,
+        namespace_name: Option<&str>,
+        local_name: Option<&str>,
+        _qname: &str,
+        atts: &Attributes,
+    ) {
+        if namespace_name != Some(XSTS_NAMESPACE) {
+            return;
         }
-        "invalid" => {
-            if errors.is_empty() {
+
+        match local_name {
+            Some("testSet") => {
+                let name = atts.get_value_by_qname("name").unwrap();
+                let contributer = atts.get_value_by_qname("contributer").unwrap_or("unknown");
+                eprintln!("=== Start testset: {name} ===");
+                eprintln!("===    path       : {} ===", self.locator.system_id());
+                eprintln!("===    contributer: {} ===", contributer);
+            }
+            Some("testGroup") => {
+                let name = atts.get_value_by_qname("name").unwrap();
+                eprintln!("----- Start test group: {name} -----");
+                self.schema = None;
+                self.instance = None;
+            }
+            Some("schemaTest") => {
+                let name = atts.get_value_by_qname("name").unwrap();
+                eprintln!("....... Start schema test: {name} .......");
+                // Since some test cases do not include `current`,
+                // I'll set it to “accepted” by default.
+                self.status = "accepted".into();
+            }
+            Some("schemaDocument") => {
+                let href = atts
+                    .get_value_by_expanded_name(Some(XLINK_NAMESPACE), "href")
+                    .unwrap();
+                let href = self
+                    .locator
+                    .system_id()
+                    .resolve(&URIString::parse(href).unwrap());
+                self.reader.parse_uri(&href, None).unwrap();
+                assert!(!self.reader.handler.fatal_error);
+                self.schema = XSDSchema::from_schema(&self.reader.handler.document).ok();
+            }
+            Some("instanceTest") => {
+                let name = atts.get_value_by_qname("name").unwrap();
+                eprintln!("....... Start instance test: {name} .......");
+                // Since some test cases do not include `current`,
+                // I'll set it to “accepted” by default.
+                self.status = "accepted".into();
+            }
+            Some("instanceDocument") => {
+                let href = atts
+                    .get_value_by_expanded_name(Some(XLINK_NAMESPACE), "href")
+                    .unwrap();
+                let href = self
+                    .locator
+                    .system_id()
+                    .resolve(&URIString::parse(href).unwrap());
+                // Since the instance documents are broken (and not even well-formed)
+                // in some test cases, I will enable skipping those tests.
+                self.instance = self
+                    .reader
+                    .parse_uri(&href, None)
+                    .ok()
+                    .filter(|_| !self.reader.handler.fatal_error)
+                    .map(|_| self.reader.handler.document.clone());
+            }
+            Some("expected") => {
+                self.validity = atts.get_value_by_qname("validity").unwrap().into();
+            }
+            Some("current") => {
+                self.status = atts.get_value_by_qname("status").unwrap().into();
+            }
+            _ => {}
+        }
+    }
+    fn end_element(
+        &mut self,
+        namespace_name: Option<&str>,
+        local_name: Option<&str>,
+        _qname: &str,
+    ) {
+        if namespace_name != Some(XSTS_NAMESPACE) {
+            return;
+        }
+
+        match local_name {
+            Some("testSet") => {
+                eprintln!("\nComplete:");
                 eprintln!(
-                    "Unexpected success to validate instance '{}'",
-                    instance_path
+                    "    schema test failure  : {:>4}/{}",
+                    self.schema_test_failure, self.schema_test_case
                 );
-                *fail += 1;
+                eprintln!(
+                    "    instance test failure: {:>4}/{}",
+                    self.instance_test_failure, self.instance_test_case
+                );
             }
+            Some("schemaTest") => {
+                if !matches!(self.validity.as_str(), "valid" | "invalid") {
+                    eprintln!(
+                        "Skip because validity is neither 'valid' nor 'invalid' (actual={})",
+                        self.validity
+                    );
+                    return;
+                }
+                if !matches!(self.status.as_str(), "accepted" | "stable") {
+                    eprintln!(
+                        "Skip because status is neither 'acepted' nor 'stable' (actual='{}')",
+                        self.status
+                    );
+                    return;
+                }
+
+                self.schema_test_case += 1;
+                if self.schema.is_some() && self.validity != "valid" {
+                    eprintln!("Unexpected success to parse schema");
+                    self.schema_test_failure += 1;
+                } else if self.schema.is_none() && self.validity != "invalid" {
+                    eprintln!("Unexpected fail to parse schema");
+                    self.schema_test_failure += 1;
+                }
+            }
+            Some("instanceTest") => {
+                if !matches!(self.status.as_str(), "accepted" | "stable") {
+                    eprintln!(
+                        "Skip because status is neither 'acepted' nor 'stable' (actual='{}')",
+                        self.status
+                    );
+                    return;
+                }
+                let Some(instance) = self.instance.as_ref() else {
+                    eprintln!("Skip because this instance document is non-well-formed document.");
+                    return;
+                };
+                let Some(schema) = self.schema.as_ref() else {
+                    eprintln!("Skip because the schema is not ready.");
+                    return;
+                };
+                self.instance_test_case += 1;
+                let errors = schema.validate(instance);
+                let instance_path = instance.document_base_uri();
+                match self.validity.as_str() {
+                    "valid" => {
+                        if !errors.is_empty() {
+                            eprintln!("Unexpected fail to validate instance '{}'", instance_path);
+                            eprintln!("    errors: {:?}", errors);
+                            self.instance_test_failure += 1;
+                        }
+                    }
+                    "invalid" => {
+                        if errors.is_empty() {
+                            eprintln!(
+                                "Unexpected success to validate instance '{}'",
+                                instance_path
+                            );
+                            self.instance_test_failure += 1;
+                        }
+                    }
+                    "implementation-defined" => {
+                        eprintln!(
+                            "Implementation defined result for '{}': errors: {:?}",
+                            instance_path, errors
+                        );
+                    }
+                    "implementation-dependent" => {
+                        eprintln!(
+                            "Implementation dependent result for '{}': errors: {:?}",
+                            instance_path, errors
+                        );
+                    }
+                    "indeterminate" => {
+                        eprintln!(
+                            "Indeterminate result for '{}': errors: {:?}",
+                            instance_path, errors
+                        );
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            _ => {}
         }
-        "implementation-defined" => {
-            eprintln!(
-                "Implementation defined result for '{}': errors: {:?}",
-                instance_path, errors
-            );
-        }
-        "implementation-dependent" => {
-            eprintln!(
-                "Implementation dependent result for '{}': errors: {:?}",
-                instance_path, errors
-            );
-        }
-        "indeterminate" => {
-            eprintln!(
-                "Indeterminate result for '{}': errors: {:?}",
-                instance_path, errors
-            );
-        }
-        _ => unreachable!(),
     }
-}
-
-fn test_set(path: &URIStr) -> usize {
-    let mut reader = XMLReader::builder()
-        .set_handler(TreeBuildHandler::with_handler(NSErrorSuppressingHandler))
-        .build();
-    reader.parse_uri(path, None).unwrap();
-    assert!(!reader.handler.fatal_error);
-
-    let testset = reader.handler.document;
-    let root = testset.document_element().unwrap();
-    let testset_name = root.get_attribute("name", None).unwrap();
-    let testset_contributor = root
-        .get_attribute("contributer", None)
-        .unwrap_or_else(|| "unknown".into());
-    eprintln!("=== Start testset: {testset_name} ===");
-    eprintln!("===    path       : {} ===", path);
-    eprintln!("===    contributer: {} ===", testset_contributor);
-
-    let mut fail = 0;
-    for test_group in testset.get_elements_by_expanded_name("testGroup", Some(XSTS_NAMESPACE)) {
-        let name = test_group.get_attribute("name", None).unwrap();
-        eprintln!("----- Start test group: {name} -----");
-        let Some(schema_test) = test_group
-            .get_elements_by_expanded_name("schemaTest", Some(XSTS_NAMESPACE))
-            .next()
-        else {
-            eprintln!("Skip because standalone (using xsi) validation is not supported.");
-            continue;
-        };
-
-        let Some(validator) = run_schema_test(path, schema_test, &mut fail) else {
-            continue;
-        };
-        let instance_test = test_group
-            .get_elements_by_expanded_name("instanceTest", Some(XSTS_NAMESPACE))
-            .collect::<Vec<_>>();
-        for instance_test in instance_test {
-            run_instance_test(path, instance_test, &validator, &mut fail);
-        }
-    }
-    eprintln!("\nComplete testset {testset_name}: fail={fail}\n");
-    fail
 }
 
 #[test]
@@ -276,13 +319,18 @@ fn test_suite() {
     assert!(!reader.handler.fatal_error);
 
     let suite = reader.handler.document;
+    let mut reader = XMLReader::builder().set_handler(XSTSWalker::new()).build();
+    let mut case = 0;
     let mut fail = 0;
     for testset_ref in suite.get_elements_by_expanded_name("testSetRef", Some(XSTS_NAMESPACE)) {
         let href = testset_ref
             .get_attribute("href", Some(XLINK_NAMESPACE))
             .unwrap();
         let href = base.resolve(&URIString::parse(&href).unwrap());
-        fail += test_set(&href);
+        reader.parse_uri(&href, None).unwrap();
+        case += reader.handler.schema_test_case + reader.handler.instance_test_case;
+        fail += reader.handler.schema_test_failure + reader.handler.instance_test_failure;
     }
+    eprintln!("\nComplete all test: case: {} failure: {}", case, fail);
     assert_eq!(fail, 0);
 }
