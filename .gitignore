@@ -1,3 +1,4 @@
+*.log
 /target
 /resources/xmlconf
 /resources/XSLT-testsuite-04

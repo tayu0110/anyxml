@@ -209,7 +209,8 @@ impl SAXHandler for XSTSWalker<'_> {
 
         match local_name {
             Some("testSet") => {
-                eprintln!("\nComplete:");
+                eprintln!();
+                eprintln!("Complete:");
                 eprintln!(
                     "    schema test failure  : {:>4}/{}",
                     self.schema_test_failure, self.schema_test_case
@@ -218,6 +219,7 @@ impl SAXHandler for XSTSWalker<'_> {
                     "    instance test failure: {:>4}/{}",
                     self.instance_test_failure, self.instance_test_case
                 );
+                eprintln!();
             }
             Some("schemaTest") => {
                 if !matches!(self.validity.as_str(), "valid" | "invalid") {
@@ -331,6 +333,6 @@ fn test_suite() {
         case += reader.handler.schema_test_case + reader.handler.instance_test_case;
         fail += reader.handler.schema_test_failure + reader.handler.instance_test_failure;
     }
-    eprintln!("\nComplete all test: case: {} failure: {}", case, fail);
+    eprintln!("Complete all test: case: {} failure: {}", case, fail);
     assert_eq!(fail, 0);
 }
