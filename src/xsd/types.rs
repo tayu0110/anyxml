@@ -11,6 +11,13 @@ use super::wildcard::{
     intersect_namespace_constraints, stricter_process_contents, union_namespace_constraints,
 };
 
+#[derive(Debug, Clone)]
+pub(super) enum ValueConstraint {
+    None,
+    Fixed(String),
+    Default(String),
+}
+
 /// An element declaration parsed from the schema.
 ///
 /// Represents either a top-level (global) element or a local element within
@@ -44,7 +51,7 @@ pub(crate) struct ElementDecl {
     pub(super) is_abstract: bool,
     /// Fixed value constraint: if set, the element's text content must exactly
     /// match this string (raw lexical comparison, no whitespace normalization).
-    pub(super) fixed: Option<String>,
+    pub(super) value_constraint: ValueConstraint,
     /// Identity constraints declared on this element.
     pub(super) identity_constraints: Vec<IdentityConstraint>,
 }

@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use crate::error::XMLError;
 use crate::tree::Element;
 use crate::xsd::XSDValidationError;
+use crate::xsd::types::ValueConstraint;
 
 use super::XML_SCHEMA_NAMESPACE;
 use super::types::{
@@ -81,27 +82,44 @@ pub(super) fn parse_element_decl(
     };
 
     let nillable = elem.get_attribute("nillable", None).as_deref() == Some("true");
-    let fixed = elem.get_attribute("fixed", None).map(|s| s.to_string());
+
+    let fixed = elem.get_attribute("fixed", None);
+    let default = elem.get_attribute("default", None);
+    let value_constraint = match (fixed, default) {
+        (Some(_), Some(_)) => {
+            // [src-element]
+            // 1 default and fixed must not both be present.
+            return Err(XMLError::XSDError(Box::new(XSDValidationError {
+                message: "'default' and 'fixed' must not both be present on the single element declaration.".into(),
+                line: None,
+                column: None,
+            })));
+        }
+        (Some(fixed), None) => ValueConstraint::Fixed(fixed),
+        (None, Some(default)) => ValueConstraint::Default(default),
+        (None, None) => ValueConstraint::None,
+    };
 
     // Parse block attribute (or use blockDefault)
-    let (block_ext, block_rst) = if let Some(block) = elem.get_attribute("block", None) {
-        let mut ext = false;
-        let mut rst = false;
-        for token in block.split_whitespace() {
-            match token {
-                "extension" => ext = true,
-                "restriction" => rst = true,
-                "#all" => {
-                    ext = true;
-                    rst = true;
+    let (block_extension, block_restriction) =
+        if let Some(block) = elem.get_attribute("block", None) {
+            let mut ext = false;
+            let mut rst = false;
+            for token in block.split_whitespace() {
+                match token {
+                    "extension" => ext = true,
+                    "restriction" => rst = true,
+                    "#all" => {
+                        ext = true;
+                        rst = true;
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
-        }
-        (ext, rst)
-    } else {
-        (block_default_ext, block_default_rst)
-    };
+            (ext, rst)
+        } else {
+            (block_default_ext, block_default_rst)
+        };
 
     let type_ref = if let Some(type_name) = elem.get_attribute("type", None) {
         resolve_type_name(&type_name, schema_target_ns)
@@ -137,12 +155,12 @@ pub(super) fn parse_element_decl(
         min_occurs,
         max_occurs,
         nillable,
-        block_extension: block_ext,
-        block_restriction: block_rst,
+        block_extension,
+        block_restriction,
         is_ref: false,
         substitution_group: parse_substitution_group(&elem, schema_target_ns),
         is_abstract: elem.get_attribute("abstract", None).as_deref() == Some("true"),
-        fixed,
+        value_constraint,
         identity_constraints: parse_identity_constraints(elem),
     })
 }
@@ -967,7 +985,7 @@ fn parse_particles(
                             is_ref: true,
                             substitution_group: None,
                             is_abstract: false,
-                            fixed: None,
+                            value_constraint: ValueConstraint::None,
                             identity_constraints: Vec::new(),
                         }),
                         min_occurs,
@@ -1137,7 +1155,7 @@ fn parse_attribute_decl(elem: Element) -> Result<AttributeDecl, XMLError> {
 ///   min/maxExclusive, totalDigits, fractionDigits, whiteSpace
 /// - Derived list types: NMTOKENS, IDREFS, ENTITIES
 pub(super) fn parse_simple_type(elem: Element) -> Result<TypeDef, XMLError> {
-    let name = elem.get_attribute("name", None).map(|s| s.to_string());
+    let name = elem.get_attribute("name", None);
     let mut base = BuiltInType::String;
     let mut facets = Vec::new();
     let mut is_list = false;

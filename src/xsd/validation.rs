@@ -123,7 +123,12 @@ impl XSDSchema {
                                 });
                                 return errors;
                             }
-                            self.validate_simple_content(elem, &st, &mut errors);
+                            self.validate_simple_content(
+                                elem,
+                                &st,
+                                &ValueConstraint::None,
+                                &mut errors,
+                            );
                         }
                     }
                     return errors;
@@ -766,7 +771,7 @@ impl XSDSchema {
                                 });
                                 return;
                             }
-                            self.validate_simple_content(node, &st, errors);
+                            self.validate_simple_content(node, &st, &decl.value_constraint, errors);
                         }
                     }
                 }
@@ -800,7 +805,7 @@ impl XSDSchema {
                         column: Some(0),
                     });
                 }
-                self.validate_simple_content(node.clone(), st, errors);
+                self.validate_simple_content(node.clone(), st, &decl.value_constraint, errors);
             }
             None => {
                 // If type can't be resolved, check if it's a built-in
@@ -834,13 +839,14 @@ impl XSDSchema {
         }
 
         // Check fixed-value constraint (raw lexical comparison, no whitespace normalization)
-        if let Some(ref fixed_value) = decl.fixed {
+        if let ValueConstraint::Fixed(fixed) = &decl.value_constraint {
             let text = node.text_content();
-            if !text.is_empty() && text != *fixed_value {
+            // [cvc-elt] clause 5
+            if !text.is_empty() && text != *fixed {
                 errors.push(XSDValidationError {
                     message: format!(
                         "Element '{}' has fixed value '{}' but content is '{}'",
-                        decl.name, fixed_value, text
+                        decl.name, fixed, text
                     ),
                     line: Some(0),
                     column: Some(0),
@@ -1210,7 +1216,12 @@ impl XSDSchema {
                         if let Some(type_def) = self.types.get(&key) {
                             match type_def {
                                 TypeDef::Simple(st) => {
-                                    self.validate_simple_content(node, st, errors);
+                                    self.validate_simple_content(
+                                        node,
+                                        st,
+                                        &ValueConstraint::None,
+                                        errors,
+                                    );
                                 }
                                 TypeDef::Complex(_) => {
                                     // Complex base type for simpleContent — text validated against
@@ -1221,7 +1232,7 @@ impl XSDSchema {
                     }
                     TypeRef::Inline(inner_type_def) => {
                         if let TypeDef::Simple(st) = inner_type_def.as_ref() {
-                            self.validate_simple_content(node, st, errors);
+                            self.validate_simple_content(node, st, &ValueConstraint::None, errors);
                         }
                     }
                 }
@@ -1880,16 +1891,47 @@ impl XSDSchema {
         &self,
         node: Element,
         st: &SimpleTypeDef,
+        constraint: &ValueConstraint,
         errors: &mut Vec<XSDValidationError>,
     ) {
-        let raw_text = node.text_content();
+        let mut raw_text = node.text_content();
+        // If the text content is empty and a default value is provided,
+        // the default value is validated instead.
+        if raw_text.is_empty()
+            && let ValueConstraint::Default(value) | ValueConstraint::Fixed(value) = &constraint
+        {
+            raw_text = value.clone();
+        }
+
         // Apply XSD whiteSpace normalization before any validation.
         let ws_mode = whitespace_for_type(&st.base);
         let text = apply_whitespace_normalization(&raw_text, &ws_mode);
 
+        // [cvc-elt] clause 5.2.2.2.2
+        if let ValueConstraint::Fixed(fixed) = &constraint {
+            let fixed = apply_whitespace_normalization(fixed, &ws_mode);
+            // Strictly speaking, the actual values need to be compared,
+            // so a simple string comparison is insufficient; however,
+            // implementation will be put on hold for now.
+            if text != fixed {
+                errors.push(XSDValidationError {
+                    message: format!(
+                        "The fixed value is '{}', but the element text contenxt is '{}'.",
+                        fixed, text
+                    ),
+                    line: None,
+                    column: None,
+                });
+            }
+            //
+            return;
+        }
+
         if st.is_list {
             // List type: value is whitespace-separated items
-            let items: Vec<&str> = text.split_whitespace().collect();
+            let items = text
+                .split(|c| XMLVersion::XML10.is_whitespace(c))
+                .collect::<Vec<_>>();
 
             // Validate each item against the item type
             if let Some(ref item_bt) = st.item_type {
