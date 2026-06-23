@@ -64,18 +64,84 @@ impl XSDSchema {
             }
         };
 
+        // In accordance with Chapter 5.2 of XSD Part 1, validation begins.
+        // In this method, the type definitions (clause 1) and element declarations (clause 2)
+        // specified by the user or application are disregarded; instead, validation begins,
+        // in accordance with clause 3, using either the element declaration identified by the
+        // element name or the type definition referenced by the `xsi:type` attribute value.
+        // In particular, since the `xsi:type` attribute is considered to be specified for the
+        // purpose of overriding the element declaration identified from the element name, it
+        // is given priority as long as it can identify a type definition.
+
+        if let Some(xsi_type_ref) = self.resolve_xsi_type(elem.clone()) {
+            match xsi_type_ref {
+                XsiTypeResult::BuiltIn(bt) => {
+                    // NOTATION cannot be used as the {type definition} of an element
+                    if bt == BuiltInType::NOTATION {
+                        errors.push(XSDValidationError {
+                            message: "xs:NOTATION cannot be used as the type of an element"
+                                .to_string(),
+                            line: Some(0),
+                            column: Some(0),
+                        });
+                        return errors;
+                    }
+                    if bt == BuiltInType::AnyType {
+                        self.validate_children_against_global_decls(elem, &mut errors);
+                    } else {
+                        // Simple built-in type: element must not have child elements
+                        if self.element_has_child_elements(elem.clone()) {
+                            errors.push(XSDValidationError {
+                                message: format!(
+                                    "Element with xsi:type '{}' must not have child elements",
+                                    self.builtin_type_name(&bt)
+                                ),
+                                line: Some(0),
+                                column: Some(0),
+                            });
+                            return errors;
+                        }
+                        let text = elem.text_content();
+                        validate_builtin_value(&text, &bt, elem, &mut errors);
+                    }
+                    return errors;
+                }
+                XsiTypeResult::Named(td) => {
+                    match *td {
+                        TypeDef::Complex(ct) => {
+                            self.validate_complex_content(elem, &ct, &mut errors);
+                        }
+                        TypeDef::Simple(st) => {
+                            // Simple type: element must not have child elements
+                            if self.element_has_child_elements(elem.clone()) {
+                                errors.push(XSDValidationError {
+                                    message:
+                                        "Element with simple xsi:type must not have child elements"
+                                            .to_string(),
+                                    line: Some(0),
+                                    column: Some(0),
+                                });
+                                return errors;
+                            }
+                            self.validate_simple_content(elem, &st, &mut errors);
+                        }
+                    }
+                    return errors;
+                }
+                XsiTypeResult::NotFound(_type_name) => {
+                    // Since verification via element declarations is the fallback, nothing
+                    // is done here.
+                    // It might be appropriate to issue a warning, but ignore it for now.
+                }
+            }
+        }
+
         // Find matching top-level element declaration
         let key_with_ns = (
             elem.namespace_name().as_deref().map(|s| s.to_string()),
             elem.local_name().to_string(),
         );
-        let key_no_ns = (None, elem.local_name().to_string());
-
-        let decl = self
-            .elements
-            .get(&key_with_ns)
-            .or_else(|| self.elements.get(&key_no_ns));
-
+        let decl = self.elements.get(&key_with_ns);
         match decl {
             Some(decl) => {
                 self.validate_element(elem, decl, &mut errors);
@@ -158,17 +224,8 @@ impl XSDSchema {
     /// Returns `None` if no `xsi:type` is present.
     fn resolve_xsi_type(&self, elem: Element) -> Option<XsiTypeResult> {
         // Look for xsi:type attribute
-        let xsi_type_value = elem
-            .get_attribute("type", Some(XML_SCHEMA_INSTANCE_NAMESPACE))
-            .or_else(|| {
-                // Also try by prefix match for elements where namespace resolution
-                // hasn't been applied to attributes
-                elem.attributes()
-                    .find(|a| {
-                        a.local_name().as_ref() == "type" && a.prefix().as_deref() == Some("xsi")
-                    })
-                    .map(|a| a.value())
-            })?;
+        let xsi_type_value = elem.get_attribute("type", Some(XML_SCHEMA_INSTANCE_NAMESPACE))?;
+        let xsi_type_value = xsi_type_value.trim_matches(|c| XMLVersion::XML10.is_whitespace(c));
 
         // Parse the QName value (may be prefixed like "xs:int")
         let (prefix, local_name) = if let Some(colon_pos) = xsi_type_value.find(':') {
@@ -177,7 +234,7 @@ impl XSDSchema {
                 &xsi_type_value[colon_pos + 1..],
             )
         } else {
-            (None, xsi_type_value.as_str())
+            (None, xsi_type_value)
         };
 
         // Resolve prefix to namespace URI
@@ -202,11 +259,6 @@ impl XSDSchema {
         // Try looking up in schema types
         let key = (type_ns.clone(), local_name.to_string());
         if let Some(td) = self.types.get(&key) {
-            return Some(XsiTypeResult::Named(Box::new(td.clone())));
-        }
-        // Also try without namespace
-        let key_no_ns = (None, local_name.to_string());
-        if let Some(td) = self.types.get(&key_no_ns) {
             return Some(XsiTypeResult::Named(Box::new(td.clone())));
         }
 
@@ -653,7 +705,6 @@ impl XSDSchema {
                         let text = node.text_content();
                         validate_builtin_value(&text, &bt, node, errors);
                     }
-                    return;
                 }
                 XsiTypeResult::Named(td) => {
                     // Check that xsi:type is the declared type or derived from it
@@ -718,7 +769,6 @@ impl XSDSchema {
                             self.validate_simple_content(node, &st, errors);
                         }
                     }
-                    return;
                 }
                 XsiTypeResult::NotFound(type_name) => {
                     errors.push(XSDValidationError {
@@ -726,9 +776,9 @@ impl XSDSchema {
                         line: Some(0),
                         column: Some(0),
                     });
-                    return;
                 }
             }
+            return;
         }
 
         let type_def = self.resolve_type(&decl.type_ref);
@@ -842,12 +892,8 @@ impl XSDSchema {
                     .map(|s| s.to_string()),
                 child_elem.local_name().to_string(),
             );
-            let key_no_ns = (None, child_elem.local_name().to_string());
 
-            let child_decl = self
-                .elements
-                .get(&key_with_ns)
-                .or_else(|| self.elements.get(&key_no_ns));
+            let child_decl = self.elements.get(&key_with_ns);
 
             if let Some(decl) = child_decl {
                 self.validate_element(child_elem, decl, errors);

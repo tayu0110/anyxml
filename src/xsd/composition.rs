@@ -129,9 +129,7 @@ pub(super) fn process_schema_composition(
     let mut children = schema_elem.first_element_child();
     while let Some(elem) = children {
         children = elem.next_element_sibling();
-        let is_xs = elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
-            || elem.prefix().as_deref() == Some("xs")
-            || elem.prefix().as_deref() == Some("xsd");
+        let is_xs = elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
         if !is_xs {
             continue;
         }
@@ -407,9 +405,7 @@ fn process_redefine_children(
     let mut children = redefine_node.first_element_child();
     while let Some(child_elem) = children {
         children = child_elem.next_element_sibling();
-        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
-            || child_elem.prefix().as_deref() == Some("xs")
-            || child_elem.prefix().as_deref() == Some("xsd");
+        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
         if !is_xs {
             continue;
         }

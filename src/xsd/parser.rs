@@ -111,9 +111,7 @@ pub(super) fn parse_element_decl(
         let mut children = elem.first_element_child();
         while let Some(child_elem) = children {
             children = child_elem.next_element_sibling();
-            let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
-                || child_elem.prefix().as_deref() == Some("xs")
-                || child_elem.prefix().as_deref() == Some("xsd");
+            let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
             if is_xs && child_elem.local_name().as_ref() == "complexType" {
                 inline_type = TypeRef::Inline(Box::new(parse_complex_type(
                     child_elem.clone(),
@@ -158,9 +156,7 @@ fn parse_identity_constraints(elem_node: Element) -> Vec<IdentityConstraint> {
     let mut children = elem_node.first_element_child();
     while let Some(child_elem) = children {
         children = child_elem.next_element_sibling();
-        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
-            || child_elem.prefix().as_deref() == Some("xs")
-            || child_elem.prefix().as_deref() == Some("xsd");
+        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
         if !is_xs {
             continue;
         }
@@ -186,9 +182,7 @@ fn parse_identity_constraints(elem_node: Element) -> Vec<IdentityConstraint> {
         let mut grand_children = child_elem.first_element_child();
         while let Some(gc_elem) = grand_children {
             grand_children = gc_elem.next_element_sibling();
-            let gc_is_xs = gc_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
-                || gc_elem.prefix().as_deref() == Some("xs")
-                || gc_elem.prefix().as_deref() == Some("xsd");
+            let gc_is_xs = gc_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
             if !gc_is_xs {
                 continue;
             }
@@ -388,9 +382,7 @@ pub(super) fn parse_complex_type(
     let mut children = elem.first_element_child();
     while let Some(child_elem) = children {
         children = child_elem.next_element_sibling();
-        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
-            || child_elem.prefix().as_deref() == Some("xs")
-            || child_elem.prefix().as_deref() == Some("xsd");
+        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
 
         if !is_xs {
             continue;
@@ -506,10 +498,8 @@ pub(super) fn parse_complex_type(
                 while let Some(gc_elem) = grandchildren {
                     grandchildren = gc_elem.next_element_sibling();
 
-                    let gc_is_xs = gc_elem.namespace_name().as_deref()
-                        == Some(XML_SCHEMA_NAMESPACE)
-                        || gc_elem.prefix().as_deref() == Some("xs")
-                        || gc_elem.prefix().as_deref() == Some("xsd");
+                    let gc_is_xs =
+                        gc_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
                     if !gc_is_xs {
                         continue;
                     }
@@ -533,9 +523,7 @@ pub(super) fn parse_complex_type(
                             while let Some(gc_child_elem) = gc_children {
                                 gc_children = gc_child_elem.next_element_sibling();
                                 let gcce_is_xs = gc_child_elem.namespace_name().as_deref()
-                                    == Some(XML_SCHEMA_NAMESPACE)
-                                    || gc_child_elem.prefix().as_deref() == Some("xs")
-                                    || gc_child_elem.prefix().as_deref() == Some("xsd");
+                                    == Some(XML_SCHEMA_NAMESPACE);
                                 if !gcce_is_xs {
                                     continue;
                                 }
@@ -723,9 +711,7 @@ pub(super) fn parse_attribute_group_def(
     while let Some(child_elem) = children {
         children = child_elem.next_element_sibling();
 
-        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
-            || child_elem.prefix().as_deref() == Some("xs")
-            || child_elem.prefix().as_deref() == Some("xsd");
+        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
         if !is_xs {
             continue;
         }
@@ -815,9 +801,7 @@ pub(super) fn parse_model_group_def(
     let mut children = node.first_element_child();
     while let Some(child_elem) = children {
         children = child_elem.next_element_sibling();
-        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
-            || child_elem.prefix().as_deref() == Some("xs")
-            || child_elem.prefix().as_deref() == Some("xsd");
+        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
         if !is_xs {
             continue;
         }
@@ -941,9 +925,7 @@ fn parse_particles(
     let mut children = node.first_element_child();
     while let Some(child_elem) = children {
         children = child_elem.next_element_sibling();
-        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
-            || child_elem.prefix().as_deref() == Some("xs")
-            || child_elem.prefix().as_deref() == Some("xsd");
+        let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
 
         if !is_xs {
             continue;
@@ -1123,9 +1105,7 @@ fn parse_attribute_decl(elem: Element) -> Result<AttributeDecl, XMLError> {
         let mut children = elem.first_element_child();
         while let Some(child_elem) = children {
             children = child_elem.next_element_sibling();
-            let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE)
-                || child_elem.prefix().as_deref() == Some("xs")
-                || child_elem.prefix().as_deref() == Some("xsd");
+            let is_xs = child_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
             if is_xs && child_elem.local_name().as_ref() == "simpleType" {
                 found_inline = Some(TypeRef::Inline(Box::new(parse_simple_type(child_elem)?)));
                 break;
@@ -1230,10 +1210,8 @@ pub(super) fn parse_simple_type(elem: Element) -> Result<TypeDef, XMLError> {
                 let mut inner_children = child_elem.first_element_child();
                 while let Some(inner_elem) = inner_children {
                     inner_children = inner_elem.next_element_sibling();
-                    let inner_is_xs = inner_elem.namespace_name().as_deref()
-                        == Some(XML_SCHEMA_NAMESPACE)
-                        || inner_elem.prefix().as_deref() == Some("xs")
-                        || inner_elem.prefix().as_deref() == Some("xsd");
+                    let inner_is_xs =
+                        inner_elem.namespace_name().as_deref() == Some(XML_SCHEMA_NAMESPACE);
                     if inner_is_xs && inner_elem.local_name().as_ref() == "simpleType" {
                         if let Ok(TypeDef::Simple(inner_st)) = parse_simple_type(inner_elem) {
                             base = inner_st.base;
