@@ -836,7 +836,7 @@ impl XSDSchema {
         // Check fixed-value constraint (raw lexical comparison, no whitespace normalization)
         if let Some(ref fixed_value) = decl.fixed {
             let text = node.text_content();
-            if text != *fixed_value {
+            if !text.is_empty() && text != *fixed_value {
                 errors.push(XSDValidationError {
                     message: format!(
                         "Element '{}' has fixed value '{}' but content is '{}'",
