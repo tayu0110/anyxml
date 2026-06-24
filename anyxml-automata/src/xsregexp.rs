@@ -1008,6 +1008,62 @@ mod tests {
     }
 
     #[test]
+    fn wildcard_tests() {
+        let re = XSRegexp::compile(".").unwrap();
+        assert!(re.is_match("a"));
+        assert!(re.is_match(" "));
+
+        let re = XSRegexp::compile("(.*)").unwrap();
+        assert!(re.is_match(r#"abc\\nsfc"#));
+
+        let re = XSRegexp::compile("...E..").unwrap();
+        assert!(re.is_match("1.0E-2"), "{re:?}");
+
+        let re = XSRegexp::compile(".x").unwrap();
+        assert!(re.is_match(" x"));
+        assert!(re.is_match("ax"));
+        assert!(re.is_match("-x"));
+        assert!(re.is_match("$x"));
+        assert!(re.is_match("#x"));
+        assert!(re.is_match("\u{8b}x"));
+
+        let re = XSRegexp::compile(".*abc.*").unwrap();
+        assert!(re.is_match("1x2abc"));
+        assert!(re.is_match("abc1x2"));
+        assert!(re.is_match("z3455abch00ray"));
+        assert!(re.is_match("bcabcabcab"));
+
+        let re = XSRegexp::compile("(([a-d]*)|(.*))").unwrap();
+        assert!(re.is_match("aaabbbcccdddeeefff"));
+
+        let re = XSRegexp::compile("(([d-f]*)|(.*))").unwrap();
+        assert!(re.is_match("dddeeeccceee"));
+    }
+
+    #[test]
+    fn charclass_tests() {
+        let re = XSRegexp::compile("[0-2][0-9]:[0-5][0-9]:[0-5][0-9].[0-9][0-9][0-9]").unwrap();
+        assert!(re.is_match("12:54:00.000"));
+
+        let re = XSRegexp::compile("[0-9]{0,2}.[0-9]{0,2}").unwrap();
+        assert!(re.is_match("5.55"));
+    }
+
+    #[test]
+    fn special_character_escaping_tests() {
+        let re = XSRegexp::compile(
+            r#"\\\\.,\\\\s,\\\\S,\\\\i,\\\\I,\\\\c,\\\\C,\\\\d,\\\\D,\\\\w,\\\\W"#,
+        )
+        .unwrap();
+        assert!(re.is_match(r#"\\.,\\s,\\S,\\i,\\I,\\c,\\C,\\d,\\D,\\w,\\W"#));
+
+        let re = XSRegexp::compile(r#"\\\\.*,\\\\s*,\\\\S*,\\\\i*,\\\\I?,\\\\c+,\\\\C+,\\\\d{0,3},\\\\D{1,1000},\\\\w*,\\\\W+"#).unwrap();
+        assert!(re.is_match(
+            r#"\\.abcd,\\sssss,\\SSSSSS,\\iiiiiii,\\,\\c,\\CCCCCC,\\ddd,\\D,\\wwwwwww,\\WWW"#
+        ));
+    }
+
+    #[test]
     fn xsts_regression() {
         let re =
             XSRegexp::compile("([a-zA-Z]{2}|[iI]-[a-zA-Z]+|[xX]-[a-zA-Z]{1,8})(-[a-zA-Z]{3})*")

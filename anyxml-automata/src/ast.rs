@@ -75,6 +75,18 @@ impl<A: Atom> ASTNode<A> {
                 s = next;
             }
         }
+        if s != A::MAX {
+            let alt = ASTNode::Charcters {
+                start: s,
+                end: A::MAX,
+                negation: false,
+            };
+            if let Some(left) = ret {
+                ret = Some(ASTNode::Alternation(Box::new(left), Box::new(alt)));
+            } else {
+                ret = Some(alt);
+            }
+        }
         ret
     }
 
