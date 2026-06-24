@@ -6,7 +6,7 @@
 
 use std::cmp::Ordering;
 
-use crate::{automata::xsregexp::XSRegexp, tree::Element};
+use crate::{XMLVersion, automata::xsregexp::XSRegexp, tree::Element};
 
 use super::{
     datetime::{
@@ -18,55 +18,6 @@ use super::{
     error::XSDValidationError,
     types::{BuiltInType, Facet, WhiteSpaceHandling},
 };
-
-/// Check if a string is a valid NCName (non-colonized name).
-pub(crate) fn is_valid_ncname(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-    let first = s.chars().next().unwrap();
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        return false;
-    }
-    s.chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
-}
-
-/// Check if a string is a valid XML Name (allows colons, unlike NCName).
-/// NameStartChar = letter | '_' | ':'
-/// NameChar = NameStartChar | digit | '.' | '-'
-/// Covers MS tests: Name001/004/005/006/014/017/018
-fn is_valid_xml_name(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-    let first = s.chars().next().unwrap();
-    if !(first.is_ascii_alphabetic() || first == '_' || first == ':') {
-        return false;
-    }
-    s.chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ':'))
-}
-
-/// Check if a string is a valid QName (prefix:localname or just localname).
-/// Both prefix and localname must be valid NCNames.
-/// Covers MS tests: QName001/004/005/007/008/010/011
-fn is_valid_qname(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-    if let Some(colon_pos) = s.find(':') {
-        // Must have exactly one colon
-        if s[colon_pos + 1..].contains(':') {
-            return false;
-        }
-        let prefix = &s[..colon_pos];
-        let local = &s[colon_pos + 1..];
-        is_valid_ncname(prefix) && is_valid_ncname(local)
-    } else {
-        is_valid_ncname(s)
-    }
-}
 
 /// Determine the whiteSpace normalization mode for a built-in type.
 /// Per XSD Part 2: string→preserve, normalizedString→replace,
@@ -457,7 +408,7 @@ pub(crate) fn validate_builtin_value(
         }
         BuiltInType::NCName | BuiltInType::ID | BuiltInType::IDREF => {
             let v = text.trim();
-            if !is_valid_ncname(v) {
+            if !XMLVersion::XML10.validate_ncname(v) {
                 errors.push(XSDValidationError {
                     message: format!("'{}' is not a valid NCName/ID/IDREF", text),
                     line: Some(0),
@@ -541,7 +492,7 @@ pub(crate) fn validate_builtin_value(
                 });
             } else {
                 for token in v.split_whitespace() {
-                    if !is_valid_ncname(token) {
+                    if !XMLVersion::XML10.validate_ncname(token) {
                         errors.push(XSDValidationError {
                             message: format!("'{}' is not a valid IDREF in IDREFS", token),
                             line: Some(0),
@@ -553,7 +504,7 @@ pub(crate) fn validate_builtin_value(
         }
         BuiltInType::NOTATION => {
             let v = text.trim();
-            if !is_valid_ncname(v) {
+            if !XMLVersion::XML10.validate_ncname(v) {
                 errors.push(XSDValidationError {
                     message: format!("'{}' is not a valid NOTATION value", text),
                     line: Some(0),
@@ -563,7 +514,7 @@ pub(crate) fn validate_builtin_value(
         }
         BuiltInType::ENTITY => {
             let v = text.trim();
-            if !is_valid_ncname(v) {
+            if !XMLVersion::XML10.validate_ncname(v) {
                 errors.push(XSDValidationError {
                     message: format!("'{}' is not a valid ENTITY value", text),
                     line: Some(0),
@@ -581,7 +532,7 @@ pub(crate) fn validate_builtin_value(
                 });
             } else {
                 for token in v.split_whitespace() {
-                    if !is_valid_ncname(token) {
+                    if !XMLVersion::XML10.validate_ncname(token) {
                         errors.push(XSDValidationError {
                             message: format!("'{}' is not a valid ENTITY in ENTITIES", token),
                             line: Some(0),
@@ -654,7 +605,7 @@ pub(crate) fn validate_builtin_value(
         // MS tests: Name001/004/005/006/014/017/018
         BuiltInType::Name => {
             let v = text.trim();
-            if !is_valid_xml_name(v) {
+            if !XMLVersion::XML10.validate_name(v) {
                 errors.push(XSDValidationError {
                     message: format!("'{}' is not a valid Name", text),
                     line: Some(0),
@@ -666,7 +617,7 @@ pub(crate) fn validate_builtin_value(
         // Note: NOTATION is handled above (validates as NCName, not full QName).
         BuiltInType::QName => {
             let v = text.trim();
-            if !is_valid_qname(v) {
+            if !XMLVersion::XML10.validate_qname(v) {
                 errors.push(XSDValidationError {
                     message: format!("'{}' is not a valid QName", text),
                     line: Some(0),
@@ -944,8 +895,8 @@ pub(crate) fn validate_facet(
             {
                 errors.push(XSDValidationError {
                     message: format!("Value '{}' does not match pattern '{}'", text, pattern),
-                    line: Some(0),
-                    column: Some(0),
+                    line: None,
+                    column: None,
                 });
             }
             // If the pattern fails to compile, we silently accept
