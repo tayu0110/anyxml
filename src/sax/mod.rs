@@ -187,8 +187,8 @@ use crate::{
 };
 
 pub use attributes::{Attribute, Attributes};
-pub use contentspec::ContentSpec;
-pub(crate) use contentspec::{ElementContent, ElementContentStateID};
+pub(crate) use contentspec::ElementContentStateID;
+pub use contentspec::{ContentSpec, ContentSpecValidationContext, ElementContent};
 pub use handler::{DebugHandler, DefaultSAXHandler, EntityResolver, ErrorHandler, SAXHandler};
 pub use parser::{
     DefaultParserSpec, ParserConfig, ParserOption, ParserSpec, ProgressiveParserSpec,
