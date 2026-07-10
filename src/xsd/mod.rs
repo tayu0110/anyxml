@@ -5,6 +5,7 @@ mod decimal;
 mod error;
 mod facet_resolution;
 mod identity;
+mod parse;
 mod parser;
 #[cfg(test)]
 mod tests;

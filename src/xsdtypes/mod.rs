@@ -11,7 +11,7 @@ use std::{borrow::Cow, num::NonZeroUsize, sync::Arc};
 
 use crate::{
     XMLVersion, automata::xsregexp::XSRegexp, base64::Base64Binary, datetime::*,
-    sax::NamespaceStack, uri::URIString,
+    sax::NamespaceStack, tree::Element, uri::URIString,
 };
 
 pub use builtin::*;
@@ -455,6 +455,32 @@ impl SimpleTypeDefinition {
             Self::UserDefined(user) => user.parse(value, namespaces),
         }
     }
+
+    pub fn parse_with_elem(
+        &self,
+        value: &str,
+        element: Element,
+    ) -> Result<SchemaValue, ParseError> {
+        match self {
+            Self::AnySimpleType => Err(ParseError::AnySimpleType),
+            Self::BuiltinPrimitive(prim) => prim.parse_with_elem(value, element),
+            Self::BuiltinDerived(deriv) => deriv.parse_with_elem(value, element),
+            Self::UserDefined(user) => user.parse_with_elem(value, element),
+        }
+    }
+
+    pub fn parse_internal(
+        &self,
+        value: &str,
+        resolver: &impl Fn(Option<&str>) -> Option<Arc<str>>,
+    ) -> Result<SchemaValue, ParseError> {
+        match self {
+            Self::AnySimpleType => Err(ParseError::AnySimpleType),
+            Self::BuiltinPrimitive(prim) => prim.parse_internal(value, resolver),
+            Self::BuiltinDerived(deriv) => deriv.parse_internal(value, resolver),
+            Self::UserDefined(user) => user.parse_internal(value, resolver),
+        }
+    }
 }
 
 /// # Note
@@ -811,6 +837,27 @@ impl BuiltinPrimitiveType {
         value: &str,
         namespaces: &NamespaceStack,
     ) -> Result<SchemaValue, ParseError> {
+        self.parse_internal(value, |prefix: Option<&str>| {
+            namespaces
+                .get(prefix.unwrap_or_default())
+                .map(|ns| ns.namespace_name.clone())
+        })
+    }
+
+    /// Parse `value` as the value of this type.
+    fn parse_with_elem(&self, value: &str, element: Element) -> Result<SchemaValue, ParseError> {
+        self.parse_internal(value, |prefix: Option<&str>| {
+            element
+                .search_namespace_by_prefix(prefix)
+                .map(|ns| ns.namespace_name().as_ref().into())
+        })
+    }
+
+    fn parse_internal(
+        &self,
+        value: &str,
+        resolver: impl Fn(Option<&str>) -> Option<Arc<str>>,
+    ) -> Result<SchemaValue, ParseError> {
         let collapsed = value.trim_matches(|c| XMLVersion::default().is_whitespace(c));
         match self {
             Self::String => Ok(SchemaValue::String(value.into())),
@@ -948,19 +995,13 @@ impl BuiltinPrimitiveType {
                     return Err(ParseError::QName);
                 }
                 if let Some((prefix, local)) = collapsed.split_once(':') {
-                    if let Some(namespace) = namespaces.get(prefix) {
-                        Ok(SchemaValue::QName(
-                            Some(namespace.namespace_name),
-                            local.into(),
-                        ))
+                    if let Some(namespace) = resolver(Some(prefix)) {
+                        Ok(SchemaValue::QName(Some(namespace), local.into()))
                     } else {
                         Err(ParseError::QName)
                     }
-                } else if let Some(namespace) = namespaces.get("") {
-                    Ok(SchemaValue::QName(
-                        Some(namespace.namespace_name),
-                        collapsed.into(),
-                    ))
+                } else if let Some(namespace) = resolver(None) {
+                    Ok(SchemaValue::QName(Some(namespace), collapsed.into()))
                 } else {
                     Ok(SchemaValue::QName(None, collapsed.into()))
                 }
@@ -970,19 +1011,13 @@ impl BuiltinPrimitiveType {
                     return Err(ParseError::NOTATION);
                 }
                 if let Some((prefix, local)) = collapsed.split_once(':') {
-                    if let Some(namespace) = namespaces.get(prefix) {
-                        Ok(SchemaValue::NOTATION(
-                            Some(namespace.namespace_name),
-                            local.into(),
-                        ))
+                    if let Some(namespace) = resolver(Some(prefix)) {
+                        Ok(SchemaValue::NOTATION(Some(namespace), local.into()))
                     } else {
                         Err(ParseError::NOTATION)
                     }
-                } else if let Some(namespace) = namespaces.get("") {
-                    Ok(SchemaValue::NOTATION(
-                        Some(namespace.namespace_name),
-                        collapsed.into(),
-                    ))
+                } else if let Some(namespace) = resolver(None) {
+                    Ok(SchemaValue::NOTATION(Some(namespace), collapsed.into()))
                 } else {
                     Ok(SchemaValue::NOTATION(None, collapsed.into()))
                 }
@@ -1447,7 +1482,27 @@ impl BuiltinDerivedType {
     pub fn parse(
         &self,
         value: &str,
-        _namespaces: &NamespaceStack,
+        namespaces: &NamespaceStack,
+    ) -> Result<SchemaValue, ParseError> {
+        self.parse_internal(value, &|prefix: Option<&str>| {
+            namespaces
+                .get(prefix.unwrap_or_default())
+                .map(|ns| ns.namespace_name.clone())
+        })
+    }
+
+    fn parse_with_elem(&self, value: &str, element: Element) -> Result<SchemaValue, ParseError> {
+        self.parse_internal(value, &|prefix: Option<&str>| {
+            element
+                .search_namespace_by_prefix(prefix)
+                .map(|ns| ns.namespace_name().as_ref().into())
+        })
+    }
+
+    fn parse_internal(
+        &self,
+        value: &str,
+        _resolver: &impl Fn(Option<&str>) -> Option<Arc<str>>,
     ) -> Result<SchemaValue, ParseError> {
         let collapsed = value.trim_matches(|c| XMLVersion::default().is_whitespace(c));
         match self {
@@ -1491,7 +1546,7 @@ impl BuiltinDerivedType {
             Self::NMTOKENS => Ok(SchemaValue::List(
                 value
                     .split('\x20')
-                    .map(|s| Self::NMTOKEN.parse(s, _namespaces))
+                    .map(|s| Self::NMTOKEN.parse_internal(s, _resolver))
                     .collect::<Result<Vec<_>, ParseError>>()?
                     .into(),
             )),
@@ -1526,7 +1581,7 @@ impl BuiltinDerivedType {
             Self::IDREFS => Ok(SchemaValue::List(
                 value
                     .split('\x20')
-                    .map(|s| Self::IDREF.parse(s, _namespaces))
+                    .map(|s| Self::IDREF.parse_internal(s, _resolver))
                     .collect::<Result<Vec<_>, ParseError>>()?
                     .into(),
             )),
@@ -1540,7 +1595,7 @@ impl BuiltinDerivedType {
             Self::ENTITIES => Ok(SchemaValue::List(
                 value
                     .split('\x20')
-                    .map(|s| Self::ENTITY.parse(s, _namespaces))
+                    .map(|s| Self::ENTITY.parse_internal(s, _resolver))
                     .collect::<Result<Vec<_>, ParseError>>()?
                     .into(),
             )),
@@ -2062,8 +2117,28 @@ impl UserDefinedType {
     /// Parse `value` as the value of this type.
     pub fn parse(
         &self,
-        literal: &str,
+        value: &str,
         namespaces: &NamespaceStack,
+    ) -> Result<SchemaValue, ParseError> {
+        self.parse_internal(value, &|prefix: Option<&str>| {
+            namespaces
+                .get(prefix.unwrap_or_default())
+                .map(|ns| ns.namespace_name.clone())
+        })
+    }
+
+    fn parse_with_elem(&self, value: &str, element: Element) -> Result<SchemaValue, ParseError> {
+        self.parse_internal(value, &|prefix: Option<&str>| {
+            element
+                .search_namespace_by_prefix(prefix)
+                .map(|ns| ns.namespace_name().as_ref().into())
+        })
+    }
+
+    fn parse_internal(
+        &self,
+        literal: &str,
+        resolver: &impl Fn(Option<&str>) -> Option<Arc<str>>,
     ) -> Result<SchemaValue, ParseError> {
         let literal = match self.whitespace() {
             Some(Whitespace::Preserve) | None => Cow::Borrowed(literal),
@@ -2090,7 +2165,9 @@ impl UserDefinedType {
         };
         match &self.variety {
             Variety::Atomic(_) => {
-                let value = self.base_type_definition.parse(&literal, namespaces)?;
+                let value = self
+                    .base_type_definition
+                    .parse_internal(&literal, resolver)?;
                 if self.check_facet(&value, &literal) {
                     Ok(value)
                 } else {
@@ -2102,7 +2179,7 @@ impl UserDefinedType {
                     literal
                         .split(|c| XMLVersion::default().is_whitespace(c))
                         .filter(|s| !s.is_empty())
-                        .map(|s| item.parse(s, namespaces))
+                        .map(|s| item.parse_internal(s, resolver))
                         .collect::<Result<Vec<_>, ParseError>>()?
                         .into(),
                 );
@@ -2115,7 +2192,7 @@ impl UserDefinedType {
             Variety::Union(members) => {
                 let mut last_error = Err(ParseError::Token);
                 for member in members.iter() {
-                    match member.parse(&literal, namespaces) {
+                    match member.parse_internal(&literal, resolver) {
                         Ok(value) if self.check_facet(&value, &literal) => return Ok(value),
                         Ok(_) => last_error = Err(ParseError::Facet),
                         Err(err) => last_error = Err(err),
@@ -2215,6 +2292,8 @@ pub enum Final {
     Union = 2,
     /// 'restriction'
     Restriction = 4,
+    /// 'extension'
+    Extension = 8,
 }
 
 impl std::ops::BitOr for Final {
