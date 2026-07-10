@@ -1195,6 +1195,32 @@ impl std::fmt::Display for Node<dyn InternalNodeSpec> {
     }
 }
 
+pub(super) fn drop_tree_non_recursive(root: Rc<RefCell<NodeCore<dyn NodeSpec>>>) {
+    let mut children = root.borrow().spec.first_child();
+    while let Some(child) = children {
+        if let Some(first) = child.borrow().spec.first_child() {
+            children = Some(first);
+        } else if let Some(next) = child.borrow_mut().next_sibling.take() {
+            children = Some(next);
+        } else {
+            children = None;
+            let mut parent = child.borrow().parent_node.upgrade();
+            while let Some(par) = parent {
+                par.borrow_mut().spec.unset_first_child();
+                par.borrow_mut().spec.unset_last_child();
+                let par = par as _;
+                if Rc::ptr_eq(&root, &par) {
+                    break;
+                }
+                if let Some(next) = par.borrow_mut().next_sibling.take() {
+                    children = Some(next);
+                }
+                parent = par.borrow().parent_node.upgrade();
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{sax::XMLReader, tree::TreeBuildHandler};

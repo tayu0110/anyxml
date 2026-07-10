@@ -11,7 +11,7 @@ use crate::{
         Attribute, Document, NodeType, XMLTreeError,
         attribute::AttributeSpec,
         namespace::{Namespace, NamespaceSpec},
-        node::{InternalNodeSpec, Node, NodeCore, NodeSpec},
+        node::{InternalNodeSpec, Node, NodeCore, NodeSpec, drop_tree_non_recursive},
     },
 };
 
@@ -70,6 +70,17 @@ impl InternalNodeSpec for ElementSpec {
             | NodeType::ProcessingInstruction
             | NodeType::Text => Ok(()),
             _ => Err(XMLTreeError::UnacceptableHierarchy),
+        }
+    }
+}
+
+impl Drop for ElementSpec {
+    fn drop(&mut self) {
+        let mut children = self.first_child.take();
+        self.last_child.take();
+        while let Some(child) = children {
+            children = child.borrow_mut().next_sibling.take();
+            drop_tree_non_recursive(child);
         }
     }
 }
