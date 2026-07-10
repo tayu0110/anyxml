@@ -125,14 +125,19 @@ fn parse_quantifier(regexp: &mut &str, atom: ASTNode<char>) -> Result<ASTNode<ch
         }
         [b'{', ..] => {
             *regexp = &regexp[1..];
-            match parse_quantity(regexp)? {
+            let ret = match parse_quantity(regexp)? {
                 Quantity::QuantRange(at_least, at_most) => Ok(ASTNode::Repeat {
                     node: Box::new(atom),
                     at_least,
                     at_most,
                 }),
                 Quantity::QuantExact(exact) => Ok(ASTNode::RepeatExact(Box::new(atom), exact)),
+            };
+            if !regexp.starts_with("}") {
+                return Err(RegexpError::SyntaxError);
             }
+            *regexp = &regexp[1..];
+            ret
         }
         _ => Ok(atom),
     }
@@ -143,7 +148,10 @@ enum Quantity {
     QuantExact(usize),
 }
 
-/// [5] quantity ::= quantRange | quantMin | QuantExact
+/// [5] quantity   ::= quantRange | quantMin | QuantExact
+/// [6] quantRange ::= QuantExact ',' QuantExact
+/// [7] quantMin   ::= QuantExact ','
+/// [8] QuantExact ::= [0-9]+
 fn parse_quantity(regexp: &mut &str) -> Result<Quantity, RegexpError> {
     let pos = regexp
         .as_bytes()
@@ -181,6 +189,7 @@ fn parse_quantity(regexp: &mut &str) -> Result<Quantity, RegexpError> {
             let q = regexp[..pos]
                 .parse::<usize>()
                 .or(Err(RegexpError::TooLargeQuantity))?;
+            *regexp = &regexp[pos..];
 
             if p > q {
                 Err(RegexpError::InvalidQuantifier)
@@ -436,7 +445,7 @@ fn parse_char_class_esc<'a>(
 fn parse_single_char_esc<'a>(
     regexp: &mut &str,
 ) -> Result<impl Iterator<Item = (char, char)> + 'a, RegexpError> {
-    if regexp.starts_with('\\') {
+    if !regexp.starts_with('\\') {
         return Err(RegexpError::SyntaxError);
     }
     *regexp = &regexp[1..];
@@ -920,5 +929,174 @@ mod tests {
         assert!(re.is_match("k"));
         assert!(!re.is_match("l"));
         assert!(re.is_match("m"));
+    }
+
+    #[test]
+    fn repeat_exactly_tests() {
+        let re = XSRegexp::compile("[a-z]{5}").unwrap();
+        eprintln!("{:?}", *re.fa);
+        assert!(re.is_match("aaaaa"));
+        assert!(re.is_match("abcde"));
+        assert!(!re.is_match("abc"));
+        assert!(!re.is_match("abcdef"));
+        assert!(!re.is_match("aaaa0"));
+    }
+
+    #[test]
+    fn repeat_range_tests() {
+        let re = XSRegexp::compile("[a-z]{2,5}").unwrap();
+        eprintln!("{:?}", *re.fa);
+        assert!(!re.is_match("a"));
+        assert!(re.is_match("aa"));
+        assert!(re.is_match("aaa"));
+        assert!(re.is_match("aaaa"));
+        assert!(re.is_match("aaaaa"));
+        assert!(!re.is_match("aaaaaa"));
+        assert!(!re.is_match("aa0"));
+    }
+
+    #[test]
+    fn repeat_at_least_tests() {
+        let re = XSRegexp::compile("[a-z]{2,}").unwrap();
+        eprintln!("{:?}", *re.fa);
+        assert!(!re.is_match("a"));
+        assert!(re.is_match("aa"));
+        assert!(re.is_match("aaa"));
+        assert!(re.is_match("aaaa"));
+        assert!(re.is_match("aaaaa"));
+        assert!(re.is_match("aaaaaa"));
+        assert!(!re.is_match("aa0"));
+    }
+
+    #[test]
+    fn single_escaped_character_tests() {
+        let re = XSRegexp::compile("\\n").unwrap();
+        assert!(re.is_match("\n"));
+        let re = XSRegexp::compile("\\r").unwrap();
+        assert!(re.is_match("\r"));
+        let re = XSRegexp::compile("\\t").unwrap();
+        assert!(re.is_match("\t"));
+        let re = XSRegexp::compile("\\\\").unwrap();
+        assert!(re.is_match("\\"));
+        let re = XSRegexp::compile("\\|").unwrap();
+        assert!(re.is_match("|"));
+        let re = XSRegexp::compile("\\.").unwrap();
+        assert!(re.is_match("."));
+        assert!(!re.is_match("a"));
+        let re = XSRegexp::compile("\\-").unwrap();
+        assert!(re.is_match("-"));
+        let re = XSRegexp::compile("\\^").unwrap();
+        assert!(re.is_match("^"));
+        let re = XSRegexp::compile("\\?").unwrap();
+        assert!(re.is_match("?"));
+        let re = XSRegexp::compile("\\*").unwrap();
+        assert!(re.is_match("*"));
+        let re = XSRegexp::compile("\\+").unwrap();
+        assert!(re.is_match("+"));
+        let re = XSRegexp::compile("\\{").unwrap();
+        assert!(re.is_match("{"));
+        let re = XSRegexp::compile("\\}").unwrap();
+        assert!(re.is_match("}"));
+        let re = XSRegexp::compile("\\(").unwrap();
+        assert!(re.is_match("("));
+        let re = XSRegexp::compile("\\)").unwrap();
+        assert!(re.is_match(")"));
+        let re = XSRegexp::compile("\\[").unwrap();
+        assert!(re.is_match("["));
+        let re = XSRegexp::compile("\\]").unwrap();
+        assert!(re.is_match("]"));
+    }
+
+    #[test]
+    fn wildcard_tests() {
+        let re = XSRegexp::compile(".").unwrap();
+        assert!(re.is_match("a"));
+        assert!(re.is_match(" "));
+
+        let re = XSRegexp::compile("(.*)").unwrap();
+        assert!(re.is_match(r#"abc\\nsfc"#));
+
+        let re = XSRegexp::compile("...E..").unwrap();
+        assert!(re.is_match("1.0E-2"), "{re:?}");
+
+        let re = XSRegexp::compile(".x").unwrap();
+        assert!(re.is_match(" x"));
+        assert!(re.is_match("ax"));
+        assert!(re.is_match("-x"));
+        assert!(re.is_match("$x"));
+        assert!(re.is_match("#x"));
+        assert!(re.is_match("\u{8b}x"));
+
+        let re = XSRegexp::compile(".*abc.*").unwrap();
+        assert!(re.is_match("1x2abc"));
+        assert!(re.is_match("abc1x2"));
+        assert!(re.is_match("z3455abch00ray"));
+        assert!(re.is_match("bcabcabcab"));
+
+        let re = XSRegexp::compile("(([a-d]*)|(.*))").unwrap();
+        assert!(re.is_match("aaabbbcccdddeeefff"));
+
+        let re = XSRegexp::compile("(([d-f]*)|(.*))").unwrap();
+        assert!(re.is_match("dddeeeccceee"));
+    }
+
+    #[test]
+    fn charclass_tests() {
+        let re = XSRegexp::compile("[0-2][0-9]:[0-5][0-9]:[0-5][0-9].[0-9][0-9][0-9]").unwrap();
+        assert!(re.is_match("12:54:00.000"));
+
+        let re = XSRegexp::compile("[0-9]{0,2}.[0-9]{0,2}").unwrap();
+        assert!(re.is_match("5.55"));
+    }
+
+    #[test]
+    fn special_character_escaping_tests() {
+        let re = XSRegexp::compile(
+            r#"\\\\.,\\\\s,\\\\S,\\\\i,\\\\I,\\\\c,\\\\C,\\\\d,\\\\D,\\\\w,\\\\W"#,
+        )
+        .unwrap();
+        assert!(re.is_match(r#"\\.,\\s,\\S,\\i,\\I,\\c,\\C,\\d,\\D,\\w,\\W"#));
+
+        let re = XSRegexp::compile(r#"\\\\.*,\\\\s*,\\\\S*,\\\\i*,\\\\I?,\\\\c+,\\\\C+,\\\\d{0,3},\\\\D{1,1000},\\\\w*,\\\\W+"#).unwrap();
+        assert!(re.is_match(
+            r#"\\.abcd,\\sssss,\\SSSSSS,\\iiiiiii,\\,\\c,\\CCCCCC,\\ddd,\\D,\\wwwwwww,\\WWW"#
+        ));
+    }
+
+    #[test]
+    fn xsts_regression() {
+        let re =
+            XSRegexp::compile("([a-zA-Z]{2}|[iI]-[a-zA-Z]+|[xX]-[a-zA-Z]{1,8})(-[a-zA-Z]{3})*")
+                .unwrap();
+        assert!(re.is_match("TE-USA"));
+
+        let re = XSRegexp::compile("[1]{1}").unwrap();
+        assert!(re.is_match("1"));
+
+        let re = XSRegexp::compile("[a-zA-Z0-9+/]{20}").unwrap();
+        assert!(re.is_match("dGRoYWx5anVnZnRydGRl"));
+        assert!(re.is_match("dnBtZWFvZHNkcWNjbHBx"));
+        assert!(re.is_match("bWhqcWdjd2ZwdGtjbXJs"));
+
+        let re = XSRegexp::compile("[a-zA-Z0-9+/]{68}").unwrap();
+        assert!(
+            re.is_match("ZWxxdXJyanJuanFodGZ3Z25sc3VrZGJ0cGp5dHFoaGJxYmVyZ2RpbXl0c3NueWJpdXVq")
+        );
+        assert!(
+            re.is_match("eGpycXh2dXFsa3lsbWtwcWt4d2hkcHVicXFlcWp2b2FtcGRucmNmbmFwcHFpcG9tdm9j")
+        );
+        assert!(
+            re.is_match("Y2V5c2dic3R0Z3V0eHdwb3JlY2hmbGlkZW9yb25xZGl1aXZsaG9mcGVrdnd4bXlid3Fv")
+        );
+
+        let re = XSRegexp::compile("[a-zA-Z0-9+/]{64}").unwrap();
+        assert!(re.is_match("b21pbWV3Ym9ibm1pbnBmdGdyYnl1Ymxybm9kcGhqbXNydmthamFocGtwaW55b2t1"));
+        assert!(re.is_match("dGx4aHlyaWxkY29hc25md3hqZnBnc214Ymlwb2t1dGdvZnNjaWljY3N1Z2NuZnB4"));
+        assert!(re.is_match("aXRhcmxvbW9lZW1zaGR3ZnF1ZW5jdHdjdG9hZmxvdnV4dWtseHd3YmJybWl1aGJo"));
+
+        let re = XSRegexp::compile("[0-9A-F]{56}").unwrap();
+        assert!(re.is_match("756765786D706E686D61746C736A66696F6870727272707864666579"));
+        assert!(re.is_match("6164696771616D657769787078716767647573626D65686570687579"));
+        assert!(re.is_match("6C6C716F636879677467686871776571686161616E6D78636B686563"));
     }
 }

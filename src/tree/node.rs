@@ -741,11 +741,8 @@ impl Node<dyn NodeSpec> {
     /// If they do not contain character data, return an empty string.
     ///
     /// # Note
-    /// If descendants contain [`Comment`](crate::tree::Comment)
-    /// or [`ProcessingInstruction`](crate::tree::ProcessingInstruction), these are also
-    /// included in the result.  \
-    /// For [`ProcessingInstruction`](crate::tree::ProcessingInstruction),
-    /// the result is the data following the target.
+    /// This method is implemented based on the `textContent` property of the `Node`
+    /// interface in DOM Level 3 Core.
     ///
     /// Additionally, the result for [`Document`] is an empty string.
     pub fn text_content(&self) -> String {
@@ -760,7 +757,14 @@ impl Node<dyn NodeSpec> {
                     let mut children = node.first_child();
                     while let Some(child) = children {
                         children = child.next_sibling();
-                        collect_text_content(child, buf);
+                        // Skip comments and processing instructions
+                        // Reference: https://www.w3.org/TR/2004/REC-DOM-Level-3-Core-20040407/DOM3-Core.html#core-Node3-textContent
+                        if !matches!(
+                            child.node_type(),
+                            NodeType::Comment | NodeType::ProcessingInstruction
+                        ) {
+                            collect_text_content(child, buf);
+                        }
                     }
                 }
                 NodeKind::Text(text) => {
@@ -1191,6 +1195,32 @@ impl std::fmt::Display for Node<dyn InternalNodeSpec> {
     }
 }
 
+pub(super) fn drop_tree_non_recursive(root: Rc<RefCell<NodeCore<dyn NodeSpec>>>) {
+    let mut children = root.borrow().spec.first_child();
+    while let Some(child) = children {
+        if let Some(first) = child.borrow().spec.first_child() {
+            children = Some(first);
+        } else if let Some(next) = child.borrow_mut().next_sibling.take() {
+            children = Some(next);
+        } else {
+            children = None;
+            let mut parent = child.borrow().parent_node.upgrade();
+            while let Some(par) = parent {
+                par.borrow_mut().spec.unset_first_child();
+                par.borrow_mut().spec.unset_last_child();
+                let par = par as _;
+                if Rc::ptr_eq(&root, &par) {
+                    break;
+                }
+                if let Some(next) = par.borrow_mut().next_sibling.take() {
+                    children = Some(next);
+                }
+                parent = par.borrow().parent_node.upgrade();
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{sax::XMLReader, tree::TreeBuildHandler};
@@ -1381,5 +1411,33 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn text_conent_tests() {
+        const XML: &str =
+            r#"<doc att="att"><?pi data="pi"?><!--comment-->text<![CDATA[cdata]]></doc>"#;
+        let mut parser = XMLReader::builder()
+            .set_handler(TreeBuildHandler::default())
+            .build();
+        parser.handler.coalescing = false;
+        parser.handler.ignoring_comments = false;
+
+        parser.parse_str(XML, None).unwrap();
+        assert!(!parser.handler.fatal_error);
+        let doc = parser.handler.document;
+        assert_eq!(doc.text_content(), "");
+        let elem = doc.document_element().unwrap();
+        assert_eq!(elem.text_content(), "textcdata");
+        let att = elem.get_attribute_node("att", None).unwrap();
+        assert_eq!(att.text_content(), "att");
+        let pi = elem.first_child().unwrap();
+        assert_eq!(pi.text_content(), "data=\"pi\"");
+        let comment = pi.next_sibling().unwrap();
+        assert_eq!(comment.text_content(), "comment");
+        let text = comment.next_sibling().unwrap();
+        assert_eq!(text.text_content(), "text");
+        let cdata = text.next_sibling().unwrap();
+        assert_eq!(cdata.text_content(), "cdata");
     }
 }
