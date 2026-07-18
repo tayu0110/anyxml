@@ -55,7 +55,7 @@ pub(super) fn parse_element_decl(
     let name = elem
         .get_attribute("name", None)
         .ok_or_else(|| {
-            XMLError::XSDError(Box::new(XSDValidationError {
+            XMLError::XSDValidError(Box::new(XSDValidationError {
                 message: "Element declaration missing 'name' attribute".into(),
                 line: None,
                 column: None,
@@ -89,7 +89,7 @@ pub(super) fn parse_element_decl(
         (Some(_), Some(_)) => {
             // [src-element]
             // 1 default and fixed must not both be present.
-            return Err(XMLError::XSDError(Box::new(XSDValidationError {
+            return Err(XMLError::XSDValidError(Box::new(XSDValidationError {
                 message: "'default' and 'fixed' must not both be present on the single element declaration.".into(),
                 line: None,
                 column: None,
@@ -1108,7 +1108,7 @@ fn parse_attribute_decl(elem: Element) -> Result<AttributeDecl, XMLError> {
     } else if let Some(ref_name) = elem.get_attribute("ref", None) {
         strip_prefix(&ref_name).to_string()
     } else {
-        return Err(XMLError::XSDError(Box::new(XSDValidationError {
+        return Err(XMLError::XSDValidError(Box::new(XSDValidationError {
             message: "Attribute declaration missing 'name' or 'ref' attribute".into(),
             line: None,
             column: None,

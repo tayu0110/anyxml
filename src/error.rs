@@ -11,7 +11,7 @@ use crate::{
     xinclude::XIncludeError,
     xpath::{XPathCompileError, XPathError},
     xpointer::XPointerParseError,
-    xsd::XSDValidationError,
+    xsd::{XSDParseError, XSDValidationError},
 };
 
 /// Error level.
@@ -52,6 +52,8 @@ pub enum XMLErrorDomain {
     RncParser,
     /// RELAX NG validation error.
     RngValid,
+    /// XSD schema parsing error.
+    XSDParser,
     /// XML Canonicalization error.
     C14N,
     /// XInclude error.
@@ -67,6 +69,7 @@ impl std::fmt::Display for XMLErrorDomain {
             Self::RngParser => write!(f, "relaxng-parser"),
             Self::RncParser => write!(f, "relaxng-compact-syntax-parser"),
             Self::RngValid => write!(f, "relaxng-valid"),
+            Self::XSDParser => write!(f, "xsd"),
             Self::C14N => write!(f, "c14n"),
             Self::XInclude => write!(f, "xinclude"),
         }
@@ -105,8 +108,10 @@ pub enum XMLError {
     RngValidError(RngValidError),
     // RELAX NG Compact Syntax parsing errors
     RncParseError(RncParseError),
-    // XSD errors
-    XSDError(Box<XSDValidationError>),
+    // XSD parsing errors,
+    XSDParseError(XSDParseError),
+    // XSD validation errors
+    XSDValidError(Box<XSDValidationError>),
     // XPointer errors
     XPointerParseError(XPointerParseError),
     // XInclude errors
@@ -201,8 +206,14 @@ impl From<RncParseError> for XMLError {
     }
 }
 
+impl From<XSDParseError> for XMLError {
+    fn from(value: XSDParseError) -> Self {
+        XMLError::XSDParseError(value)
+    }
+}
+
 impl From<XSDValidationError> for XMLError {
     fn from(value: XSDValidationError) -> Self {
-        Self::XSDError(Box::new(value))
+        Self::XSDValidError(Box::new(value))
     }
 }

@@ -116,7 +116,7 @@ pub(super) fn process_schema_composition(
     state: &mut CompositionState,
 ) -> Result<(), XMLError> {
     if state.depth >= MAX_INCLUDE_DEPTH {
-        return Err(XMLError::XSDError(Box::new(XSDValidationError {
+        return Err(XMLError::XSDValidError(Box::new(XSDValidationError {
             message: format!(
                 "Schema include/import/redefine nesting exceeds maximum depth of {}",
                 MAX_INCLUDE_DEPTH

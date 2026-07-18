@@ -16,6 +16,7 @@ mod wildcard;
 use std::collections::HashMap;
 
 pub use error::XSDValidationError;
+pub use parse::{Schema, XSDParseError};
 
 use crate::{
     error::XMLError,
@@ -121,7 +122,7 @@ impl XSDSchema {
         };
 
         let schema_elem = schema_doc.document_element().ok_or_else(|| {
-            XMLError::XSDError(Box::new(XSDValidationError {
+            XMLError::XSDValidError(Box::new(XSDValidationError {
                 message: "Schema document has no root element".into(),
                 line: None,
                 column: None,
