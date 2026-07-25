@@ -2287,6 +2287,11 @@ impl FinalSet {
     pub fn restriction(&self) -> bool {
         self.0 & Final::Restriction as u8 != 0
     }
+
+    /// Check if 'extension' is contained.
+    pub fn extension(&self) -> bool {
+        self.0 & Final::Extension as u8 != 0
+    }
 }
 
 impl std::ops::BitOr<Final> for FinalSet {
@@ -2310,6 +2315,8 @@ pub enum Final {
     Restriction = 4,
     /// 'extension'
     Extension = 8,
+    /// 'substitution'
+    Substitution = 16,
 }
 
 impl std::ops::BitOr for Final {
@@ -2451,7 +2458,7 @@ impl SimpleTypeDefinitionBuilder {
         if !self.base.is_applicable_facets(FacetType::Pattern) {
             return Err(FacetError::Unacceptable.into());
         }
-        let pattern = pattern.into();
+        let pattern: String = pattern.into();
         if XSRegexp::compile(&pattern).is_err() {
             return Err(FacetError::InvalidPattern.into());
         }
