@@ -175,12 +175,12 @@ macro_rules! unallowed_element {
 
 #[derive(Default)]
 pub struct Schema {
-    type_defs: HashMap<(Option<String>, String), TypeDefinition>,
-    att_decls: HashMap<(Option<String>, String), AttributeDeclaration>,
-    elem_decls: HashMap<(Option<String>, String), ElementDeclaration>,
-    attgroup_defs: HashMap<(Option<String>, String), AttributeGroupDefinition>,
-    modelgroup_defs: HashMap<(Option<String>, String), ModelGroupDefinition>,
-    notation_decls: HashMap<(Option<String>, String), Notation>,
+    type_defs: HashMap<(Option<Arc<str>>, Arc<str>), TypeDefinition>,
+    att_decls: HashMap<(Option<Arc<str>>, Arc<str>), AttributeDeclaration>,
+    elem_decls: HashMap<(Option<Arc<str>>, Arc<str>), ElementDeclaration>,
+    attgroup_defs: HashMap<(Option<Arc<str>>, Arc<str>), AttributeGroupDefinition>,
+    modelgroup_defs: HashMap<(Option<Arc<str>>, Arc<str>), ModelGroupDefinition>,
+    notation_decls: HashMap<(Option<Arc<str>>, Arc<str>), Notation>,
     annotations: Vec<Annotation>,
 }
 
@@ -520,13 +520,13 @@ struct XSDParseContext<'a, H: SAXHandler> {
     schema: Schema,
 
     // context
-    target_namespace: Option<String>,
+    target_namespace: Option<Arc<str>>,
     unnamed: usize,
-    simple_types: HashMap<(Option<String>, String), Element>,
-    complex_types: HashMap<(Option<String>, String), Element>,
-    att_groups: HashMap<(Option<String>, String), Element>,
-    model_groups: HashMap<(Option<String>, String), Element>,
-    elem_decls: HashMap<(Option<String>, String), Element>,
+    simple_types: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
+    complex_types: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
+    att_groups: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
+    model_groups: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
+    elem_decls: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
 
     // qualification form
     attr_form_default: QualificationForm,
@@ -582,7 +582,9 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
 
         if let Some(target_namespace) = target_namespace.as_deref() {
             match SCHEMA_BUILTIN_ANYURI.parse_with_elem(target_namespace, schema.clone()) {
-                Ok(SchemaValue::AnyURI(uri)) => self.target_namespace = Some(uri.to_string()),
+                Ok(SchemaValue::AnyURI(uri)) => {
+                    self.target_namespace = Some(uri.to_string().into())
+                }
                 Ok(_) => internal_error!(self.handler, schema),
                 Err(err) => {
                     error!(
@@ -666,10 +668,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                             };
                             match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
                                 Ok(SchemaValue::String(ncname)) => {
-                                    self.simple_types.insert(
-                                        (self.target_namespace.clone(), ncname.to_string()),
-                                        elem,
-                                    );
+                                    self.simple_types
+                                        .insert((self.target_namespace.clone(), ncname), elem);
                                 }
                                 Err(err) => {
                                     error!(
@@ -693,10 +693,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                             };
                             match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
                                 Ok(SchemaValue::String(ncname)) => {
-                                    self.complex_types.insert(
-                                        (self.target_namespace.clone(), ncname.to_string()),
-                                        elem,
-                                    );
+                                    self.complex_types
+                                        .insert((self.target_namespace.clone(), ncname), elem);
                                 }
                                 Err(err) => {
                                     error!(
@@ -718,10 +716,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                             };
                             match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
                                 Ok(SchemaValue::String(ncname)) => {
-                                    self.model_groups.insert(
-                                        (self.target_namespace.clone(), ncname.to_string()),
-                                        elem,
-                                    );
+                                    self.model_groups
+                                        .insert((self.target_namespace.clone(), ncname), elem);
                                 }
                                 Ok(_) => internal_error!(self.handler, elem),
                                 Err(err) => {
@@ -743,10 +739,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                             };
                             match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
                                 Ok(SchemaValue::String(ncname)) => {
-                                    self.att_groups.insert(
-                                        (self.target_namespace.clone(), ncname.to_string()),
-                                        elem,
-                                    );
+                                    self.att_groups
+                                        .insert((self.target_namespace.clone(), ncname), elem);
                                 }
                                 Ok(_) => internal_error!(self.handler, elem),
                                 Err(err) => {
@@ -768,10 +762,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                             };
                             match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
                                 Ok(SchemaValue::String(ncname)) => {
-                                    self.elem_decls.insert(
-                                        (self.target_namespace.clone(), ncname.to_string()),
-                                        elem,
-                                    );
+                                    self.elem_decls
+                                        .insert((self.target_namespace.clone(), ncname), elem);
                                 }
                                 Ok(_) => internal_error!(self.handler, elem),
                                 Err(err) => {
@@ -849,6 +841,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
             self.complex_types.remove(&key);
             self.parse_complex_type_definitions(value, key.0, &mut vec![], true)?;
         }
+        // Next, resolve element declarations
         while let Some((key, value)) = self.elem_decls.iter().next() {
             let key = key.clone();
             let value = value.clone();
@@ -856,6 +849,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
             self.elem_decls.remove(&key);
             self.parse_top_level_element(value, key.0)?;
         }
+        // Next, resolve model group definitions
         while let Some((key, value)) = self.model_groups.iter().next() {
             let key = key.clone();
             let value = value.clone();
@@ -875,7 +869,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_attribute_declaration(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
         global: bool,
     ) -> Result<Option<AttributeUse>, XSDParseError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
@@ -906,7 +900,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                         );
                         return Err(XSDParseError::SrcAttribute);
                     }
-                    name.to_string()
+                    name
                 }
                 Ok(_) => internal_error!(self.handler, elem),
                 Err(err) => {
@@ -936,7 +930,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                         return Err(XSDParseError::SrcAttribute);
                     }
                     self.unnamed += 1;
-                    format!("#unnamed{}", self.unnamed)
+                    format!("#unnamed{}", self.unnamed).into()
                 } else {
                     todo!("raise error")
                 }
@@ -1048,15 +1042,13 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                     return Err(XSDParseError::SrcAttribute);
                 }
                 match SCHEMA_BUILTIN_QNAME.parse_with_elem(&r#type, elem.clone()) {
-                    Ok(SchemaValue::QName(nsname, local)) => match self
-                        .schema
-                        .type_defs
-                        .get(&(nsname.map(|ns| ns.to_string()), local.to_string()))
-                    {
-                        Some(TypeDefinition::Simple(simple)) => simple.clone(),
-                        Some(_) => todo!("raise error because of non-simple-type definition"),
-                        None => todo!("raise error because of missing definition"),
-                    },
+                    Ok(SchemaValue::QName(nsname, local)) => {
+                        match self.schema.type_defs.get(&(nsname, local)) {
+                            Some(TypeDefinition::Simple(simple)) => simple.clone(),
+                            Some(_) => todo!("raise error because of non-simple-type definition"),
+                            None => todo!("raise error because of missing definition"),
+                        }
+                    }
                     Ok(_) => internal_error!(self.handler, elem),
                     Err(err) => {
                         error!(
@@ -1110,11 +1102,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                     // declaration at this point, it is acceptable to treat this as an error.
                     match SCHEMA_BUILTIN_QNAME.parse_with_elem(r#ref, elem.clone()) {
                         Ok(SchemaValue::QName(nsname, local)) => {
-                            match self
-                                .schema
-                                .type_defs
-                                .get(&(nsname.map(|ns| ns.to_string()), local.to_string()))
-                            {
+                            match self.schema.type_defs.get(&(nsname, local)) {
                                 Some(TypeDefinition::Simple(simple)) => simple.clone(),
                                 Some(_) => {
                                     todo!("raise error because of non-simple type definition")
@@ -1203,7 +1191,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
             };
             self.schema
                 .att_decls
-                .insert((target_namespace.clone(), name.clone()), decl);
+                .insert((target_namespace.clone(), decl.name.clone()), decl);
             Ok(None)
         } else if r#ref.is_none() {
             let decl = AttributeDeclaration {
@@ -1216,7 +1204,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
             };
             self.schema
                 .att_decls
-                .insert((target_namespace.clone(), name.clone()), decl);
+                .insert((target_namespace.clone(), decl.name.clone()), decl);
             Ok(Some(AttributeUse {
                 required: r#use,
                 attribute_declaration: (target_namespace, name),
@@ -1234,7 +1222,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_top_level_element(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
     ) -> Result<(), XSDParseError> {
         // "ref", "form", "minOccurs" and "maxOccurs" are prohibited explicitly in schema of schema.
         let r#abstract = self
@@ -1261,7 +1249,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         let _id = elem.remove_attribute("id", None);
         let name = match elem.remove_attribute("name", None) {
             Some(name) => match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                Ok(SchemaValue::String(ncname)) => ncname.to_string(),
+                Ok(SchemaValue::String(ncname)) => ncname,
                 Ok(_) => internal_error!(self.handler, elem),
                 Err(err) => {
                     error!(
@@ -1366,7 +1354,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_local_element(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
         scope: Option<Scope>,
     ) -> Result<Particle, XSDParseError> {
         // "substitutionGroup", "final" and "abstract" are prohibited explicitly in schema of schema.
@@ -1385,7 +1373,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         };
         let name = match elem.remove_attribute("name", None) {
             Some(name) => match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                Ok(SchemaValue::String(ncname)) => Some(ncname.to_string()),
+                Ok(SchemaValue::String(ncname)) => Some(ncname),
                 Ok(_) => internal_error!(self.handler, elem),
                 Err(err) => {
                     error!(
@@ -1497,7 +1485,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
 
                 self.unnamed += 1;
                 // Change the name so that it doesn't conflict with the top-level declaration.
-                let local = format!("#local{}/{}", self.unnamed, decl.name);
+                let local: Arc<str> = format!("#local{}/{}", self.unnamed, decl.name).into();
                 let particle = Particle {
                     min_occurs,
                     max_occurs,
@@ -1649,7 +1637,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn resolve_element_type(
         &mut self,
         elem: Element,
-        r#type: Option<(Option<String>, String)>,
+        r#type: Option<(Option<Arc<str>>, Arc<str>)>,
         typedef: Option<TypeDefinition>,
         allow_missing: bool,
     ) -> Result<TypeDefinition, XSDParseError> {
@@ -1699,8 +1687,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_named_attgroup_definition(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
-        loop_guard: &mut Vec<(Option<String>, String)>,
+        target_namespace: Option<Arc<str>>,
+        loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
     ) -> Result<(), XSDParseError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_ATTGROUP_NAME);
@@ -1708,7 +1696,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         let _id = elem.remove_attribute("id", None);
         let name = match elem.remove_attribute("name", None) {
             Some(name) => match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                Ok(SchemaValue::String(ncname)) => ncname.to_string(),
+                Ok(SchemaValue::String(ncname)) => ncname,
                 Ok(_) => internal_error!(self.handler, elem),
                 Err(err) => {
                     error!(
@@ -1757,8 +1745,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_attgroup_reference(
         &mut self,
         mut elem: Element,
-        loop_guard: &mut Vec<(Option<String>, String)>,
-    ) -> Result<(Option<String>, String), XSDParseError> {
+        loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
+    ) -> Result<(Option<Arc<str>>, Arc<str>), XSDParseError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_ATTGROUP_NAME);
 
@@ -1789,8 +1777,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_simple_type_definitions(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
-        loop_guard: &mut Vec<(Option<String>, String)>,
+        target_namespace: Option<Arc<str>>,
+        loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
         global: bool,
     ) -> Result<Arc<SimpleTypeDefinition>, XSDParseError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
@@ -1800,7 +1788,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         let _id = elem.remove_attribute("id", None);
         let name = match elem.remove_attribute("name", None) {
             Some(name) => match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                Ok(SchemaValue::String(ncname)) => ncname.to_string(),
+                Ok(SchemaValue::String(ncname)) => ncname,
                 Ok(_) => internal_error!(self.handler, elem),
                 Err(err) => {
                     error!(
@@ -1819,7 +1807,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                     self.unnamed += 1;
                     // Choose a name that is not an NCName to avoid conflicts
                     // with other type definitions.
-                    format!("#unnamed{}", self.unnamed)
+                    format!("#unnamed{}", self.unnamed).into()
                 } else {
                     todo!("raise error because of missing mandatory attribute");
                 }
@@ -1894,8 +1882,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                                     match SCHEMA_BUILTIN_QNAME.parse_with_elem(&base, elem.clone())
                                     {
                                         Ok(SchemaValue::QName(nsname, local)) => {
-                                            let key =
-                                                (nsname.map(|n| n.to_string()), local.to_string());
+                                            let key = (nsname, local);
                                             if let Some(elem) = self.simple_types.remove(&key) {
                                                 self.parse_simple_type_definitions(
                                                     elem,
@@ -2008,8 +1995,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                                         .parse_with_elem(&item_type, elem.clone())
                                     {
                                         Ok(SchemaValue::QName(nsname, local)) => {
-                                            let key =
-                                                (nsname.map(|n| n.to_string()), local.to_string());
+                                            let key = (nsname, local);
                                             if let Some(elem) = self.simple_types.remove(&key) {
                                                 self.parse_simple_type_definitions(
                                                     elem,
@@ -2121,8 +2107,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                                         .parse_with_elem(member_type, elem.clone())
                                     {
                                         Ok(SchemaValue::QName(nsname, local)) => {
-                                            let key =
-                                                (nsname.map(|n| n.to_string()), local.to_string());
+                                            let key = (nsname, local);
                                             if let Some(elem) = self.simple_types.remove(&key) {
                                                 self.parse_simple_type_definitions(
                                                     elem,
@@ -2209,12 +2194,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                 }
                 builder = builder.r#final(set);
             }
-            let def = builder
-                .name(
-                    name.as_str().into(),
-                    target_namespace.as_deref().map(|s| s.into()),
-                )
-                .build();
+            let def = builder.name(name.clone(), target_namespace.clone()).build();
             if global {
                 self.schema.type_defs.insert(
                     (target_namespace, name),
@@ -2230,8 +2210,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_complex_type_definitions(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
-        loop_guard: &mut Vec<(Option<String>, String)>,
+        target_namespace: Option<Arc<str>>,
+        loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
         global: bool,
     ) -> Result<Arc<ComplexTypeDefinition>, XSDParseError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
@@ -2262,7 +2242,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
             .unwrap_or(false);
         let name = match elem.remove_attribute("name", None) {
             Some(name) => match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                Ok(SchemaValue::String(ncname)) => ncname.to_string(),
+                Ok(SchemaValue::String(ncname)) => ncname,
                 Ok(_) => internal_error!(self.handler, elem),
                 Err(err) => {
                     error!(
@@ -2281,7 +2261,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                     self.unnamed += 1;
                     // Choose a name that is not an NCName to avoid conflicts
                     // with other type definitions.
-                    format!("#unnamed{}", self.unnamed)
+                    format!("#unnamed{}", self.unnamed).into()
                 } else {
                     error!(
                         self.handler,
@@ -2464,8 +2444,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_simple_content(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
-        loop_guard: &mut Vec<(Option<String>, String)>,
+        target_namespace: Option<Arc<str>>,
+        loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
     ) -> Result<
         (
             TypeDefinition,
@@ -2775,8 +2755,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_complex_content(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
-        loop_guard: &mut Vec<(Option<String>, String)>,
+        target_namespace: Option<Arc<str>>,
+        loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
         mixed: bool,
     ) -> Result<
         (
@@ -3061,7 +3041,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_any_attribute(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
     ) -> Result<Wildcard, XSDParseError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_ANYATT_NAME);
@@ -3084,13 +3064,15 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_named_group(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
     ) -> Result<(), XSDParseError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_GROUP_NAME);
 
         let _id = elem.remove_attribute("id", None);
-        let Some(name) = elem.remove_attribute("name", None) else {
+        let Some(name) =
+            self.parse_ncname(elem.clone(), "name", XSDParseError::SrcModelGroupDefn)?
+        else {
             error!(
                 self.handler,
                 SrcModelGroupDefn,
@@ -3187,7 +3169,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_group_ref(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
     ) -> Result<Particle, XSDParseError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_GROUP_NAME);
@@ -3214,7 +3196,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         self.check_unexpected_schema_elements(children)?;
 
         let r#ref = match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&r#ref, elem.clone()) {
-            Ok(SchemaValue::String(ncname)) => ncname.to_string(),
+            Ok(SchemaValue::String(ncname)) => ncname,
             Ok(_) => internal_error!(self.handler, elem),
             Err(err) => {
                 error!(
@@ -3250,7 +3232,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_choice(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
     ) -> Result<Particle, XSDParseError> {
         let _id = elem.remove_attribute("id", None);
         let max_occurs = self.parse_occurs(elem.clone(), "maxOccurs", Some(1), true)?;
@@ -3284,7 +3266,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_sequence(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
     ) -> Result<Particle, XSDParseError> {
         let _id = elem.remove_attribute("id", None);
         let max_occurs = self.parse_occurs(elem.clone(), "maxOccurs", Some(1), true)?;
@@ -3318,7 +3300,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_all(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
     ) -> Result<Particle, XSDParseError> {
         let _id = elem.remove_attribute("id", None);
         let Some(max_occurs) = self.parse_occurs(elem.clone(), "maxOccurs", Some(1), false)? else {
@@ -3393,7 +3375,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_any(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
     ) -> Result<Particle, XSDParseError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_ANY_NAME);
@@ -3436,7 +3418,9 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                 | SCHEMA_MAXINCLUSIVE_NAME
         ));
 
-        let fixed = elem.remove_attribute("fixed", None);
+        let fixed = self
+            .parse_boolean(elem.clone(), "fixed", XSDParseError::SrcSimpleType)?
+            .unwrap_or(false);
         let _id = elem.remove_attribute("id", None);
         let Some(value) = elem.remove_attribute("value", None) else {
             todo!("raise error because of missing a mandatory attribute");
@@ -3445,24 +3429,6 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
 
         let _annot = self.parse_single_annotation_child(elem.clone())?;
 
-        let fixed = match fixed {
-            Some(fixed) => match SCHEMA_BUILTIN_BOOLEAN.parse_with_elem(&fixed, elem.clone()) {
-                Ok(SchemaValue::Boolean(fixed)) => fixed,
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcSimpleType,
-                        elem,
-                        "The attribute 'fixed' of '{}' is failed to parse as boolean because {}.",
-                        elem.local_name(),
-                        err
-                    );
-                    return Err(XSDParseError::SrcSimpleType);
-                }
-            },
-            None => false,
-        };
         let Ok(value) = base.parse_with_elem(&value, elem.clone()) else {
             todo!("raise error")
         };
@@ -3476,7 +3442,9 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert!(elem.local_name().as_ref() == SCHEMA_TOTALDIGITS_NAME);
 
-        let fixed = elem.remove_attribute("fixed", None);
+        let fixed = self
+            .parse_boolean(elem.clone(), "fixed", XSDParseError::SrcSimpleType)?
+            .unwrap_or(false);
         let _id = elem.remove_attribute("id", None);
         let Some(value) = elem.remove_attribute("value", None) else {
             todo!("raise error because of missing a mandatory attribute");
@@ -3485,24 +3453,6 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
 
         let _annot = self.parse_single_annotation_child(elem.clone())?;
 
-        let fixed = match fixed {
-            Some(fixed) => match SCHEMA_BUILTIN_BOOLEAN.parse_with_elem(&fixed, elem.clone()) {
-                Ok(SchemaValue::Boolean(fixed)) => fixed,
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcSimpleType,
-                        elem,
-                        "The attribute 'fixed' of '{}' is failed to parse as boolean because {}.",
-                        elem.local_name(),
-                        err
-                    );
-                    return Err(XSDParseError::SrcSimpleType);
-                }
-            },
-            None => false,
-        };
         let Ok(SchemaValue::Integer(value)) =
             SCHEMA_BUILTIN_POSITIVE_INTEGER.parse_with_elem(&value, elem.clone())
         else {
@@ -3521,7 +3471,9 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert!(elem.local_name().as_ref() == SCHEMA_FRACDIGITS_NAME);
 
-        let fixed = elem.remove_attribute("fixed", None);
+        let fixed = self
+            .parse_boolean(elem.clone(), "fixed", XSDParseError::SrcSimpleType)?
+            .unwrap_or(false);
         let _id = elem.remove_attribute("id", None);
         let Some(value) = elem.remove_attribute("value", None) else {
             todo!("raise error because of missing a mandatory attribute");
@@ -3530,24 +3482,6 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
 
         let _annot = self.parse_single_annotation_child(elem.clone())?;
 
-        let fixed = match fixed {
-            Some(fixed) => match SCHEMA_BUILTIN_BOOLEAN.parse_with_elem(&fixed, elem.clone()) {
-                Ok(SchemaValue::Boolean(fixed)) => fixed,
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcSimpleType,
-                        elem,
-                        "The attribute 'fixed' of '{}' is failed to parse as boolean because {}.",
-                        elem.local_name().as_ref(),
-                        err
-                    );
-                    return Err(XSDParseError::SrcSimpleType);
-                }
-            },
-            None => false,
-        };
         let Ok(SchemaValue::Integer(value)) =
             SCHEMA_BUILTIN_NONNEGATIVE_INTEGER.parse_with_elem(&value, elem.clone())
         else {
@@ -3566,7 +3500,9 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
             SCHEMA_LENGTH_NAME | SCHEMA_MINLENGTH_NAME | SCHEMA_MAXLENGTH_NAME
         ));
 
-        let fixed = elem.remove_attribute("fixed", None);
+        let fixed = self
+            .parse_boolean(elem.clone(), "fixed", XSDParseError::SrcSimpleType)?
+            .unwrap_or(false);
         let _id = elem.remove_attribute("id", None);
         let Some(value) = elem.remove_attribute("value", None) else {
             todo!("raise error because of missing a mandatory attribute");
@@ -3575,24 +3511,6 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
 
         let _annot = self.parse_single_annotation_child(elem.clone())?;
 
-        let fixed = match fixed {
-            Some(fixed) => match SCHEMA_BUILTIN_BOOLEAN.parse_with_elem(&fixed, elem.clone()) {
-                Ok(SchemaValue::Boolean(fixed)) => fixed,
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcSimpleType,
-                        elem,
-                        "The attribute 'fixed' of '{}' is failed to parse as boolean because {}.",
-                        elem.local_name().as_ref(),
-                        err
-                    );
-                    return Err(XSDParseError::SrcSimpleType);
-                }
-            },
-            None => false,
-        };
         let Ok(SchemaValue::Integer(value)) =
             SCHEMA_BUILTIN_NONNEGATIVE_INTEGER.parse_with_elem(&value, elem.clone())
         else {
@@ -3630,7 +3548,9 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert!(elem.local_name().as_ref() == SCHEMA_WHITESPACE_NAME);
 
-        let fixed = elem.remove_attribute("fixed", None);
+        let fixed = self
+            .parse_boolean(elem.clone(), "fixed", XSDParseError::SrcSimpleType)?
+            .unwrap_or(false);
         let _id = elem.remove_attribute("id", None);
         let Some(value) = elem.remove_attribute("value", None) else {
             todo!("raise error because of missing a mandatory attribute");
@@ -3639,24 +3559,6 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
 
         let _annot = self.parse_single_annotation_child(elem.clone())?;
 
-        let fixed = match fixed {
-            Some(fixed) => match SCHEMA_BUILTIN_BOOLEAN.parse_with_elem(&fixed, elem.clone()) {
-                Ok(SchemaValue::Boolean(fixed)) => fixed,
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcSimpleType,
-                        elem,
-                        "The attribute 'fixed' of '{}' is failed to parse as boolean because {}.",
-                        elem.local_name().as_ref(),
-                        err
-                    );
-                    return Err(XSDParseError::SrcSimpleType);
-                }
-            },
-            None => false,
-        };
         match value.as_str() {
             "collapse" => Ok((fixed, Whitespace::Collapse)),
             "preserve" => Ok((fixed, Whitespace::Preserve)),
@@ -3820,8 +3722,16 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         assert_eq!(elem.local_name().as_ref(), SCHEMA_NOTATION_NAME);
 
         let _id = elem.remove_attribute("id", None);
-        let Some(name) = elem.remove_attribute("name", None) else {
-            todo!("raise error because of mandatory attribute");
+        let Some(name) = self.parse_ncname(elem.clone(), "name", XSDParseError::SrcNotation)?
+        else {
+            error!(
+                self.handler,
+                SrcNotation,
+                elem,
+                "The attribute 'name' of '{}' is mandatory, but is absent.",
+                elem.local_name()
+            );
+            return Err(XSDParseError::SrcNotation);
         };
         let public = match elem.remove_attribute("public", None) {
             Some(public) => match SCHEMA_BUILTIN_TOKEN.parse_with_elem(&public, elem.clone()) {
@@ -3953,15 +3863,13 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         &mut self,
         mut elem: Element,
         name: &str,
-    ) -> Result<Option<(Option<String>, String)>, XSDParseError> {
+    ) -> Result<Option<(Option<Arc<str>>, Arc<str>)>, XSDParseError> {
         let Some(name) = elem.remove_attribute(name, None) else {
             return Ok(None);
         };
 
         match SCHEMA_BUILTIN_QNAME.parse_with_elem(&name, elem.clone()) {
-            Ok(SchemaValue::QName(nsname, local)) => {
-                Ok(Some((nsname.map(|ns| ns.to_string()), local.to_string())))
-            }
+            Ok(SchemaValue::QName(nsname, local)) => Ok(Some((nsname, local))),
             Ok(_) => internal_error!(self.handler, elem),
             Err(err) => {
                 error!(
@@ -3974,6 +3882,34 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                     err
                 );
                 Err(XSDParseError::SrcQname)
+            }
+        }
+    }
+
+    fn parse_ncname(
+        &mut self,
+        mut elem: Element,
+        name: &str,
+        error: XSDParseError,
+    ) -> Result<Option<Arc<str>>, XSDParseError> {
+        let Some(ncname) = elem.remove_attribute(name, None) else {
+            return Ok(None);
+        };
+
+        match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&ncname, elem.clone()) {
+            Ok(SchemaValue::String(ret)) => Ok(Some(ret)),
+            Ok(_) => internal_error!(self.handler, elem),
+            Err(err) => {
+                error!(
+                    self.handler,
+                    error,
+                    elem,
+                    "The attribute '{}' of '{}' is failed to parse as NCName because {}.",
+                    ncname,
+                    elem.local_name(),
+                    err
+                );
+                Err(error)
             }
         }
     }
@@ -4055,7 +3991,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn parse_namespace_list(
         &mut self,
         mut elem: Element,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
         name: &str,
     ) -> Result<NamespaceConstraint, XSDParseError> {
         match elem.remove_attribute(name, None) {
@@ -4077,7 +4013,9 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                             list.push(None);
                         } else {
                             match SCHEMA_BUILTIN_ANYURI.parse_with_elem(uri, elem.clone()) {
-                                Ok(SchemaValue::AnyURI(uri)) => list.push(Some(uri.to_string())),
+                                Ok(SchemaValue::AnyURI(uri)) => {
+                                    list.push(Some(uri.to_string().into()))
+                                }
                                 Ok(_) => internal_error!(self.handler, elem),
                                 Err(err) => {
                                     error!(
@@ -4332,8 +4270,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn pop_attr_decls(
         &mut self,
         children: &mut Option<Node<dyn NodeSpec>>,
-        target_namespace: Option<String>,
-        loop_guard: &mut Vec<(Option<String>, String)>,
+        target_namespace: Option<Arc<str>>,
+        loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
     ) -> Result<(Vec<AttributeUse>, Option<Wildcard>), XSDParseError> {
         let mut attribute_uses = vec![];
         // wildcards from attributeGroup
@@ -4403,7 +4341,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn pop_type_def_particle(
         &mut self,
         children: &mut Option<Node<dyn NodeSpec>>,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
     ) -> Result<Option<Particle>, XSDParseError> {
         while let Some(child) = children.take() {
             *children = child.next_sibling();
@@ -4443,7 +4381,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn pop_nested_particle(
         &mut self,
         children: &mut Option<Node<dyn NodeSpec>>,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
     ) -> Result<Option<Particle>, XSDParseError> {
         while let Some(child) = children.take() {
             *children = child.next_sibling();
@@ -4484,7 +4422,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
     fn pop_idc(
         &mut self,
         children: &mut Option<Node<dyn NodeSpec>>,
-        target_namespace: Option<String>,
+        target_namespace: Option<Arc<str>>,
     ) -> Result<Option<IDCDefinition>, XSDParseError> {
         while let Some(child) = children.take() {
             *children = child.next_sibling();
@@ -4506,15 +4444,25 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                     };
 
                     let _id = elem.remove_attribute("id", None);
-                    let Some(name) = elem.remove_attribute("name", None) else {
-                        todo!("raise error because of missing a mandatory attribute")
+                    let Some(name) = self.parse_ncname(
+                        elem.clone(),
+                        "name",
+                        XSDParseError::SrcIdentityConstraint,
+                    )?
+                    else {
+                        error!(
+                            self.handler,
+                            SrcIdentityConstraint,
+                            elem,
+                            "The attribute 'name' of '{}' is mandatory, but is absent.",
+                            elem.local_name()
+                        );
+                        return Err(XSDParseError::SrcIdentityConstraint);
                     };
                     let referenced_key = if matches!(idc_category, IDCCategory::Keyref) {
                         if let Some(refer) = elem.remove_attribute("refer", None) {
                             match SCHEMA_BUILTIN_QNAME.parse_with_elem(&refer, elem.clone()) {
-                                Ok(SchemaValue::QName(nsname, local)) => {
-                                    Some((nsname.map(|n| n.to_string()), local.to_string()))
-                                }
+                                Ok(SchemaValue::QName(nsname, local)) => Some((nsname, local)),
                                 Ok(_) => internal_error!(self.handler, elem),
                                 Err(err) => {
                                     error!(
@@ -4848,12 +4796,12 @@ enum Scope {
     /// top-level declaration or definition
     Global,
     /// local declaration or definition
-    Local(Option<String>, String),
+    Local(Option<Arc<str>>, Arc<str>),
 }
 
 struct AttributeDeclaration {
-    name: String,
-    target_namespace: Option<String>,
+    name: Arc<str>,
+    target_namespace: Option<Arc<str>>,
     type_definition: Arc<SimpleTypeDefinition>,
     scope: Option<Scope>,
     value_constraint: Option<ValueConstraint>,
@@ -4861,14 +4809,14 @@ struct AttributeDeclaration {
 }
 
 struct ElementDeclaration {
-    name: String,
-    target_namespace: Option<String>,
+    name: Arc<str>,
+    target_namespace: Option<Arc<str>>,
     type_definition: TypeDefinition,
     scope: Option<Scope>,
     value_constraint: Option<ValueConstraint>,
     nillable: bool,
     idc_definitions: Vec<IDCDefinition>,
-    substitution_group_affiliation: Option<(Option<String>, String)>,
+    substitution_group_affiliation: Option<(Option<Arc<str>>, Arc<str>)>,
     substitution_group_exclusions: FinalSet,
     disallowed_substitutions: FinalSet,
     r#abstract: bool,
@@ -4974,21 +4922,21 @@ struct AttributeUse {
     // Although the component is defined as having a Boolean value,
     // it is treated as an enumeration to accommodate the "prohibited" value.
     required: Occurrence,
-    attribute_declaration: (Option<String>, String),
+    attribute_declaration: (Option<Arc<str>>, Arc<str>),
     value_constraint: Option<ValueConstraint>,
 }
 
 struct AttributeGroupDefinition {
-    name: String,
-    target_namespace: Option<String>,
+    name: Arc<str>,
+    target_namespace: Option<Arc<str>>,
     attribute_uses: Vec<AttributeUse>,
     attribute_wildcard: Option<Wildcard>,
     annotation: Option<Annotation>,
 }
 
 struct ModelGroupDefinition {
-    name: String,
-    target_namespace: Option<String>,
+    name: Arc<str>,
+    target_namespace: Option<Arc<str>>,
     model_group: ModelGroup,
     annotation: Option<Annotation>,
 }
@@ -5011,7 +4959,7 @@ struct ModelGroup {
 enum Term {
     ModelGroup(ModelGroup),
     Wildcard(Wildcard),
-    ElementDecl(Option<String>, String),
+    ElementDecl(Option<Arc<str>>, Arc<str>),
 }
 
 #[derive(Debug, Clone)]
@@ -5090,8 +5038,8 @@ enum ProcessContent {
 #[derive(Debug, Clone)]
 enum NamespaceConstraint {
     Any,
-    Not(Option<String>),
-    List(Vec<Option<String>>),
+    Not(Option<Arc<str>>),
+    List(Vec<Option<Arc<str>>>),
 }
 
 #[derive(Debug, Clone)]
@@ -5202,18 +5150,18 @@ enum IDCCategory {
 }
 
 struct IDCDefinition {
-    name: String,
-    target_namespace: Option<String>,
+    name: Arc<str>,
+    target_namespace: Option<Arc<str>>,
     idc_category: IDCCategory,
     selector: String,
     fields: Vec<String>,
-    referenced_key: Option<(Option<String>, String)>,
+    referenced_key: Option<(Option<Arc<str>>, Arc<str>)>,
     annotation: Vec<Annotation>,
 }
 
 struct Notation {
-    name: String,
-    target_namespace: Option<String>,
+    name: Arc<str>,
+    target_namespace: Option<Arc<str>>,
     system_id: Option<Arc<URIStr>>,
     public_id: Option<Arc<str>>,
     annotation: Option<Annotation>,
