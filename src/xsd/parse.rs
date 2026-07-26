@@ -292,6 +292,7 @@ fn parse_schema<H: SAXHandler>(
         att_groups: HashMap::new(),
         model_groups: HashMap::new(),
         elem_decls: HashMap::new(),
+        attr_decls: HashMap::new(),
         attr_form_default: QualificationForm::Unqualified,
         elem_form_default: QualificationForm::Unqualified,
         block_default: FinalSet::default(),
@@ -527,6 +528,7 @@ struct XSDParseContext<'a, H: SAXHandler> {
     att_groups: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
     model_groups: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
     elem_decls: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
+    attr_decls: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
 
     // qualification form
     attr_form_default: QualificationForm,
@@ -644,7 +646,6 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
             }
         }
 
-        let mut att_decls = vec![];
         // global definition/declaration phase
         while let Some(child) = children {
             children = child.next_sibling();
@@ -779,7 +780,29 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                                 }
                             }
                         }
-                        SCHEMA_ATTRIBUTE_NAME => att_decls.push(elem),
+                        SCHEMA_ATTRIBUTE_NAME => {
+                            let Some(name) = elem.get_attribute("name", None) else {
+                                todo!("raise error")
+                            };
+                            match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
+                                Ok(SchemaValue::String(ncname)) => {
+                                    self.attr_decls
+                                        .insert((self.target_namespace.clone(), ncname), elem);
+                                }
+                                Ok(_) => internal_error!(self.handler, elem),
+                                Err(err) => {
+                                    error!(
+                                        self.handler,
+                                        SrcAttributeGroup,
+                                        elem,
+                                        "The attribute 'name' of '{}' is failed to parse as NCName because {}.",
+                                        elem.local_name(),
+                                        err
+                                    );
+                                    return Err(XSDParseError::SrcAttributeGroup);
+                                }
+                            }
+                        }
                         SCHEMA_NOTATION_NAME => {
                             let nota = self.parse_notation(elem)?;
                             self.schema
@@ -814,8 +837,12 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         // they can be resolved here.
         // Because attribute group definitions and complex type definitions depend on
         // attribute declarations, they must be resolved before these.
-        for att in att_decls {
-            self.parse_attribute_declaration(att, self.target_namespace.clone(), true)?;
+        while let Some((key, value)) = self.attr_decls.iter().next() {
+            let key = key.clone();
+            let value = value.clone();
+
+            self.attr_decls.remove(&key);
+            self.parse_attribute_declaration(value, self.target_namespace.clone(), true)?;
         }
         // Third, resolve the attribute group definition.
         // Since this depends only on attribute declarations, it can be resolved here.
@@ -1663,8 +1690,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                     // Since the complex type definition may not have been
                     // resolved yet, set a temporary type definition.
                     Ok(TypeDefinition::Complex(Arc::new(ComplexTypeDefinition {
-                        name: key.1.into(),
-                        target_namespace: key.0.map(|ns| ns.into()),
+                        name: key.1,
+                        target_namespace: key.0,
                         base_type_definition: None,
                         derivation_method: DerivationMethod::Restriction,
                         r#final: FinalSet::default(),
@@ -2317,8 +2344,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                             )?;
 
                             Some(Arc::new(ComplexTypeDefinition {
-                                name: name.clone().into(),
-                                target_namespace: target_namespace.clone().map(|ns| ns.into()),
+                                name: name.clone(),
+                                target_namespace: target_namespace.clone(),
                                 base_type_definition: Some(base_type_definition),
                                 derivation_method,
                                 r#final,
@@ -2344,8 +2371,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                             )?;
 
                             Some(Arc::new(ComplexTypeDefinition {
-                                name: name.clone().into(),
-                                target_namespace: target_namespace.clone().map(|ns| ns.into()),
+                                name: name.clone(),
+                                target_namespace: target_namespace.clone(),
                                 base_type_definition: Some(base_type_definition),
                                 derivation_method,
                                 r#final,
@@ -2385,8 +2412,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                                 .unwrap_or(ContentType::Empty);
 
                             Some(Arc::new(ComplexTypeDefinition {
-                                name: name.clone().into(),
-                                target_namespace: target_namespace.clone().map(|ns| ns.into()),
+                                name: name.clone(),
+                                target_namespace: target_namespace.clone(),
                                 base_type_definition: Some(TypeDefinition::Complex(
                                     SCHEMA_BUILTIN_ANY_TYPE.clone(),
                                 )),
@@ -2416,8 +2443,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
             // This is a model definition that omits `complexContent` and is
             // treated as having an empty model and an empty set of attributes.
             Arc::new(ComplexTypeDefinition {
-                name: name.clone().into(),
-                target_namespace: target_namespace.clone().map(|ns| ns.into()),
+                name: name.clone(),
+                target_namespace: target_namespace.clone(),
                 base_type_definition: Some(TypeDefinition::Complex(
                     SCHEMA_BUILTIN_ANY_TYPE.clone(),
                 )),
