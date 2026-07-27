@@ -623,10 +623,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                         continue;
                     }
                     match elem.local_name().as_ref() {
-                        SCHEMA_INCLUDE_NAME => {
-                            self.parse_include(elem)?;
-                        }
-                        SCHEMA_IMPORT_NAME => todo!(),
+                        SCHEMA_INCLUDE_NAME => self.parse_include(elem)?,
+                        SCHEMA_IMPORT_NAME => self.parse_import(elem)?,
                         SCHEMA_REDEFINE_NAME => todo!(),
                         SCHEMA_ANNOTATION_NAME => {
                             let annot = self.parse_annotation(elem)?;
@@ -3737,9 +3735,26 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         assert_eq!(elem.local_name().as_ref(), SCHEMA_IMPORT_NAME);
 
         let _id = elem.remove_attribute("id", None);
-        let schema_location = match elem.remove_attribute("schemaLocation", None) {
-            Some(loc) => match SCHEMA_BUILTIN_ANYURI.parse_with_elem(&loc, elem.clone()) {
-                Ok(SchemaValue::AnyURI(uri)) => uri,
+        let namespace = elem.remove_attribute("namespace", None).map(|ns| {
+            match SCHEMA_BUILTIN_ANYURI.parse_with_elem(&ns, elem.clone()) {
+                Ok(SchemaValue::AnyURI(uri)) => Ok(uri.to_string()),
+                Ok(_) => internal_error!(self.handler, elem),
+                Err(err) => {
+                    error!(
+                        self.handler,
+                        SrcImport,
+                        elem,
+                        "The attribute 'namespace' of '{}' is failed to parse as anyURI because {}.",
+                        elem.local_name(),
+                        err
+                    );
+                    Err(XSDParseError::SrcImport)
+                }
+            }
+        }).transpose()?;
+        let schema_location = elem.remove_attribute("schemaLocation", None).map(|loc| {
+            match SCHEMA_BUILTIN_ANYURI.parse_with_elem(&loc, elem.clone()) {
+                Ok(SchemaValue::AnyURI(uri)) => Ok(uri),
                 Ok(_) => internal_error!(self.handler, elem),
                 Err(err) => {
                     error!(
@@ -3747,25 +3762,130 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                         SrcImport,
                         elem,
                         "The attribute 'schemaLocation' of '{}' is failed to parse as anyURI because {}.",
-                        elem.local_name().as_ref(),
+                        elem.local_name(),
                         err
                     );
-                    return Err(XSDParseError::SrcImport);
+                    Err(XSDParseError::SrcImport)
                 }
-            },
-            None => {
-                // The absence of the `schemaLocation` attribute is not an error.
-                // This simply means that no hint is provided regarding the location
-                // of the schema to be imported; since there is nothing the processor
-                // can do in this case, it simply ignores it and terminates processing.
-                return Ok(());
             }
-        };
+        }).transpose()?;
 
         self.check_attribute(elem.clone())?;
 
-        let _annot = self.parse_single_annotation_child(elem)?;
-        todo!()
+        let _annot = self.parse_single_annotation_child(elem.clone())?;
+
+        let Some(schema_location) = schema_location else {
+            // Unlike 'include', schemaLocation is an optional attribute, so this
+            // is not an error. However, since the processor cannot do anything
+            // further, it simply returns `Ok` and terminates processing.
+            return Ok(());
+        };
+        if self.included_resources.contains(&schema_location) {
+            // According to the note in Section 4.2.3 of XSD 1.0 Part 1,
+            // including the same resource multiple times does not result in an error.
+            //
+            // According to clause 2 of [sch-props-correct], components with the same
+            // target namespace and name pair are not allowed. To distinguish between
+            // components that are duplicates due to multiple inclusions and those that
+            // are not, it is necessary to prevent the same resource from being included
+            // multiple times.
+            return Ok(());
+        }
+
+        let mut reader = XMLReader::builder()
+            .set_handler(create_handler(&mut self.handler))
+            .build();
+
+        let included_doc = match reader.parse_uri(&schema_location, None) {
+            Ok(()) if !reader.handler.fatal_error => {
+                // Register it as an imported resource.
+                self.included_resources.insert(schema_location.clone());
+                reader.handler.document
+            }
+            Err(XMLError::IOError(_)) => {
+                // It is not an error if the resource referenced by `schemaLocation` cannot be resolved.
+                // In this context, an I/O error is treated as a failure to resolve the resource.
+                return Ok(());
+            }
+            _ => {
+                // [src-import] 2.1 and 2.2
+                error!(
+                    self.handler,
+                    SrcImport,
+                    elem,
+                    "The imported resource '{}' could not be parsed as XML.",
+                    schema_location
+                );
+                return Err(XSDParseError::SrcImport);
+            }
+        };
+
+        let Some(schema) = included_doc.document_element() else {
+            internal_error!(self.handler, elem);
+        };
+
+        if schema.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE)
+            || schema.local_name().as_ref() != SCHEMA_SCHEMA_NAME
+        {
+            // [src-import] 2.1 and 2.2
+            error!(
+                self.handler,
+                SrcImport,
+                schema,
+                "The document element of the imported resource '{}' must be '{{{}}}schema', but is '{}{}'.",
+                schema_location,
+                XML_SCHEMA_NAMESPACE,
+                schema
+                    .namespace_name()
+                    .map(|ns| format!("{{{ns}}}"))
+                    .unwrap_or_default(),
+                schema.local_name()
+            );
+            return Err(XSDParseError::SrcImport);
+        }
+
+        if self.target_namespace.as_deref() == namespace.as_deref() {
+            // [src-import] clause 1
+            error!(
+                self.handler,
+                SrcImport,
+                elem,
+                "The '{}' must not be the imported schema's namespace because it is as same as the parent schema's one.",
+                namespace.as_deref().unwrap_or("(null)")
+            );
+            return Err(XSDParseError::SrcImport);
+        }
+
+        let target_namespace = self
+            .get_any_uri(schema.clone(), "targetNamespace", XSDParseError::SrcImport)?
+            .map(|ns| ns.to_string());
+        if target_namespace != namespace {
+            // [src-include] clause 2
+            error!(
+                self.handler,
+                SrcImport,
+                schema,
+                "The imported schema's target namespace is '{}', but the attribute value of 'namespace' is '{}'.",
+                target_namespace.as_deref().unwrap_or("(null)"),
+                namespace.as_deref().unwrap_or("(null)")
+            );
+            return Err(XSDParseError::SrcImport);
+        }
+
+        // It would be easier if child elements could be retrieved and merged into the parse
+        // context, but given the differences in values for `blockDefault`, `finalDefault`,
+        // `xxxFormDefault`, and others, the only option is to parse them as separate schemas
+        // and then merge them.
+        let schema = parse_schema(included_doc, &mut self.handler)?;
+        // Merge schemas
+        self.schema.type_defs.extend(schema.type_defs);
+        self.schema.att_decls.extend(schema.att_decls);
+        self.schema.elem_decls.extend(schema.elem_decls);
+        self.schema.attgroup_defs.extend(schema.attgroup_defs);
+        self.schema.modelgroup_defs.extend(schema.modelgroup_defs);
+        self.schema.notation_decls.extend(schema.notation_decls);
+        self.schema.annotations.extend(schema.annotations);
+        Ok(())
     }
 
     fn parse_redefine(&mut self, mut elem: Element) -> Result<(), XSDParseError> {
@@ -4046,7 +4166,56 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                     error,
                     elem,
                     "The attribute '{}' of '{}' is failed to parse as boolean because {}.",
-                    boolean,
+                    name,
+                    elem.local_name(),
+                    err
+                );
+                Err(error)
+            }
+        }
+    }
+
+    fn extract_any_uri(
+        &mut self,
+        mut elem: Element,
+        name: &str,
+        error: XSDParseError,
+    ) -> Result<Option<Arc<URIStr>>, XSDParseError> {
+        let Some(uri) = elem.remove_attribute(name, None) else {
+            return Ok(None);
+        };
+        self.parse_any_uri(elem, name, &uri, error)
+    }
+
+    fn get_any_uri(
+        &mut self,
+        elem: Element,
+        name: &str,
+        error: XSDParseError,
+    ) -> Result<Option<Arc<URIStr>>, XSDParseError> {
+        let Some(uri) = elem.get_attribute(name, None) else {
+            return Ok(None);
+        };
+        self.parse_any_uri(elem, name, &uri, error)
+    }
+
+    fn parse_any_uri(
+        &mut self,
+        elem: Element,
+        name: &str,
+        value: &str,
+        error: XSDParseError,
+    ) -> Result<Option<Arc<URIStr>>, XSDParseError> {
+        match SCHEMA_BUILTIN_ANYURI.parse_with_elem(value, elem.clone()) {
+            Ok(SchemaValue::AnyURI(uri)) => Ok(Some(uri)),
+            Ok(_) => internal_error!(self.handler, elem),
+            Err(err) => {
+                error!(
+                    self.handler,
+                    error,
+                    elem,
+                    "The attribute '{}' of '{}' is failed to parse as anyURI because {}.",
+                    name,
                     elem.local_name(),
                     err
                 );
