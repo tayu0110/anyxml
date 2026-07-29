@@ -11,7 +11,7 @@ use crate::{
     xinclude::XIncludeError,
     xpath::{XPathCompileError, XPathError},
     xpointer::XPointerParseError,
-    xsd::{XSDParseError, XSDValidationError},
+    xsd::XSDParseError,
 };
 
 /// Error level.
@@ -110,8 +110,6 @@ pub enum XMLError {
     RncParseError(RncParseError),
     // XSD parsing errors,
     XSDParseError(XSDParseError),
-    // XSD validation errors
-    XSDValidError(Box<XSDValidationError>),
     // XPointer errors
     XPointerParseError(XPointerParseError),
     // XInclude errors
@@ -209,11 +207,5 @@ impl From<RncParseError> for XMLError {
 impl From<XSDParseError> for XMLError {
     fn from(value: XSDParseError) -> Self {
         XMLError::XSDParseError(value)
-    }
-}
-
-impl From<XSDValidationError> for XMLError {
-    fn from(value: XSDValidationError) -> Self {
-        Self::XSDValidError(Box::new(value))
     }
 }
