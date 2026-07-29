@@ -284,24 +284,8 @@ fn parse_schema<H: SAXHandler>(
     document: Document,
     handler: &mut H,
 ) -> Result<Schema, XSDParseError> {
-    let mut context = XSDParseContext {
-        schema: Schema::default(),
-        target_namespace: None,
-        included_resources: HashSet::from([document.document_base_uri().as_ref().into()]),
-        unnamed: 0,
-        simple_types: HashMap::new(),
-        complex_types: HashMap::new(),
-        att_groups: HashMap::new(),
-        model_groups: HashMap::new(),
-        elem_decls: HashMap::new(),
-        attr_decls: HashMap::new(),
-        attr_form_default: QualificationForm::Unqualified,
-        elem_form_default: QualificationForm::Unqualified,
-        block_default: FinalSet::default(),
-        final_default: FinalSet::default(),
-        handler,
-    };
-    context.parse_schema(document)?;
+    let mut context = XSDParseContext::new(handler);
+    context.parse(document)?;
     Ok(context.schema)
 }
 
@@ -545,7 +529,34 @@ struct XSDParseContext<'a, H: SAXHandler> {
     handler: &'a mut H,
 }
 
-impl<H: SAXHandler> XSDParseContext<'_, H> {
+impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
+    fn new(handler: &'a mut H) -> Self {
+        XSDParseContext {
+            schema: Schema::default(),
+            target_namespace: None,
+            included_resources: HashSet::new(),
+            unnamed: 0,
+            simple_types: HashMap::new(),
+            complex_types: HashMap::new(),
+            att_groups: HashMap::new(),
+            model_groups: HashMap::new(),
+            elem_decls: HashMap::new(),
+            attr_decls: HashMap::new(),
+            attr_form_default: QualificationForm::Unqualified,
+            elem_form_default: QualificationForm::Unqualified,
+            block_default: FinalSet::default(),
+            final_default: FinalSet::default(),
+            handler,
+        }
+    }
+
+    fn parse(&mut self, document: Document) -> Result<(), XSDParseError> {
+        self.included_resources
+            .insert(document.document_base_uri().as_ref().into());
+        self.parse_schema(document)?;
+        Ok(())
+    }
+
     fn parse_schema(&mut self, document: Document) -> Result<(), XSDParseError> {
         let Some(mut schema) = document.document_element() else {
             internal_error!(self.handler, document);
@@ -587,27 +598,16 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                 true,
             )?
             .unwrap_or_default();
-        let _id = schema.remove_attribute("id", None);
-        let target_namespace = schema.remove_attribute("targetNamespace", None);
+        let _id = self.extract_ncname(schema.clone(), "id", XSDParseError::SchPropsCorrect)?;
         let _version = schema.remove_attribute("version", None);
         let _lang = schema.remove_attribute("lang", Some(XML_XML_NAMESPACE));
-
-        self.target_namespace = target_namespace.as_deref().map(|target_namespace| {
-            match SCHEMA_BUILTIN_ANYURI.parse_with_elem(target_namespace, schema.clone()) {
-                Ok(SchemaValue::AnyURI(uri)) => Ok(uri.to_string().into()),
-                Ok(_) => internal_error!(self.handler, schema),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SchPropsCorrect,
-                        schema,
-                        "The attribute 'targetNamespace' of 'schema' is failed to parse as anyURI because {}.",
-                        err
-                    );
-                    Err(XSDParseError::SchPropsCorrect)
-                }
-            }
-        }).transpose()?;
+        self.target_namespace = self
+            .extract_any_uri(
+                schema.clone(),
+                "targetNamespace",
+                XSDParseError::SchPropsCorrect,
+            )?
+            .map(|ns| ns.to_string().into());
 
         self.check_attribute(schema.clone())?;
 
@@ -658,164 +658,53 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
 
             match child.downcast() {
                 NodeKind::Element(elem) => {
+                    use XSDParseError::*;
+
                     if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
                         // skip foreign element
                         continue;
                     }
-                    match elem.local_name().as_ref() {
+                    let (memo, error) = match elem.local_name().as_ref() {
                         SCHEMA_ANNOTATION_NAME => {
                             let annot = self.parse_annotation(elem)?;
                             self.schema.annotations.push(annot);
+                            continue;
                         }
-                        SCHEMA_SIMPLETYPE_NAME => {
-                            let Some(name) = elem.get_attribute("name", None) else {
-                                todo!(
-                                    "raise error because of missing 'name' attr for global simple type definition"
-                                )
-                            };
-                            match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                                Ok(SchemaValue::String(ncname)) => {
-                                    self.simple_types
-                                        .insert((self.target_namespace.clone(), ncname), elem);
-                                }
-                                Err(err) => {
-                                    error!(
-                                        self.handler,
-                                        SrcSimpleType,
-                                        elem,
-                                        "The attribute 'name' of '{}' is failed to parse as NCName because {}.",
-                                        elem.local_name(),
-                                        err
-                                    );
-                                    return Err(XSDParseError::SrcSimpleType);
-                                }
-                                Ok(_) => internal_error!(self.handler, elem),
-                            }
-                        }
-                        SCHEMA_COMPLEXTYPE_NAME => {
-                            let Some(name) = elem.get_attribute("name", None) else {
-                                todo!(
-                                    "raise error because of missing 'name' attr for global simple type definition"
-                                )
-                            };
-                            match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                                Ok(SchemaValue::String(ncname)) => {
-                                    self.complex_types
-                                        .insert((self.target_namespace.clone(), ncname), elem);
-                                }
-                                Err(err) => {
-                                    error!(
-                                        self.handler,
-                                        SrcCt,
-                                        elem,
-                                        "The attribute 'name' of '{}' is failed to parse as NCName because {}.",
-                                        elem.local_name(),
-                                        err
-                                    );
-                                    return Err(XSDParseError::SrcCt);
-                                }
-                                Ok(_) => internal_error!(self.handler, elem),
-                            }
-                        }
-                        SCHEMA_GROUP_NAME => {
-                            let Some(name) = elem.get_attribute("name", None) else {
-                                todo!("raise error")
-                            };
-                            match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                                Ok(SchemaValue::String(ncname)) => {
-                                    self.model_groups
-                                        .insert((self.target_namespace.clone(), ncname), elem);
-                                }
-                                Ok(_) => internal_error!(self.handler, elem),
-                                Err(err) => {
-                                    error!(
-                                        self.handler,
-                                        SrcModelGroupDefn,
-                                        elem,
-                                        "The attribute 'name' of '{}' is failed to parse as NCName because {}.",
-                                        elem.local_name(),
-                                        err
-                                    );
-                                    return Err(XSDParseError::SrcModelGroupDefn);
-                                }
-                            }
-                        }
-                        SCHEMA_ATTGROUP_NAME => {
-                            let Some(name) = elem.get_attribute("name", None) else {
-                                todo!("raise error")
-                            };
-                            match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                                Ok(SchemaValue::String(ncname)) => {
-                                    self.att_groups
-                                        .insert((self.target_namespace.clone(), ncname), elem);
-                                }
-                                Ok(_) => internal_error!(self.handler, elem),
-                                Err(err) => {
-                                    error!(
-                                        self.handler,
-                                        SrcElement,
-                                        elem,
-                                        "The attribute 'name' of '{}' is failed to parse as NCName because {}.",
-                                        elem.local_name(),
-                                        err
-                                    );
-                                    return Err(XSDParseError::SrcElement);
-                                }
-                            }
-                        }
-                        SCHEMA_ELEMENT_NAME => {
-                            let Some(name) = elem.get_attribute("name", None) else {
-                                todo!("raise error")
-                            };
-                            match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                                Ok(SchemaValue::String(ncname)) => {
-                                    self.elem_decls
-                                        .insert((self.target_namespace.clone(), ncname), elem);
-                                }
-                                Ok(_) => internal_error!(self.handler, elem),
-                                Err(err) => {
-                                    error!(
-                                        self.handler,
-                                        SrcAttributeGroup,
-                                        elem,
-                                        "The attribute 'name' of '{}' is failed to parse as NCName because {}.",
-                                        elem.local_name(),
-                                        err
-                                    );
-                                    return Err(XSDParseError::SrcAttributeGroup);
-                                }
-                            }
-                        }
-                        SCHEMA_ATTRIBUTE_NAME => {
-                            let Some(name) = elem.get_attribute("name", None) else {
-                                todo!("raise error")
-                            };
-                            match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                                Ok(SchemaValue::String(ncname)) => {
-                                    self.attr_decls
-                                        .insert((self.target_namespace.clone(), ncname), elem);
-                                }
-                                Ok(_) => internal_error!(self.handler, elem),
-                                Err(err) => {
-                                    error!(
-                                        self.handler,
-                                        SrcAttributeGroup,
-                                        elem,
-                                        "The attribute 'name' of '{}' is failed to parse as NCName because {}.",
-                                        elem.local_name(),
-                                        err
-                                    );
-                                    return Err(XSDParseError::SrcAttributeGroup);
-                                }
-                            }
-                        }
+                        SCHEMA_SIMPLETYPE_NAME => (&mut self.simple_types, SrcSimpleType),
+                        SCHEMA_COMPLEXTYPE_NAME => (&mut self.complex_types, SrcCt),
+                        SCHEMA_GROUP_NAME => (&mut self.model_groups, SrcModelGroupDefn),
+                        SCHEMA_ATTGROUP_NAME => (&mut self.att_groups, SrcAttributeGroup),
+                        SCHEMA_ELEMENT_NAME => (&mut self.elem_decls, SrcElement),
+                        SCHEMA_ATTRIBUTE_NAME => (&mut self.attr_decls, SrcAttribute),
                         SCHEMA_NOTATION_NAME => {
                             let nota = self.parse_notation(elem)?;
                             self.schema
                                 .notation_decls
                                 .insert((nota.target_namespace.clone(), nota.name.clone()), nota);
+                            continue;
                         }
                         _ => unallowed_element!(self.handler, elem),
+                    };
+
+                    let Some(value) = elem.get_attribute("name", None) else {
+                        todo!("raise error");
+                    };
+                    match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&value, elem.clone()) {
+                        Ok(SchemaValue::String(ncname)) => {
+                            memo.insert((self.target_namespace.clone(), ncname), elem);
+                        }
+                        Ok(_) => internal_error!(self.handler, elem),
+                        Err(err) => {
+                            error!(
+                                self.handler,
+                                error,
+                                elem,
+                                "The attribute 'name' of '{}' is failed to parse as NCName because {}.",
+                                elem.local_name(),
+                                err
+                            );
+                            return Err(error);
+                        }
                     }
                 }
                 NodeKind::Text(_) => unallowed_text!(self.handler, schema),
@@ -1280,24 +1169,9 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
             .unwrap_or(self.final_default);
         let fixed = elem.remove_attribute("fixed", None);
         let _id = elem.remove_attribute("id", None);
-        let name = match elem.remove_attribute("name", None) {
-            Some(name) => match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                Ok(SchemaValue::String(ncname)) => ncname,
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcElement,
-                        elem,
-                        "The attribute 'name' of 'element' is failed to parse as NCName because {}.",
-                        err
-                    );
-                    return Err(XSDParseError::SrcElement);
-                }
-            },
-            None => {
-                todo!("raise error because of missing a mandatory attribute");
-            }
+        let Some(name) = self.extract_ncname(elem.clone(), "name", XSDParseError::SrcElement)?
+        else {
+            todo!("raise error because of missing a mandatory attribute");
         };
         let nillable = self
             .extract_boolean(elem.clone(), "nillable", XSDParseError::SrcElement)?
@@ -1405,23 +1279,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         else {
             internal_error!(self.handler, elem);
         };
-        let name = match elem.remove_attribute("name", None) {
-            Some(name) => match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                Ok(SchemaValue::String(ncname)) => Some(ncname),
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcElement,
-                        elem,
-                        "The attribute 'name' of 'element' is failed to parse as NCName because {}.",
-                        err
-                    );
-                    return Err(XSDParseError::SrcElement);
-                }
-            },
-            None => None,
-        };
+        let name = self.extract_ncname(elem.clone(), "name", XSDParseError::SrcElement)?;
         let r#ref = self.extract_qname(elem.clone(), "ref")?;
 
         let mut children = elem.first_child();
@@ -1728,23 +1586,10 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         assert_eq!(elem.local_name().as_ref(), SCHEMA_ATTGROUP_NAME);
 
         let _id = elem.remove_attribute("id", None);
-        let name = match elem.remove_attribute("name", None) {
-            Some(name) => match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                Ok(SchemaValue::String(ncname)) => ncname,
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcAttributeGroup,
-                        elem,
-                        "The attribute 'name' of '{}' is failed to parse as NCName because {}.",
-                        SCHEMA_ATTGROUP_NAME,
-                        err
-                    );
-                    return Err(XSDParseError::SrcAttributeGroup);
-                }
-            },
-            None => todo!("raise error"),
+        let Some(name) =
+            self.extract_ncname(elem.clone(), "name", XSDParseError::SrcAttributeGroup)?
+        else {
+            todo!("raise error")
         };
 
         loop_guard.push((target_namespace.clone(), name.clone()));
@@ -1820,22 +1665,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
 
         let r#final = elem.remove_attribute("final", None);
         let _id = elem.remove_attribute("id", None);
-        let name = match elem.remove_attribute("name", None) {
-            Some(name) => match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                Ok(SchemaValue::String(ncname)) => ncname,
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcSimpleType,
-                        elem,
-                        "The attribute 'name' of '{}' is failed to parse as QName because {}.",
-                        SCHEMA_SIMPLETYPE_NAME,
-                        err
-                    );
-                    return Err(XSDParseError::SrcSimpleType);
-                }
-            },
+        let name = match self.extract_ncname(elem.clone(), "name", XSDParseError::SrcSimpleType)? {
+            Some(name) => name,
             None => {
                 if !global {
                     self.unnamed += 1;
@@ -2244,22 +2075,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         let mixed = self
             .extract_boolean(elem.clone(), "mixed", XSDParseError::SrcCt)?
             .unwrap_or(false);
-        let name = match elem.remove_attribute("name", None) {
-            Some(name) => match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                Ok(SchemaValue::String(ncname)) => ncname,
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcCt,
-                        elem,
-                        "The attribute 'name' of '{}' is failed to parse as boolean because {}.",
-                        SCHEMA_COMPLEXTYPE_NAME,
-                        err
-                    );
-                    return Err(XSDParseError::SrcCt);
-                }
-            },
+        let name = match self.extract_ncname(elem.clone(), "name", XSDParseError::SrcCt)? {
+            Some(name) => name,
             None => {
                 if !global {
                     self.unnamed += 1;
@@ -3184,7 +3001,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         else {
             internal_error!(self.handler, elem);
         };
-        let Some(r#ref) = elem.remove_attribute("ref", None) else {
+        let Some(r#ref) = self.extract_ncname(elem.clone(), "ref", XSDParseError::SrcModelGroup)?
+        else {
             error!(
                 self.handler,
                 SrcModelGroup,
@@ -3199,22 +3017,6 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         let mut children = elem.first_child();
         let _annot = self.pop_annotation(&mut children)?;
         self.check_unexpected_schema_elements(children)?;
-
-        let r#ref = match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&r#ref, elem.clone()) {
-            Ok(SchemaValue::String(ncname)) => ncname,
-            Ok(_) => internal_error!(self.handler, elem),
-            Err(err) => {
-                error!(
-                    self.handler,
-                    SrcModelGroup,
-                    elem,
-                    "The attribute 'ref' of '{}' is failed to parse as NCName because {}.",
-                    SCHEMA_GROUP_NAME,
-                    err
-                );
-                return Err(XSDParseError::SrcModelGroup);
-            }
-        };
 
         if let Some(elem) = self
             .model_groups
@@ -3596,31 +3398,16 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         assert_eq!(elem.local_name().as_ref(), SCHEMA_INCLUDE_NAME);
 
         let _id = elem.remove_attribute("id", None);
-        let schema_location = match elem.remove_attribute("schemaLocation", None) {
-            Some(loc) => match SCHEMA_BUILTIN_ANYURI.parse_with_elem(&loc, elem.clone()) {
-                Ok(SchemaValue::AnyURI(uri)) => uri,
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcInclude,
-                        elem,
-                        "The attribute 'schemaLocation' of '{}' is failed to parse as anyURI because {}.",
-                        elem.local_name().as_ref(),
-                        err
-                    );
-                    return Err(XSDParseError::SrcInclude);
-                }
-            },
-            None => {
-                error!(
-                    self.handler,
-                    SrcInclude,
-                    elem,
-                    "The mandatory attribute 'schemaLocation' of 'include' is missing."
-                );
-                return Err(XSDParseError::SrcInclude);
-            }
+        let Some(schema_location) =
+            self.extract_any_uri(elem.clone(), "schemaLocation", XSDParseError::SrcInclude)?
+        else {
+            error!(
+                self.handler,
+                SrcInclude,
+                elem,
+                "The mandatory attribute 'schemaLocation' of 'include' is missing."
+            );
+            return Err(XSDParseError::SrcInclude);
         };
 
         self.check_attribute(elem.clone())?;
@@ -3718,7 +3505,11 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         // context, but given the differences in values for `blockDefault`, `finalDefault`,
         // `xxxFormDefault`, and others, the only option is to parse them as separate schemas
         // and then merge them.
-        let schema = parse_schema(included_doc, &mut self.handler)?;
+        let mut context = XSDParseContext::new(&mut self.handler);
+        context.unnamed = self.unnamed;
+        context.parse(included_doc)?;
+        self.unnamed = context.unnamed;
+        let schema = context.schema;
         // Merge schemas
         self.schema.type_defs.extend(schema.type_defs);
         self.schema.att_decls.extend(schema.att_decls);
@@ -3752,23 +3543,8 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                 }
             }
         }).transpose()?;
-        let schema_location = elem.remove_attribute("schemaLocation", None).map(|loc| {
-            match SCHEMA_BUILTIN_ANYURI.parse_with_elem(&loc, elem.clone()) {
-                Ok(SchemaValue::AnyURI(uri)) => Ok(uri),
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcImport,
-                        elem,
-                        "The attribute 'schemaLocation' of '{}' is failed to parse as anyURI because {}.",
-                        elem.local_name(),
-                        err
-                    );
-                    Err(XSDParseError::SrcImport)
-                }
-            }
-        }).transpose()?;
+        let schema_location =
+            self.extract_any_uri(elem.clone(), "schemaLocation", XSDParseError::SrcImport)?;
 
         self.check_attribute(elem.clone())?;
 
@@ -3780,6 +3556,9 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
             // further, it simply returns `Ok` and terminates processing.
             return Ok(());
         };
+        // Manage imported URIs within the same set as included URIs.
+        // Considering cases where an imported schema includes additional schemas, it
+        // is better not to separate duplicate management between include and import.
         if self.included_resources.contains(&schema_location) {
             // According to the note in Section 4.2.3 of XSD 1.0 Part 1,
             // including the same resource multiple times does not result in an error.
@@ -3860,7 +3639,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
             .get_any_uri(schema.clone(), "targetNamespace", XSDParseError::SrcImport)?
             .map(|ns| ns.to_string());
         if target_namespace != namespace {
-            // [src-include] clause 2
+            // [src-import] clause 3
             error!(
                 self.handler,
                 SrcImport,
@@ -3876,7 +3655,11 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         // context, but given the differences in values for `blockDefault`, `finalDefault`,
         // `xxxFormDefault`, and others, the only option is to parse them as separate schemas
         // and then merge them.
-        let schema = parse_schema(included_doc, &mut self.handler)?;
+        let mut context = XSDParseContext::new(&mut self.handler);
+        context.unnamed = self.unnamed;
+        context.parse(included_doc)?;
+        self.unnamed = context.unnamed;
+        let schema = context.schema;
         // Merge schemas
         self.schema.type_defs.extend(schema.type_defs);
         self.schema.att_decls.extend(schema.att_decls);
@@ -3893,36 +3676,26 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         assert_eq!(elem.local_name().as_ref(), SCHEMA_REDEFINE_NAME);
 
         let _id = elem.remove_attribute("id", None);
-        let schema_location = match elem.remove_attribute("schemaLocation", None) {
-            Some(loc) => match SCHEMA_BUILTIN_ANYURI.parse_with_elem(&loc, elem.clone()) {
-                Ok(SchemaValue::AnyURI(uri)) => uri,
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcRedefine,
-                        elem,
-                        "The attribute 'schemaLocation' of '{}' is failed to parse as anyURI because {}.",
-                        elem.local_name().as_ref(),
-                        err
-                    );
-                    return Err(XSDParseError::SrcRedefine);
-                }
-            },
-            None => {
-                error!(
-                    self.handler,
-                    SrcImport,
-                    elem,
-                    "The mandatory attribute 'schemaLocation' of 'redefine' is missing."
-                );
-                return Err(XSDParseError::SrcImport);
-            }
+        let Some(schema_location) =
+            self.extract_any_uri(elem.clone(), "schemaLocation", XSDParseError::SrcRedefine)?
+        else {
+            error!(
+                self.handler,
+                SrcRedefine,
+                elem,
+                "The mandatory attribute 'schemaLocation' of '{}' is missing.",
+                elem.local_name()
+            );
+            return Err(XSDParseError::SrcRedefine);
         };
 
         self.check_attribute(elem.clone())?;
 
         let mut children = elem.first_child();
+        let mut simple_types = vec![];
+        let mut complex_types = vec![];
+        let mut groups = vec![];
+        let mut att_groups = vec![];
         while let Some(child) = children {
             children = child.next_sibling();
 
@@ -3936,18 +3709,126 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                         SCHEMA_ANNOTATION_NAME => {
                             let _annot = self.parse_annotation(elem)?;
                         }
-                        SCHEMA_SIMPLETYPE_NAME => todo!(),
-                        SCHEMA_COMPLEXTYPE_NAME => todo!(),
-                        SCHEMA_GROUP_NAME => todo!(),
-                        SCHEMA_ATTGROUP_NAME => todo!(),
-                        _ => todo!("raise error"),
+                        SCHEMA_SIMPLETYPE_NAME => simple_types.push(elem),
+                        SCHEMA_COMPLEXTYPE_NAME => complex_types.push(elem),
+                        SCHEMA_GROUP_NAME => groups.push(elem),
+                        SCHEMA_ATTGROUP_NAME => att_groups.push(elem),
+                        _ => unallowed_element!(self.handler, elem),
                     }
                 }
                 NodeKind::Text(_) => unallowed_text!(self.handler, elem),
                 _ => {}
             }
         }
-        todo!()
+        self.check_unexpected_schema_elements(children)?;
+
+        if self.included_resources.contains(&schema_location) {
+            // It is unclear how to handle 'redefine' that have different sets
+            // of children for the same resource, but for now, simply skip them.
+            // Although this is not explicitly stated in the specification, one
+            // possible strategy might be to group 'include' and 'redefine' that
+            // target the same resource and treat them as a single 'redefine'.
+            return Ok(());
+        }
+
+        let empty = simple_types.is_empty()
+            && complex_types.is_empty()
+            && groups.is_empty()
+            && att_groups.is_empty();
+
+        let mut reader = XMLReader::builder()
+            .set_handler(create_handler(&mut self.handler))
+            .build();
+
+        let included_doc = match reader.parse_uri(&schema_location, None) {
+            Ok(()) if !reader.handler.fatal_error => {
+                // Register it as an included resource.
+                self.included_resources.insert(schema_location.clone());
+                reader.handler.document
+            }
+            Err(XMLError::IOError(_)) if empty => {
+                // Resource errors are treated the same as an 'include' only
+                // when the resource has no children other than 'annotation's.
+                return Ok(());
+            }
+            _ => {
+                // [src-redefine] clause 1 and 2
+                error!(
+                    self.handler,
+                    SrcRedefine,
+                    elem,
+                    "The redefined resource '{}' could not be parsed as XML.",
+                    schema_location
+                );
+                return Err(XSDParseError::SrcRedefine);
+            }
+        };
+
+        let Some(mut schema) = included_doc.document_element() else {
+            internal_error!(self.handler, elem);
+        };
+
+        if schema.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE)
+            || schema.local_name().as_ref() != SCHEMA_SCHEMA_NAME
+        {
+            // [src-redefine] clause 2
+            error!(
+                self.handler,
+                SrcRedefine,
+                schema,
+                "The document element of the redefined resource '{}' must be '{{{}}}schema', but is '{}{}'.",
+                schema_location,
+                XML_SCHEMA_NAMESPACE,
+                schema
+                    .namespace_name()
+                    .map(|ns| format!("{{{ns}}}"))
+                    .unwrap_or_default(),
+                schema.local_name()
+            );
+            return Err(XSDParseError::SrcRedefine);
+        }
+
+        if let Some(target_namespace) = schema.get_attribute("targetNamespace", None) {
+            if self
+                .target_namespace
+                .as_deref()
+                .is_none_or(|ns| ns != target_namespace)
+            {
+                // [src-redefine] clause 3
+                error!(
+                    self.handler,
+                    SrcRedefine,
+                    schema,
+                    "The redefine schema's target namespace is '{}', but parent schema's one is '{}'.",
+                    target_namespace,
+                    self.target_namespace.as_deref().unwrap_or("(null)")
+                );
+                return Err(XSDParseError::SrcRedefine);
+            }
+        } else if let Some(target_namespace) = self.target_namespace.as_deref() {
+            schema
+                .set_attribute("targetNamespace", None, Some(target_namespace))
+                .ok();
+        }
+
+        // It would be easier if child elements could be retrieved and merged into the parse
+        // context, but given the differences in values for `blockDefault`, `finalDefault`,
+        // `xxxFormDefault`, and others, the only option is to parse them as separate schemas
+        // and then merge them.
+        let mut context = XSDParseContext::new(&mut self.handler);
+        context.unnamed = self.unnamed;
+        context.parse(included_doc)?;
+        self.unnamed = context.unnamed;
+        let schema = context.schema;
+        // Merge schemas
+        self.schema.type_defs.extend(schema.type_defs);
+        self.schema.att_decls.extend(schema.att_decls);
+        self.schema.elem_decls.extend(schema.elem_decls);
+        self.schema.attgroup_defs.extend(schema.attgroup_defs);
+        self.schema.modelgroup_defs.extend(schema.modelgroup_defs);
+        self.schema.notation_decls.extend(schema.notation_decls);
+        self.schema.annotations.extend(schema.annotations);
+        Ok(())
     }
 
     fn parse_notation(&mut self, mut elem: Element) -> Result<Notation, XSDParseError> {
@@ -4128,8 +4009,17 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
         let Some(ncname) = elem.remove_attribute(name, None) else {
             return Ok(None);
         };
+        self.parse_ncname(elem, name, &ncname, error)
+    }
 
-        match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&ncname, elem.clone()) {
+    fn parse_ncname(
+        &mut self,
+        elem: Element,
+        name: &str,
+        value: &str,
+        error: XSDParseError,
+    ) -> Result<Option<Arc<str>>, XSDParseError> {
+        match SCHEMA_BUILTIN_NCNAME.parse_with_elem(value, elem.clone()) {
             Ok(SchemaValue::String(ret)) => Ok(Some(ret)),
             Ok(_) => internal_error!(self.handler, elem),
             Err(err) => {
@@ -4138,7 +4028,7 @@ impl<H: SAXHandler> XSDParseContext<'_, H> {
                     error,
                     elem,
                     "The attribute '{}' of '{}' is failed to parse as NCName because {}.",
-                    ncname,
+                    name,
                     elem.local_name(),
                     err
                 );
