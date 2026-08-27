@@ -39,6 +39,14 @@ pub enum SchemaTypeError {
     ParseError(ParseError),
 }
 
+impl std::fmt::Display for SchemaTypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for SchemaTypeError {}
+
 impl From<FacetError> for SchemaTypeError {
     fn from(value: FacetError) -> Self {
         Self::FacetError(value)
@@ -98,6 +106,14 @@ pub enum ParseError {
     PositiveInteger,
     Facet,
 }
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for ParseError {}
 
 /// # Reference
 /// - [4.1.1 The Simple Type Definition Schema Component](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#dc-defn)
@@ -2356,7 +2372,7 @@ impl SimpleTypeDefinitionBuilder {
         if !self.base.is_applicable_facets(FacetType::Pattern) {
             return Err(FacetError::Unacceptable.into());
         }
-        let pattern = pattern.into();
+        let pattern: String = pattern.into();
         if XSRegexp::compile(&pattern).is_err() {
             return Err(FacetError::InvalidPattern.into());
         }

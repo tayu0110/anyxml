@@ -1,7 +1,9 @@
 /target
 /resources/xmlconf
 /resources/XSLT-testsuite-04
+/resources/xmlschema2006-11-06
 /resources/XIncl*
 /resources/*.zip
+/resources/*.tar.gz
 /benches/dataset/*.gml
 /.vscode
