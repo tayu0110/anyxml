@@ -5,6 +5,8 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use anyxml_automata::xsregexp::RegexpError;
+
 use crate::{
     XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
@@ -296,6 +298,8 @@ pub enum XSDParseError {
     UnallowedAttribute,
     UnallowedText,
     TooLargeOccurence,
+    MissingSubComponent,
+    RegexpError(RegexpError),
 
     // Schema Representation Constraints
     /// Schema Document Location Strategy
@@ -5090,7 +5094,7 @@ enum QualificationForm {
 }
 
 #[derive(Debug, Clone)]
-struct AttributeUse {
+pub(super) struct AttributeUse {
     // Although the component is defined as having a Boolean value,
     // it is treated as an enumeration to accommodate the "prohibited" value.
     required: Occurrence,
@@ -5135,7 +5139,7 @@ enum Term {
 }
 
 #[derive(Debug, Clone)]
-struct Particle {
+pub(super) struct Particle {
     min_occurs: usize,
     max_occurs: Option<usize>,
     term: Term,
@@ -5215,7 +5219,7 @@ enum NamespaceConstraint {
 }
 
 #[derive(Debug, Clone)]
-struct Wildcard {
+pub(super) struct Wildcard {
     ns_constraint: NamespaceConstraint,
     process_contents: ProcessContent,
 }

@@ -1,4 +1,5 @@
 mod parse;
+mod typedef;
 
 pub use parse::{Schema, XSDParseError};
 
