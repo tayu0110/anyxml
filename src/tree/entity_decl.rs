@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
+    XMLVersion,
     save::write_quoted,
     tree::{
         Document, NodeType, XMLTreeError,
@@ -75,8 +76,11 @@ impl EntityDecl {
         name: Rc<str>,
         value: Rc<str>,
         owner_document: Document,
-    ) -> Self {
-        Node::create_node(
+    ) -> Result<Self, XMLTreeError> {
+        if !XMLVersion::XML10.validate_name(&name) {
+            return Err(XMLTreeError::InvalidName);
+        }
+        Ok(Node::create_node(
             EntityDeclSpec {
                 first_child: None,
                 last_child: None,
@@ -87,7 +91,7 @@ impl EntityDecl {
                 value: Some(value),
             },
             owner_document,
-        )
+        ))
     }
 
     pub(crate) fn new_external_entity_decl(
@@ -95,8 +99,11 @@ impl EntityDecl {
         system_id: Rc<URIStr>,
         public_id: Option<Rc<str>>,
         owner_document: Document,
-    ) -> Self {
-        Node::create_node(
+    ) -> Result<Self, XMLTreeError> {
+        if !XMLVersion::XML10.validate_name(&name) {
+            return Err(XMLTreeError::InvalidName);
+        }
+        Ok(Node::create_node(
             EntityDeclSpec {
                 first_child: None,
                 last_child: None,
@@ -107,7 +114,7 @@ impl EntityDecl {
                 value: None,
             },
             owner_document,
-        )
+        ))
     }
 
     pub(crate) fn new_unparsed_entity_decl(
@@ -116,8 +123,13 @@ impl EntityDecl {
         public_id: Option<Rc<str>>,
         notation_name: Rc<str>,
         owner_document: Document,
-    ) -> Self {
-        Node::create_node(
+    ) -> Result<Self, XMLTreeError> {
+        if !XMLVersion::XML10.validate_name(&name)
+            || !XMLVersion::XML10.validate_name(&notation_name)
+        {
+            return Err(XMLTreeError::InvalidName);
+        }
+        Ok(Node::create_node(
             EntityDeclSpec {
                 first_child: None,
                 last_child: None,
@@ -128,7 +140,7 @@ impl EntityDecl {
                 value: None,
             },
             owner_document,
-        )
+        ))
     }
 
     /// Entity name.

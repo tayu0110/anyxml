@@ -191,7 +191,7 @@ fn normalize_tree(mut document: Document, base_uri: &URIStr) -> Document {
                     .unwrap();
             }
             NodeKind::CDATASection(mut cdata) => {
-                let text = document.create_text(&*cdata.data());
+                let text = document.create_text(&*cdata.data()).unwrap();
                 cdata.replace_subtree(text).unwrap();
             }
             _ => {}

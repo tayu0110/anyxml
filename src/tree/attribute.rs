@@ -336,7 +336,7 @@ impl Attribute {
             children = child.next_sibling();
             child.detach()?;
         }
-        let text = self.owner_document().create_text(data);
+        let text = self.owner_document().create_text(data)?;
         self.append_child(text)
     }
 

@@ -3,9 +3,12 @@ use std::{
     rc::Rc,
 };
 
-use crate::tree::{
-    Document, NodeType,
-    node::{Node, NodeCore, NodeSpec},
+use crate::{
+    XMLVersion,
+    tree::{
+        Document, NodeType, XMLTreeError,
+        node::{Node, NodeCore, NodeSpec},
+    },
 };
 
 /// Comment node spec.
@@ -37,8 +40,11 @@ impl NodeSpec for CommentSpec {
 pub type Comment = Node<CommentSpec>;
 
 impl Comment {
-    pub(crate) fn new(data: String, owner_document: Document) -> Self {
-        Node::create_node(CommentSpec { data }, owner_document)
+    pub(crate) fn new(data: String, owner_document: Document) -> Result<Self, XMLTreeError> {
+        if data.contains(|c: char| !XMLVersion::XML10.is_char(c)) {
+            return Err(XMLTreeError::UnacceptableCharacter);
+        }
+        Ok(Node::create_node(CommentSpec { data }, owner_document))
     }
 
     /// The content of this comment.
@@ -73,7 +79,7 @@ impl Comment {
     /// use anyxml::tree::Document;
     ///
     /// let document = Document::new();
-    /// let text1 = document.create_comment("comment node");
+    /// let text1 = document.create_comment("comment node").unwrap();
     /// let text2 = text1.deep_copy();
     /// assert!(text1.is_same_node(text1.clone()));
     /// assert_eq!(*text1.data(), *text2.data());

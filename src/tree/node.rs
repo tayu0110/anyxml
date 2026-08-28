@@ -481,7 +481,7 @@ impl Node<dyn NodeSpec> {
     ///
     /// let mut document = Document::new();
     /// let mut root = document.create_element("root", None).unwrap();
-    /// let mut comment = document.create_comment("comment");
+    /// let mut comment = document.create_comment("comment").unwrap();
     /// // cyclic reference
     /// assert!(root.insert_previous_sibling(root.clone()).is_err());
     /// // multiple root
@@ -563,7 +563,7 @@ impl Node<dyn NodeSpec> {
     ///
     /// let mut document = Document::new();
     /// let mut root = document.create_element("root", None).unwrap();
-    /// let mut comment = document.create_comment("comment");
+    /// let mut comment = document.create_comment("comment").unwrap();
     /// // cyclic reference
     /// assert!(root.insert_next_sibling(root.clone()).is_err());
     /// // multiple root
@@ -642,8 +642,8 @@ impl Node<dyn NodeSpec> {
     /// use anyxml::tree::Document;
     ///
     /// let document = Document::new();
-    /// let text1 = document.create_text("Hello");
-    /// let text2 = document.create_text("Hello");
+    /// let text1 = document.create_text("Hello").unwrap();
+    /// let text2 = document.create_text("Hello").unwrap();
     ///
     /// assert!(text1.is_same_node(text1.clone()));
     /// // These have the same character data, but are not the same node.

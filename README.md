@@ -148,7 +148,7 @@ let text = root.first_child().unwrap().as_text().unwrap();
 assert_eq!(&*text.data(), "Hello");
 
 // modify the document tree
-root.append_child(document.create_text(" World!!")).unwrap();
+root.append_child(document.create_text(" World!!").unwrap()).unwrap();
 // serialize the document tree
 assert_eq!(
     document.to_string(),

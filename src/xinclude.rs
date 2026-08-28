@@ -438,7 +438,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             source.grow()?;
         }
 
-        let text = include.owner_document().create_text(buf);
+        let text = include.owner_document().create_text(buf)?;
         Ok(Some(text.into()))
     }
 
@@ -783,7 +783,9 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                 .document_element()
                 .map(|elem| elem.name())
                 .unwrap_or_else(|| "root".into());
-            let mut doctype = self.result_document.create_document_type(name, None, None);
+            let mut doctype = self
+                .result_document
+                .create_document_type(name, None, None)?;
             for ent in entities {
                 doctype.append_child(ent.deep_copy_subtree()?)?;
             }

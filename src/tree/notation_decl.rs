@@ -1,9 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
+    XMLVersion,
     save::write_quoted,
     tree::{
-        Document, NodeType,
+        Document, NodeType, XMLTreeError,
         node::{Node, NodeCore, NodeSpec},
     },
     uri::URIStr,
@@ -39,15 +40,18 @@ impl NotationDecl {
         system_id: Option<Rc<URIStr>>,
         public_id: Option<Rc<str>>,
         owner_document: Document,
-    ) -> Self {
-        Node::create_node(
+    ) -> Result<Self, XMLTreeError> {
+        if !XMLVersion::XML10.validate_name(&name) {
+            return Err(XMLTreeError::InvalidName);
+        }
+        Ok(Node::create_node(
             NotationDeclSpec {
                 name,
                 system_id,
                 public_id,
             },
             owner_document,
-        )
+        ))
     }
 
     /// Notation name.
@@ -76,7 +80,7 @@ impl NotationDecl {
     /// use anyxml::tree::Document;
     ///
     /// let document = Document::new();
-    /// let nota1 = document.create_notation_decl("notation", None, None);
+    /// let nota1 = document.create_notation_decl("notation", None, None).unwrap();
     /// let nota2 = nota1.deep_copy();
     /// assert!(nota1.is_same_node(nota1.clone()));
     /// assert_eq!(nota1.name(), nota2.name());

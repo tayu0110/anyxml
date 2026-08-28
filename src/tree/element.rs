@@ -290,7 +290,7 @@ impl Element {
             Attribute::new(qname.into(), None, self.clone())?
         };
         if let Some(value) = value {
-            let text = self.owner_document().create_text(value);
+            let text = self.owner_document().create_text(value)?;
             attribute.append_child(text)?;
         }
         self.core
