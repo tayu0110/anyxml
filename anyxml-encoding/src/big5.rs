@@ -1,7 +1,7 @@
 use crate::{DecodeError, Decoder, EncodeError, Encoder};
 
 /// Encoding name for Big5.
-pub const BIG5_NAME: &str = "Big5";
+pub const BIG5_NAME: &str = "BIG5";
 
 /// Encoder for Big5.
 pub struct Big5Encoder;
