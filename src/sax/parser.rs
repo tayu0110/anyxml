@@ -247,7 +247,7 @@ pub struct XMLReader<Spec: ParserSpec, H: SAXHandler + ?Sized = DefaultSAXHandle
 
     // Parser Context
     pub(crate) state: ParserState,
-    pub(crate) fatal_error_occurred: bool,
+    pub(crate) fatal_error: Result<(), XMLError>,
     pub(crate) version: XMLVersion,
     pub(crate) encoding: Option<Box<str>>,
     pub(crate) standalone: Option<bool>,
@@ -345,7 +345,7 @@ impl<Spec: ParserSpec, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
 
         // reset Parser Context
         self.state = ParserState::BeforeStart;
-        self.fatal_error_occurred = false;
+        self.fatal_error = Ok(());
         self.version = XMLVersion::default();
         self.encoding = None;
         self.standalone = None;
@@ -523,7 +523,8 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
             .parse_document()
             .inspect_err(|err| {
                 fatal_error!(self, err, "Unrecoverable error: {}", err);
-            })
+            })?;
+        std::mem::replace(&mut self.fatal_error, Ok(()))
     }
 
     /// Reset the parser to its initial state.
@@ -583,7 +584,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
     pub fn parse_chunk(&mut self, chunk: impl AsRef<[u8]>, finish: bool) -> Result<(), XMLError> {
         let reader = self as &mut XMLReader<ProgressiveParserSpec, dyn SAXHandler>;
         (|| {
-            if reader.fatal_error_occurred {
+            if reader.fatal_error.is_err() {
                 return Ok(());
             }
             let chunk = chunk.as_ref();
@@ -591,7 +592,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                 reader.source.push_bytes(bytes, false)?;
                 while reader.parse_event_once(false)? {}
             }
-            if !reader.fatal_error_occurred && finish {
+            if reader.fatal_error.is_ok() && finish {
                 reader.source.push_bytes([], true)?;
                 while reader.parse_event_once(true)? {}
 
@@ -731,7 +732,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             atts_buffer: Attributes::new(),
             atts_temp_buffer: vec![],
             state: ParserState::BeforeStart,
-            fatal_error_occurred: false,
+            fatal_error: Ok(()),
             version: XMLVersion::default(),
             encoding: None,
             standalone: None,
@@ -805,7 +806,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
                 atts_buffer: Attributes::new(),
                 atts_temp_buffer: vec![],
                 state: self.reader.state,
-                fatal_error_occurred: self.reader.fatal_error_occurred,
+                fatal_error: self.reader.fatal_error,
                 version: self.reader.version,
                 encoding: self.reader.encoding,
                 standalone: self.reader.standalone,
@@ -867,7 +868,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
                 atts_buffer: Attributes::new(),
                 atts_temp_buffer: vec![],
                 state: self.reader.state,
-                fatal_error_occurred: self.reader.fatal_error_occurred,
+                fatal_error: self.reader.fatal_error,
                 version: self.reader.version,
                 encoding: self.reader.encoding,
                 standalone: self.reader.standalone,
@@ -941,7 +942,7 @@ impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
                 atts_buffer: Attributes::new(),
                 atts_temp_buffer: vec![],
                 state: self.reader.state,
-                fatal_error_occurred: self.reader.fatal_error_occurred,
+                fatal_error: self.reader.fatal_error,
                 version: self.reader.version,
                 encoding: self.reader.encoding,
                 standalone: self.reader.standalone,

@@ -86,7 +86,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 let mut buffer = String::new();
                 self.parse_entity_value(&mut buffer)?;
                 self.skip_whitespaces_with_handle_peref(true)?;
-                if !self.fatal_error_occurred {
+                if self.fatal_error.is_ok() {
                     self.handler.internal_entity_decl(&name, &buffer);
                 }
                 if pe {
@@ -157,7 +157,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 }
 
                 let system_id = URIString::parse(system_id)?;
-                if !pe && !self.fatal_error_occurred {
+                if !pe && self.fatal_error.is_ok() {
                     if let Some(ndata) = ndata.as_deref() {
                         self.handler.unparsed_entity_decl(
                             &name,

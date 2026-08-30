@@ -62,7 +62,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // If it starts with “SYSTEM,” it is surely an ExternalID.
                 let system_id = system_id.get_or_insert_default();
                 self.parse_external_id(system_id, &mut None)?;
-                if !self.fatal_error_occurred {
+                if self.fatal_error.is_ok() {
                     let system_id = URIString::parse(system_id)?;
                     self.handler.notation_decl(&name, None, Some(&system_id));
                 }
@@ -108,7 +108,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     self.skip_whitespaces_with_handle_peref(true)?;
                 }
 
-                if !self.fatal_error_occurred {
+                if self.fatal_error.is_ok() {
                     let system_id = system_id.map(URIString::parse).transpose()?;
                     self.handler
                         .notation_decl(&name, Some(public_id), system_id.as_deref());

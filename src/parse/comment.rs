@@ -74,7 +74,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             }
 
             if self.text_buffer.len() >= CHARDATA_CHUNK_LENGTH {
-                if !self.fatal_error_occurred {
+                if self.fatal_error.is_ok() {
                     self.handler.comment(&self.text_buffer);
                 }
                 self.text_buffer.clear();
@@ -84,7 +84,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             }
         }
 
-        if !self.text_buffer.is_empty() && !self.fatal_error_occurred {
+        if !self.text_buffer.is_empty() && self.fatal_error.is_ok() {
             self.handler.comment(&self.text_buffer);
         }
 

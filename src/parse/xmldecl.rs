@@ -86,7 +86,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             return Err(err);
         }
 
-        if !self.fatal_error_occurred {
+        if self.fatal_error.is_ok() {
             self.handler
                 .declaration(&version_str, encoding.as_deref(), standalone);
         }

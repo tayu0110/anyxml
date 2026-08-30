@@ -27,7 +27,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                             Ok(false)
                         };
                     }
-                    if !self.fatal_error_occurred {
+                    if self.fatal_error.is_ok() {
                         self.handler.set_document_locator(self.locator.clone());
                         self.handler.start_document();
                     }
@@ -410,7 +410,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                             }
                             self.version = old_version;
                             self.encoding = old_encoding;
-                            if !self.fatal_error_occurred {
+                            if self.fatal_error.is_ok() {
                                 self.handler.end_entity();
                             }
                             Ok(true)
@@ -742,7 +742,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                             ParseError::UnexpectedDocumentContent,
                         ))
                     } else {
-                        if !self.fatal_error_occurred
+                        if self.fatal_error.is_ok()
                             && self.config.is_enable(ParserOption::Validation)
                             && !self.unresolved_ids.is_empty()
                         {
@@ -779,7 +779,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                 // If the next state is `Finished`, hand off everything to the next state,
                 // including error handling.
                 self.state = next_state;
-                if !self.fatal_error_occurred && self.source.content_bytes().is_empty() {
+                if self.fatal_error.is_ok() && self.source.content_bytes().is_empty() {
                     self.handler.end_document();
                 }
                 Ok(ControlFlow::Break(true))
@@ -1051,7 +1051,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                             None,
                         )?;
 
-                        if !self.fatal_error_occurred {
+                        if self.fatal_error.is_ok() {
                             self.handler.start_entity(&name);
                         }
 
@@ -1115,7 +1115,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                                     public_id.as_deref().map(Arc::from),
                                 )?;
 
-                                if !self.fatal_error_occurred {
+                                if self.fatal_error.is_ok() {
                                     self.handler.start_entity(&name);
                                 }
 
@@ -1136,7 +1136,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                                 );
                             }
                         }
-                    } else if !self.fatal_error_occurred {
+                    } else if self.fatal_error.is_ok() {
                         self.handler.skipped_entity(&name);
                         self.state = ParserState::InContent;
                         return Ok(ControlFlow::Break(true));
@@ -1180,7 +1180,7 @@ impl<H: SAXHandler + ?Sized> XMLReader<ProgressiveParserSpec, H> {
                 );
             }
 
-            if !self.fatal_error_occurred {
+            if self.fatal_error.is_ok() {
                 self.handler.skipped_entity(&name);
             }
             return Ok(ControlFlow::Break(true));

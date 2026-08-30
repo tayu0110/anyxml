@@ -58,7 +58,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             }
             att_name.clear();
             let (atttype, default_decl) = self.parse_att_def(false, &mut att_name)?;
-            if !self.fatal_error_occurred {
+            if self.fatal_error.is_ok() {
                 self.handler
                     .attribute_decl(&name, &att_name, &atttype, &default_decl);
             }

@@ -80,7 +80,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 public_id.as_deref().map(From::from),
             )?;
 
-            if !self.fatal_error_occurred {
+            if self.fatal_error.is_ok() {
                 self.handler.start_entity(EXTERNAL_DTD_SUBSET_ENTITY_NAME);
             }
 
@@ -97,18 +97,18 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
 
             self.pop_source()?;
 
-            if !self.fatal_error_occurred {
+            if self.fatal_error.is_ok() {
                 self.handler.end_entity();
             }
         } else if system_id.is_some()
             && !self.config.is_enable(ParserOption::Validation)
             && !self.config.is_enable(ParserOption::ExternalGeneralEntities)
-            && !self.fatal_error_occurred
+            && self.fatal_error.is_ok()
         {
             self.handler.skipped_entity(EXTERNAL_DTD_SUBSET_ENTITY_NAME);
         }
 
-        if !self.fatal_error_occurred {
+        if self.fatal_error.is_ok() {
             self.handler.end_dtd();
         }
 
@@ -290,7 +290,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             public_id = ext.public_id().map(str::to_owned);
             external_subset = Some(ext);
         }
-        if !self.fatal_error_occurred {
+        if self.fatal_error.is_ok() {
             self.handler
                 .start_dtd(&self.dtd_name, public_id.as_deref(), system_id.as_deref());
         }
@@ -325,7 +325,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 _ => {
                     if self.source.source_id() != source_id {
                         self.pop_source()?;
-                        if !self.fatal_error_occurred {
+                        if self.fatal_error.is_ok() {
                             self.handler.end_entity();
                         }
                     } else {
