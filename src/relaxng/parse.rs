@@ -2457,11 +2457,8 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
 
     pub(super) fn build(&mut self) -> Grammar {
         let mut grammar = Grammar {
-            root: 0,
             libraries: self.datatype_libraries.clone(),
-            patterns: vec![],
-            intern: HashMap::new(),
-            nullable: vec![],
+            ..Default::default()
         };
         let root = self.do_build(0, &mut grammar, &mut HashMap::new());
         grammar.root = root;
@@ -2503,8 +2500,8 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
                 let pat = self.do_build(pat, grammar, defines);
                 grammar.create_node(Pattern::Attribute(nc, pat))
             }
-            RelaxNGNodeType::Empty => grammar.create_node(Pattern::Empty),
-            RelaxNGNodeType::NotAllowed => grammar.create_node(Pattern::NotAllowed),
+            RelaxNGNodeType::Empty => grammar.empty(),
+            RelaxNGNodeType::NotAllowed => grammar.not_allowed(),
             RelaxNGNodeType::Text => grammar.create_node(Pattern::Text),
             RelaxNGNodeType::Ref(name) => {
                 if let Some(&index) = defines.get(name.as_ref()) {
