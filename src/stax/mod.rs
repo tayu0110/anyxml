@@ -45,19 +45,15 @@ use crate::{
 };
 
 /// StAX style XML parser.
-pub struct XMLStreamReader<
-    'a,
-    Resolver: EntityResolver = DefaultSAXHandler,
-    Reporter: ErrorHandler = DefaultSAXHandler,
-> {
+pub struct XMLStreamReader<'a, Handler: EntityResolver + ErrorHandler = DefaultSAXHandler> {
     source: Box<dyn Read + 'a>,
     buffer: Vec<u8>,
     eof: bool,
 
-    reader: XMLReader<ProgressiveParserSpec, XMLStreamReaderHandler<Resolver, Reporter>>,
+    reader: XMLReader<ProgressiveParserSpec, XMLStreamReaderHandler<Handler>>,
 }
 
-impl<'a, Resolver: EntityResolver> XMLStreamReader<'a, Resolver> {
+impl<'a, H: EntityResolver + ErrorHandler> XMLStreamReader<'a, H> {
     /// Returns the most recently occurred warning, error, or fatal error.  \
     /// If none occurred, returns `None`.
     ///
@@ -68,9 +64,7 @@ impl<'a, Resolver: EntityResolver> XMLStreamReader<'a, Resolver> {
     pub fn last_error(&self) -> Option<&SAXParseError> {
         self.reader.handler.last_error.as_ref()
     }
-}
 
-impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, Resolver, Reporter> {
     /// Retrieves and parses the XML document specified by `uri`.  \
     /// If retrieval or parsing of the XML document fails, an error is returned.
     ///
@@ -329,19 +323,19 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReader<'a, R
     }
 
     /// If a user-defined error handler is configured, it will be returned.
-    pub fn error_handler(&self) -> Option<&Reporter> {
-        self.reader.handler.error_handler.as_ref()
+    pub fn handler(&self) -> Option<&H> {
+        self.reader.handler.handler.as_ref()
     }
 
     /// Configure a user-defined error handler. If a handler is already configured, return it.
-    pub fn set_error_handler(&mut self, handler: Reporter) -> Option<Reporter> {
-        self.reader.handler.error_handler.replace(handler)
+    pub fn set_handler(&mut self, handler: H) -> Option<H> {
+        self.reader.handler.handler.replace(handler)
     }
 
     /// If a user-defined error handler is configured, it will be returned.  \
     /// The error handler will be unset.
-    pub fn take_error_handler(&mut self) -> Option<Reporter> {
-        self.reader.handler.error_handler.take()
+    pub fn take_error_handler(&mut self) -> Option<H> {
+        self.reader.handler.handler.take()
     }
 }
 
@@ -352,14 +346,9 @@ impl Default for XMLStreamReader<'_> {
 }
 
 /// Builder for [`XMLStreamReader`].
-pub struct XMLStreamReaderBuilder<
-    'a,
-    Resolver: EntityResolver = DefaultSAXHandler,
-    Reporter: ErrorHandler = DefaultSAXHandler,
-> {
+pub struct XMLStreamReaderBuilder<'a, H: EntityResolver + ErrorHandler = DefaultSAXHandler> {
     builder: XMLProgressiveReaderBuilder<XMLStreamReaderHandler>,
-    entity_resolver: Option<Resolver>,
-    error_handler: Option<Reporter>,
+    handler: Option<H>,
     _phantom: PhantomData<&'a ()>,
 }
 
@@ -370,50 +359,32 @@ impl<'a> XMLStreamReaderBuilder<'a> {
             builder: XMLReader::builder()
                 .set_handler(XMLStreamReaderHandler::default())
                 .progressive_parser(),
-            entity_resolver: None,
-            error_handler: None,
+            handler: None,
             _phantom: PhantomData,
         }
     }
 }
 
-impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
-    XMLStreamReaderBuilder<'a, Resolver, Reporter>
-{
+impl<'a, H: EntityResolver + ErrorHandler> XMLStreamReaderBuilder<'a, H> {
     /// Set `base_uri` as the default base URI.
     ///
     /// `base_uri` must be a absolute URI.
     pub fn set_default_base_uri(self, base_uri: impl Into<Arc<URIStr>>) -> Result<Self, XMLError> {
         Ok(Self {
             builder: self.builder.set_default_base_uri(base_uri)?,
-            entity_resolver: self.entity_resolver,
-            error_handler: self.error_handler,
+            handler: self.handler,
             _phantom: PhantomData,
         })
     }
 
-    /// Set `resolver` as the entity resolver.
-    pub fn set_entity_resolver<Other: EntityResolver>(
-        self,
-        resolver: Other,
-    ) -> XMLStreamReaderBuilder<'a, Other, Reporter> {
-        XMLStreamReaderBuilder {
-            builder: self.builder,
-            entity_resolver: Some(resolver),
-            error_handler: self.error_handler,
-            _phantom: PhantomData,
-        }
-    }
-
     /// Set `error_handler` as the error handler.
-    pub fn set_error_handler<Other: ErrorHandler>(
+    pub fn set_handler<Other: EntityResolver + ErrorHandler>(
         self,
-        error_handler: Other,
-    ) -> XMLStreamReaderBuilder<'a, Resolver, Other> {
+        handler: Other,
+    ) -> XMLStreamReaderBuilder<'a, Other> {
         XMLStreamReaderBuilder {
             builder: self.builder,
-            entity_resolver: self.entity_resolver,
-            error_handler: Some(error_handler),
+            handler: Some(handler),
             _phantom: PhantomData,
         }
     }
@@ -422,8 +393,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
     pub fn set_parser_config(self, config: ParserConfig) -> Self {
         Self {
             builder: self.builder.set_parser_config(config),
-            entity_resolver: self.entity_resolver,
-            error_handler: self.error_handler,
+            handler: self.handler,
             _phantom: PhantomData,
         }
     }
@@ -431,8 +401,7 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
     pub fn enable_option(self, option: ParserOption) -> Self {
         Self {
             builder: self.builder.enable_option(option),
-            entity_resolver: self.entity_resolver,
-            error_handler: self.error_handler,
+            handler: self.handler,
             _phantom: PhantomData,
         }
     }
@@ -440,17 +409,15 @@ impl<'a, Resolver: EntityResolver, Reporter: ErrorHandler>
     pub fn disable_option(self, option: ParserOption) -> Self {
         Self {
             builder: self.builder.disable_option(option),
-            entity_resolver: self.entity_resolver,
-            error_handler: self.error_handler,
+            handler: self.handler,
             _phantom: PhantomData,
         }
     }
 
     /// Finish to build the parser.
-    pub fn build(self) -> XMLStreamReader<'a, Resolver, Reporter> {
+    pub fn build(self) -> XMLStreamReader<'a, H> {
         let handler = XMLStreamReaderHandler {
-            entity_resolver: self.entity_resolver,
-            error_handler: self.error_handler,
+            handler: self.handler,
             ..Default::default()
         };
         XMLStreamReader {

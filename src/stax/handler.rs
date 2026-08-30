@@ -10,10 +10,7 @@ use crate::{
     uri::{URIStr, URIString},
 };
 
-pub(crate) struct XMLStreamReaderHandler<
-    Resolver: EntityResolver = DefaultSAXHandler,
-    Reporter: ErrorHandler = DefaultSAXHandler,
-> {
+pub(crate) struct XMLStreamReaderHandler<H: EntityResolver + ErrorHandler = DefaultSAXHandler> {
     pub(super) event: XMLEventType,
     pub(super) namespace_name: Option<String>,
     pub(super) local_name: Option<String>,
@@ -27,23 +24,19 @@ pub(crate) struct XMLStreamReaderHandler<
     pub(super) locator: Option<Arc<Locator>>,
 
     // user defined handlers
-    pub(super) entity_resolver: Option<Resolver>,
-    pub(super) error_handler: Option<Reporter>,
+    pub(super) handler: Option<H>,
 }
 
-impl<Resolver: EntityResolver, Reporter: ErrorHandler> XMLStreamReaderHandler<Resolver, Reporter> {
+impl<H: EntityResolver + ErrorHandler> XMLStreamReaderHandler<H> {
     pub(crate) fn reset(&mut self) {
         *self = Self {
-            entity_resolver: self.entity_resolver.take(),
-            error_handler: self.error_handler.take(),
+            handler: self.handler.take(),
             ..Default::default()
         };
     }
 }
 
-impl<Resolver: EntityResolver, Reporter: ErrorHandler> Default
-    for XMLStreamReaderHandler<Resolver, Reporter>
-{
+impl<H: EntityResolver + ErrorHandler> Default for XMLStreamReaderHandler<H> {
     fn default() -> Self {
         Self {
             event: Default::default(),
@@ -57,21 +50,18 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> Default
             reported: Default::default(),
             last_error: None,
             locator: None,
-            entity_resolver: None,
-            error_handler: None,
+            handler: None,
         }
     }
 }
 
-impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
-    for XMLStreamReaderHandler<Resolver, Reporter>
-{
+impl<H: EntityResolver + ErrorHandler> EntityResolver for XMLStreamReaderHandler<H> {
     fn get_external_subset(
         &mut self,
         name: &str,
         base_uri: Option<&URIStr>,
     ) -> Result<InputSource<'static>, XMLError> {
-        if let Some(entity_resolver) = self.entity_resolver.as_mut() {
+        if let Some(entity_resolver) = self.handler.as_mut() {
             entity_resolver.get_external_subset(name, base_uri)
         } else {
             DefaultSAXHandler.get_external_subset(name, base_uri)
@@ -85,7 +75,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
         base_uri: &URIStr,
         system_id: &URIStr,
     ) -> Result<InputSource<'static>, XMLError> {
-        if let Some(entity_resolver) = self.entity_resolver.as_mut() {
+        if let Some(entity_resolver) = self.handler.as_mut() {
             entity_resolver.resolve_entity(name, public_id, base_uri, system_id)
         } else {
             DefaultSAXHandler.resolve_entity(name, public_id, base_uri, system_id)
@@ -93,11 +83,9 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> EntityResolver
     }
 }
 
-impl<Resolver: EntityResolver, Reporter: ErrorHandler> ErrorHandler
-    for XMLStreamReaderHandler<Resolver, Reporter>
-{
+impl<H: EntityResolver + ErrorHandler> ErrorHandler for XMLStreamReaderHandler<H> {
     fn error(&mut self, error: SAXParseError) {
-        if let Some(error_handler) = self.error_handler.as_mut() {
+        if let Some(error_handler) = self.handler.as_mut() {
             error_handler.error(error);
         } else {
             self.last_error = Some(error);
@@ -105,7 +93,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> ErrorHandler
     }
 
     fn fatal_error(&mut self, error: SAXParseError) {
-        if let Some(error_handler) = self.error_handler.as_mut() {
+        if let Some(error_handler) = self.handler.as_mut() {
             error_handler.fatal_error(error);
         } else {
             self.last_error = Some(error);
@@ -114,7 +102,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> ErrorHandler
     }
 
     fn warning(&mut self, error: SAXParseError) {
-        if let Some(error_handler) = self.error_handler.as_mut() {
+        if let Some(error_handler) = self.handler.as_mut() {
             error_handler.warning(error);
         } else {
             self.last_error = Some(error);
@@ -122,9 +110,7 @@ impl<Resolver: EntityResolver, Reporter: ErrorHandler> ErrorHandler
     }
 }
 
-impl<Resolver: EntityResolver, Reporter: ErrorHandler> SAXHandler
-    for XMLStreamReaderHandler<Resolver, Reporter>
-{
+impl<H: EntityResolver + ErrorHandler> SAXHandler for XMLStreamReaderHandler<H> {
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
         self.locator = Some(locator);
     }

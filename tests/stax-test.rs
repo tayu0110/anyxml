@@ -1,10 +1,13 @@
 use std::{fmt::Write as _, fs::read_dir, path::Path};
 
 use anyxml::{
-    error::XMLErrorDomain,
-    sax::{DefaultSAXHandler, ErrorHandler, ParserOption},
+    error::{XMLError, XMLErrorDomain},
+    sax::{
+        DefaultSAXHandler, EntityResolver, ErrorHandler, InputSource, ParserOption,
+        error::SAXParseError,
+    },
     stax::{XMLStreamReaderBuilder, events::XMLEvent},
-    uri::URIString,
+    uri::{URIStr, URIString},
 };
 
 #[test]
@@ -58,12 +61,12 @@ struct XMLConfErrorHandler {
 }
 
 impl ErrorHandler for XMLConfErrorHandler {
-    fn warning(&mut self, error: anyxml::sax::error::SAXParseError) {
+    fn warning(&mut self, error: SAXParseError) {
         writeln!(self.buffer, "{error}").unwrap();
         self.warning += 1;
     }
 
-    fn error(&mut self, error: anyxml::sax::error::SAXParseError) {
+    fn error(&mut self, error: SAXParseError) {
         writeln!(self.buffer, "{error}").unwrap();
         match error.domain {
             XMLErrorDomain::Parser => self.error += 1,
@@ -77,9 +80,29 @@ impl ErrorHandler for XMLConfErrorHandler {
         }
     }
 
-    fn fatal_error(&mut self, error: anyxml::sax::error::SAXParseError) {
+    fn fatal_error(&mut self, error: SAXParseError) {
         writeln!(self.buffer, "{error}").unwrap();
         self.fatal_error += 1;
+    }
+}
+
+impl EntityResolver for XMLConfErrorHandler {
+    fn resolve_entity(
+        &mut self,
+        name: &str,
+        public_id: Option<&str>,
+        base_uri: &URIStr,
+        system_id: &URIStr,
+    ) -> Result<InputSource<'static>, XMLError> {
+        DefaultSAXHandler.resolve_entity(name, public_id, base_uri, system_id)
+    }
+
+    fn get_external_subset(
+        &mut self,
+        name: &str,
+        base_uri: Option<&URIStr>,
+    ) -> Result<InputSource<'static>, XMLError> {
+        DefaultSAXHandler.get_external_subset(name, base_uri)
     }
 }
 
@@ -93,8 +116,7 @@ fn xmlconf_tests() {
 
     let xmlconf = URIString::parse_file_path(format!("{XMLCONF_DIR}/xmlconf.xml")).unwrap();
     let mut reader = XMLStreamReaderBuilder::new()
-        .set_error_handler(DefaultSAXHandler)
-        .set_entity_resolver(DefaultSAXHandler)
+        .set_handler(DefaultSAXHandler)
         .enable_option(ParserOption::ExternalGeneralEntities)
         .build();
     reader.parse_uri(xmlconf, None).unwrap();
@@ -175,7 +197,7 @@ fn xmlconf_tests() {
                             .resolve(&URIString::parse(uri).unwrap());
 
                         let mut builder = XMLStreamReaderBuilder::new()
-                            .set_error_handler(XMLConfErrorHandler::default());
+                            .set_handler(XMLConfErrorHandler::default());
                         if entities != "none" || matches!(r#type.as_ref(), "valid" | "invalid") {
                             builder = builder.enable_option(ParserOption::Validation)
                         }
