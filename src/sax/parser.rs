@@ -604,7 +604,12 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
         })()
         .inspect_err(|err| {
             fatal_error!(reader, err, "Unrecoverable error: {}", err);
-        })
+        })?;
+        if finish {
+            std::mem::replace(&mut self.fatal_error, Ok(()))
+        } else {
+            Ok(())
+        }
     }
 }
 
