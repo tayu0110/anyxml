@@ -1,0 +1,73 @@
+名稱,所屬,類別,說明
+release.txt,-,檔案,OpenData全字庫資料集發布說明
+Fonts_Kai.zip,-,檔案,全字庫楷體字型 ZIP 壓縮檔
+TW-Kai-98_1.ttf,Fonts_Kai.zip,檔案,全字庫正楷體向量字型檔(對應至Unicode的BMP字面)
+TW-Kai-Ext-B-98_1.ttf,Fonts_Kai.zip,檔案,全字庫正楷體向量字型檔(對應至Unicode的第2字面)
+TW-Kai-Plus-98_1.ttf,Fonts_Kai.zip,檔案,全字庫正楷體向量字型檔(對應至Unicode的第15字面)
+全字庫字型說明文件.txt,Fonts_Kai.zip,檔案,全字庫楷體字型檔說明
+Fonts_Sung.zip,-,檔案,全字庫正宋體字型 ZIP 壓縮檔
+TW-Sung-98_1.ttf,Fonts_Sung.zip,檔案,全字庫正宋體向量字型檔(對應至Unicode的BMP字面)
+TW-Sung-Ext-B-98_1.ttf,Fonts_Sung.zip,檔案,全字庫正宋體向量字型檔(對應至Unicode的第2字面)
+TW-Sung-Plus-98_1.ttf,Fonts_Sung.zip,檔案,全字庫正宋體向量字型檔(對應至Unicode的第15字面)
+全字庫字型說明文件.txt,Fonts_Sung.zip,檔案,全字庫宋體字型檔說明
+MapingTables.zip,-,檔案,全字庫中文碼對照表 ZIP 壓縮檔
+Big5,MapingTables.zip,目錄,內含CNS對Big5的照表
+CNS2BIG5.txt,Big5,檔案,CNS對Big5的對照表
+CNS2BIG5_Big5E.txt,Big5,檔案,CNS對Big5E的對照表
+CNS2BIG5_七個倚天外字.txt,Big5,檔案,CNS對七個倚天外字集的對照表
+CNS2BIG5(符號).txt,Bi5,檔案,CNS對Big5符號及控制字元的對照表
+Unicode,MapingTables.zip,目錄,內含CNS對Unicode的對照表
+CNS2UNICODE_Unicode BMP.txt,Unicode,檔案,CNS對Unicode 第0(BMP)字面的對照表
+CNS2UNICODE_Unicode 2.txt,Unicode,檔案,CNS對Unicode 第2字面的對照表
+CNS2UNICODE_Unicode 3.txt,Unicode,檔案,CNS對Unicode 第3字面的對照表
+CNS2UNICODE_Unicode 15.txt,Unicode,檔案,CNS對Unicode 第15字面的對照表
+地政,MapingTables.zip,目錄,含25個縣市的對照表(縣市未合併及升格前)
+臺中市.txt,地政,檔案,CNS對臺中市機關使用內碼的對照表
+臺中縣.txt,地政,檔案,CNS對臺中縣機關使用內碼的對照表
+臺北市.txt,地政,檔案,CNS對臺北市機關使用內碼的對照表
+臺北縣.txt,地政,檔案,CNS對臺北縣機關使用內碼的對照表
+臺東縣.txt,地政,檔案,CNS對臺東縣機關使用內碼的對照表
+臺南市.txt,地政,檔案,CNS對臺南市機關使用內碼的對照表
+臺南縣.txt,地政,檔案,CNS對臺南縣機關使用內碼的對照表
+宜蘭縣.txt,地政,檔案,CNS對宜蘭縣機關使用內碼的對照表
+花蓮縣.txt,地政,檔案,CNS對花蓮縣機關使用內碼的對照表
+金門縣.txt,地政,檔案,CNS對金門縣機關使用內碼的對照表
+南投縣.txt,地政,檔案,CNS對南投縣機關使用內碼的對照表
+屏東縣.txt,地政,檔案,CNS對屏東縣機關使用內碼的對照表
+苗栗縣.txt,地政,檔案,CNS對苗栗縣機關使用內碼的對照表
+桃園縣.txt,地政,檔案,CNS對桃園縣機關使用內碼的對照表
+高雄市.txt,地政,檔案,CNS對高雄市機關使用內碼的對照表
+高雄縣.txt,地政,檔案,CNS對高雄縣機關使用內碼的對照表
+基隆市.txt,地政,檔案,CNS對基隆市機關使用內碼的對照表
+連江縣.txt,地政,檔案,CNS對連江縣機關使用內碼的對照表
+雲林縣.txt,地政,檔案,CNS對雲林縣機關使用內碼的對照表
+新竹市.txt,地政,檔案,CNS對新竹市機關使用內碼的對照表
+新竹縣.txt,地政,檔案,CNS對新竹縣機關使用內碼的對照表
+嘉義市.txt,地政,檔案,CNS對嘉義市機關使用內碼的對照表
+嘉義縣.txt,地政,檔案,CNS對嘉義縣機關使用內碼的對照表
+彰化縣.txt,地政,檔案,CNS對彰化縣機關使用內碼的對照表
+澎湖縣.txt,地政,檔案,CNS對澎湖縣機關使用內碼的對照表
+CNS2DCI.txt,MapingTables.zip,檔案,CNS對公路監理單位所使用的電信內碼的對照表
+CNS2FIN.txt,MapingTables.zip,檔案,CNS對稅務內碼的對照表
+CNS2INC.txt,MapingTables.zip,檔案,CNS對工商內碼的對照表
+CNS2TAX.txt,MapingTables.zip,檔案,CNS對財稅交換碼的對照表
+全字庫中文對照表說明文件.txt,MapingTables.zip,檔案,全字庫對照表說明
+Properties.zip,-,檔案,全字庫屬性資料 ZIP 壓縮檔
+CNS_cangjei.txt,Properties.zip,檔案,全字庫的倉頡資料表格
+CNS_component.txt,Properties.zip,檔案,全字庫的部件資料表格
+CNS_component_ref.txt,Properties.zip,檔案,全字庫的部件代號對照表格
+CNS_component_word.txt,Properties.zip,檔案,全字庫的部件代號資料表格
+CNS_component_word.zip,Properties.zip,檔案,全字庫的部件圖檔
+CNS_phonetic.txt,Properties.zip,檔案,全字庫的注音資料表格
+CNS_pinyin_1.txt,Properties.zip,檔案,全字庫的拼音資料表格
+CNS_pinyin_2.txt,Properties.zip,檔案,全字庫的拼音資料表格
+CNS_radical.txt,Properties.zip,檔案,全字庫的部首資料表格
+CNS_radical_word.txt,Properties.zip,檔案,全字庫的部首代號資料表格
+CNS_source.txt,Properties.zip,檔案,全字庫的字形來源資料表格
+CNS_stroke.txt,Properties.zip,檔案,全字庫的筆畫數資料表格
+CNS_strokes_sequence.txt,Properties.zip,檔案,全字庫的筆順資料表格
+全字庫屬性資料說明文件.txt,Properties.zip,檔案,全字庫屬性資料說明
+Voice.zip,-,檔案,全字庫音檔 ZIP 壓縮檔
+female.zip,Voice.zip,檔案,內含女性發音音檔
+male.zip,Voice.zip,檔案,內含男性發音音檔
+全字庫音檔說明文件.txt,Voice.zip,檔案,全字庫音檔說明

@@ -241,17 +241,17 @@ where
                 dst[read] = c as u8;
                 write += 1;
             } else if let Ok(pos) = self.g1.binary_search_by_key(&(c as u32), |e| e.0.into()) {
-                let to = self.g1[pos].1.into();
+                let to: u32 = self.g1[pos].1.into();
                 write_buffer!(G1DIM, to);
             } else if let Ok(pos) = self.g2.binary_search_by_key(&(c as u32), |e| e.0.into()) {
                 dst[write] = 0x8E;
                 write += 1;
-                let to = self.g2[pos].1.into();
+                let to: u32 = self.g2[pos].1.into();
                 write_buffer!(G2DIM, to);
             } else if let Ok(pos) = self.g3.binary_search_by_key(&(c as u32), |e| e.0.into()) {
                 dst[write] = 0x8F;
                 write += 1;
-                let to = self.g3[pos].1.into();
+                let to: u32 = self.g3[pos].1.into();
                 write_buffer!(G3DIM, to);
             } else {
                 return Err(EncodeError::Unmappable { read, write, c });

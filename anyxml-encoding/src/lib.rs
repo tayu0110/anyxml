@@ -12,6 +12,7 @@
 //! The default encoding names and aliases are based on
 //! [IANA registrations](https://www.iana.org/assignments/character-sets/character-sets.xhtml).
 
+mod big5;
 mod ebcdic;
 mod euc;
 mod iso_8859;
@@ -29,6 +30,7 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
+pub use big5::*;
 pub use ebcdic::*;
 pub use euc::*;
 pub use iso_8859::*;
@@ -121,6 +123,7 @@ pub trait Decoder {
 /// Encoding names are listed in lexical order.
 pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {
     const NAMES: &[&str] = &[
+        BIG5_NAME,
         EUCJP_NAME,
         EUCKR_NAME,
         IBM037,
@@ -504,6 +507,7 @@ pub static ENCODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, EncoderFactory>
         map.insert(IBM1026, || Box::new(IBM1026Encoder));
         map.insert(EUCJP_NAME, eucjp_encoder_factory);
         map.insert(EUCKR_NAME, euckr_encoder_factory);
+        map.insert(BIG5_NAME, || Box::new(Big5Encoder));
         RwLock::new(map)
     });
 pub fn find_encoder(encoding_name: &str) -> Option<Box<dyn Encoder>> {
@@ -599,6 +603,7 @@ pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>
         map.insert(IBM1026, || Box::new(IBM1026Decoder));
         map.insert(EUCJP_NAME, eucjp_decoder_factory);
         map.insert(EUCKR_NAME, euckr_decoder_factory);
+        map.insert(BIG5_NAME, || Box::new(Big5Decoder));
         RwLock::new(map)
     });
 pub fn find_decoder(encoding_name: &str) -> Option<Box<dyn Decoder>> {
