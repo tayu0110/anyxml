@@ -78,7 +78,7 @@ dependencies = [
 
 [[package]]
 name = "anyxml"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "anyxml-automata",
  "anyxml-base64",
@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "anyxml-cli"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyxml",
  "clap",
