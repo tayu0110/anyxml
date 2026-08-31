@@ -146,6 +146,8 @@ impl Document {
             parent_node: weak.clone(),
             previous_sibling: weak.clone(),
             next_sibling: None,
+            line: 0,
+            column: 0,
             spec: DocumentSpec {
                 first_child: None,
                 last_child: None,

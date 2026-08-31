@@ -255,6 +255,8 @@ impl DocumentFragment {
                 parent_node: owner_document.core.borrow().parent_node.clone(),
                 previous_sibling: owner_document.core.borrow().previous_sibling.clone(),
                 next_sibling: None,
+                line: 0,
+                column: 0,
                 spec: DocumentFragmentSpec {
                     first_child: None,
                     last_child: None,

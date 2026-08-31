@@ -73,6 +73,8 @@ impl Namespace {
                 parent_node: elem.clone(),
                 previous_sibling: prev,
                 next_sibling: None,
+                line: 0,
+                column: 0,
                 spec: NamespaceSpec {
                     owner_element: elem,
                     prefix,

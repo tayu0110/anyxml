@@ -84,10 +84,6 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             }
         }
 
-        if !self.text_buffer.is_empty() && self.fatal_error.is_ok() {
-            self.handler.comment(&self.text_buffer);
-        }
-
         if !self.source.content_bytes().starts_with(b"-->") {
             fatal_error!(self, InvalidComment, "Comment does not end with '-->'.");
             return Err(XMLError::XMLParseError(ParseError::InvalidComment));
@@ -95,6 +91,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         // skip '-->'
         self.source.advance(3);
         self.locator.update_column(|c| c + 3);
+
+        if !self.text_buffer.is_empty() && self.fatal_error.is_ok() {
+            self.handler.comment(&self.text_buffer);
+        }
 
         Ok(())
     }

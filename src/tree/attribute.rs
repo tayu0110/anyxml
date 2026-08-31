@@ -124,6 +124,8 @@ impl Attribute {
                 parent_node: elem.clone(),
                 previous_sibling: prev,
                 next_sibling: None,
+                line: 0,
+                column: 0,
                 spec: AttributeSpec {
                     first_child: None,
                     last_child: None,
@@ -202,6 +204,8 @@ impl Attribute {
                     parent_node: elem.clone(),
                     previous_sibling: prev,
                     next_sibling: None,
+                    line: 0,
+                    column: 0,
                     spec: AttributeSpec {
                         first_child: None,
                         last_child: None,
@@ -232,6 +236,8 @@ impl Attribute {
                     parent_node: elem.clone(),
                     previous_sibling: prev,
                     next_sibling: None,
+                    line: 0,
+                    column: 0,
                     spec: AttributeSpec {
                         first_child: None,
                         last_child: None,

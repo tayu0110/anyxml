@@ -80,6 +80,8 @@ pub struct NodeCore<Spec: ?Sized> {
     pub(super) parent_node: Weak<RefCell<NodeCore<dyn InternalNodeSpec>>>,
     pub(super) previous_sibling: Weak<RefCell<NodeCore<dyn NodeSpec>>>,
     pub(super) next_sibling: Option<Rc<RefCell<NodeCore<dyn NodeSpec>>>>,
+    pub(super) line: usize,
+    pub(super) column: usize,
     pub(super) spec: Spec,
 }
 
@@ -323,6 +325,30 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
         other: &Node<Other>,
     ) -> bool {
         Rc::ptr_eq(&self.owner_document, &other.owner_document)
+    }
+
+    /// The line number of the markup or text content represented by the current node
+    /// in the XML document from which the tree was constructed.
+    ///
+    /// If the tree has been edited since it was first constructed, the value returned
+    /// by this method has no meaning.
+    pub fn line(&self) -> usize {
+        self.core.borrow().line
+    }
+    pub(super) fn set_line(&mut self, line: usize) {
+        self.core.borrow_mut().line = line;
+    }
+
+    /// The column number of the markup or text content represented by the current node
+    /// in the XML document from which the tree was constructed.
+    ///
+    /// If the tree has been edited since it was first constructed, the value returned
+    /// by this method has no meaning.
+    pub fn column(&self) -> usize {
+        self.core.borrow().column
+    }
+    pub(super) fn set_column(&mut self, column: usize) {
+        self.core.borrow_mut().column = column;
     }
 }
 
@@ -987,6 +1013,8 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
                 parent_node: weak.clone(),
                 previous_sibling: weak,
                 next_sibling: None,
+                line: 0,
+                column: 0,
                 spec,
             })),
             owner_document: owner_document.owner_document.clone(),
