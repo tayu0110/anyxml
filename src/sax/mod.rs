@@ -760,11 +760,19 @@ impl Locator {
     }
 
     /// Line number in the parsing process.
+    ///
+    /// This method returns the line number of the character following the last character of
+    /// the current document event. For example, if the current document event is a start tag,
+    /// it returns the line number of the character following the closing ">" character.
     pub fn line(&self) -> usize {
         self.line.load(Ordering::Acquire)
     }
 
-    /// Offset from the first character within the line at the position being processed.
+    /// Column number in the parsing process.
+    ///
+    /// This method returns the column number of the character following the last character of
+    /// the current document event. For example, if the current document event is a start tag,
+    /// it returns the column number of the character following the closing ">" character.
     pub fn column(&self) -> usize {
         self.column.load(Ordering::Acquire)
     }
