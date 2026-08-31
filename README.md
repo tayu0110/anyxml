@@ -35,6 +35,8 @@ This crate provides multiple styles of XML parsers.
 SAX Parser is the base for all other styles of parsers and offers the best performance.  \
 Other styles of parsers are more flexible than SAX Parser in some ways, but tend to be less performant than SAX Parser.
 
+For more details, please see the document of `sax` and `stax` module.
+
 ### SAX Parser
 You can use a SAX-like API designed with reference to Java SAX API.
 
@@ -207,6 +209,14 @@ let text = evaluate_str(XPATH, DOCUMENT, None)
     .unwrap();
 assert_eq!(text.as_ref(), "こんにちは");
 ```
+
+## Encoding support
+In addition to supporting UTF-8 and UTF-16 as required by the XML specification, this crate includes support for various other encodings.
+
+As of v0.15.0, you can use single-byte encodings such as the ISO-8859 series and some EBCDIC variants, as well as multi-byte encodings such as UCS-4, Shift_JIS, EUC-JP, EUC-KR, and Big5.
+Please refer to the `anyxml-encoding` crate documentation for the latest information.
+
+Additionally, users can extend the encoders and decoders by implementing `anyxml_encoding::Encoder` and `anyxml_encoding::Decoder`.
 
 # Conformance
 This crate conforms to the following specifications:
