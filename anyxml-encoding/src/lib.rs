@@ -17,6 +17,7 @@ mod ebcdic;
 mod euc;
 mod iso_8859;
 mod jisx;
+mod koi8r;
 mod ksx;
 mod shift_jis;
 mod ucs4;
@@ -34,6 +35,7 @@ pub use big5::*;
 pub use ebcdic::*;
 pub use euc::*;
 pub use iso_8859::*;
+pub use koi8r::*;
 pub use shift_jis::*;
 pub use ucs4::*;
 pub use us_ascii::*;
@@ -178,6 +180,7 @@ pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {
         ISO_8859_7_NAME,
         ISO_8859_8_NAME,
         ISO_8859_9_NAME,
+        KOI8R_NAME,
         SHIFT_JIS_NAME,
         ISO_8859_11_NAME,
         US_ASCII_NAME,
@@ -508,6 +511,7 @@ pub static ENCODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, EncoderFactory>
         map.insert(EUCJP_NAME, eucjp_encoder_factory);
         map.insert(EUCKR_NAME, euckr_encoder_factory);
         map.insert(BIG5_NAME, || Box::new(Big5Encoder));
+        map.insert(KOI8R_NAME, || Box::new(KOI8REncoder));
         RwLock::new(map)
     });
 pub fn find_encoder(encoding_name: &str) -> Option<Box<dyn Encoder>> {
@@ -604,6 +608,7 @@ pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>
         map.insert(EUCJP_NAME, eucjp_decoder_factory);
         map.insert(EUCKR_NAME, euckr_decoder_factory);
         map.insert(BIG5_NAME, || Box::new(Big5Decoder));
+        map.insert(KOI8R_NAME, || Box::new(KOI8RDecoder));
         RwLock::new(map)
     });
 pub fn find_decoder(encoding_name: &str) -> Option<Box<dyn Decoder>> {
@@ -629,4 +634,25 @@ pub fn register_decoder(
 }
 pub fn unregister_decoder(encoding_name: &str) -> Option<DecoderFactory> {
     DECODER_TABLE.write().unwrap().remove(encoding_name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_encoder_tests() {
+        for &name in DEFAULT_SUPPORTED_ENCODINGS {
+            let encoder = find_encoder(name).unwrap();
+            assert_eq!(name, encoder.name());
+        }
+    }
+
+    #[test]
+    fn find_decoder_tests() {
+        for &name in DEFAULT_SUPPORTED_ENCODINGS {
+            let decoder = find_decoder(name).unwrap();
+            assert_eq!(name, decoder.name());
+        }
+    }
 }
