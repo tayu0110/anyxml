@@ -1,4 +1,8 @@
-use crate::{DecodeError, Decoder, EncodeError, Encoder, jisx, ksx};
+use crate::{
+    DecodeError, Decoder, EncodeError, Encoder,
+    gb2312::{GB2312_TO_UCS, UCS_TO_GB2312},
+    jisx, ksx,
+};
 
 pub struct EUCDecoder {
     // G0 implicitly designate ASCII.
@@ -14,7 +18,7 @@ pub struct EUCDecoder {
 
 impl EUCDecoder {
     /// If no error occurs, return `Ok((read_bytes, write_bytes))`.
-    fn decode(
+    pub(crate) fn decode(
         &mut self,
         src: &[u8],
         dst: &mut String,
@@ -199,7 +203,7 @@ where
     G3To: Into<u32> + Copy,
 {
     /// If no error occurs, return `Ok((read_bytes, write_bytes))`.
-    fn encode(
+    pub(crate) fn encode(
         &mut self,
         src: &str,
         dst: &mut [u8],
@@ -238,7 +242,7 @@ where
         for c in src.chars() {
             read += c.len_utf8();
             if c.is_ascii() || ((..'\u{A0}').contains(&c) && c != '\u{8E}' && c != '\u{8F}') {
-                dst[read] = c as u8;
+                dst[write] = c as u8;
                 write += 1;
             } else if let Ok(pos) = self.g1.binary_search_by_key(&(c as u32), |e| e.0.into()) {
                 let to: u32 = self.g1[pos].1.into();
@@ -391,6 +395,69 @@ impl Encoder for EUCKREncoder {
     }
 }
 
+/// Encoding name for GB2312.
+pub const GB2312_NAME: &str = "GB2312";
+
+/// Encoder for GB2312.
+pub struct GB2312Encoder {
+    encoder: EUCEncoder<u16, u16, u8, u8, u8, u8, 2, 1, 1>,
+}
+
+impl Encoder for GB2312Encoder {
+    fn name(&self) -> &'static str {
+        GB2312_NAME
+    }
+
+    fn encode(
+        &mut self,
+        src: &str,
+        dst: &mut [u8],
+        finish: bool,
+    ) -> Result<(usize, usize), crate::EncodeError> {
+        self.encoder.encode(src, dst, finish)
+    }
+}
+
+pub(crate) fn gb2312_encoder_factory() -> Box<dyn Encoder> {
+    Box::new(GB2312Encoder {
+        encoder: EUCEncoder {
+            g1: UCS_TO_GB2312,
+            g2: &[],
+            g3: &[],
+        },
+    })
+}
+
+/// Decoder for GB2312.
+pub struct GB2312Decoder {
+    decoder: EUCDecoder,
+}
+
+impl Decoder for GB2312Decoder {
+    fn name(&self) -> &'static str {
+        GB2312_NAME
+    }
+
+    fn decode(
+        &mut self,
+        src: &[u8],
+        dst: &mut String,
+        finish: bool,
+    ) -> Result<(usize, usize), crate::DecodeError> {
+        self.decoder.decode(src, dst, finish)
+    }
+}
+
+pub(crate) fn gb2312_decoder_factory() -> Box<dyn Decoder> {
+    Box::new(GB2312Decoder {
+        decoder: EUCDecoder {
+            g1: &GB2312_TO_UCS,
+            g2: &[&[]],
+            g3: &[&[]],
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -535,5 +602,25 @@ mod tests {
             buf,
             "悠久한 歷史와 傳統에 빛나는 우리 大韓國民은 3·1 運動으로 建立된 大韓民國臨時政府의 法統과 不義에 抗拒한 4·19 民主理念을 繼承하고, 祖國의 民主改革과 平和的統一의 使命에 立脚하여 正義·人道와 同胞愛로써 民族의 團結을 鞏固히 하고, 모든 社會的弊習과 不義를 打破하며, 自律과 調和를 바탕으로 自由民主的基本秩序를 더욱 確固히 하여 政治·經濟·社會·文化의 모든 領域에 있어서 各人의 機會를 均等히 하고, 能力을 最高度로 發揮하게 하며, 自由와 權利에 따르는 責任과 義務를 完遂하게 하여, 안으로는 國民生活의 均等한 向上을 期하고 밖으로는 恒久的인 世界平和와 人類共榮에 이바지함으로써 우리들과 우리들의 子孫의 安全과 自由와 幸福을 永遠히 確保할 것을 다짐하면서 1948年 7月 12日에 制定되고 8次에 걸쳐 改正된 憲法을 이제 國會의 議決을 거쳐 國民投票에 依하여 改正한다."
         );
+    }
+
+    #[test]
+    fn gb2312_tests() {
+        let src = include_str!("../resources/gb2312tests/邓小平南巡讲话_unicode.txt");
+        let mut buf = vec![0; 1 << 15];
+        let (_, write) = gb2312_encoder_factory()
+            .encode(src, &mut buf, true)
+            .unwrap();
+        assert!(buf.len() >= write);
+        buf.truncate(write);
+
+        let bytes = include_bytes!("../resources/gb2312tests/邓小平南巡讲话_GB2312.txt").as_slice();
+        assert_eq!(buf.as_slice(), bytes);
+
+        let mut unicode = String::with_capacity(src.len() * 2);
+        gb2312_decoder_factory()
+            .decode(&buf, &mut unicode, true)
+            .unwrap();
+        assert_eq!(src, unicode);
     }
 }

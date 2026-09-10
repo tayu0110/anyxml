@@ -15,6 +15,7 @@
 mod big5;
 mod ebcdic;
 mod euc;
+mod gb2312;
 mod iso_8859;
 mod jisx;
 mod koi8r;
@@ -128,6 +129,7 @@ pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {
         BIG5_NAME,
         EUCJP_NAME,
         EUCKR_NAME,
+        GB2312_NAME,
         IBM037,
         IBM1026,
         IBM273,
@@ -512,6 +514,7 @@ pub static ENCODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, EncoderFactory>
         map.insert(EUCKR_NAME, euckr_encoder_factory);
         map.insert(BIG5_NAME, || Box::new(Big5Encoder));
         map.insert(KOI8R_NAME, || Box::new(KOI8REncoder));
+        map.insert(GB2312_NAME, gb2312_encoder_factory);
         RwLock::new(map)
     });
 pub fn find_encoder(encoding_name: &str) -> Option<Box<dyn Encoder>> {
@@ -609,6 +612,7 @@ pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>
         map.insert(EUCKR_NAME, euckr_decoder_factory);
         map.insert(BIG5_NAME, || Box::new(Big5Decoder));
         map.insert(KOI8R_NAME, || Box::new(KOI8RDecoder));
+        map.insert(GB2312_NAME, gb2312_decoder_factory);
         RwLock::new(map)
     });
 pub fn find_decoder(encoding_name: &str) -> Option<Box<dyn Decoder>> {
