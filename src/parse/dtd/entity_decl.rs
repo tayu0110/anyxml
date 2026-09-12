@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{
     error::XMLError,
     parse::ParseError,
@@ -158,6 +160,11 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
 
                 let system_id = URIString::parse(system_id)?;
                 if !pe && self.fatal_error.is_ok() {
+                    let system_id = if self.config.is_enable(ParserOption::ResolveDTDURIs) {
+                        Cow::Owned(base_uri.resolve(&system_id))
+                    } else {
+                        Cow::Borrowed(&system_id)
+                    };
                     if let Some(ndata) = ndata.as_deref() {
                         self.handler.unparsed_entity_decl(
                             &name,

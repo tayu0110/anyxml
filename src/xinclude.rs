@@ -9,7 +9,8 @@ use crate::{
     XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::{
-        AttributeType, DefaultParserSpec, DefaultSAXHandler, InputSource, SAXHandler, XMLReader,
+        AttributeType, DefaultParserSpec, DefaultSAXHandler, InputSource, ParserOption, SAXHandler,
+        XMLReader,
     },
     tree::{
         Document, Element, Node, NodeType, TreeBuildHandler,
@@ -806,9 +807,12 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
 
 impl Default for XIncludeProcessor<'_> {
     fn default() -> Self {
+        // Since URI resolution may cause the contents of entity declarations and notation
+        // declarations to no longer match, it is recommended to optionally disable resolution.
         Self {
             reader: XMLReader::builder()
                 .set_handler(TreeBuildHandler::default())
+                .disable_option(ParserOption::ResolveDTDURIs)
                 .build(),
             resolver: XIncludeDefaultResourceResolver,
             document_cache: HashMap::new(),

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{
     error::XMLError,
     parse::ParseError,
@@ -29,6 +31,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         self.source.advance(10);
         self.locator.update_column(|c| c + 10);
 
+        let base_uri = self.base_uri.clone();
         let base_source_id = self.source.source_id();
 
         if self.skip_whitespaces_with_handle_peref(true)? == 0 {
@@ -62,8 +65,14 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 // If it starts with “SYSTEM,” it is surely an ExternalID.
                 let system_id = system_id.get_or_insert_default();
                 self.parse_external_id(system_id, &mut None)?;
+                self.skip_whitespaces_with_handle_peref(true)?;
                 if self.fatal_error.is_ok() {
                     let system_id = URIString::parse(system_id)?;
+                    let system_id = if self.config.is_enable(ParserOption::ResolveDTDURIs) {
+                        Cow::Owned(base_uri.resolve(&system_id))
+                    } else {
+                        Cow::Borrowed(&system_id)
+                    };
                     self.handler.notation_decl(&name, None, Some(&system_id));
                 }
             }
@@ -108,8 +117,16 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     self.skip_whitespaces_with_handle_peref(true)?;
                 }
 
+                self.skip_whitespaces_with_handle_peref(true)?;
                 if self.fatal_error.is_ok() {
                     let system_id = system_id.map(URIString::parse).transpose()?;
+                    let system_id = match system_id {
+                        Some(system_id) if self.config.is_enable(ParserOption::ResolveDTDURIs) => {
+                            Some(base_uri.resolve(&system_id))
+                        }
+                        Some(system_id) => Some(system_id),
+                        None => None,
+                    };
                     self.handler
                         .notation_decl(&name, Some(public_id), system_id.as_deref());
                 }
@@ -124,7 +141,6 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             }
         }
 
-        self.skip_whitespaces_with_handle_peref(true)?;
         if self.source.source_id() != base_source_id {
             // [VC: Proper Declaration/PE Nesting]
             validity_error!(

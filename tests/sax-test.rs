@@ -86,7 +86,10 @@ fn well_formed_tests() {
         buffer: String::new(),
     };
 
-    let mut reader = XMLReader::builder().set_handler(handler).build();
+    let mut reader = XMLReader::builder()
+        .set_handler(handler)
+        .disable_option(ParserOption::ResolveDTDURIs)
+        .build();
 
     for ent in read_dir("resources/well-formed").unwrap() {
         if let Ok(ent) = ent
@@ -131,6 +134,7 @@ fn progressive_well_formed_tests() {
 
     let mut reader = XMLReader::builder()
         .set_handler(handler)
+        .disable_option(ParserOption::ResolveDTDURIs)
         .progressive_parser()
         .build();
 

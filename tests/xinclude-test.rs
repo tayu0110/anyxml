@@ -89,6 +89,7 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
         "success" => {
             let mut reader = XMLReader::builder()
                 .set_handler(TreeBuildHandler::default())
+                .disable_option(anyxml::sax::ParserOption::ResolveDTDURIs)
                 .build();
             eprintln!("href: {}", href.as_unescaped_str().unwrap());
             reader.parse_uri(href.as_ref(), None).unwrap();
@@ -125,6 +126,7 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
         "error" => {
             let mut reader = XMLReader::builder()
                 .set_handler(TreeBuildHandler::default())
+                .disable_option(anyxml::sax::ParserOption::ResolveDTDURIs)
                 .build();
             eprintln!("href: {}", href.as_unescaped_str().unwrap());
             reader.parse_uri(href.as_ref(), None).unwrap();

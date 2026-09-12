@@ -103,6 +103,15 @@ pub enum ParserOption {
     Catalogs = 4,
     /// Enable processing of the `oasis-xml-catalog` instruction as defined by the OASIS standard.
     CatalogPIAware = 5,
+    /// Enable resolution of URIs passed to the markup declaration event.
+    ///
+    /// For URIs appearing in entity declarations or notation declarations, if this option is
+    /// enabled, the absolute URI resolved using the declaration's base URI—as described in
+    /// the XML specification—is passed to the event.  \
+    /// If disabled, the URI is passed exactly as it appears in the document.
+    ///
+    /// This option is disabled by default.
+    ResolveDTDURIs = 6,
 }
 
 impl std::ops::BitOr<Self> for ParserOption {
@@ -993,6 +1002,8 @@ impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
 
 #[cfg(test)]
 mod tests {
+    use crate::sax::DebugHandler;
+
     use super::*;
 
     #[test]
@@ -1022,5 +1033,56 @@ mod tests {
 
         let mut reader = XMLReader::builder().build();
         reader.parse_str(XML_LATIN1, None).unwrap();
+    }
+
+    #[test]
+    fn resolve_dtd_uris_tests() {
+        const XML: &str = r#"<!DOCTYPE root [
+            <!ENTITY ent SYSTEM "ent.ent">
+            <!ENTITY uent SYSTEM "uent.ent" NDATA ndata>
+            <!NOTATION ndata SYSTEM "ndata.ndata">
+        ]><root/>"#;
+
+        let mut reader = XMLReader::builder()
+            .set_handler(DebugHandler::default())
+            .enable_option(ParserOption::ResolveDTDURIs)
+            .build();
+        let base_uri = URIString::parse("file:///document.xml").unwrap();
+        reader.parse_str(XML, Some(&base_uri)).unwrap();
+        assert_eq!(
+            reader.handler.buffer,
+            r#"setDocumentLocator()
+startDocument()
+startDTD(root, None, None)
+externalEntityDecl(ent, None, file:///ent.ent)
+unparsedEntityDecl(uent, None, file:///uent.ent, ndata)
+notationDecl(ndata, None, file:///ndata.ndata)
+endDTD()
+startElement(None, root, root)
+endElement(None, root, root)
+endDocument()
+"#
+        );
+
+        reader
+            .config
+            .set_option(ParserOption::ResolveDTDURIs, false);
+        assert!(!reader.config.is_enable(ParserOption::ResolveDTDURIs));
+        reader.handler.buffer.clear();
+        reader.parse_str(XML, Some(&base_uri)).unwrap();
+        assert_eq!(
+            reader.handler.buffer,
+            r#"setDocumentLocator()
+startDocument()
+startDTD(root, None, None)
+externalEntityDecl(ent, None, ent.ent)
+unparsedEntityDecl(uent, None, uent.ent, ndata)
+notationDecl(ndata, None, ndata.ndata)
+endDTD()
+startElement(None, root, root)
+endElement(None, root, root)
+endDocument()
+"#
+        );
     }
 }
