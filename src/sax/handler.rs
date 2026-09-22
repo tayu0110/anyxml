@@ -337,7 +337,7 @@ impl<H: EntityResolver + ?Sized> EntityResolver for &mut H {
         base_uri: &URIStr,
         system_id: &URIStr,
     ) -> Result<InputSource<'static>, XMLError> {
-        (*self).resolve_entity(name, public_id, base_uri, system_id)
+        (**self).resolve_entity(name, public_id, base_uri, system_id)
     }
 
     fn get_external_subset(
@@ -345,20 +345,20 @@ impl<H: EntityResolver + ?Sized> EntityResolver for &mut H {
         name: &str,
         base_uri: Option<&URIStr>,
     ) -> Result<InputSource<'static>, XMLError> {
-        (*self).get_external_subset(name, base_uri)
+        (**self).get_external_subset(name, base_uri)
     }
 }
 impl<H: ErrorHandler + ?Sized> ErrorHandler for &mut H {
     fn error(&mut self, error: SAXParseError) {
-        (*self).error(error);
+        (**self).error(error);
     }
 
     fn fatal_error(&mut self, error: SAXParseError) {
-        (*self).fatal_error(error);
+        (**self).fatal_error(error);
     }
 
     fn warning(&mut self, error: SAXParseError) {
-        (*self).warning(error);
+        (**self).warning(error);
     }
 }
 impl<H: SAXHandler + ?Sized> SAXHandler for &mut H {
@@ -369,87 +369,87 @@ impl<H: SAXHandler + ?Sized> SAXHandler for &mut H {
         attribute_type: &AttributeType,
         default_decl: &DefaultDecl,
     ) {
-        (*self).attribute_decl(element_name, attribute_name, attribute_type, default_decl);
+        (**self).attribute_decl(element_name, attribute_name, attribute_type, default_decl);
     }
 
     fn characters(&mut self, data: &str) {
-        (*self).characters(data);
+        (**self).characters(data);
     }
 
     fn comment(&mut self, data: &str) {
-        (*self).comment(data);
+        (**self).comment(data);
     }
 
     fn declaration(&mut self, version: &str, encoding: Option<&str>, standalone: Option<bool>) {
-        (*self).declaration(version, encoding, standalone);
+        (**self).declaration(version, encoding, standalone);
     }
 
     fn element_decl(&mut self, name: &str, contentspec: &ContentSpec) {
-        (*self).element_decl(name, contentspec);
+        (**self).element_decl(name, contentspec);
     }
 
     fn end_cdata(&mut self) {
-        (*self).end_cdata();
+        (**self).end_cdata();
     }
 
     fn end_document(&mut self) {
-        (*self).end_document();
+        (**self).end_document();
     }
 
     fn end_dtd(&mut self) {
-        (*self).end_dtd();
+        (**self).end_dtd();
     }
 
     fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
-        (*self).end_element(namespace_name, local_name, qname);
+        (**self).end_element(namespace_name, local_name, qname);
     }
 
     fn end_entity(&mut self) {
-        (*self).end_entity();
+        (**self).end_entity();
     }
 
     fn end_prefix_mapping(&mut self, prefix: Option<&str>) {
-        (*self).end_prefix_mapping(prefix);
+        (**self).end_prefix_mapping(prefix);
     }
 
     fn external_entity_decl(&mut self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
-        (*self).external_entity_decl(name, public_id, system_id);
+        (**self).external_entity_decl(name, public_id, system_id);
     }
 
     fn ignorable_whitespace(&mut self, data: &str) {
-        (*self).ignorable_whitespace(data);
+        (**self).ignorable_whitespace(data);
     }
 
     fn internal_entity_decl(&mut self, name: &str, value: &str) {
-        (*self).internal_entity_decl(name, value);
+        (**self).internal_entity_decl(name, value);
     }
 
     fn notation_decl(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
-        (*self).notation_decl(name, public_id, system_id);
+        (**self).notation_decl(name, public_id, system_id);
     }
 
     fn processing_instruction(&mut self, target: &str, data: Option<&str>) {
-        (*self).processing_instruction(target, data);
+        (**self).processing_instruction(target, data);
     }
 
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
-        (*self).set_document_locator(locator);
+        (**self).set_document_locator(locator);
     }
 
     fn skipped_entity(&mut self, name: &str) {
-        (*self).skipped_entity(name);
+        (**self).skipped_entity(name);
     }
 
     fn start_cdata(&mut self) {
-        (*self).start_cdata();
+        (**self).start_cdata();
     }
 
     fn start_document(&mut self) {
-        (*self).start_document();
+        (**self).start_document();
     }
 
     fn start_dtd(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
-        (*self).start_dtd(name, public_id, system_id);
+        (**self).start_dtd(name, public_id, system_id);
     }
 
     fn start_element(
@@ -459,15 +459,15 @@ impl<H: SAXHandler + ?Sized> SAXHandler for &mut H {
         qname: &str,
         atts: &Attributes,
     ) {
-        (*self).start_element(namespace_name, local_name, qname, atts);
+        (**self).start_element(namespace_name, local_name, qname, atts);
     }
 
     fn start_entity(&mut self, name: &str) {
-        (*self).start_entity(name);
+        (**self).start_entity(name);
     }
 
     fn start_prefix_mapping(&mut self, prefix: Option<&str>, uri: &str) {
-        (*self).start_prefix_mapping(prefix, uri);
+        (**self).start_prefix_mapping(prefix, uri);
     }
 
     fn unparsed_entity_decl(
@@ -477,7 +477,132 @@ impl<H: SAXHandler + ?Sized> SAXHandler for &mut H {
         system_id: &URIStr,
         notation_name: &str,
     ) {
-        (*self).unparsed_entity_decl(name, public_id, system_id, notation_name);
+        (**self).unparsed_entity_decl(name, public_id, system_id, notation_name);
+    }
+}
+
+impl<H: EntityResolver + ?Sized> EntityResolver for Box<H> {
+    fn get_external_subset(
+        &mut self,
+        name: &str,
+        base_uri: Option<&URIStr>,
+    ) -> Result<InputSource<'static>, XMLError> {
+        (**self).get_external_subset(name, base_uri)
+    }
+    fn resolve_entity(
+        &mut self,
+        name: &str,
+        public_id: Option<&str>,
+        base_uri: &URIStr,
+        system_id: &URIStr,
+    ) -> Result<InputSource<'static>, XMLError> {
+        (**self).resolve_entity(name, public_id, base_uri, system_id)
+    }
+}
+impl<H: ErrorHandler + ?Sized> ErrorHandler for Box<H> {
+    fn error(&mut self, error: SAXParseError) {
+        (**self).error(error);
+    }
+    fn fatal_error(&mut self, error: SAXParseError) {
+        (**self).fatal_error(error);
+    }
+    fn warning(&mut self, error: SAXParseError) {
+        (**self).warning(error);
+    }
+}
+impl<H: SAXHandler + ?Sized> SAXHandler for Box<H> {
+    fn attribute_decl(
+        &mut self,
+        element_name: &str,
+        attribute_name: &str,
+        attribute_type: &AttributeType,
+        default_decl: &DefaultDecl,
+    ) {
+        (**self).attribute_decl(element_name, attribute_name, attribute_type, default_decl);
+    }
+    fn characters(&mut self, data: &str) {
+        (**self).characters(data);
+    }
+    fn comment(&mut self, data: &str) {
+        (**self).comment(data);
+    }
+    fn declaration(&mut self, version: &str, encoding: Option<&str>, standalone: Option<bool>) {
+        (**self).declaration(version, encoding, standalone);
+    }
+    fn element_decl(&mut self, name: &str, contentspec: &ContentSpec) {
+        (**self).element_decl(name, contentspec);
+    }
+    fn end_cdata(&mut self) {
+        (**self).end_cdata();
+    }
+    fn end_document(&mut self) {
+        (**self).end_document();
+    }
+    fn end_dtd(&mut self) {
+        (**self).end_dtd();
+    }
+    fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
+        (**self).end_element(namespace_name, local_name, qname);
+    }
+    fn end_entity(&mut self) {
+        (**self).end_entity();
+    }
+    fn end_prefix_mapping(&mut self, prefix: Option<&str>) {
+        (**self).end_prefix_mapping(prefix);
+    }
+    fn external_entity_decl(&mut self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
+        (**self).external_entity_decl(name, public_id, system_id);
+    }
+    fn ignorable_whitespace(&mut self, data: &str) {
+        (**self).ignorable_whitespace(data);
+    }
+    fn internal_entity_decl(&mut self, name: &str, value: &str) {
+        (**self).internal_entity_decl(name, value);
+    }
+    fn notation_decl(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
+        (**self).notation_decl(name, public_id, system_id);
+    }
+    fn processing_instruction(&mut self, target: &str, data: Option<&str>) {
+        (**self).processing_instruction(target, data);
+    }
+    fn set_document_locator(&mut self, locator: Arc<Locator>) {
+        (**self).set_document_locator(locator);
+    }
+    fn skipped_entity(&mut self, name: &str) {
+        (**self).skipped_entity(name);
+    }
+    fn start_cdata(&mut self) {
+        (**self).start_cdata();
+    }
+    fn start_document(&mut self) {
+        (**self).start_document();
+    }
+    fn start_dtd(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
+        (**self).start_dtd(name, public_id, system_id);
+    }
+    fn start_element(
+        &mut self,
+        namespace_name: Option<&str>,
+        local_name: Option<&str>,
+        qname: &str,
+        atts: &Attributes,
+    ) {
+        (**self).start_element(namespace_name, local_name, qname, atts);
+    }
+    fn start_entity(&mut self, name: &str) {
+        (**self).start_entity(name);
+    }
+    fn start_prefix_mapping(&mut self, prefix: Option<&str>, namespace_name: &str) {
+        (**self).start_prefix_mapping(prefix, namespace_name);
+    }
+    fn unparsed_entity_decl(
+        &mut self,
+        name: &str,
+        public_id: Option<&str>,
+        system_id: &URIStr,
+        notation_name: &str,
+    ) {
+        (**self).unparsed_entity_decl(name, public_id, system_id, notation_name);
     }
 }
 
