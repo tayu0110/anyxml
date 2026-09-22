@@ -620,7 +620,10 @@ impl NamespaceStack {
         Some(self.namespaces[index].0.clone())
     }
 
-    pub(crate) fn push(&mut self, prefix: &str, namespace_name: &str) {
+    /// Push a namespace whose namespace name is `namespace_name` and bound prefix is `prefix`.
+    ///
+    /// To push the default namespace, use an empty prefix name.
+    pub fn push(&mut self, prefix: &str, namespace_name: &str) {
         if let Some(index) = self.prefix_map.get_mut(prefix) {
             let previous = *index;
             *index = self.namespaces.len();
@@ -642,7 +645,10 @@ impl NamespaceStack {
         }
     }
 
-    pub(crate) fn pop(&mut self) -> Option<Namespace> {
+    /// Pop the latest pushed namespace.
+    ///
+    /// The 'xml' prefix defined in Namespace specification cannot be removed.
+    pub fn pop(&mut self) -> Option<Namespace> {
         if self.len() == 1 {
             return None;
         }
@@ -656,9 +662,7 @@ impl NamespaceStack {
     }
 
     pub(crate) fn truncate(&mut self, depth: usize) {
-        while self.namespaces.len() > depth {
-            self.pop();
-        }
+        while self.namespaces.len() > depth && self.pop().is_some() {}
     }
 
     pub(crate) fn clear(&mut self) {
