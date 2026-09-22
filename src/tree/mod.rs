@@ -49,6 +49,7 @@ use crate::{
         node::{InternalNodeSpec, NodeSpec},
     },
     uri::URIStr,
+    xpath::XPathObject,
 };
 
 /// Node types.
@@ -721,6 +722,17 @@ fn compare_document_order(
         rp = rprev;
     }
     Some(Greater)
+}
+
+impl<Spec: ?Sized> Node<Spec>
+where
+    Self: Into<Node<dyn NodeSpec>>,
+{
+    /// Execute the given XPath with the itself as the context node.
+    pub fn xpath(&self, xpath: &str) -> Result<XPathObject, XMLError> {
+        let mut exp = crate::xpath::compile(xpath)?;
+        Ok(exp.evaluate(self.clone())?)
+    }
 }
 
 #[cfg(test)]
