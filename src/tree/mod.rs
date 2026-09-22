@@ -1,4 +1,50 @@
 //! Provide APIs and data structures that represents and manipulates XML document tree.
+//!
+//! # Basic usage
+//! Using [`TreeBuildHandler`], it is easy to construct a document tree from an XML resource.
+//!
+//! By configuring the fields of [`TreeBuildHandler`], it is possible to control whether
+//! comments are included, whether CDATA sections are included, and whether entity references
+//! are replaced with the entities they refer to, and so on.
+//!
+//! The document tree API does not allow disabling namespace support.  \
+//! If the namespace is disabled via parser options, trees cannot be constructed correctly.
+//!
+//! ## Example
+//! ```rust
+//! use anyxml::{
+//!     XML_XML_NAMESPACE, sax::XMLReader, tree::TreeBuildHandler
+//! };
+//!
+//! const XML: &str = r#"<?xml version="1.0"?>
+//! <root>
+//!     <greeting xml:lang='en'>Hello</greeting>
+//!     <greeting xml:lang='ja'>こんにちは</greeting>
+//!     <greeting xml:lang='ch'>你好</greeting>
+//! </root>"#;
+//!
+//! # fn main() -> Result<(), anyxml::error::XMLError> {
+//! let mut reader = XMLReader::builder()
+//!     .set_handler(TreeBuildHandler::default())
+//!     .build();
+//! reader.parse_str(XML, None).unwrap();
+//!
+//! let doc = reader.handler.document;
+//! // search nodes by XPath and downcast to `Element` node.
+//! let ja = doc.xpath("//greeting[lang('ja')]")?
+//!     .as_nodeset()?[0]
+//!     .as_element()
+//!     .unwrap();
+//! // node type specific operations
+//! let name = ja.local_name();
+//! assert_eq!(name.as_ref(), "greeting");
+//! let lang = ja.get_attribute("lang", Some(XML_XML_NAMESPACE));
+//! assert_eq!(lang.as_deref(), Some("ja"));
+//! let text = ja.text_content();
+//! assert_eq!(text, "こんにちは");
+//! # Ok(())
+//! # }
+//! ```
 
 pub mod attlist_decl;
 pub mod attribute;

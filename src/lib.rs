@@ -29,8 +29,8 @@ const ENCODING_NAME_LIMIT_LENGTH: usize = 128;
 /// Approximate chunk length when the parser reports character data
 const CHARDATA_CHUNK_LENGTH: usize = 4096;
 
-const XML_XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
-const XML_NS_NAMESPACE: &str = "http://www.w3.org/2000/xmlns/";
+pub const XML_XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
+pub const XML_NS_NAMESPACE: &str = "http://www.w3.org/2000/xmlns/";
 
 /// XML version. Currently supports XML 1.0 only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
