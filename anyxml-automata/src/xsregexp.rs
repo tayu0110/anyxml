@@ -353,7 +353,9 @@ fn parse_pos_char_group(
                 return parse_char_class_esc(regexp);
             }
         } else {
-            let start = regexp.chars().next().unwrap();
+            let Some(start) = regexp.chars().next() else {
+                return Err(RegexpError::SyntaxError);
+            };
             *regexp = &regexp[start.len_utf8()..];
             if matches!(start, '\x2D' | '\x5B' | '\x5D') {
                 return Err(RegexpError::InvalidCharacter);
@@ -1098,5 +1100,8 @@ mod tests {
         assert!(re.is_match("756765786D706E686D61746C736A66696F6870727272707864666579"));
         assert!(re.is_match("6164696771616D657769787078716767647573626D65686570687579"));
         assert!(re.is_match("6C6C716F636879677467686871776571686161616E6D78636B686563"));
+
+        // msData/regex/reH1.xsd
+        assert!(XSRegexp::compile("[\\]").is_err());
     }
 }
