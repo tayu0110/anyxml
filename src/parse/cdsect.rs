@@ -23,7 +23,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         self.source.advance(9);
         self.locator.update_column(|c| c + 9);
 
-        if !self.fatal_error_occurred {
+        if self.fatal_error.is_ok() {
             self.handler.start_cdata();
         }
 
@@ -68,7 +68,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             }
 
             if self.text_buffer.len() >= CHARDATA_CHUNK_LENGTH {
-                if !self.fatal_error_occurred {
+                if self.fatal_error.is_ok() {
                     self.handler.characters(&self.text_buffer);
                 }
                 self.text_buffer.clear();
@@ -79,7 +79,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             }
         }
 
-        if !self.text_buffer.is_empty() && !self.fatal_error_occurred {
+        if !self.text_buffer.is_empty() && self.fatal_error.is_ok() {
             self.handler.characters(&self.text_buffer);
         }
 
@@ -91,7 +91,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         self.source.advance(3);
         self.locator.update_column(|c| c + 3);
 
-        if !self.fatal_error_occurred {
+        if self.fatal_error.is_ok() {
             self.handler.end_cdata();
         }
 

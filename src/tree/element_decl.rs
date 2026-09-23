@@ -4,9 +4,10 @@ use std::{
 };
 
 use crate::{
+    XMLVersion,
     sax::ContentSpec,
     tree::{
-        Document, NodeType,
+        Document, NodeType, XMLTreeError,
         node::{Node, NodeCore, NodeSpec},
     },
 };
@@ -35,8 +36,18 @@ impl NodeSpec for ElementDeclSpec {
 pub type ElementDecl = Node<ElementDeclSpec>;
 
 impl ElementDecl {
-    pub(crate) fn new(name: Rc<str>, content_spec: ContentSpec, owner_document: Document) -> Self {
-        Node::create_node(ElementDeclSpec { name, content_spec }, owner_document)
+    pub(crate) fn new(
+        name: Rc<str>,
+        content_spec: ContentSpec,
+        owner_document: Document,
+    ) -> Result<Self, XMLTreeError> {
+        if !XMLVersion::XML10.validate_name(&name) {
+            return Err(XMLTreeError::InvalidName);
+        }
+        Ok(Node::create_node(
+            ElementDeclSpec { name, content_spec },
+            owner_document,
+        ))
     }
 
     /// Element name declared by this declaration.

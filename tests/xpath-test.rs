@@ -1,66 +1,35 @@
-use std::{fmt::Write as _, path::Path};
+use std::fmt::Write as _;
 
 use anyxml::{
+    error::XMLError,
     sax::{ParserOption, XMLReader},
     tree::{TreeBuildHandler, convert::NodeKind},
     uri::URIString,
-    xpath::{self, XPathObject},
+    xpath::XPathObject,
 };
 
 #[test]
-fn xpath_evaluation_tests() {
+fn xpath_evaluation_tests() -> Result<(), XMLError> {
     let mut reader = XMLReader::builder()
         .set_handler(TreeBuildHandler::default())
         .enable_option(ParserOption::ExternalGeneralEntities)
         .build();
-    reader
-        .parse_uri(
-            URIString::parse_file_path(
-                Path::new("resources/xpath/testsuite.xml")
-                    .canonicalize()
-                    .unwrap(),
-            )
-            .unwrap(),
-            None,
-        )
-        .unwrap();
+    reader.parse_uri(URIString::parse("resources/xpath/testsuite.xml")?, None)?;
     let document = reader.handler.document.clone();
 
-    let mut expression = xpath::compile("//test-cases").unwrap();
-    let XPathObject::NodeSet(test_cases) = expression.evaluate(document).unwrap() else {
-        unreachable!()
-    };
+    let test_cases = document.xpath("//test-cases")?.as_nodeset()?;
 
     for test_cases in test_cases.iter().map(|case| case.as_element().unwrap()) {
-        let input_file = test_cases
-            .get_elements_by_qname("input-file")
-            .next()
-            .unwrap()
-            .text_content();
-        reader
-            .parse_uri(
-                URIString::parse_file_path(Path::new(input_file.as_str()).canonicalize().unwrap())
-                    .unwrap(),
-                None,
-            )
-            .unwrap();
+        let input_file = test_cases.xpath("./input-file[1]")?.as_nodeset()?[0].text_content();
+        reader.parse_uri(URIString::parse(input_file.as_str())?, None)?;
         let document = reader.handler.document.clone();
-        for test_case in test_cases.get_elements_by_qname("test-case") {
-            let xpath = test_case
-                .get_elements_by_qname("xpath")
-                .next()
-                .unwrap()
-                .text_content();
-            let output = test_case
-                .get_elements_by_qname("output")
-                .next()
-                .unwrap()
-                .text_content();
+        for test_case in test_cases.xpath("./test-case")?.as_nodeset()? {
+            let xpath = test_case.xpath("./xpath[1]")?.as_nodeset()?[0].text_content();
+            let output = test_case.xpath("./output[1]")?.as_nodeset()?[0].text_content();
 
             let mut buf = String::new();
             eprintln!("input_file: {input_file}, xpath: {xpath}");
-            let mut expression = xpath::compile(&xpath).unwrap();
-            match expression.evaluate(document.clone()).unwrap() {
+            match document.xpath(&xpath).unwrap() {
                 XPathObject::Boolean(boolean) => write!(buf, "{boolean},").unwrap(),
                 XPathObject::Number(number) => write!(buf, "{number},").unwrap(),
                 XPathObject::String(string) => write!(buf, "{string},").unwrap(),
@@ -111,4 +80,6 @@ fn xpath_evaluation_tests() {
             );
         }
     }
+
+    Ok(())
 }

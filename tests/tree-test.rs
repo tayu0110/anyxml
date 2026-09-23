@@ -194,7 +194,10 @@ fn tree_walk_tests() {
                 buffer: String::new(),
             });
             handler.expand_entity_reference = false;
-            let mut reader = XMLReader::builder().set_handler(handler).build();
+            let mut reader = XMLReader::builder()
+                .set_handler(handler)
+                .disable_option(anyxml::sax::ParserOption::ResolveDTDURIs)
+                .build();
             reader.parse_uri(&uri, None).ok();
 
             let outname = path.file_name().unwrap().to_str().unwrap();
@@ -233,7 +236,10 @@ fn tree_dump_tests() {
             let uri = URIString::parse_file_path(path.canonicalize().unwrap()).unwrap();
             let mut handler = TreeBuildHandler::default();
             handler.expand_entity_reference = false;
-            let mut reader = XMLReader::builder().set_handler(handler).build();
+            let mut reader = XMLReader::builder()
+                .set_handler(handler)
+                .disable_option(anyxml::sax::ParserOption::ResolveDTDURIs)
+                .build();
             reader.parse_uri(&uri, None).ok();
             assert!(!reader.handler.fatal_error);
 

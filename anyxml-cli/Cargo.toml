@@ -1,6 +1,6 @@
 [package]
 name = "anyxml-cli"
-version = "0.5.0"
+version = "0.5.1"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -10,7 +10,7 @@ keywords = ["cli", "xml", "xpath", "validation"]
 rust-version.workspace = true
 
 [dependencies]
-anyxml = { version = "^0.14", path = "../" }
+anyxml = { version = "^0.15", path = "../" }
 clap = { version = "4.5.52", features = ["derive"] }
 
 [[bin]]

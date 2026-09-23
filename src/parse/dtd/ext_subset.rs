@@ -51,7 +51,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     if entity_push {
                         self.pop_source()?;
                     }
-                    if !self.fatal_error_occurred {
+                    if self.fatal_error.is_ok() {
                         self.handler.end_entity();
                     }
                 }

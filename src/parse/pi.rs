@@ -73,7 +73,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             self.source.advance(2);
             self.locator.update_column(|c| c + 2);
 
-            if !self.fatal_error_occurred {
+            if self.fatal_error.is_ok() {
                 self.handler.processing_instruction(&target, None);
             }
 
@@ -152,7 +152,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         self.source.advance(2);
         self.locator.update_column(|c| c + 2);
 
-        if !self.fatal_error_occurred {
+        if self.fatal_error.is_ok() {
             self.handler.processing_instruction(&target, Some(&data));
         }
 

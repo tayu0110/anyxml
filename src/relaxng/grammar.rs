@@ -136,3 +136,27 @@ pub(super) struct Grammar {
     /// -1: unknown, 0: false, 1: true
     pub(super) nullable: Vec<i8>,
 }
+
+impl Grammar {
+    pub(super) const fn not_allowed(&self) -> PatternId {
+        0
+    }
+
+    pub(super) const fn empty(&self) -> PatternId {
+        1
+    }
+}
+
+impl Default for Grammar {
+    fn default() -> Self {
+        let not_allowed = Arc::new(Pattern::NotAllowed);
+        let empty = Arc::new(Pattern::Empty);
+        Self {
+            root: 0,
+            libraries: RelaxNGDatatypeLibraries::default(),
+            patterns: vec![not_allowed.clone(), empty.clone()],
+            intern: HashMap::from([(not_allowed.clone(), 0), (empty.clone(), 1)]),
+            nullable: vec![0, 1],
+        }
+    }
+}

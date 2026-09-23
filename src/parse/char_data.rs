@@ -90,7 +90,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 }
 
                 if self.text_buffer.len() >= CHARDATA_CHUNK_LENGTH {
-                    if !self.fatal_error_occurred {
+                    if self.fatal_error.is_ok() {
                         if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
                             if non_whitespace != self.text_buffer.len() {
                                 validator.push_whitespaces();
@@ -127,7 +127,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 non_whitespace += c.len_utf8();
 
                 if self.text_buffer.len() >= CHARDATA_CHUNK_LENGTH {
-                    if !self.fatal_error_occurred {
+                    if self.fatal_error.is_ok() {
                         if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
                             if non_whitespace != self.text_buffer.len() {
                                 validator.push_whitespaces();
@@ -152,7 +152,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             }
         }
 
-        if !self.text_buffer.is_empty() && !self.fatal_error_occurred {
+        if !self.text_buffer.is_empty() && self.fatal_error.is_ok() {
             if let Some(Some((_, validator))) = self.validation_stack.last_mut() {
                 if non_whitespace != self.text_buffer.len() {
                     validator.push_whitespaces();

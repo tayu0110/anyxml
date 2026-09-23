@@ -126,7 +126,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             None,
                         )?;
 
-                        if !self.fatal_error_occurred {
+                        if self.fatal_error.is_ok() {
                             self.handler.start_entity(&name);
                         }
 
@@ -143,7 +143,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         }
 
                         self.pop_source()?;
-                        if !self.fatal_error_occurred {
+                        if self.fatal_error.is_ok() {
                             self.handler.end_entity();
                         }
                     }
@@ -199,7 +199,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                     public_id.as_deref().map(Arc::from),
                                 )?;
 
-                                if !self.fatal_error_occurred {
+                                if self.fatal_error.is_ok() {
                                     self.handler.start_entity(&name);
                                 }
 
@@ -216,7 +216,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 }
 
                                 self.pop_source()?;
-                                if !self.fatal_error_occurred {
+                                if self.fatal_error.is_ok() {
                                     self.handler.end_entity();
                                 }
                             }
@@ -229,7 +229,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 );
                             }
                         }
-                    } else if !self.fatal_error_occurred {
+                    } else if self.fatal_error.is_ok() {
                         self.handler.skipped_entity(&name);
                     }
                 }
@@ -271,7 +271,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                 );
             }
 
-            if !self.fatal_error_occurred {
+            if self.fatal_error.is_ok() {
                 self.handler.skipped_entity(&name);
             }
         }

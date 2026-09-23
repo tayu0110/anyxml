@@ -677,23 +677,23 @@ impl Grammar {
             (cx, &Pattern::OneOrMore(p), s) => {
                 let q1 = self.text_deriv(cx, p, s);
                 let r1 = self.create_node(Pattern::OneOrMore(p));
-                let r2 = self.create_node(Pattern::Empty);
+                let r2 = self.empty();
                 let q2 = self.choice(r1, r2);
                 self.group(q1, q2)
             }
             (_, Pattern::Text, _) => pattern,
             (cx1, Pattern::Value(dt, value, cx2), s) => {
                 if self.datatype_equal(dt, value, cx2, s, cx1) {
-                    self.create_node(Pattern::Empty)
+                    self.empty()
                 } else {
-                    self.create_node(Pattern::NotAllowed)
+                    self.not_allowed()
                 }
             }
             (cx, Pattern::Data(dt, params), s) => {
                 if self.datatype_allows(dt, params, s, cx) {
-                    self.create_node(Pattern::Empty)
+                    self.empty()
                 } else {
-                    self.create_node(Pattern::NotAllowed)
+                    self.not_allowed()
                 }
             }
             (cx, &Pattern::DataExcept(ref dt, ref params, p), s) => {
@@ -701,9 +701,9 @@ impl Grammar {
                     && let q = self.text_deriv(cx, p, s)
                     && !self.nullable(q)
                 {
-                    self.create_node(Pattern::Empty)
+                    self.empty()
                 } else {
-                    self.create_node(Pattern::NotAllowed)
+                    self.not_allowed()
                 }
             }
             (cx, &Pattern::List(p), s) => {
@@ -715,12 +715,12 @@ impl Grammar {
                         .collect::<Vec<_>>(),
                 );
                 if self.nullable(q) {
-                    self.create_node(Pattern::Empty)
+                    self.empty()
                 } else {
-                    self.create_node(Pattern::NotAllowed)
+                    self.not_allowed()
                 }
             }
-            (_, _, _) => self.create_node(Pattern::NotAllowed),
+            (_, _, _) => self.not_allowed(),
         }
     }
 
@@ -836,10 +836,10 @@ impl Grammar {
             }
             Pattern::Element(ref nc, p) => {
                 if nc.contains(qn) {
-                    let r = self.create_node(Pattern::Empty);
+                    let r = self.empty();
                     self.after(p, r)
                 } else {
-                    self.create_node(Pattern::NotAllowed)
+                    self.not_allowed()
                 }
             }
             Pattern::Interleave(p1, p2) => {
@@ -857,7 +857,7 @@ impl Grammar {
                 let q = self.start_tag_open_deriv(p, qn);
                 self.apply_after(
                     &move |slf: &mut Grammar, p: usize| {
-                        let r = slf.create_node(Pattern::Empty);
+                        let r = slf.empty();
                         let q = slf.choice(pattern, r);
                         slf.group(p, q)
                     },
@@ -878,7 +878,7 @@ impl Grammar {
                 let q = self.start_tag_open_deriv(p1, qn);
                 self.apply_after(&move |slf: &mut Grammar, p1: usize| slf.after(p1, p2), q)
             }
-            _ => self.create_node(Pattern::NotAllowed),
+            _ => self.not_allowed(),
         }
     }
 
@@ -915,12 +915,12 @@ impl Grammar {
             }
             (Pattern::Attribute(nc, p), AttributeNode(qn, s)) => {
                 if nc.contains(qn) && self.value_match(cx, *p, s) {
-                    self.create_node(Pattern::Empty)
+                    self.empty()
                 } else {
-                    self.create_node(Pattern::NotAllowed)
+                    self.not_allowed()
                 }
             }
-            (_, _) => self.create_node(Pattern::NotAllowed),
+            (_, _) => self.not_allowed(),
         }
     }
 
@@ -956,7 +956,7 @@ impl Grammar {
                 let q = self.start_tag_close_deriv(p);
                 self.one_or_more(q)
             }
-            Pattern::Attribute(_, _) => self.create_node(Pattern::NotAllowed),
+            Pattern::Attribute(_, _) => self.not_allowed(),
             _ => pattern,
         }
     }
@@ -971,10 +971,10 @@ impl Grammar {
                 if self.nullable(p1) {
                     p2
                 } else {
-                    self.create_node(Pattern::NotAllowed)
+                    self.not_allowed()
                 }
             }
-            _ => self.create_node(Pattern::NotAllowed),
+            _ => self.not_allowed(),
         }
     }
 }

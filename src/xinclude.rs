@@ -9,7 +9,8 @@ use crate::{
     XML_XML_NAMESPACE, XMLVersion,
     error::XMLError,
     sax::{
-        AttributeType, DefaultParserSpec, DefaultSAXHandler, InputSource, SAXHandler, XMLReader,
+        AttributeType, DefaultParserSpec, DefaultSAXHandler, InputSource, ParserOption, SAXHandler,
+        XMLReader,
     },
     tree::{
         Document, Element, Node, NodeType, TreeBuildHandler,
@@ -438,7 +439,7 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
             source.grow()?;
         }
 
-        let text = include.owner_document().create_text(buf);
+        let text = include.owner_document().create_text(buf)?;
         Ok(Some(text.into()))
     }
 
@@ -783,7 +784,9 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
                 .document_element()
                 .map(|elem| elem.name())
                 .unwrap_or_else(|| "root".into());
-            let mut doctype = self.result_document.create_document_type(name, None, None);
+            let mut doctype = self
+                .result_document
+                .create_document_type(name, None, None)?;
             for ent in entities {
                 doctype.append_child(ent.deep_copy_subtree()?)?;
             }
@@ -804,9 +807,12 @@ impl<H: SAXHandler, R: XIncludeResourceResolver> XIncludeProcessor<'_, H, R> {
 
 impl Default for XIncludeProcessor<'_> {
     fn default() -> Self {
+        // Since URI resolution may cause the contents of entity declarations and notation
+        // declarations to no longer match, it is recommended to optionally disable resolution.
         Self {
             reader: XMLReader::builder()
                 .set_handler(TreeBuildHandler::default())
+                .disable_option(ParserOption::ResolveDTDURIs)
                 .build(),
             resolver: XIncludeDefaultResourceResolver,
             document_cache: HashMap::new(),

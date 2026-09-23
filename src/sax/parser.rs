@@ -103,6 +103,15 @@ pub enum ParserOption {
     Catalogs = 4,
     /// Enable processing of the `oasis-xml-catalog` instruction as defined by the OASIS standard.
     CatalogPIAware = 5,
+    /// Enable resolution of URIs passed to the markup declaration event.
+    ///
+    /// For URIs appearing in entity declarations or notation declarations, if this option is
+    /// enabled, the absolute URI resolved using the declaration's base URI—as described in
+    /// the XML specification—is passed to the event.  \
+    /// If disabled, the URI is passed exactly as it appears in the document.
+    ///
+    /// This option is disabled by default.
+    ResolveDTDURIs = 6,
 }
 
 impl std::ops::BitOr<Self> for ParserOption {
@@ -247,7 +256,7 @@ pub struct XMLReader<Spec: ParserSpec, H: SAXHandler + ?Sized = DefaultSAXHandle
 
     // Parser Context
     pub(crate) state: ParserState,
-    pub(crate) fatal_error_occurred: bool,
+    pub(crate) fatal_error: Result<(), XMLError>,
     pub(crate) version: XMLVersion,
     pub(crate) encoding: Option<Box<str>>,
     pub(crate) standalone: Option<bool>,
@@ -345,7 +354,7 @@ impl<Spec: ParserSpec, H: SAXHandler + ?Sized> XMLReader<Spec, H> {
 
         // reset Parser Context
         self.state = ParserState::BeforeStart;
-        self.fatal_error_occurred = false;
+        self.fatal_error = Ok(());
         self.version = XMLVersion::default();
         self.encoding = None;
         self.standalone = None;
@@ -523,7 +532,8 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
             .parse_document()
             .inspect_err(|err| {
                 fatal_error!(self, err, "Unrecoverable error: {}", err);
-            })
+            })?;
+        std::mem::replace(&mut self.fatal_error, Ok(()))
     }
 
     /// Reset the parser to its initial state.
@@ -583,7 +593,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
     pub fn parse_chunk(&mut self, chunk: impl AsRef<[u8]>, finish: bool) -> Result<(), XMLError> {
         let reader = self as &mut XMLReader<ProgressiveParserSpec, dyn SAXHandler>;
         (|| {
-            if reader.fatal_error_occurred {
+            if reader.fatal_error.is_err() {
                 return Ok(());
             }
             let chunk = chunk.as_ref();
@@ -591,7 +601,7 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
                 reader.source.push_bytes(bytes, false)?;
                 while reader.parse_event_once(false)? {}
             }
-            if !reader.fatal_error_occurred && finish {
+            if reader.fatal_error.is_ok() && finish {
                 reader.source.push_bytes([], true)?;
                 while reader.parse_event_once(true)? {}
 
@@ -603,7 +613,12 @@ impl<H: SAXHandler> XMLReader<ProgressiveParserSpec, H> {
         })()
         .inspect_err(|err| {
             fatal_error!(reader, err, "Unrecoverable error: {}", err);
-        })
+        })?;
+        if finish {
+            std::mem::replace(&mut self.fatal_error, Ok(()))
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -731,7 +746,7 @@ impl<'a> Default for XMLReader<DefaultParserSpec<'a>> {
             atts_buffer: Attributes::new(),
             atts_temp_buffer: vec![],
             state: ParserState::BeforeStart,
-            fatal_error_occurred: false,
+            fatal_error: Ok(()),
             version: XMLVersion::default(),
             encoding: None,
             standalone: None,
@@ -805,7 +820,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
                 atts_buffer: Attributes::new(),
                 atts_temp_buffer: vec![],
                 state: self.reader.state,
-                fatal_error_occurred: self.reader.fatal_error_occurred,
+                fatal_error: self.reader.fatal_error,
                 version: self.reader.version,
                 encoding: self.reader.encoding,
                 standalone: self.reader.standalone,
@@ -867,7 +882,7 @@ impl<'a, H: SAXHandler> XMLReaderBuilder<'a, H> {
                 atts_buffer: Attributes::new(),
                 atts_temp_buffer: vec![],
                 state: self.reader.state,
-                fatal_error_occurred: self.reader.fatal_error_occurred,
+                fatal_error: self.reader.fatal_error,
                 version: self.reader.version,
                 encoding: self.reader.encoding,
                 standalone: self.reader.standalone,
@@ -941,7 +956,7 @@ impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
                 atts_buffer: Attributes::new(),
                 atts_temp_buffer: vec![],
                 state: self.reader.state,
-                fatal_error_occurred: self.reader.fatal_error_occurred,
+                fatal_error: self.reader.fatal_error,
                 version: self.reader.version,
                 encoding: self.reader.encoding,
                 standalone: self.reader.standalone,
@@ -987,6 +1002,8 @@ impl<H: SAXHandler> XMLProgressiveReaderBuilder<H> {
 
 #[cfg(test)]
 mod tests {
+    use crate::sax::DebugHandler;
+
     use super::*;
 
     #[test]
@@ -1016,5 +1033,56 @@ mod tests {
 
         let mut reader = XMLReader::builder().build();
         reader.parse_str(XML_LATIN1, None).unwrap();
+    }
+
+    #[test]
+    fn resolve_dtd_uris_tests() {
+        const XML: &str = r#"<!DOCTYPE root [
+            <!ENTITY ent SYSTEM "ent.ent">
+            <!ENTITY uent SYSTEM "uent.ent" NDATA ndata>
+            <!NOTATION ndata SYSTEM "ndata.ndata">
+        ]><root/>"#;
+
+        let mut reader = XMLReader::builder()
+            .set_handler(DebugHandler::default())
+            .enable_option(ParserOption::ResolveDTDURIs)
+            .build();
+        let base_uri = URIString::parse("file:///document.xml").unwrap();
+        reader.parse_str(XML, Some(&base_uri)).unwrap();
+        assert_eq!(
+            reader.handler.buffer,
+            r#"setDocumentLocator()
+startDocument()
+startDTD(root, None, None)
+externalEntityDecl(ent, None, file:///ent.ent)
+unparsedEntityDecl(uent, None, file:///uent.ent, ndata)
+notationDecl(ndata, None, file:///ndata.ndata)
+endDTD()
+startElement(None, root, root)
+endElement(None, root, root)
+endDocument()
+"#
+        );
+
+        reader
+            .config
+            .set_option(ParserOption::ResolveDTDURIs, false);
+        assert!(!reader.config.is_enable(ParserOption::ResolveDTDURIs));
+        reader.handler.buffer.clear();
+        reader.parse_str(XML, Some(&base_uri)).unwrap();
+        assert_eq!(
+            reader.handler.buffer,
+            r#"setDocumentLocator()
+startDocument()
+startDTD(root, None, None)
+externalEntityDecl(ent, None, ent.ent)
+unparsedEntityDecl(uent, None, uent.ent, ndata)
+notationDecl(ndata, None, ndata.ndata)
+endDTD()
+startElement(None, root, root)
+endElement(None, root, root)
+endDocument()
+"#
+        );
     }
 }

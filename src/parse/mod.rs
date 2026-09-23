@@ -199,7 +199,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         }
 
         self.state = ParserState::Finished;
-        if !self.fatal_error_occurred
+        if self.fatal_error.is_ok()
             && self.config.is_enable(ParserOption::Validation)
             && !self.unresolved_ids.is_empty()
         {
@@ -315,10 +315,10 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             )?;
                             entity_push = true;
 
-                            if !in_decl && !self.fatal_error_occurred {
+                            if !in_decl && self.fatal_error.is_ok() {
                                 self.handler.start_entity(&name);
                             }
-                        } else if !in_decl && !self.fatal_error_occurred {
+                        } else if !in_decl && self.fatal_error.is_ok() {
                             self.handler.skipped_entity(&name);
                         }
                     }
@@ -363,7 +363,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                 )?;
                                 entity_push = true;
 
-                                if !in_decl && !self.fatal_error_occurred {
+                                if !in_decl && self.fatal_error.is_ok() {
                                     self.handler.start_entity(&name);
                                 }
                             }
@@ -374,7 +374,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                     "The external general entity '{}' cannot be resolved.",
                                     name
                                 );
-                                if !in_decl && !self.fatal_error_occurred {
+                                if !in_decl && self.fatal_error.is_ok() {
                                     self.handler.skipped_entity(&name);
                                 }
                             }
@@ -394,7 +394,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     self.handler.skipped_entity(&name);
                 }
             }
-        } else if !in_decl && !self.fatal_error_occurred {
+        } else if !in_decl && self.fatal_error.is_ok() {
             self.handler.skipped_entity(&name);
         }
         Ok(entity_push)
@@ -446,7 +446,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                     break Ok(s);
                 }
                 self.pop_source()?;
-                if !in_decl && !self.fatal_error_occurred {
+                if !in_decl && self.fatal_error.is_ok() {
                     self.handler.end_entity();
                 }
                 s += 1 + self.skip_whitespaces()?;

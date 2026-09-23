@@ -255,6 +255,8 @@ impl DocumentFragment {
                 parent_node: owner_document.core.borrow().parent_node.clone(),
                 previous_sibling: owner_document.core.borrow().previous_sibling.clone(),
                 next_sibling: None,
+                line: 0,
+                column: 0,
                 spec: DocumentFragmentSpec {
                     first_child: None,
                     last_child: None,
@@ -315,7 +317,7 @@ mod tests {
     fn document_fragment_doctype_insertion_test() {
         let document = Document::new();
 
-        let mut doctype = document.create_document_type("root", None, None);
+        let mut doctype = document.create_document_type("root", None, None).unwrap();
         let mut elem1 = document.create_element("elem1", None).unwrap();
         let elem2 = document.create_element("elem2", None).unwrap();
         let mut frag = document.create_document_fragment();
@@ -408,7 +410,8 @@ mod tests {
 
         frag.append_child(document.create_element("child1", None).unwrap())
             .unwrap();
-        frag.append_child(document.create_text("text1")).unwrap();
+        frag.append_child(document.create_text("text1").unwrap())
+            .unwrap();
         frag.append_child(document.create_element("child2", None).unwrap())
             .unwrap();
 
@@ -437,13 +440,15 @@ mod tests {
         let mut document = Document::new();
 
         let mut frag = document.create_document_fragment();
-        frag.append_child(document.create_comment("comment1"))
+        frag.append_child(document.create_comment("comment1").unwrap())
             .unwrap();
-        frag.append_child(document.create_comment("comment2"))
+        frag.append_child(document.create_comment("comment2").unwrap())
             .unwrap();
-        frag.append_child(document.create_text("text1")).unwrap();
-        frag.append_child(document.create_text("text2")).unwrap();
-        frag.append_child(document.create_comment("comment3"))
+        frag.append_child(document.create_text("text1").unwrap())
+            .unwrap();
+        frag.append_child(document.create_text("text2").unwrap())
+            .unwrap();
+        frag.append_child(document.create_comment("comment3").unwrap())
             .unwrap();
 
         assert!(document.append_child(frag.clone()).is_err());

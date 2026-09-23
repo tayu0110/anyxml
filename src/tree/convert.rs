@@ -271,8 +271,8 @@ mod tests {
     };
 
     macro_rules! convert_and_test {
-        ( $document:ident, $create:ident( $( $arg:tt )* ), $revert:ident, $match:tt, $( $to:ty ),* ) => {
-            let node = $document.$create($( $arg )*);
+        ( $document:ident, $create:ident( $( $arg:tt )* )$( .$chain:ident( $( $carg:tt )* ) )*, $revert:ident, $match:tt, $( $to:ty ),* ) => {
+            let node = $document.$create($( $arg )*)$( .$chain( $( $carg )*) )*;
             $(
                 let converted = <$to>::from(node.clone()).downcast();
                 assert!(matches!(converted, NodeKind::$match(_)));
@@ -303,21 +303,22 @@ mod tests {
                 "attribute",
                 AttributeType::CDATA,
                 DefaultDecl::IMPLIED
-            ),
+            )
+            .unwrap(),
             as_attlist_decl,
             AttlistDecl,
             Node<dyn NodeSpec>
         );
         convert_and_test!(
             document,
-            create_cdata_section("CDATASection"),
+            create_cdata_section("CDATASection").unwrap(),
             as_cdata_section,
             CDATASection,
             Node<dyn NodeSpec>
         );
         convert_and_test!(
             document,
-            create_comment("Comment"),
+            create_comment("Comment").unwrap(),
             as_comment,
             Comment,
             Node<dyn NodeSpec>
@@ -332,7 +333,7 @@ mod tests {
         );
         convert_and_test!(
             document,
-            create_document_type("dtd", None, None),
+            create_document_type("dtd", None, None).unwrap(),
             as_document_type,
             DocumentType,
             Node<dyn NodeSpec>,

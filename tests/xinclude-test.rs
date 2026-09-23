@@ -89,6 +89,7 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
         "success" => {
             let mut reader = XMLReader::builder()
                 .set_handler(TreeBuildHandler::default())
+                .disable_option(anyxml::sax::ParserOption::ResolveDTDURIs)
                 .build();
             eprintln!("href: {}", href.as_unescaped_str().unwrap());
             reader.parse_uri(href.as_ref(), None).unwrap();
@@ -125,6 +126,7 @@ fn handle_testcase(base_uri: &URIStr, testcase: Element) {
         "error" => {
             let mut reader = XMLReader::builder()
                 .set_handler(TreeBuildHandler::default())
+                .disable_option(anyxml::sax::ParserOption::ResolveDTDURIs)
                 .build();
             eprintln!("href: {}", href.as_unescaped_str().unwrap());
             reader.parse_uri(href.as_ref(), None).unwrap();
@@ -191,7 +193,7 @@ fn normalize_tree(mut document: Document, base_uri: &URIStr) -> Document {
                     .unwrap();
             }
             NodeKind::CDATASection(mut cdata) => {
-                let text = document.create_text(&*cdata.data());
+                let text = document.create_text(&*cdata.data()).unwrap();
                 cdata.replace_subtree(text).unwrap();
             }
             _ => {}

@@ -4,9 +4,10 @@ use std::{
 };
 
 use crate::{
+    XMLVersion,
     save::write_escaped_char_data,
     tree::{
-        Document, NodeType,
+        Document, NodeType, XMLTreeError,
         node::{Node, NodeCore, NodeSpec},
     },
 };
@@ -34,8 +35,11 @@ impl NodeSpec for TextSpec {
 pub type Text = Node<TextSpec>;
 
 impl Text {
-    pub(crate) fn new(data: String, owner_document: Document) -> Self {
-        Node::create_node(TextSpec { data }, owner_document)
+    pub(crate) fn new(data: String, owner_document: Document) -> Result<Self, XMLTreeError> {
+        if data.contains(|c: char| !XMLVersion::XML10.is_char(c)) {
+            return Err(XMLTreeError::UnacceptableCharacter);
+        }
+        Ok(Node::create_node(TextSpec { data }, owner_document))
     }
 
     /// Return the character data of this text node.
@@ -69,7 +73,7 @@ impl Text {
     /// use anyxml::tree::Document;
     ///
     /// let document = Document::new();
-    /// let text1 = document.create_text("text node");
+    /// let text1 = document.create_text("text node").unwrap();
     /// let text2 = text1.deep_copy();
     /// assert!(text1.is_same_node(text1.clone()));
     /// assert_eq!(*text1.data(), *text2.data());

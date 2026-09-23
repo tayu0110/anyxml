@@ -87,7 +87,10 @@ fn well_formed_tests() {
         buffer: String::new(),
     };
 
-    let mut reader = XMLReader::builder().set_handler(handler).build();
+    let mut reader = XMLReader::builder()
+        .set_handler(handler)
+        .disable_option(ParserOption::ResolveDTDURIs)
+        .build();
 
     for ent in read_dir("resources/well-formed").unwrap() {
         if let Ok(ent) = ent
@@ -132,6 +135,7 @@ fn progressive_well_formed_tests() {
 
     let mut reader = XMLReader::builder()
         .set_handler(handler)
+        .disable_option(ParserOption::ResolveDTDURIs)
         .progressive_parser()
         .build();
 
@@ -220,14 +224,13 @@ fn errors_tests() {
 // Some tests require unsupported encodings or their types do not match the actual
 // error that occurs, making it difficult to pass all of them, so they are skipped.
 const SKIP_TESTS: &[&str] = &[
-    "pr-xml-iso-2022-jp",          // unsupported encoding
-    "weekly-euc-jp",               // error type, but it is unknown what error should be reported.
-    "weekly-iso-2022-jp",          // unsupported encoding
-    "weekly-shift_jis",            // error type, but it is unknown what error should be reported.
+    "weekly-euc-jp",      // error type, but it is unknown what error should be reported.
+    "weekly-iso-2022-jp", // error type, but it is unknown what error should be reported.
+    "weekly-shift_jis",   // error type, but it is unknown what error should be reported.
     "ibm-not-wf-P69-ibm69n05.xml", // error type, but requires VC validation
-    "invalid-bo-7",                // error type, but a Fatal Error occurs (Illegal XML character)
-    "invalid-bo-8",                // error type, but a Fatal Error occurs (Illegal XML character)
-    "invalid-bo-9",                // error type, but a Fatal Error occurs (Illegal XML character)
+    "invalid-bo-7",       // error type, but a Fatal Error occurs (Illegal XML character)
+    "invalid-bo-8",       // error type, but a Fatal Error occurs (Illegal XML character)
+    "invalid-bo-9",       // error type, but a Fatal Error occurs (Illegal XML character)
 ];
 
 #[derive(Default)]

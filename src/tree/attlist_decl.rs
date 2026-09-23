@@ -4,9 +4,10 @@ use std::{
 };
 
 use crate::{
+    XMLVersion,
     sax::{AttributeType, DefaultDecl},
     tree::{
-        Document, NodeType,
+        Document, NodeType, XMLTreeError,
         node::{Node, NodeCore, NodeSpec},
     },
 };
@@ -43,8 +44,13 @@ impl AttlistDecl {
         attr_type: AttributeType,
         default_decl: DefaultDecl,
         owner_document: Document,
-    ) -> Self {
-        Node::create_node(
+    ) -> Result<Self, XMLTreeError> {
+        if !XMLVersion::XML10.validate_name(&elem_name)
+            || !XMLVersion::XML10.validate_name(&attr_name)
+        {
+            return Err(XMLTreeError::InvalidName);
+        }
+        Ok(Node::create_node(
             AttlistDeclSpec {
                 elem_name,
                 attr_name,
@@ -52,7 +58,7 @@ impl AttlistDecl {
                 default_decl,
             },
             owner_document,
-        )
+        ))
     }
 
     /// The target element name of this declaration.

@@ -332,7 +332,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // Do not call `start_entity`/`end_entity` for entities appearing
                         // in attribute values.
                         // https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html#startEntity(java.lang.String)
-                        // if !self.fatal_error_occurred {
+                        // if self.fatal_error.is_ok() {
                         //     self.handler.start_entity(&name);
                         // }
 
@@ -355,7 +355,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                         // Do not call `start_entity`/`end_entity` for entities appearing
                         // in attribute values.
                         // https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ext/LexicalHandler.html#startEntity(java.lang.String)
-                        // if !self.fatal_error_occurred {
+                        // if self.fatal_error.is_ok() {
                         //     self.handler.end_entity();
                         // }
                     }
@@ -411,7 +411,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
 
             // Do not call `skipped_entity` for entities appearing in attribute values.
             // https://docs.oracle.com/javase/jp/21/docs/api/java.xml/org/xml/sax/ContentHandler.html#skippedEntity(java.lang.String)
-            // if !self.fatal_error_occurred {
+            // if self.fatal_error.is_ok() {
             //     self.handler.skipped_entity(&name);
             // }
         }
@@ -589,12 +589,12 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                                                 self,
                                                 err, "The entity '{}' cannot be resolved.", name
                                             );
-                                            if !self.fatal_error_occurred {
+                                            if self.fatal_error.is_ok() {
                                                 self.handler.skipped_entity(&name);
                                             }
                                         }
                                     }
-                                } else if !self.fatal_error_occurred {
+                                } else if self.fatal_error.is_ok() {
                                     self.handler.skipped_entity(&name);
                                 }
                             }
@@ -609,7 +609,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
                             "The entity '{}' is not declared.",
                             name
                         );
-                        if !self.fatal_error_occurred {
+                        if self.fatal_error.is_ok() {
                             self.handler.skipped_entity(&name);
                         }
                     }

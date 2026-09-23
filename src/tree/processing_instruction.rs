@@ -1,8 +1,11 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::tree::{
-    Document, NodeType,
-    node::{Node, NodeCore, NodeSpec},
+use crate::{
+    XMLVersion,
+    tree::{
+        Document, NodeType, XMLTreeError,
+        node::{Node, NodeCore, NodeSpec},
+    },
 };
 
 /// Processing instruction node spec.
@@ -35,8 +38,23 @@ impl NodeSpec for ProcessingInstructionSpec {
 pub type ProcessingInstruction = Node<ProcessingInstructionSpec>;
 
 impl ProcessingInstruction {
-    pub(crate) fn new(target: Rc<str>, data: Option<Rc<str>>, owner_document: Document) -> Self {
-        Node::create_node(ProcessingInstructionSpec { target, data }, owner_document)
+    pub(crate) fn new(
+        target: Rc<str>,
+        data: Option<Rc<str>>,
+        owner_document: Document,
+    ) -> Result<Self, XMLTreeError> {
+        if !XMLVersion::XML10.validate_name(&target) || target.eq_ignore_ascii_case("xml") {
+            return Err(XMLTreeError::InvalidPITarget);
+        }
+        if data.as_deref().is_some_and(|d| {
+            d.contains("?>") || d.contains(|c: char| !XMLVersion::XML10.is_char(c))
+        }) {
+            return Err(XMLTreeError::UnacceptableCharacter);
+        }
+        Ok(Node::create_node(
+            ProcessingInstructionSpec { target, data },
+            owner_document,
+        ))
     }
 
     /// The target name of this processing instruction.
@@ -60,7 +78,7 @@ impl ProcessingInstruction {
     /// use anyxml::tree::Document;
     ///
     /// let document = Document::new();
-    /// let pi1 = document.create_processing_instruction("target", Some("data".into()));
+    /// let pi1 = document.create_processing_instruction("target", Some("data".into())).unwrap();
     /// let pi2 = pi1.deep_copy();
     /// assert!(pi1.is_same_node(pi1.clone()));
     /// assert_eq!(pi1.target(), pi2.target());

@@ -579,7 +579,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
             return Err(XMLError::XMLParseError(ParseError::InvalidStartOrEmptyTag));
         }
 
-        if !self.fatal_error_occurred {
+        if self.fatal_error.is_ok() {
             for att in self.atts_buffer.iter().filter(|att| att.is_nsdecl()) {
                 let local_name = att.local_name.as_deref().unwrap();
                 if local_name.len() == att.qname.len() {
@@ -724,7 +724,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
     }
 
     pub(crate) fn report_end_element(&mut self, name: &str, prefix_length: usize) {
-        if !self.fatal_error_occurred {
+        if self.fatal_error.is_ok() {
             if self.config.is_enable(ParserOption::Namespaces) {
                 if prefix_length > 0 {
                     if let Some(namespace) = self.namespaces.get(&name[..prefix_length]) {
@@ -775,7 +775,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
     pub(crate) fn finish_content_model_validation(&mut self, name: &str) {
         if self.config.is_enable(ParserOption::Validation)
             && let Some(Some((context_name, mut validator))) = self.validation_stack.pop()
-            && !self.fatal_error_occurred
+            && self.fatal_error.is_ok()
         {
             assert_eq!(context_name.as_ref(), name);
             if validator.is_external_element_content()

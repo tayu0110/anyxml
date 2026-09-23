@@ -12,10 +12,14 @@
 //! The default encoding names and aliases are based on
 //! [IANA registrations](https://www.iana.org/assignments/character-sets/character-sets.xhtml).
 
+mod big5;
 mod ebcdic;
 mod euc;
-mod iso_8859;
+mod gb2312;
+mod iso2022jp;
+mod iso8859;
 mod jisx;
+mod koi8r;
 mod ksx;
 mod shift_jis;
 mod ucs4;
@@ -29,9 +33,12 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
+pub use big5::*;
 pub use ebcdic::*;
 pub use euc::*;
-pub use iso_8859::*;
+pub use iso2022jp::*;
+pub use iso8859::*;
+pub use koi8r::*;
 pub use shift_jis::*;
 pub use ucs4::*;
 pub use us_ascii::*;
@@ -121,8 +128,10 @@ pub trait Decoder {
 /// Encoding names are listed in lexical order.
 pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {
     const NAMES: &[&str] = &[
+        BIG5_NAME,
         EUCJP_NAME,
         EUCKR_NAME,
+        GB2312_NAME,
         IBM037,
         IBM1026,
         IBM273,
@@ -161,6 +170,7 @@ pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {
         IBM904,
         IBM905,
         IBM918,
+        ISO_2022_JP_NAME,
         ISO_8859_10_NAME,
         ISO_8859_13_NAME,
         ISO_8859_14_NAME,
@@ -175,6 +185,7 @@ pub const DEFAULT_SUPPORTED_ENCODINGS: &[&str] = {
         ISO_8859_7_NAME,
         ISO_8859_8_NAME,
         ISO_8859_9_NAME,
+        KOI8R_NAME,
         SHIFT_JIS_NAME,
         ISO_8859_11_NAME,
         US_ASCII_NAME,
@@ -394,6 +405,7 @@ pub static ENCODING_ALIASES: LazyLock<RwLock<BTreeMap<Cow<'static, str>, &'stati
             ("CP1026".into(), IBM1026),
             ("EUCPKDFMTJAPANESE".into(), EUCJP_NAME),
             ("EUCKR".into(), EUCKR_NAME),
+            ("ISO2022JP".into(), ISO_2022_JP_NAME),
         ]))
     });
 /// Register `alias` as an alias for the encoding name `real`.  \
@@ -504,6 +516,10 @@ pub static ENCODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, EncoderFactory>
         map.insert(IBM1026, || Box::new(IBM1026Encoder));
         map.insert(EUCJP_NAME, eucjp_encoder_factory);
         map.insert(EUCKR_NAME, euckr_encoder_factory);
+        map.insert(BIG5_NAME, || Box::new(Big5Encoder));
+        map.insert(KOI8R_NAME, || Box::new(KOI8REncoder));
+        map.insert(GB2312_NAME, gb2312_encoder_factory);
+        map.insert(ISO_2022_JP_NAME, || Box::new(ISO2022JPEncoder::default()));
         RwLock::new(map)
     });
 pub fn find_encoder(encoding_name: &str) -> Option<Box<dyn Encoder>> {
@@ -599,6 +615,10 @@ pub static DECODER_TABLE: LazyLock<RwLock<BTreeMap<&'static str, DecoderFactory>
         map.insert(IBM1026, || Box::new(IBM1026Decoder));
         map.insert(EUCJP_NAME, eucjp_decoder_factory);
         map.insert(EUCKR_NAME, euckr_decoder_factory);
+        map.insert(BIG5_NAME, || Box::new(Big5Decoder));
+        map.insert(KOI8R_NAME, || Box::new(KOI8RDecoder));
+        map.insert(GB2312_NAME, gb2312_decoder_factory);
+        map.insert(ISO_2022_JP_NAME, || Box::new(ISO2022JPDecoder::default()));
         RwLock::new(map)
     });
 pub fn find_decoder(encoding_name: &str) -> Option<Box<dyn Decoder>> {
@@ -624,4 +644,25 @@ pub fn register_decoder(
 }
 pub fn unregister_decoder(encoding_name: &str) -> Option<DecoderFactory> {
     DECODER_TABLE.write().unwrap().remove(encoding_name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_encoder_tests() {
+        for &name in DEFAULT_SUPPORTED_ENCODINGS {
+            let encoder = find_encoder(name).unwrap();
+            assert_eq!(name, encoder.name());
+        }
+    }
+
+    #[test]
+    fn find_decoder_tests() {
+        for &name in DEFAULT_SUPPORTED_ENCODINGS {
+            let decoder = find_decoder(name).unwrap();
+            assert_eq!(name, decoder.name());
+        }
+    }
 }

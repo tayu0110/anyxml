@@ -1,6 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
+    XMLVersion,
     save::write_quoted,
     tree::{
         AttlistDecl, Document, ElementDecl, EntityDecl, NodeType, NotationDecl, XMLTreeError,
@@ -222,8 +223,11 @@ impl DocumentType {
         system_id: Option<Rc<URIStr>>,
         public_id: Option<Rc<str>>,
         owner_document: Document,
-    ) -> Self {
-        Node::create_node(
+    ) -> Result<Self, XMLTreeError> {
+        if !XMLVersion::XML10.validate_name(&name) {
+            return Err(XMLTreeError::InvalidName);
+        }
+        Ok(Node::create_node(
             DocumentTypeSpec {
                 first_child: None,
                 last_child: None,
@@ -236,7 +240,7 @@ impl DocumentType {
                 public_id,
             },
             owner_document,
-        )
+        ))
     }
 
     /// Lookup an element declaration whose name is `name`.

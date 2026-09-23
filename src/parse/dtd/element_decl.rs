@@ -243,7 +243,7 @@ impl<'a, Spec: ParserSpec<Reader = InputSource<'a>>, H: SAXHandler + ?Sized> XML
         self.source.advance(1);
         self.locator.update_column(|c| c + 1);
 
-        if !self.fatal_error_occurred {
+        if self.fatal_error.is_ok() {
             self.handler.element_decl(&name, &contentspec);
         }
         // [VC: Unique Element Type Declaration]

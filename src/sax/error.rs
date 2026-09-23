@@ -109,7 +109,7 @@ macro_rules! fatal_error {
             $message,
             $( $args ),*
         );
-        $reader.fatal_error_occurred = true;
+        $reader.fatal_error = Err($code.clone().into());
     };
     ($reader:expr, $code:ident, $message:literal) => {
         $crate::sax::error::fatal_error!($reader, $code, $message, );
@@ -124,7 +124,7 @@ macro_rules! fatal_error {
             $reader.locator,
             $message
         );
-        $reader.fatal_error_occurred = true;
+        $reader.fatal_error = Err($code.clone().into());
     };
 }
 
