@@ -588,7 +588,7 @@ fn parse_char_prop(
 fn parse_multi_char_esc(
     regexp: &mut &str,
 ) -> Result<Box<dyn Iterator<Item = (char, char)>>, RegexpError> {
-    if regexp.starts_with('\\') {
+    if !regexp.starts_with('\\') {
         return Err(RegexpError::SyntaxError);
     }
     *regexp = &regexp[1..];
@@ -1103,5 +1103,7 @@ mod tests {
 
         // msData/regex/reH1.xsd
         assert!(XSRegexp::compile("[\\]").is_err());
+        // nistData/atomic/unsignedInt/Schema+Instance/NISTSchema-SV-IV-atomic-unsignedInt-pattern-3.xsd
+        assert!(XSRegexp::compile("\\d{5}").is_ok());
     }
 }
