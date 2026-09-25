@@ -66,6 +66,7 @@ impl ErrorHandler for TestSAXHandler {
             | XMLErrorDomain::RncParser
             | XMLErrorDomain::RngValid
             | XMLErrorDomain::XSDParser
+            | XMLErrorDomain::XSDValid
             | XMLErrorDomain::C14N
             | XMLErrorDomain::XInclude => self.error.update(|c| c + 1),
         }

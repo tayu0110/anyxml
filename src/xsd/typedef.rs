@@ -7,7 +7,7 @@ use std::{
 use crate::{
     automata::xsregexp::XSRegexp,
     xsd::{
-        XML_SCHEMA_NAMESPACE, XSDParseError,
+        XML_SCHEMA_NAMESPACE, XSDError,
         parse::{AttributeUse, Particle, Wildcard},
     },
 };
@@ -960,15 +960,15 @@ static POSITIVE_INTEGER: LazyLock<TypeDefinition> = LazyLock::new(|| {
     })
 });
 
+#[derive(Default)]
 pub struct SimpleTypeDefinition {
-    name: Arc<str>,
-    target_namespace: Option<Arc<str>>,
-    base_type_definition: (Option<Arc<str>>, Arc<str>),
-    facets: Facets,
-    fundamental_facets: FundamentalFacets,
-    r#final: FinalSet,
-    variety: Option<Variety>,
-    // annotation: (),
+    pub(super) name: Arc<str>,
+    pub(super) target_namespace: Option<Arc<str>>,
+    pub(super) base_type_definition: (Option<Arc<str>>, Arc<str>),
+    pub(super) facets: Facets,
+    pub(super) fundamental_facets: FundamentalFacets,
+    pub(super) r#final: FinalSet,
+    pub(super) variety: Option<Variety>,
 }
 
 impl SimpleTypeDefinition {
@@ -976,7 +976,7 @@ impl SimpleTypeDefinition {
         target_namespace: Option<Arc<str>>,
         name: Arc<str>,
         base_type_definition: (Option<Arc<str>>, Arc<str>),
-    ) -> Result<Self, XSDParseError> {
+    ) -> Result<Self, XSDError> {
         if base_type_definition.0.as_deref() == Some(XML_SCHEMA_NAMESPACE)
             && base_type_definition.1.as_ref() == "anySimpleType"
         {
@@ -987,7 +987,7 @@ impl SimpleTypeDefinition {
             //
             // Although the description above exists, there is no corresponding SCC,
             // so for now, it will be treated as a “st-props-correct” error.
-            return Err(XSDParseError::StPropsCorrect);
+            return Err(XSDError::StPropsCorrect);
         }
         Ok(Self {
             name,
@@ -1038,19 +1038,19 @@ impl SimpleTypeDefinition {
         self.facets.length.map(|l| l.value)
     }
 
-    pub fn set_length(&mut self, length: usize, fixed: bool) -> Result<(), XSDParseError> {
+    pub fn set_length(&mut self, length: usize, fixed: bool) -> Result<(), XSDError> {
         if self.facets.length.is_some() {
-            return Err(XSDParseError::SrcSingleFacetValue);
+            return Err(XSDError::SrcSingleFacetValue);
         }
         match self.variety.as_ref() {
-            Some(Variety::Union(_)) => return Err(XSDParseError::CosApplicableFacets),
+            Some(Variety::Union(_)) => return Err(XSDError::CosApplicableFacets),
             Some(Variety::Atomic(_, n))
                 if !matches!(
                     n.as_ref(),
                     "string" | "hexBinary" | "base64Binary" | "anyURI" | "QName" | "NOTATION"
                 ) =>
             {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             _ => {}
         }
@@ -1065,19 +1065,19 @@ impl SimpleTypeDefinition {
         self.facets.min_length.map(|l| l.value)
     }
 
-    pub fn set_min_length(&mut self, length: usize, fixed: bool) -> Result<(), XSDParseError> {
+    pub fn set_min_length(&mut self, length: usize, fixed: bool) -> Result<(), XSDError> {
         if self.facets.min_length.is_some() {
-            return Err(XSDParseError::SrcSingleFacetValue);
+            return Err(XSDError::SrcSingleFacetValue);
         }
         match self.variety.as_ref() {
-            Some(Variety::Union(_)) => return Err(XSDParseError::CosApplicableFacets),
+            Some(Variety::Union(_)) => return Err(XSDError::CosApplicableFacets),
             Some(Variety::Atomic(_, n))
                 if !matches!(
                     n.as_ref(),
                     "string" | "hexBinary" | "base64Binary" | "anyURI" | "QName" | "NOTATION"
                 ) =>
             {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             _ => {}
         }
@@ -1092,19 +1092,19 @@ impl SimpleTypeDefinition {
         self.facets.max_length.map(|l| l.value)
     }
 
-    pub fn set_max_length(&mut self, length: usize, fixed: bool) -> Result<(), XSDParseError> {
+    pub fn set_max_length(&mut self, length: usize, fixed: bool) -> Result<(), XSDError> {
         if self.facets.max_length.is_some() {
-            return Err(XSDParseError::SrcSingleFacetValue);
+            return Err(XSDError::SrcSingleFacetValue);
         }
         match self.variety.as_ref() {
-            Some(Variety::Union(_)) => return Err(XSDParseError::CosApplicableFacets),
+            Some(Variety::Union(_)) => return Err(XSDError::CosApplicableFacets),
             Some(Variety::Atomic(_, n))
                 if !matches!(
                     n.as_ref(),
                     "string" | "hexBinary" | "base64Binary" | "anyURI" | "QName" | "NOTATION"
                 ) =>
             {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             _ => {}
         }
@@ -1115,19 +1115,19 @@ impl SimpleTypeDefinition {
         Ok(())
     }
 
-    pub fn set_pattern(&mut self, pattern: impl Into<String>) -> Result<(), XSDParseError> {
+    pub fn set_pattern(&mut self, pattern: impl Into<String>) -> Result<(), XSDError> {
         let pattern: String = pattern.into();
         if let Err(err) = XSRegexp::compile(&pattern) {
-            return Err(XSDParseError::RegexpError(err));
+            return Err(XSDError::RegexpError(err));
         }
         self.facets.pattern.push(Pattern { value: pattern });
         Ok(())
     }
 
-    pub fn set_enumeration(&mut self, value: impl Into<String>) -> Result<(), XSDParseError> {
+    pub fn set_enumeration(&mut self, value: impl Into<String>) -> Result<(), XSDError> {
         match self.variety.as_ref() {
             Some(Variety::Atomic(_, n)) if n.as_ref() == "boolean" => {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             _ => {}
         }
@@ -1141,12 +1141,12 @@ impl SimpleTypeDefinition {
         self.facets.whitespace.map(|w| w.value)
     }
 
-    pub fn set_whitespace(&mut self, value: Whitespace, fixed: bool) -> Result<(), XSDParseError> {
+    pub fn set_whitespace(&mut self, value: Whitespace, fixed: bool) -> Result<(), XSDError> {
         if self.facets.whitespace.is_some() {
-            return Err(XSDParseError::SrcSingleFacetValue);
+            return Err(XSDError::SrcSingleFacetValue);
         }
         if matches!(self.variety, Some(Variety::Union(_))) {
-            return Err(XSDParseError::CosApplicableFacets);
+            return Err(XSDError::CosApplicableFacets);
         }
         self.facets.whitespace = Some(WhitespaceConstraint { value, fixed });
         Ok(())
@@ -1156,13 +1156,13 @@ impl SimpleTypeDefinition {
         &mut self,
         value: impl Into<String>,
         fixed: bool,
-    ) -> Result<(), XSDParseError> {
+    ) -> Result<(), XSDError> {
         if self.facets.max_inclusive.is_some() {
-            return Err(XSDParseError::SrcSingleFacetValue);
+            return Err(XSDError::SrcSingleFacetValue);
         }
         match self.variety.as_ref() {
             Some(Variety::List(_, _) | Variety::Union(_)) => {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             Some(Variety::Atomic(_, n))
                 if !matches!(
@@ -1181,7 +1181,7 @@ impl SimpleTypeDefinition {
                         | "gMonth"
                 ) =>
             {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             _ => {}
         }
@@ -1196,13 +1196,13 @@ impl SimpleTypeDefinition {
         &mut self,
         value: impl Into<String>,
         fixed: bool,
-    ) -> Result<(), XSDParseError> {
+    ) -> Result<(), XSDError> {
         if self.facets.max_exclusive.is_some() {
-            return Err(XSDParseError::SrcSingleFacetValue);
+            return Err(XSDError::SrcSingleFacetValue);
         }
         match self.variety.as_ref() {
             Some(Variety::List(_, _) | Variety::Union(_)) => {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             Some(Variety::Atomic(_, n))
                 if !matches!(
@@ -1221,7 +1221,7 @@ impl SimpleTypeDefinition {
                         | "gMonth"
                 ) =>
             {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             _ => {}
         }
@@ -1236,13 +1236,13 @@ impl SimpleTypeDefinition {
         &mut self,
         value: impl Into<String>,
         fixed: bool,
-    ) -> Result<(), XSDParseError> {
+    ) -> Result<(), XSDError> {
         if self.facets.min_exclusive.is_some() {
-            return Err(XSDParseError::SrcSingleFacetValue);
+            return Err(XSDError::SrcSingleFacetValue);
         }
         match self.variety.as_ref() {
             Some(Variety::List(_, _) | Variety::Union(_)) => {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             Some(Variety::Atomic(_, n))
                 if !matches!(
@@ -1261,7 +1261,7 @@ impl SimpleTypeDefinition {
                         | "gMonth"
                 ) =>
             {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             _ => {}
         }
@@ -1276,13 +1276,13 @@ impl SimpleTypeDefinition {
         &mut self,
         value: impl Into<String>,
         fixed: bool,
-    ) -> Result<(), XSDParseError> {
+    ) -> Result<(), XSDError> {
         if self.facets.min_inclusive.is_some() {
-            return Err(XSDParseError::SrcSingleFacetValue);
+            return Err(XSDError::SrcSingleFacetValue);
         }
         match self.variety.as_ref() {
             Some(Variety::List(_, _) | Variety::Union(_)) => {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             Some(Variety::Atomic(_, n))
                 if !matches!(
@@ -1301,7 +1301,7 @@ impl SimpleTypeDefinition {
                         | "gMonth"
                 ) =>
             {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             _ => {}
         }
@@ -1312,20 +1312,16 @@ impl SimpleTypeDefinition {
         Ok(())
     }
 
-    pub fn set_total_digits(
-        &mut self,
-        value: NonZeroUsize,
-        fixed: bool,
-    ) -> Result<(), XSDParseError> {
+    pub fn set_total_digits(&mut self, value: NonZeroUsize, fixed: bool) -> Result<(), XSDError> {
         if self.facets.total_digits.is_some() {
-            return Err(XSDParseError::SrcSingleFacetValue);
+            return Err(XSDError::SrcSingleFacetValue);
         }
         match self.variety.as_ref() {
             Some(Variety::List(_, _) | Variety::Union(_)) => {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             Some(Variety::Atomic(_, n)) if !matches!(n.as_ref(), "decimal") => {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             _ => {}
         }
@@ -1336,16 +1332,16 @@ impl SimpleTypeDefinition {
         Ok(())
     }
 
-    pub fn set_fraction_digits(&mut self, value: usize, fixed: bool) -> Result<(), XSDParseError> {
+    pub fn set_fraction_digits(&mut self, value: usize, fixed: bool) -> Result<(), XSDError> {
         if self.facets.fraction_digits.is_some() {
-            return Err(XSDParseError::SrcSingleFacetValue);
+            return Err(XSDError::SrcSingleFacetValue);
         }
         match self.variety.as_ref() {
             Some(Variety::List(_, _) | Variety::Union(_)) => {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             Some(Variety::Atomic(_, n)) if !matches!(n.as_ref(), "decimal") => {
-                return Err(XSDParseError::CosApplicableFacets);
+                return Err(XSDError::CosApplicableFacets);
             }
             _ => {}
         }
@@ -1360,43 +1356,39 @@ impl SimpleTypeDefinition {
 }
 
 #[derive(Default)]
-struct Facets {
-    length: Option<Length>,
-    min_length: Option<Length>,
-    max_length: Option<Length>,
-    pattern: Vec<Pattern>,
-    enumeration: Vec<Enumeration>,
-    whitespace: Option<WhitespaceConstraint>,
-    max_inclusive: Option<Boundary>,
-    max_exclusive: Option<Boundary>,
-    min_exclusive: Option<Boundary>,
-    min_inclusive: Option<Boundary>,
-    total_digits: Option<Length>,
-    fraction_digits: Option<Length>,
+pub(super) struct Facets {
+    pub(super) length: Option<Length>,
+    pub(super) min_length: Option<Length>,
+    pub(super) max_length: Option<Length>,
+    pub(super) pattern: Vec<Pattern>,
+    pub(super) enumeration: Vec<Enumeration>,
+    pub(super) whitespace: Option<WhitespaceConstraint>,
+    pub(super) max_inclusive: Option<Boundary>,
+    pub(super) max_exclusive: Option<Boundary>,
+    pub(super) min_exclusive: Option<Boundary>,
+    pub(super) min_inclusive: Option<Boundary>,
+    pub(super) total_digits: Option<Length>,
+    pub(super) fraction_digits: Option<Length>,
 }
 
 #[derive(Clone, Copy)]
-struct Length {
-    value: usize,
-    fixed: bool,
-    // annotation: (),
+pub(super) struct Length {
+    pub(super) value: usize,
+    pub(super) fixed: bool,
 }
 
-struct Pattern {
-    value: String,
-    // annotation: (),
+pub(super) struct Pattern {
+    pub(super) value: String,
 }
 
-struct Enumeration {
-    value: String,
-    // annotation: (),
+pub(super) struct Enumeration {
+    pub(super) value: String,
 }
 
 #[derive(Clone, Copy)]
-struct WhitespaceConstraint {
-    value: Whitespace,
-    fixed: bool,
-    // annotation: (),
+pub(super) struct WhitespaceConstraint {
+    pub(super) value: Whitespace,
+    pub(super) fixed: bool,
 }
 
 /// The constraining facet 'whiteSpace'.
@@ -1413,22 +1405,21 @@ pub enum Whitespace {
     Collapse = 2,
 }
 
-struct Boundary {
-    value: String,
-    fixed: bool,
-    // annotation: (),
+pub(super) struct Boundary {
+    pub(super) value: String,
+    pub(super) fixed: bool,
 }
 
 #[derive(Default)]
-struct FundamentalFacets {
-    ordered: Ordered,
-    bounded: bool,
-    cardinality: Cardinality,
-    numeric: bool,
+pub(super) struct FundamentalFacets {
+    pub(super) ordered: Ordered,
+    pub(super) bounded: bool,
+    pub(super) cardinality: Cardinality,
+    pub(super) numeric: bool,
 }
 
 #[derive(Clone, Copy, Default)]
-enum Ordered {
+pub(super) enum Ordered {
     #[default]
     False,
     Partial,
@@ -1436,35 +1427,35 @@ enum Ordered {
 }
 
 #[derive(Clone, Copy, Default)]
-enum Cardinality {
+pub(super) enum Cardinality {
     #[default]
     CountablyInfinite,
     Finite,
 }
 
 #[derive(Clone)]
-enum Variety {
+pub(super) enum Variety {
     Atomic(Option<Arc<str>>, Arc<str>),
     List(Option<Arc<str>>, Arc<str>),
     Union(Arc<[(Option<Arc<str>>, Arc<str>)]>),
 }
 
 pub struct ComplexTypeDefinition {
-    name: Arc<str>,
-    target_namespace: Option<Arc<str>>,
-    base_type_definition: (Option<Arc<str>>, Arc<str>),
-    derivation_method: DerivationMethod,
-    r#final: FinalSet,
-    r#abstract: bool,
-    attribute_uses: Vec<AttributeUse>,
-    attribute_wildcard: Option<Wildcard>,
-    content_type: ContentType,
-    prohibited_substitutions: BlockSet,
+    pub(super) name: Arc<str>,
+    pub(super) target_namespace: Option<Arc<str>>,
+    pub(super) base_type_definition: (Option<Arc<str>>, Arc<str>),
+    pub(super) derivation_method: DerivationMethod,
+    pub(super) r#final: FinalSet,
+    pub(super) r#abstract: bool,
+    pub(super) attribute_uses: Vec<AttributeUse>,
+    pub(super) attribute_wildcard: Option<Wildcard>,
+    pub(super) content_type: ContentType,
+    pub(super) prohibited_substitutions: BlockSet,
     // annotation: (),
 }
 
 #[derive(Clone)]
-enum ContentType {
+pub(super) enum ContentType {
     Empty,
     Simple(Option<Arc<str>>, Arc<str>),
     Mixed(Particle),
@@ -1604,24 +1595,24 @@ impl TypeSet {
         }
     }
 
-    pub fn derive(&mut self, mut typedef: TypeDefinition) -> Result<(), XSDParseError> {
+    pub fn derive(&mut self, mut typedef: TypeDefinition) -> Result<(), XSDError> {
         let base = typedef.base_type_definition();
         let is_circular = self.is_circular_definition(&typedef);
         let Some(base) = self.set.get(&base) else {
             // Although this is not strictly an error—since it should be handled in
             // accordance with the description in Chapter 5.3 of XSD Part 1—an error
             // is returned to help determine whether the base type could be resolved.
-            return Err(XSDParseError::MissingSubComponent);
+            return Err(XSDError::MissingSubComponent);
         };
         match typedef {
             TypeDefinition::Simple(ref mut def) => {
                 if is_circular {
                     // [st-props-correct] clause 2
-                    return Err(XSDParseError::StPropsCorrect);
+                    return Err(XSDError::StPropsCorrect);
                 }
                 let TypeDefinition::Simple(base) = base else {
                     // [st-props-correct] clause 1
-                    return Err(XSDParseError::StPropsCorrect);
+                    return Err(XSDError::StPropsCorrect);
                 };
 
                 if def.variety.is_none() {
@@ -1633,7 +1624,7 @@ impl TypeSet {
 
                 if base.r#final.restriction() {
                     // [st-props-correct] clause 3
-                    return Err(XSDParseError::StPropsCorrect);
+                    return Err(XSDError::StPropsCorrect);
                 }
 
                 // check min/max length
@@ -1645,7 +1636,7 @@ impl TypeSet {
                     .is_some_and(|(d, b)| d.value < b.value)
                 {
                     // [minLength-valid-restriction]
-                    return Err(XSDParseError::MinLengthValidRestriction);
+                    return Err(XSDError::MinLengthValidRestriction);
                 }
                 def.facets.min_length = def.facets.min_length.or(base.facets.min_length);
                 if def
@@ -1656,7 +1647,7 @@ impl TypeSet {
                     .is_some_and(|(d, b)| d.value > b.value)
                 {
                     // [maxLength-valid-restriction]
-                    return Err(XSDParseError::MaxLengthValidRestriction);
+                    return Err(XSDError::MaxLengthValidRestriction);
                 }
                 def.facets.max_length = def.facets.max_length.or(base.facets.max_length);
                 if def
@@ -1667,7 +1658,7 @@ impl TypeSet {
                     .is_some_and(|(min, max)| min.value > max.value)
                 {
                     // [minLength-less-than-equal-to-maxLength]
-                    return Err(XSDParseError::MinLengthLessThanEqualToMaxLength);
+                    return Err(XSDError::MinLengthLessThanEqualToMaxLength);
                 }
 
                 // check length
@@ -1679,7 +1670,7 @@ impl TypeSet {
                     .is_some_and(|(d, b)| d.value != b.value)
                 {
                     // [length-valid-restriction]
-                    return Err(XSDParseError::LengthValidRestriction);
+                    return Err(XSDError::LengthValidRestriction);
                 }
                 def.facets.length = def.facets.length.or(base.facets.length);
                 if def.facets.length.as_ref().is_some_and(|l| {
@@ -1694,7 +1685,7 @@ impl TypeSet {
                             .is_some_and(|max| max.value < l.value)
                 }) {
                     // [length-minLength-maxLength]
-                    return Err(XSDParseError::LengthMinLengthMaxLength);
+                    return Err(XSDError::LengthMinLengthMaxLength);
                 }
 
                 // check whitespace
@@ -1706,7 +1697,7 @@ impl TypeSet {
                     .is_some_and(|(d, b)| d.value < b.value)
                 {
                     // [whiteSpace-valid-restriction]
-                    return Err(XSDParseError::WhiteSpaceValidRestriction);
+                    return Err(XSDError::WhiteSpaceValidRestriction);
                 }
                 def.facets.whitespace = def.facets.whitespace.or(base.facets.whitespace);
 
@@ -1719,7 +1710,7 @@ impl TypeSet {
                     .is_some_and(|(d, b)| d.value > b.value)
                 {
                     // [totalDigits-valid-restriction]
-                    return Err(XSDParseError::TotalDigitsValidRestriction);
+                    return Err(XSDError::TotalDigitsValidRestriction);
                 }
                 def.facets.total_digits = def.facets.total_digits.or(base.facets.total_digits);
 
@@ -1732,7 +1723,7 @@ impl TypeSet {
                     .is_some_and(|(d, b)| d.value > b.value)
                 {
                     // [fractionDigits-valid-restriction]
-                    return Err(XSDParseError::FractionDigitsValidRestriction);
+                    return Err(XSDError::FractionDigitsValidRestriction);
                 }
                 def.facets.fraction_digits =
                     def.facets.fraction_digits.or(base.facets.fraction_digits);
@@ -1744,14 +1735,14 @@ impl TypeSet {
                     .is_some_and(|(f, t)| f.value > t.value)
                 {
                     // [fractionDigits-totalDigits]
-                    return Err(XSDParseError::FractionDigitsTotalDigits);
+                    return Err(XSDError::FractionDigitsTotalDigits);
                 }
 
                 match def.variety.as_ref() {
                     Some(Variety::Atomic(_, n)) => {
                         if !matches!(base.variety, Some(Variety::Atomic(_, _))) {
                             // [cos-st-restricts] clause 1.1
-                            return Err(XSDParseError::CosStRestricts);
+                            return Err(XSDError::CosStRestricts);
                         }
                         def.fundamental_facets.ordered = base.fundamental_facets.ordered;
                         def.fundamental_facets.bounded = (def.facets.min_exclusive.is_some()
@@ -1792,7 +1783,7 @@ impl TypeSet {
                         let Some(TypeDefinition::Simple(itemdef)) =
                             self.set.get(&(ns.clone(), local.clone()))
                         else {
-                            return Err(XSDParseError::MissingSubComponent);
+                            return Err(XSDError::MissingSubComponent);
                         };
                         match itemdef.variety.as_ref() {
                             Some(Variety::Atomic(_, _)) => {}
@@ -1800,17 +1791,17 @@ impl TypeSet {
                                 for member in members.iter() {
                                     let Some(TypeDefinition::Simple(def)) = self.set.get(member)
                                     else {
-                                        return Err(XSDParseError::MissingSubComponent);
+                                        return Err(XSDError::MissingSubComponent);
                                     };
                                     if !matches!(def.variety, Some(Variety::Atomic(_, _))) {
                                         // [st-props-correct] clause 2.1
-                                        return Err(XSDParseError::StPropsCorrect);
+                                        return Err(XSDError::StPropsCorrect);
                                     }
                                 }
                             }
                             _ => {
                                 // [cos-list-of-atomic] and [st-props-correct] clause 2.1
-                                return Err(XSDParseError::CosListOfAtomic);
+                                return Err(XSDError::CosListOfAtomic);
                             }
                         }
 
@@ -1819,7 +1810,7 @@ impl TypeSet {
                             // [cos-st-restricts] clause 2.3.1
                             if itemdef.r#final.list() {
                                 // [cos-st-restricts] clause 2.3.1.1
-                                return Err(XSDParseError::CosStRestricts);
+                                return Err(XSDError::CosStRestricts);
                             }
                             if def.facets.length.is_some()
                                 || def.facets.min_length.is_some()
@@ -1834,17 +1825,17 @@ impl TypeSet {
                                 || def.facets.fraction_digits.is_some()
                             {
                                 // [cos-st-restricts] clause 2.3.1.2
-                                return Err(XSDParseError::CosStRestricts);
+                                return Err(XSDError::CosStRestricts);
                             }
                         } else {
                             // [cos-st-restricts] clause 2.3.2
                             if !matches!(base.variety, Some(Variety::List(_, _))) {
                                 // [cos-st-restricts] clause 2.3.2.1
-                                return Err(XSDParseError::CosStRestricts);
+                                return Err(XSDError::CosStRestricts);
                             }
                             if base.r#final.restriction() {
                                 // [cos-st-restricts] clause 2.3.2.2
-                                return Err(XSDParseError::CosStRestricts);
+                                return Err(XSDError::CosStRestricts);
                             }
                             if def.facets.max_inclusive.is_some()
                                 || def.facets.max_exclusive.is_some()
@@ -1854,7 +1845,7 @@ impl TypeSet {
                                 || def.facets.fraction_digits.is_some()
                             {
                                 // [cos-st-restricts] clause 2.3.2.4
-                                return Err(XSDParseError::CosStRestricts);
+                                return Err(XSDError::CosStRestricts);
                             }
                         }
 
@@ -1872,15 +1863,15 @@ impl TypeSet {
                     }
                     Some(Variety::Union(members)) => {
                         if members.is_empty() {
-                            return Err(XSDParseError::SrcUnionMemberTypesOrSimpleTypes);
+                            return Err(XSDError::SrcUnionMemberTypesOrSimpleTypes);
                         }
 
                         let members = members
                             .iter()
                             .map(|m| self.set.get(m))
                             .map(|t| t.and_then(|t| t.as_simple()))
-                            .map(|t| t.ok_or(XSDParseError::MissingSubComponent))
-                            .collect::<Result<Vec<_>, XSDParseError>>()?;
+                            .map(|t| t.ok_or(XSDError::MissingSubComponent))
+                            .collect::<Result<Vec<_>, XSDError>>()?;
 
                         // Skip verification of [cos-st-restricts] clause 3.1.
                         // By the definition of a component, the union contained in
@@ -1892,7 +1883,7 @@ impl TypeSet {
                             // [cos-st-restricts] clause 3.3.1
                             if members.iter().any(|m| m.r#final.union()) {
                                 // [cos-st-restricts] clause 3.3.1.1
-                                return Err(XSDParseError::CosStRestricts);
+                                return Err(XSDError::CosStRestricts);
                             }
                             if def.facets.length.is_some()
                                 || def.facets.min_length.is_some()
@@ -1908,17 +1899,17 @@ impl TypeSet {
                                 || def.facets.fraction_digits.is_some()
                             {
                                 // [cos-st-restricts] clause 3.3.1.2
-                                return Err(XSDParseError::CosStRestricts);
+                                return Err(XSDError::CosStRestricts);
                             }
                         } else {
                             // [cos-st-restricts] clause 3.3.2
                             if !matches!(base.variety, Some(Variety::Union(_))) {
                                 // [cos-st-restricts] clause 3.3.2.1
-                                return Err(XSDParseError::CosStRestricts);
+                                return Err(XSDError::CosStRestricts);
                             }
                             if base.r#final.restriction() {
                                 // [cos-st-restricts] clause 3.3.2.2
-                                return Err(XSDParseError::CosStRestricts);
+                                return Err(XSDError::CosStRestricts);
                             }
                             if def.facets.length.is_some()
                                 || def.facets.min_length.is_some()
@@ -1932,7 +1923,7 @@ impl TypeSet {
                                 || def.facets.fraction_digits.is_some()
                             {
                                 // [cos-st-restricts] clause 3.3.2.4
-                                return Err(XSDParseError::CosStRestricts);
+                                return Err(XSDError::CosStRestricts);
                             }
                         }
                     }
@@ -1951,10 +1942,10 @@ impl TypeSet {
         Ok(())
     }
 
-    pub fn redefine(&mut self, mut typedef: TypeDefinition) -> Result<(), XSDParseError> {
+    pub fn redefine(&mut self, mut typedef: TypeDefinition) -> Result<(), XSDError> {
         let key = (typedef.target_namespace(), typedef.name());
         let Some(base) = self.set.0.remove(&key) else {
-            return Err(XSDParseError::MissingSubComponent);
+            return Err(XSDError::MissingSubComponent);
         };
 
         let id = self.redefine_id;
@@ -1998,7 +1989,7 @@ impl TypeSet {
 }
 
 #[derive(Clone, Copy)]
-enum DerivationMethod {
+pub(super) enum DerivationMethod {
     Extension,
     Restriction,
 }
@@ -2091,8 +2082,22 @@ impl std::ops::BitOr<BlockSet> for Block {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct BlockSet(u8);
+
+impl BlockSet {
+    pub fn extension(&self) -> bool {
+        self.0 & Block::Extension as u8 != 0
+    }
+
+    pub fn restriction(&self) -> bool {
+        self.0 & Block::Restriction as u8 != 0
+    }
+
+    pub fn substitution(&self) -> bool {
+        self.0 & Block::Substitution as u8 != 0
+    }
+}
 
 impl std::ops::BitOr<Block> for BlockSet {
     type Output = BlockSet;

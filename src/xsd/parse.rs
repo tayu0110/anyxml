@@ -1,26 +1,36 @@
 use std::{
+    borrow::Cow,
+    cell::RefCell,
     collections::{HashMap, HashSet},
     io::Read,
-    num::NonZeroUsize,
     sync::{Arc, LazyLock},
 };
 
-use anyxml_automata::xsregexp::RegexpError;
+use anyxml_automata::xsregexp::XSRegexp;
+use anyxml_uri::uri::URIString;
 
 use crate::{
     XML_XML_NAMESPACE, XMLVersion,
-    error::XMLError,
-    sax::{DefaultSAXHandler, SAXHandler, XMLReader},
+    automata::xsregexp::RegexpError,
+    error::{XMLError, XMLErrorDomain, XMLErrorLevel},
+    sax::{
+        AttributeType, Attributes, DefaultDecl, DefaultSAXHandler, EntityResolver, ErrorHandler,
+        InputSource, Locator, NamespaceStack, SAXHandler, XMLReader, error::SAXParseError,
+    },
     tree::{
         Attribute, Document, Element, Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec,
     },
     uri::URIStr,
-    xsd::{XML_SCHEMA_NAMESPACE, XSDSchema},
+    xsd::{
+        XML_SCHEMA_NAMESPACE, XSDSchema,
+        typedef::{
+            Block, BlockSet, Boundary, Enumeration, Final, FinalSet, Length, Pattern,
+            SimpleTypeDefinition, Variety, Whitespace, WhitespaceConstraint,
+        },
+    },
     xsdtypes::{
-        Final, FinalSet, SCHEMA_BUILTIN_ANY_SIMPLE_TYPE, SCHEMA_BUILTIN_ANYURI,
-        SCHEMA_BUILTIN_BOOLEAN, SCHEMA_BUILTIN_NCNAME, SCHEMA_BUILTIN_NONNEGATIVE_INTEGER,
-        SCHEMA_BUILTIN_POSITIVE_INTEGER, SCHEMA_BUILTIN_QNAME, SCHEMA_BUILTIN_TOKEN, SchemaValue,
-        SimpleTypeDefinition, SimpleTypeDefinitionBuilder, Whitespace,
+        SCHEMA_BUILTIN_ANYURI, SCHEMA_BUILTIN_BOOLEAN, SCHEMA_BUILTIN_NCNAME,
+        SCHEMA_BUILTIN_NONNEGATIVE_INTEGER, SCHEMA_BUILTIN_QNAME, SchemaValue,
     },
 };
 
@@ -70,7 +80,7 @@ const SCHEMA_FIELD_NAME: &str = "field";
 macro_rules! generic_error {
     ($method:ident, $handler:expr, $code:expr, $level:expr, $domain:expr, $elem:expr, $message:literal, $( $args:expr ),*) => {
         #[allow(unused)]
-        use self::XSDParseError::*;
+        use self::XSDError::*;
         $handler.$method($crate::sax::error::SAXParseError {
             error: $code.into(),
             level: $level,
@@ -83,7 +93,7 @@ macro_rules! generic_error {
         })
     };
     ($method:ident, $handler:expr, $code:expr, $level:expr, $domain:expr, $elem:expr, $message:literal) => {
-        use XSDParseError::*;
+        use XSDError::*;
         $handler.$method($crate::sax::error::SAXParseError {
             error: $code.into(),
             level: $level,
@@ -96,7 +106,7 @@ macro_rules! generic_error {
         })
     };
     ($method:ident, $handler:expr, $code:expr, $level:expr, $domain:expr, $elem:expr, $message:expr) => {
-        use XSDParseError::*;
+        use XSDError::*;
         $handler.$method($crate::sax::error::SAXParseError {
             error: $code.into(),
             level: $level,
@@ -148,7 +158,7 @@ macro_rules! internal_error {
             line!(),
             column!()
         );
-        return Err(XSDParseError::InternalError);
+        return Err(XSDError::InternalError);
     }};
 }
 macro_rules! unallowed_text {
@@ -160,7 +170,7 @@ macro_rules! unallowed_text {
             "Text is not allowed as children of schema element '{}'.",
             $elem.local_name()
         );
-        return Err(XSDParseError::UnallowedText);
+        return Err(XSDError::UnallowedText);
     }};
 }
 macro_rules! unallowed_element {
@@ -172,8 +182,12 @@ macro_rules! unallowed_element {
             "'{}' is not allowed as a schema element.",
             $elem.local_name()
         );
-        return Err(XSDParseError::UnallowedElement);
+        return Err(XSDError::UnallowedElement);
     }};
+}
+
+thread_local! {
+    static META_SCHEMA_HOLDER_V1_0: RefCell<Vec<XSDSchema>> = const { RefCell::new(vec![]) };
 }
 
 #[derive(Default)]
@@ -184,7 +198,6 @@ pub struct Schema {
     attgroup_defs: HashMap<(Option<Arc<str>>, Arc<str>), AttributeGroupDefinition>,
     modelgroup_defs: HashMap<(Option<Arc<str>>, Arc<str>), ModelGroupDefinition>,
     notation_decls: HashMap<(Option<Arc<str>>, Arc<str>), Notation>,
-    annotations: Vec<Annotation>,
 }
 
 impl XSDSchema {
@@ -200,20 +213,18 @@ impl XSDSchema {
         encoding: Option<&str>,
         handler: Option<Handler>,
     ) -> Result<Self, XMLError> {
-        if let Some(handler) = handler {
-            let mut parser = XMLReader::builder()
-                .set_handler(create_handler(handler))
-                .build();
-            parser.parse_uri(uri, encoding)?;
-            let _schema = parse_schema(parser.handler.document, &mut parser.handler.handler);
-        } else {
-            let mut parser = XMLReader::builder()
-                .set_handler(create_handler(DefaultSAXHandler))
-                .build();
-            parser.parse_uri(uri, encoding)?;
-            let _schema = parse_schema(parser.handler.document, &mut parser.handler.handler);
-        };
-        todo!()
+        let mut handler: Box<dyn SAXHandler> = handler
+            .map(|h| Box::new(h) as Box<dyn SAXHandler>)
+            .unwrap_or_else(|| Box::new(DefaultSAXHandler));
+        let mut meta = Self::parse_meta_schema();
+        let validator = meta.new_validate_handler(XSDParseHandler::with_handler(&mut *handler));
+        let mut parser = XMLReader::builder().set_handler(validator).build();
+        parser.parse_uri(&uri, encoding)?;
+        let handler = parser.handler.child;
+        META_SCHEMA_HOLDER_V1_0.with_borrow_mut(|holder| holder.push(meta));
+        Ok(Self {
+            schema: handler.schema,
+        })
     }
 
     /// Parse XSD schema using `reader`, `encoding` and `uri`.
@@ -229,20 +240,18 @@ impl XSDSchema {
         uri: Option<&URIStr>,
         handler: Option<Handler>,
     ) -> Result<Self, XMLError> {
-        if let Some(handler) = handler {
-            let mut parser = XMLReader::builder()
-                .set_handler(create_handler(handler))
-                .build();
-            parser.parse_reader(reader, encoding, uri)?;
-            let _schema = parse_schema(parser.handler.document, &mut parser.handler.handler);
-        } else {
-            let mut parser = XMLReader::builder()
-                .set_handler(create_handler(DefaultSAXHandler))
-                .build();
-            parser.parse_reader(reader, encoding, uri)?;
-            let _schema = parse_schema(parser.handler.document, &mut parser.handler.handler);
-        }
-        todo!()
+        let mut handler: Box<dyn SAXHandler> = handler
+            .map(|h| Box::new(h) as Box<dyn SAXHandler>)
+            .unwrap_or_else(|| Box::new(DefaultSAXHandler));
+        let mut meta = Self::parse_meta_schema();
+        let validator = meta.new_validate_handler(XSDParseHandler::with_handler(&mut *handler));
+        let mut parser = XMLReader::builder().set_handler(validator).build();
+        parser.parse_reader(reader, encoding, uri)?;
+        let handler = parser.handler.child;
+        META_SCHEMA_HOLDER_V1_0.with_borrow_mut(|holder| holder.push(meta));
+        Ok(Self {
+            schema: handler.schema,
+        })
     }
 
     /// Parse XSD schema using `schema` and `uri`.
@@ -257,22 +266,889 @@ impl XSDSchema {
         uri: Option<&URIStr>,
         handler: Option<Handler>,
     ) -> Result<Self, XMLError> {
-        if let Some(handler) = handler {
+        let mut handler: Box<dyn SAXHandler> = handler
+            .map(|h| Box::new(h) as Box<dyn SAXHandler>)
+            .unwrap_or_else(|| Box::new(DefaultSAXHandler));
+        let mut meta = Self::parse_meta_schema();
+        let validator = meta.new_validate_handler(XSDParseHandler::with_handler(&mut *handler));
+        let mut parser = XMLReader::builder().set_handler(validator).build();
+        parser.parse_str(schema, uri)?;
+        let handler = parser.handler.child;
+        META_SCHEMA_HOLDER_V1_0.with_borrow_mut(|holder| holder.push(meta));
+        Ok(Self {
+            schema: handler.schema,
+        })
+    }
+
+    fn parse_meta_schema() -> Self {
+        META_SCHEMA_HOLDER_V1_0.with_borrow_mut(|holder| {
+            if let Some(meta) = holder.pop() {
+                return meta;
+            }
             let mut parser = XMLReader::builder()
-                .set_handler(create_handler(handler))
+                .set_handler(XSDParseHandler::with_handler(MetaSchemaParsehandler))
                 .build();
-            parser.parse_str(schema, uri)?;
-            let _schema = parse_schema(parser.handler.document, &mut parser.handler.handler);
-        } else {
-            let mut parser = XMLReader::builder()
-                .set_handler(create_handler(DefaultSAXHandler))
-                .build();
-            parser.parse_str(schema, uri)?;
-            let _schema = parse_schema(parser.handler.document, &mut parser.handler.handler);
-        }
-        todo!()
+            let xml = include_str!("../../resources/xsd/XMLSchema-compact.xsd");
+            parser.parse_str(xml, None).unwrap();
+            Self {
+                schema: parser.handler.schema,
+            }
+        })
     }
 }
+
+/// SAX handler for parsing XSD schema documents.
+pub struct XSDParseHandler<H: SAXHandler = DefaultSAXHandler> {
+    child: H,
+    schema: Schema,
+    last_error: Result<(), XMLError>,
+    locator: Arc<Locator>,
+    skip_depth: usize,
+
+    // context
+    target_namespace: Option<Arc<str>>,
+    unnamed: usize,
+    // context stack
+    ns_stack: NamespaceStack,
+    element_stack: Vec<&'static str>,
+
+    // qualification form
+    attr_form_default: QualificationForm,
+    elem_form_default: QualificationForm,
+    // block
+    block_default: BlockSet,
+    // final
+    final_default: FinalSet,
+
+    // external schemas
+    includes: Vec<URIString>,
+    imports: Vec<(Option<Box<str>>, URIString)>,
+
+    // temporary component buffer
+    simple_type: Box<SimpleTypeDefinition>,
+    idc: Box<IDCDefinition>,
+}
+
+impl<H: SAXHandler> XSDParseHandler<H> {
+    fn with_handler(handler: H) -> Self {
+        Self {
+            child: handler,
+            schema: Schema::default(),
+            last_error: Ok(()),
+            locator: Arc::new(Locator::default()),
+            skip_depth: 0,
+            target_namespace: None,
+            unnamed: 0,
+            ns_stack: NamespaceStack::default(),
+            element_stack: vec![],
+            attr_form_default: QualificationForm::Unqualified,
+            elem_form_default: QualificationForm::Unqualified,
+            block_default: BlockSet::default(),
+            final_default: FinalSet::default(),
+            includes: vec![],
+            imports: vec![],
+            simple_type: Box::default(),
+            idc: Box::default(),
+        }
+    }
+
+    /// Create dummy name. The returned name differs for each call.
+    ///
+    /// Since the returned name is not a syntactically valid XML name,
+    /// it does not conflict with any valid name.
+    fn dummy_name(&mut self) -> Arc<str> {
+        self.unnamed += 1;
+        Arc::from(format!("#unnamed{}", self.unnamed))
+    }
+
+    fn get_qname(&self, atts: &Attributes, name: &str) -> Option<(Option<Arc<str>>, Arc<str>)> {
+        let value = atts.get_value_by_qname(name)?;
+        if let Some((pre, loc)) = value.split_once(':') {
+            let namespace = self.ns_stack.get(pre)?;
+            Some((Some(namespace.namespace_name.clone()), loc.into()))
+        } else if let Some(namespace) = self.ns_stack.get("") {
+            Some((Some(namespace.namespace_name.clone()), value.into()))
+        } else {
+            Some((None, value.into()))
+        }
+    }
+}
+
+impl<H: SAXHandler> EntityResolver for XSDParseHandler<H> {
+    fn resolve_entity(
+        &mut self,
+        name: &str,
+        public_id: Option<&str>,
+        base_uri: &URIStr,
+        system_id: &URIStr,
+    ) -> Result<InputSource<'static>, XMLError> {
+        self.child
+            .resolve_entity(name, public_id, base_uri, system_id)
+    }
+
+    fn get_external_subset(
+        &mut self,
+        name: &str,
+        base_uri: Option<&URIStr>,
+    ) -> Result<InputSource<'static>, XMLError> {
+        self.child.get_external_subset(name, base_uri)
+    }
+}
+
+impl<H: SAXHandler> ErrorHandler for XSDParseHandler<H> {
+    fn fatal_error(&mut self, mut error: SAXParseError) {
+        self.last_error = Err(error.error.clone());
+        if matches!(error.domain, XMLErrorDomain::XSDValid) {
+            error.domain = XMLErrorDomain::XSDParser;
+        }
+        self.child.fatal_error(error);
+    }
+
+    fn error(&mut self, mut error: SAXParseError) {
+        if matches!(
+            error.domain,
+            XMLErrorDomain::XSDParser | XMLErrorDomain::XSDValid
+        ) {
+            error.domain = XMLErrorDomain::XSDParser;
+            self.last_error = Err(error.error.clone());
+        }
+        self.child.error(error);
+    }
+
+    fn warning(&mut self, mut error: SAXParseError) {
+        if matches!(error.domain, XMLErrorDomain::XSDValid) {
+            error.domain = XMLErrorDomain::XSDParser;
+        }
+        self.child.warning(error);
+    }
+}
+
+impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
+    fn set_document_locator(&mut self, locator: Arc<Locator>) {
+        self.locator = locator.clone();
+        self.child.set_document_locator(locator);
+    }
+
+    fn start_element(
+        &mut self,
+        namespace_name: Option<&str>,
+        local_name: Option<&str>,
+        qname: &str,
+        atts: &Attributes,
+    ) {
+        self.child
+            .start_element(namespace_name, local_name, qname, atts);
+
+        // skip non-schema elements
+        //
+        // 3.1.2 XML Representations of Components
+        // All the element information items in the XML representation of a schema must
+        // be in the XML Schema namespace, that is their [namespace name] must be
+        // http://www.w3.org/2001/XMLSchema.
+        if self.skip_depth > 0 || namespace_name != Some(XML_SCHEMA_NAMESPACE) {
+            self.skip_depth += 1;
+            return;
+        }
+
+        let local_name = local_name.unwrap();
+        if self.element_stack.is_empty() && local_name != SCHEMA_SCHEMA_NAME {
+            // If this is non-schema document, report error and skip all elements.
+            //
+            // 3.1.2 XML Representations of Components
+            // [Definition:]  A document in this form (i.e. a <schema> element information
+            // item) is a schema document.
+            self.error(SAXParseError {
+                error: XMLError::XSDError(XSDError::UnallowedElement),
+                level: XMLErrorLevel::Error,
+                domain: XMLErrorDomain::XSDParser,
+                line: self.locator.line(),
+                column: self.locator.column(),
+                system_id: self.locator.system_id(),
+                public_id: self.locator.public_id(),
+                message: Cow::Owned(format!(
+                    "'{}' cannot be the root elemnt of a schema.",
+                    local_name
+                )),
+            });
+            self.skip_depth += 1;
+            return;
+        }
+
+        match local_name {
+            SCHEMA_SCHEMA_NAME => {
+                self.attr_form_default =
+                    get_qualification_form(atts, "attributeFormDefault").unwrap_or_default();
+                self.elem_form_default =
+                    get_qualification_form(atts, "elementFormDefault").unwrap_or_default();
+                self.block_default = get_block(atts, "blockDefault").unwrap_or_default();
+                self.final_default = get_final(atts, "finalDefault").unwrap_or_default();
+                self.target_namespace = atts.get_value_by_qname("targetNamespace").map(From::from);
+                self.element_stack.push(SCHEMA_SCHEMA_NAME);
+            }
+            SCHEMA_INCLUDE_NAME => {
+                let Some(value) = atts
+                    .get_value_by_qname("schemaLocation")
+                    .and_then(|loc| URIString::parse(loc).ok())
+                else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                self.includes.push(value);
+                self.element_stack.push(SCHEMA_INCLUDE_NAME);
+            }
+            SCHEMA_REDEFINE_NAME => {
+                self.element_stack.push(SCHEMA_REDEFINE_NAME);
+            }
+            SCHEMA_IMPORT_NAME => {
+                let Some(schema_location) = atts
+                    .get_value_by_qname("schemaLocation")
+                    .and_then(|loc| URIString::parse(loc).ok())
+                else {
+                    // Although the absence of a `schemaLocation` is not an error, there is
+                    // nothing that can be done about such `import` elements, so it is skipped.
+                    self.skip_depth += 1;
+                    return;
+                };
+                let namespace = atts.get_value_by_qname("namespace").map(Box::<str>::from);
+                self.imports.push((namespace, schema_location));
+                self.element_stack.push(SCHEMA_IMPORT_NAME);
+            }
+            SCHEMA_SIMPLETYPE_NAME => {
+                if self.element_stack.last() == Some(&SCHEMA_RESTRICTION_NAME)
+                    && !self.simple_type.base_type_definition.1.is_empty()
+                {
+                    // [src-restriction-base-or-simpleType]
+                    // If the "base" attribute is present in <restriction>,
+                    // <simpleType> must not exist under <restriction>.
+                    let msg = "The attribute 'base' and the child <simpleType> of <restriction> must not both be present.";
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::SrcRestrictionBaseOrSimpleType),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Borrowed(msg),
+                    });
+                    self.skip_depth += 1;
+                    return;
+                } else if self.element_stack.last() == Some(&SCHEMA_LIST_NAME)
+                    && !self.simple_type.base_type_definition.1.is_empty()
+                {
+                    // [src-list-itemType-or-simpleType]
+                    // If the `itemType` attribute is present,
+                    // the child must not have a `simpleType`.
+                    let msg = "The attribute 'itemType' and the child <simpleType> of <list> must not both be present.";
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::SrcListItemTypeOrSimpleType),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Borrowed(msg),
+                    });
+                    self.skip_depth += 1;
+                    return;
+                }
+
+                // Whether "name" is required depends on whether it is a top-level
+                // declaration. Since the meta-schema validator is responsible for
+                // reporting errors when required attributes are missing, "name" can
+                // be treated as an optional attribute here.
+                self.simple_type.name = atts
+                    .get_value_by_qname("name")
+                    .map(Arc::from)
+                    .unwrap_or_else(|| self.dummy_name());
+                self.simple_type.target_namespace = self.target_namespace.clone();
+                self.simple_type.r#final = get_final(atts, "final").unwrap_or_default();
+                self.element_stack.push(SCHEMA_SIMPLETYPE_NAME);
+            }
+            SCHEMA_RESTRICTION_NAME
+                if self.element_stack.last() == Some(&SCHEMA_SIMPLETYPE_NAME) =>
+            {
+                // 'restriction' under a simple type definition
+
+                // Since the child may contain <simpleType>, "base" is not a required element.
+                if let Some((ns, loc)) = self.get_qname(atts, "base") {
+                    self.simple_type.base_type_definition = (ns, loc);
+                }
+                self.element_stack.push(SCHEMA_RESTRICTION_NAME);
+            }
+            SCHEMA_LIST_NAME => {
+                // Since the child may contain <simpleType>, "itemType" is not a required element.
+                if let Some((pre, loc)) = self.get_qname(atts, "itemType") {
+                    self.simple_type.variety = Some(Variety::List(pre, loc));
+                }
+                self.element_stack.push(SCHEMA_LIST_NAME);
+            }
+            SCHEMA_UNION_NAME => {
+                if let Some(member_types) = atts.get_value_by_qname("memberTypes") {
+                    let mut buf = vec![];
+                    for member in member_types.split_ascii_whitespace() {
+                        if let Some((pre, loc)) = member.split_once(':') {
+                            if let Some(ns) = self.ns_stack.get(pre) {
+                                buf.push((Some(ns.namespace_name.clone()), loc.into()));
+                            }
+                        } else if let Some(ns) = self.ns_stack.get("") {
+                            buf.push((Some(ns.namespace_name.clone()), member.into()));
+                        } else {
+                            buf.push((None, member.into()));
+                        }
+                    }
+                    self.simple_type.variety = Some(Variety::Union(buf.into()));
+                }
+                self.element_stack.push(SCHEMA_UNION_NAME);
+            }
+            SCHEMA_LENGTH_NAME => {
+                let Some(value) = atts
+                    .get_value_by_qname("value")
+                    .and_then(|v| v.parse().ok())
+                else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                self.simple_type.facets.length = Some(Length { value, fixed });
+                self.element_stack.push(SCHEMA_LENGTH_NAME);
+            }
+            SCHEMA_MINLENGTH_NAME => {
+                let Some(value) = atts
+                    .get_value_by_qname("value")
+                    .and_then(|v| v.parse().ok())
+                else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                self.simple_type.facets.min_length = Some(Length { value, fixed });
+                self.element_stack.push(SCHEMA_MINLENGTH_NAME);
+            }
+            SCHEMA_MAXLENGTH_NAME => {
+                let Some(value) = atts
+                    .get_value_by_qname("value")
+                    .and_then(|v| v.parse().ok())
+                else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                self.simple_type.facets.max_length = Some(Length { value, fixed });
+                self.element_stack.push(SCHEMA_MAXLENGTH_NAME);
+            }
+            SCHEMA_PATTERN_NAME => {
+                let Some(regex) = atts.get_value_by_qname("value") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                if let Err(err) = XSRegexp::compile(regex) {
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::RegexpError(err)),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(format!(
+                            "'{regex}' is invalid regular expression because: {err}"
+                        )),
+                    });
+                    self.skip_depth += 1;
+                    return;
+                }
+                self.simple_type.facets.pattern.push(Pattern {
+                    value: regex.into(),
+                });
+                self.element_stack.push(SCHEMA_PATTERN_NAME);
+            }
+            SCHEMA_ENUMERATION_NAME => {
+                let Some(value) = atts.get_value_by_qname("value") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                self.simple_type.facets.enumeration.push(Enumeration {
+                    value: value.into(),
+                });
+                self.element_stack.push(SCHEMA_ENUMERATION_NAME);
+            }
+            SCHEMA_WHITESPACE_NAME => {
+                let Some(value) = atts.get_value_by_qname("value") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                let value = match value {
+                    "collapse" => Whitespace::Collapse,
+                    "preserve" => Whitespace::Preserve,
+                    "replace" => Whitespace::Replace,
+                    _ => {
+                        self.skip_depth += 1;
+                        return;
+                    }
+                };
+                self.simple_type.facets.whitespace = Some(WhitespaceConstraint { value, fixed });
+                self.element_stack.push(SCHEMA_WHITESPACE_NAME);
+            }
+            SCHEMA_MAXINCLUSIVE_NAME => {
+                let Some(value) = atts.get_value_by_qname("value") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                self.simple_type.facets.max_inclusive = Some(Boundary {
+                    value: value.into(),
+                    fixed,
+                });
+                self.element_stack.push(SCHEMA_MAXINCLUSIVE_NAME);
+            }
+            SCHEMA_MAXEXCLUSIVE_NAME => {
+                let Some(value) = atts.get_value_by_qname("value") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                self.simple_type.facets.max_exclusive = Some(Boundary {
+                    value: value.into(),
+                    fixed,
+                });
+                self.element_stack.push(SCHEMA_MAXEXCLUSIVE_NAME);
+            }
+            SCHEMA_MINEXCLUSIVE_NAME => {
+                let Some(value) = atts.get_value_by_qname("value") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                self.simple_type.facets.min_exclusive = Some(Boundary {
+                    value: value.into(),
+                    fixed,
+                });
+                self.element_stack.push(SCHEMA_MINEXCLUSIVE_NAME);
+            }
+            SCHEMA_MININCLUSIVE_NAME => {
+                let Some(value) = atts.get_value_by_qname("value") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                self.simple_type.facets.min_inclusive = Some(Boundary {
+                    value: value.into(),
+                    fixed,
+                });
+                self.element_stack.push(SCHEMA_MININCLUSIVE_NAME);
+            }
+            SCHEMA_TOTALDIGITS_NAME => {
+                let Some(value) = atts
+                    .get_value_by_qname("value")
+                    .and_then(|v| v.parse::<usize>().ok())
+                else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                self.simple_type.facets.total_digits = Some(Length { value, fixed });
+                self.element_stack.push(SCHEMA_TOTALDIGITS_NAME);
+            }
+            SCHEMA_FRACDIGITS_NAME => {
+                let Some(value) = atts
+                    .get_value_by_qname("value")
+                    .and_then(|v| v.parse::<usize>().ok())
+                else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                self.simple_type.facets.fraction_digits = Some(Length { value, fixed });
+                self.element_stack.push(SCHEMA_FRACDIGITS_NAME);
+            }
+            SCHEMA_COMPLEXTYPE_NAME => {
+                self.element_stack.push(SCHEMA_COMPLEXTYPE_NAME);
+            }
+            SCHEMA_SIMPLECONT_NAME => {
+                self.element_stack.push(SCHEMA_SIMPLECONT_NAME);
+            }
+            SCHEMA_COMPLEXCONT_NAME => {
+                self.element_stack.push(SCHEMA_COMPLEXCONT_NAME);
+            }
+            SCHEMA_RESTRICTION_NAME => {
+                self.element_stack.push(SCHEMA_RESTRICTION_NAME);
+            }
+            SCHEMA_EXTENSION_NAME => {
+                self.element_stack.push(SCHEMA_EXTENSION_NAME);
+            }
+            SCHEMA_GROUP_NAME => {
+                self.element_stack.push(SCHEMA_GROUP_NAME);
+            }
+            SCHEMA_ATTGROUP_NAME => {
+                self.element_stack.push(SCHEMA_ATTGROUP_NAME);
+            }
+            SCHEMA_ELEMENT_NAME => {
+                self.element_stack.push(SCHEMA_ELEMENT_NAME);
+            }
+            SCHEMA_ATTRIBUTE_NAME => {
+                self.element_stack.push(SCHEMA_ATTRIBUTE_NAME);
+            }
+            SCHEMA_NOTATION_NAME => {
+                let Some(name) = atts.get_value_by_qname("name").map(Arc::<str>::from) else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                let public_id = atts.get_value_by_qname("public").map(From::from);
+                let system_id = atts
+                    .get_value_by_qname("system")
+                    .and_then(|sys| URIString::parse(sys).ok())
+                    .map(From::from);
+                self.schema.notation_decls.insert(
+                    (self.target_namespace.clone(), name.clone()),
+                    Notation {
+                        name,
+                        target_namespace: self.target_namespace.clone(),
+                        system_id,
+                        public_id,
+                    },
+                );
+                self.element_stack.push(SCHEMA_NOTATION_NAME);
+            }
+            SCHEMA_ALL_NAME => {
+                self.element_stack.push(SCHEMA_ALL_NAME);
+            }
+            SCHEMA_CHOICE_NAME => {
+                self.element_stack.push(SCHEMA_CHOICE_NAME);
+            }
+            SCHEMA_SEQUENCE_NAME => {
+                self.element_stack.push(SCHEMA_SEQUENCE_NAME);
+            }
+            SCHEMA_ANY_NAME => {
+                self.element_stack.push(SCHEMA_ANY_NAME);
+            }
+            SCHEMA_ANYATT_NAME => {
+                self.element_stack.push(SCHEMA_ANYATT_NAME);
+            }
+            SCHEMA_UNIQUE_NAME => {
+                let Some(name) = atts.get_value_by_qname("name") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                self.idc.name = name.into();
+                self.idc.target_namespace = self.target_namespace.clone();
+                self.idc.idc_category = IDCCategory::Unique;
+                self.element_stack.push(SCHEMA_UNIQUE_NAME);
+            }
+            SCHEMA_KEY_NAME => {
+                let Some(name) = atts.get_value_by_qname("name") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                self.idc.name = name.into();
+                self.idc.target_namespace = self.target_namespace.clone();
+                self.idc.idc_category = IDCCategory::Key;
+                self.element_stack.push(SCHEMA_KEY_NAME);
+            }
+            SCHEMA_KEYREF_NAME => {
+                let Some(name) = atts.get_value_by_qname("name") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                let Some((ref_ns, ref_loc)) = self.get_qname(atts, "refer") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                self.idc.name = name.into();
+                self.idc.target_namespace = self.target_namespace.clone();
+                self.idc.idc_category = IDCCategory::Keyref;
+                self.idc.referenced_key = Some((ref_ns, ref_loc));
+                self.element_stack.push(SCHEMA_KEYREF_NAME);
+            }
+            SCHEMA_SELECTOR_NAME => {
+                let Some(xpath) = atts.get_value_by_qname("xpath") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                self.idc.selector = xpath.into();
+                self.element_stack.push(SCHEMA_SELECTOR_NAME);
+            }
+            SCHEMA_FIELD_NAME => {
+                let Some(xpath) = atts.get_value_by_qname("xpath") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                self.idc.fields.push(xpath.into());
+                self.element_stack.push(SCHEMA_FIELD_NAME);
+            }
+            SCHEMA_ANNOTATION_NAME | SCHEMA_APPINFO_NAME | SCHEMA_DOCUMENTATION_NAME => {
+                // Skip these as they are unnecessary.
+                // Since schema validation is handled by the meta-schema, and the
+                // annotation information is passed to the child handler, users can
+                // retrieve the necessary information.
+                self.skip_depth += 1;
+            }
+            _ => {
+                // An error should be reported, but that is left
+                // to the meta schema validator. Skip simply.
+                self.skip_depth += 1;
+            }
+        }
+    }
+
+    fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
+        self.child.end_element(namespace_name, local_name, qname);
+
+        if self.skip_depth > 0 {
+            self.skip_depth -= 1;
+            return;
+        }
+
+        assert_eq!(self.element_stack.pop(), local_name);
+
+        let local_name = local_name.unwrap();
+        match local_name {
+            SCHEMA_RESTRICTION_NAME
+                if self.element_stack.last() == Some(&SCHEMA_SIMPLETYPE_NAME) =>
+            {
+                if self.simple_type.base_type_definition.1.is_empty() {
+                    // [src-restriction-base-or-simpleType]
+                    // If there is no "base" attribute, there
+                    // must be a child of type <simpleType>.
+                    let msg = "<restriction> must have either the attribute 'base' or the child <simpleType>.";
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::SrcRestrictionBaseOrSimpleType),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Borrowed(msg),
+                    });
+                }
+            }
+            SCHEMA_LIST_NAME => {
+                if self.simple_type.variety.is_none() {
+                    // [src-list-itemType-or-simpleType]
+                    // If there is no "itemType" attribute, there
+                    // must be a child of type <simpleType>.
+                    let msg = "<list> must have either the attribute 'itemType' or the child <simpleType>.";
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::SrcListItemTypeOrSimpleType),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Borrowed(msg),
+                    });
+                }
+            }
+            SCHEMA_UNION_NAME => {
+                if self.simple_type.variety.is_none() {
+                    // [src-union-memberTypes-or-simpleTypes]
+                    // If there is no `memberType` attribute, there
+                    // must be children of type `simpleType`.
+                    let msg = "<union> must have either the non-empty attribute 'memberType' or the child <simpleType>s.";
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::SrcUnionMemberTypesOrSimpleTypes),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Borrowed(msg),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn characters(&mut self, data: &str) {
+        self.child.characters(data);
+    }
+
+    fn start_prefix_mapping(&mut self, prefix: Option<&str>, namespace_name: &str) {
+        self.child.start_prefix_mapping(prefix, namespace_name);
+        self.ns_stack
+            .push(prefix.unwrap_or_default(), namespace_name);
+    }
+
+    fn end_prefix_mapping(&mut self, prefix: Option<&str>) {
+        self.child.end_prefix_mapping(prefix);
+        // Although the namespace that is actually popped may not bind the specified prefix,
+        // it doesn't matter because everything works out by the time the other callbacks are
+        // invoked.
+        self.ns_stack.pop();
+    }
+
+    // unused callbacks
+
+    fn attribute_decl(
+        &mut self,
+        element_name: &str,
+        attribute_name: &str,
+        attribute_type: &AttributeType,
+        default_decl: &DefaultDecl,
+    ) {
+        self.child
+            .attribute_decl(element_name, attribute_name, attribute_type, default_decl);
+    }
+    fn comment(&mut self, data: &str) {
+        self.child.comment(data);
+    }
+    fn declaration(&mut self, version: &str, encoding: Option<&str>, standalone: Option<bool>) {
+        self.child.declaration(version, encoding, standalone);
+    }
+    fn element_decl(&mut self, name: &str, contentspec: &crate::sax::ContentSpec) {
+        self.child.element_decl(name, contentspec);
+    }
+    fn start_cdata(&mut self) {
+        self.child.start_cdata();
+    }
+    fn end_cdata(&mut self) {
+        self.child.end_cdata();
+    }
+    fn start_document(&mut self) {
+        self.child.start_document();
+    }
+    fn end_document(&mut self) {
+        self.child.end_document();
+    }
+    fn start_dtd(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
+        self.child.start_dtd(name, public_id, system_id);
+    }
+    fn end_dtd(&mut self) {
+        self.child.end_dtd();
+    }
+    fn start_entity(&mut self, name: &str) {
+        self.child.start_entity(name);
+    }
+    fn end_entity(&mut self) {
+        self.child.end_entity();
+    }
+    fn external_entity_decl(&mut self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
+        self.child.external_entity_decl(name, public_id, system_id);
+    }
+    fn ignorable_whitespace(&mut self, data: &str) {
+        self.child.ignorable_whitespace(data);
+    }
+    fn internal_entity_decl(&mut self, name: &str, value: &str) {
+        self.child.internal_entity_decl(name, value);
+    }
+    fn notation_decl(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
+        self.child.notation_decl(name, public_id, system_id);
+    }
+    fn processing_instruction(&mut self, target: &str, data: Option<&str>) {
+        self.child.processing_instruction(target, data);
+    }
+    fn skipped_entity(&mut self, name: &str) {
+        self.child.skipped_entity(name);
+    }
+    fn unparsed_entity_decl(
+        &mut self,
+        name: &str,
+        public_id: Option<&str>,
+        system_id: &URIStr,
+        notation_name: &str,
+    ) {
+        self.child
+            .unparsed_entity_decl(name, public_id, system_id, notation_name);
+    }
+}
+
+fn get_boolean(atts: &Attributes, name: &str) -> Option<bool> {
+    atts.get_value_by_qname(name).and_then(|value| match value {
+        "true" | "1" => Some(true),
+        "false" | "0" => Some(false),
+        _ => None,
+    })
+}
+
+fn get_qualification_form(atts: &Attributes, name: &str) -> Option<QualificationForm> {
+    let value = atts.get_value_by_qname(name)?;
+    match value {
+        "qualified" => Some(QualificationForm::Qualified),
+        "unqualified" => Some(QualificationForm::Unqualified),
+        _ => None,
+    }
+}
+
+fn get_final(atts: &Attributes, name: &str) -> Option<FinalSet> {
+    let value = atts.get_value_by_qname(name)?;
+    if value == "#all" {
+        return Some(Final::Extension | Final::Restriction | Final::List | Final::Union);
+    }
+
+    let mut ret = FinalSet::default();
+    for fin in value.split_ascii_whitespace() {
+        match fin {
+            "extension" => ret |= Final::Extension,
+            "restriction" => ret |= Final::Restriction,
+            "list" => ret |= Final::List,
+            "union" => ret |= Final::Union,
+            _ => {}
+        }
+    }
+    Some(ret)
+}
+
+fn get_block(atts: &Attributes, name: &str) -> Option<BlockSet> {
+    let value = atts.get_value_by_qname(name)?;
+    if value == "#all" {
+        return Some(Block::Extension | Block::Restriction | Block::Substitution);
+    }
+
+    let mut ret = BlockSet::default();
+    for fin in value.split_ascii_whitespace() {
+        match fin {
+            "extension" => ret |= Block::Extension,
+            "restriction" => ret |= Block::Restriction,
+            "substitution" => ret |= Block::Substitution,
+            _ => {}
+        }
+    }
+    Some(ret)
+}
+
+struct MetaSchemaParsehandler;
+impl ErrorHandler for MetaSchemaParsehandler {
+    fn error(&mut self, error: SAXParseError) {
+        DefaultSAXHandler.error(error);
+    }
+    fn fatal_error(&mut self, error: SAXParseError) {
+        DefaultSAXHandler.fatal_error(error);
+    }
+    fn warning(&mut self, error: SAXParseError) {
+        DefaultSAXHandler.warning(error);
+    }
+}
+impl EntityResolver for MetaSchemaParsehandler {
+    fn resolve_entity(
+        &mut self,
+        _name: &str,
+        _public_id: Option<&str>,
+        base_uri: &URIStr,
+        system_id: &URIStr,
+    ) -> Result<InputSource<'static>, XMLError> {
+        if system_id.as_escaped_str().ends_with("xml-compact.xsd") {
+            Ok(InputSource::from_content(include_str!(
+                "../../resources/xsd/xml-compact.xsd"
+            )))
+        } else {
+            let uri = base_uri.resolve(system_id);
+            Err(XMLError::IOError(
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("resource '{uri}' is not found."),
+                )
+                .into(),
+            ))
+        }
+    }
+}
+impl SAXHandler for MetaSchemaParsehandler {}
 
 fn create_handler<H: SAXHandler>(handler: H) -> TreeBuildHandler<H> {
     let mut h = TreeBuildHandler::with_handler(handler);
@@ -282,17 +1158,17 @@ fn create_handler<H: SAXHandler>(handler: H) -> TreeBuildHandler<H> {
     h
 }
 
-fn parse_schema<H: SAXHandler>(
+fn parse_schema<H: SAXHandler + ?Sized>(
     document: Document,
     handler: &mut H,
-) -> Result<Schema, XSDParseError> {
+) -> Result<Schema, XSDError> {
     let mut context = XSDParseContext::new(handler);
     context.parse(document)?;
     Ok(context.schema)
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum XSDParseError {
+pub enum XSDError {
     InternalError,
     UnallowedElement,
     UnallowedAttribute,
@@ -498,15 +1374,15 @@ pub enum XSDParseError {
     WhiteSpaceValidRestriction,
 }
 
-impl std::fmt::Display for XSDParseError {
+impl std::fmt::Display for XSDError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
     }
 }
 
-impl std::error::Error for XSDParseError {}
+impl std::error::Error for XSDError {}
 
-struct XSDParseContext<'a, H: SAXHandler> {
+struct XSDParseContext<'a, H: SAXHandler + ?Sized> {
     // result schema
     schema: Schema,
 
@@ -533,7 +1409,7 @@ struct XSDParseContext<'a, H: SAXHandler> {
     handler: &'a mut H,
 }
 
-impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
+impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
     fn new(handler: &'a mut H) -> Self {
         XSDParseContext {
             schema: Schema::default(),
@@ -554,14 +1430,14 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         }
     }
 
-    fn parse(&mut self, document: Document) -> Result<(), XSDParseError> {
+    fn parse(&mut self, document: Document) -> Result<(), XSDError> {
         self.included_resources
             .insert(document.document_base_uri().as_ref().into());
         self.parse_schema(document)?;
         Ok(())
     }
 
-    fn parse_schema(&mut self, document: Document) -> Result<(), XSDParseError> {
+    fn parse_schema(&mut self, document: Document) -> Result<(), XSDError> {
         let Some(mut schema) = document.document_element() else {
             internal_error!(self.handler, document);
         };
@@ -572,46 +1448,9 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
             unallowed_element!(self.handler, schema);
         }
 
-        self.attr_form_default = self
-            .extract_qualification_form(
-                schema.clone(),
-                "attributeFormDefault",
-                XSDParseError::SchPropsCorrect,
-            )?
-            .unwrap_or(QualificationForm::Unqualified);
-        self.block_default = self
-            .extract_final(
-                schema.clone(),
-                "blockDefault",
-                Final::Extension | Final::Restriction | Final::Substitution,
-                true,
-            )?
-            .unwrap_or_default();
-        self.elem_form_default = self
-            .extract_qualification_form(
-                schema.clone(),
-                "elementFormDefault",
-                XSDParseError::SchPropsCorrect,
-            )?
-            .unwrap_or(QualificationForm::Unqualified);
-        self.final_default = self
-            .extract_final(
-                schema.clone(),
-                "finalDefault",
-                Final::Extension | Final::Restriction | Final::List | Final::Union,
-                true,
-            )?
-            .unwrap_or_default();
-        let _id = self.extract_ncname(schema.clone(), "id", XSDParseError::SchPropsCorrect)?;
+        let _id = self.extract_ncname(schema.clone(), "id", XSDError::SchPropsCorrect)?;
         let _version = schema.remove_attribute("version", None);
         let _lang = schema.remove_attribute("lang", Some(XML_XML_NAMESPACE));
-        self.target_namespace = self
-            .extract_any_uri(
-                schema.clone(),
-                "targetNamespace",
-                XSDParseError::SchPropsCorrect,
-            )?
-            .map(|ns| ns.to_string().into());
 
         self.check_attribute(schema.clone())?;
 
@@ -630,10 +1469,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                         SCHEMA_INCLUDE_NAME => self.parse_include(elem)?,
                         SCHEMA_IMPORT_NAME => self.parse_import(elem)?,
                         SCHEMA_REDEFINE_NAME => todo!(),
-                        SCHEMA_ANNOTATION_NAME => {
-                            let annot = self.parse_annotation(elem)?;
-                            self.schema.annotations.push(annot);
-                        }
+                        SCHEMA_ANNOTATION_NAME => {}
                         SCHEMA_SIMPLETYPE_NAME
                         | SCHEMA_COMPLEXTYPE_NAME
                         | SCHEMA_GROUP_NAME
@@ -662,7 +1498,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
 
             match child.downcast() {
                 NodeKind::Element(elem) => {
-                    use XSDParseError::*;
+                    use XSDError::*;
 
                     if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
                         // skip foreign element
@@ -670,8 +1506,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     }
                     let (memo, error) = match elem.local_name().as_ref() {
                         SCHEMA_ANNOTATION_NAME => {
-                            let annot = self.parse_annotation(elem)?;
-                            self.schema.annotations.push(annot);
                             continue;
                         }
                         SCHEMA_SIMPLETYPE_NAME => (&mut self.simple_types, SrcSimpleType),
@@ -681,10 +1515,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                         SCHEMA_ELEMENT_NAME => (&mut self.elem_decls, SrcElement),
                         SCHEMA_ATTRIBUTE_NAME => (&mut self.attr_decls, SrcAttribute),
                         SCHEMA_NOTATION_NAME => {
-                            let nota = self.parse_notation(elem)?;
-                            self.schema
-                                .notation_decls
-                                .insert((nota.target_namespace.clone(), nota.name.clone()), nota);
                             continue;
                         }
                         _ => unallowed_element!(self.handler, elem),
@@ -720,17 +1550,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
             }
         }
 
-        // At first, resolve all simple type definitions
-        // Since simple type definitions do not depend on anything other than other simple
-        // type definitions, and since almost all other declarations and definitions depend
-        // on them, they should be resolved first.
-        while let Some((key, value)) = self.simple_types.iter().next() {
-            let key = key.clone();
-            let value = value.clone();
-
-            self.simple_types.remove(&key);
-            self.parse_simple_type_definitions(value, key.0, &mut vec![], true)?;
-        }
         // Second, resolve the attribute declarations.
         // Since they do not depend on anything other than simple type definitions,
         // they can be resolved here.
@@ -797,14 +1616,14 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
         global: bool,
-    ) -> Result<Option<AttributeUse>, XSDParseError> {
+    ) -> Result<Option<AttributeUse>, XSDError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_ATTRIBUTE_NAME);
 
         let default = elem.remove_attribute("default", None);
         let fixed = elem.remove_attribute("fixed", None);
         let form = self
-            .extract_qualification_form(elem.clone(), "form", XSDParseError::SrcAttribute)?
+            .extract_qualification_form(elem.clone(), "form", XSDError::SrcAttribute)?
             .or(global.then_some(self.attr_form_default));
         let target_namespace =
             target_namespace.filter(|_| matches!(form, Some(QualificationForm::Qualified)));
@@ -824,7 +1643,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                             elem,
                             "A local attribute declaration must not have both the attribute 'name' and 'ref'."
                         );
-                        return Err(XSDParseError::SrcAttribute);
+                        return Err(XSDError::SrcAttribute);
                     }
                     name
                 }
@@ -837,7 +1656,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                         "The attribute 'name' of 'attribute' is failed to parse as NCName because {}.",
                         err
                     );
-                    return Err(XSDParseError::SrcAttribute);
+                    return Err(XSDError::SrcAttribute);
                 }
             },
             None => {
@@ -853,7 +1672,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                             elem,
                             "A local attribute declaration must have one of the attribute 'name' or 'ref'."
                         );
-                        return Err(XSDParseError::SrcAttribute);
+                        return Err(XSDError::SrcAttribute);
                     }
                     self.unnamed += 1;
                     format!("#unnamed{}", self.unnamed).into()
@@ -880,7 +1699,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                 "The attribute 'use' of '{}' must be 'optional' when 'default' is present.",
                                 SCHEMA_ATTRIBUTE_NAME
                             );
-                            return Err(XSDParseError::SrcAttribute);
+                            return Err(XSDError::SrcAttribute);
                         }
                         Occurrence::Prohibited
                     }
@@ -896,7 +1715,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                 "The attribute 'use' of '{}' must be 'optional' when 'default' is present.",
                                 SCHEMA_ATTRIBUTE_NAME
                             );
-                            return Err(XSDParseError::SrcAttribute);
+                            return Err(XSDError::SrcAttribute);
                         }
                         Occurrence::Required
                     }
@@ -908,37 +1727,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
 
         self.check_attribute(elem.clone())?;
 
-        let mut simple_type = None;
-        let mut children = elem.first_child();
-        let annotation = self.pop_annotation(&mut children)?;
-        while let Some(child) = children {
-            children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    match elem.local_name().as_ref() {
-                        SCHEMA_SIMPLETYPE_NAME => {
-                            if simple_type.is_some() {
-                                todo!("raise error")
-                            }
-                            simple_type = Some(self.parse_simple_type_definitions(
-                                elem,
-                                target_namespace.clone(),
-                                &mut vec![],
-                                false,
-                            )?);
-                        }
-                        _ => unallowed_element!(self.handler, elem),
-                    }
-                }
-                NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                _ => {}
-            }
-        }
+        let simple_type = None;
 
         let type_definition = match (r#type, simple_type) {
             (Some(_), Some(_)) => {
@@ -952,7 +1741,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     SCHEMA_ATTRIBUTE_NAME,
                     SCHEMA_SIMPLETYPE_NAME
                 );
-                return Err(XSDParseError::SrcAttribute);
+                return Err(XSDError::SrcAttribute);
             }
             (Some(r#type), None) => {
                 if !global && r#ref.is_some() {
@@ -965,7 +1754,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                         "The attribute 'type' of '{}' must be absent when 'ref' is present.",
                         SCHEMA_ATTRIBUTE_NAME
                     );
-                    return Err(XSDParseError::SrcAttribute);
+                    return Err(XSDError::SrcAttribute);
                 }
                 match SCHEMA_BUILTIN_QNAME.parse_with_elem(&r#type, elem.clone()) {
                     Ok(SchemaValue::QName(nsname, local)) => {
@@ -984,7 +1773,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                             "The attribute 'type' of 'attribute' is failed to parse as QName because {}.",
                             err
                         );
-                        return Err(XSDParseError::SrcAttribute);
+                        return Err(XSDError::SrcAttribute);
                     }
                 }
             }
@@ -1000,7 +1789,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                         SCHEMA_ATTRIBUTE_NAME,
                         SCHEMA_SIMPLETYPE_NAME
                     );
-                    return Err(XSDParseError::SrcAttribute);
+                    return Err(XSDError::SrcAttribute);
                 }
                 def
             }
@@ -1012,7 +1801,8 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     // otherwise the simple type definition ·resolved· to by the ·actual
                     // value· of the type [attribute], if present, otherwise the ·simple
                     // ur-type definition·.
-                    (*SCHEMA_BUILTIN_ANY_SIMPLE_TYPE).clone()
+                    // (*SCHEMA_BUILTIN_ANY_SIMPLE_TYPE).clone()
+                    todo!()
                 } else if let Some(r#ref) = r#ref.as_deref() {
                     // 3.2.2 XML Representation of Attribute Declaration Schema Components
                     // {attribute declaration}	The (top-level) attribute declaration
@@ -1045,7 +1835,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                 "The attribute 'ref' of 'attribute' is failed to parse as NCName because {}.",
                                 err
                             );
-                            return Err(XSDParseError::SrcAttribute);
+                            return Err(XSDError::SrcAttribute);
                         }
                     }
                 } else {
@@ -1055,7 +1845,8 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     // otherwise the simple type definition ·resolved· to by the ·actual
                     // value· of the type [attribute], if present, otherwise the ·simple
                     // ur-type definition·.
-                    SCHEMA_BUILTIN_ANY_SIMPLE_TYPE.clone()
+                    // SCHEMA_BUILTIN_ANY_SIMPLE_TYPE.clone()
+                    todo!()
                 }
             }
         };
@@ -1069,40 +1860,44 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     elem,
                     "The attribute 'default' and 'fixed' must not both be present."
                 );
-                return Err(XSDParseError::SrcAttribute);
+                return Err(XSDError::SrcAttribute);
             }
             (Some(default), None) => {
-                match type_definition.parse_with_elem(&default, elem.clone()) {
-                    Ok(value) => Some(ValueConstraint::Default(value)),
-                    Err(err) => {
-                        error!(
-                            self.handler,
-                            SrcAttribute,
-                            elem,
-                            "The attribute 'default' of '{}' is failed to parse as {} because {}.",
-                            SCHEMA_ATTRIBUTE_NAME,
-                            type_definition.name(),
-                            err
-                        );
-                        return Err(XSDParseError::SrcAttribute);
-                    }
-                }
+                // match type_definition.parse_with_elem(&default, elem.clone()) {
+                //     Ok(value) => Some(ValueConstraint::Default(value)),
+                //     Err(err) => {
+                //         error!(
+                //             self.handler,
+                //             SrcAttribute,
+                //             elem,
+                //             "The attribute 'default' of '{}' is failed to parse as {} because {}.",
+                //             SCHEMA_ATTRIBUTE_NAME,
+                //             type_definition.name(),
+                //             err
+                //         );
+                //         return Err(XSDError::SrcAttribute);
+                //     }
+                // }
+                None
             }
-            (None, Some(fixed)) => match type_definition.parse_with_elem(&fixed, elem.clone()) {
-                Ok(value) => Some(ValueConstraint::Fixed(value)),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcAttribute,
-                        elem,
-                        "The attribute 'fixed' of '{}' is failed to parse as {} because {}.",
-                        SCHEMA_ATTRIBUTE_NAME,
-                        type_definition.name(),
-                        err
-                    );
-                    return Err(XSDParseError::SrcAttribute);
-                }
-            },
+            (None, Some(fixed)) => {
+                // match type_definition.parse_with_elem(&fixed, elem.clone()) {
+                //     Ok(value) => Some(ValueConstraint::Fixed(value)),
+                //     Err(err) => {
+                //         error!(
+                //             self.handler,
+                //             SrcAttribute,
+                //             elem,
+                //             "The attribute 'fixed' of '{}' is failed to parse as {} because {}.",
+                //             SCHEMA_ATTRIBUTE_NAME,
+                //             type_definition.name(),
+                //             err
+                //         );
+                //         return Err(XSDError::SrcAttribute);
+                //     }
+                // }
+                None
+            }
             (None, None) => None,
         };
 
@@ -1113,7 +1908,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 type_definition,
                 scope: Some(Scope::Global),
                 value_constraint,
-                annotation,
+                annotation: None,
             };
             self.schema
                 .att_decls
@@ -1126,7 +1921,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 type_definition,
                 scope: None,
                 value_constraint: None,
-                annotation,
+                annotation: None,
             };
             self.schema
                 .att_decls
@@ -1149,19 +1944,20 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
-    ) -> Result<(), XSDParseError> {
+    ) -> Result<(), XSDError> {
         // "ref", "form", "minOccurs" and "maxOccurs" are prohibited explicitly in schema of schema.
         let r#abstract = self
-            .extract_boolean(elem.clone(), "abstract", XSDParseError::SrcElement)?
+            .extract_boolean(elem.clone(), "abstract", XSDError::SrcElement)?
             .unwrap_or(false);
-        let block = self
-            .extract_final(
-                elem.clone(),
-                "block",
-                Final::Restriction | Final::Extension | Final::Substitution,
-                true,
-            )?
-            .unwrap_or(self.block_default);
+        // let block = self
+        //     .extract_final(
+        //         elem.clone(),
+        //         "block",
+        //         Final::Restriction | Final::Extension | Final::Substitution,
+        //         true,
+        //     )?
+        //     .unwrap_or(self.block_default);
+        let block = FinalSet::default();
         let default = elem.remove_attribute("default", None);
         let r#final = self
             .extract_final(
@@ -1173,12 +1969,11 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
             .unwrap_or(self.final_default);
         let fixed = elem.remove_attribute("fixed", None);
         let _id = elem.remove_attribute("id", None);
-        let Some(name) = self.extract_ncname(elem.clone(), "name", XSDParseError::SrcElement)?
-        else {
+        let Some(name) = self.extract_ncname(elem.clone(), "name", XSDError::SrcElement)? else {
             todo!("raise error because of missing a mandatory attribute");
         };
         let nillable = self
-            .extract_boolean(elem.clone(), "nillable", XSDParseError::SrcElement)?
+            .extract_boolean(elem.clone(), "nillable", XSDError::SrcElement)?
             .unwrap_or(false);
         let substitution_group = self.extract_qname(elem.clone(), "substitutionGroup")?;
         let r#type = self.extract_qname(elem.clone(), "type")?;
@@ -1186,7 +1981,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         self.check_attribute(elem.clone())?;
 
         let mut children = elem.first_child();
-        let annotation = self.pop_annotation(&mut children)?;
 
         let mut type_definition = None;
         while let Some(child) = children {
@@ -1199,15 +1993,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     }
 
                     match elem.local_name().as_ref() {
-                        SCHEMA_SIMPLETYPE_NAME => {
-                            type_definition =
-                                Some(TypeDefinition::Simple(self.parse_simple_type_definitions(
-                                    elem,
-                                    target_namespace.clone(),
-                                    &mut vec![],
-                                    false,
-                                )?));
-                        }
                         SCHEMA_COMPLEXTYPE_NAME => {
                             type_definition = Some(TypeDefinition::Complex(
                                 self.parse_complex_type_definitions(
@@ -1229,10 +2014,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
             }
         }
 
-        let mut idc_definitions = vec![];
-        while let Some(idc) = self.pop_idc(&mut children, target_namespace.clone())? {
-            idc_definitions.push(idc);
-        }
+        let idc_definitions = vec![];
 
         self.check_unexpected_schema_elements(children)?;
 
@@ -1253,7 +2035,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
             substitution_group_exclusions: r#final,
             disallowed_substitutions: block,
             r#abstract,
-            annotation,
+            annotation: None,
         };
 
         self.schema
@@ -1267,14 +2049,15 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
         scope: Option<Scope>,
-    ) -> Result<Particle, XSDParseError> {
+    ) -> Result<Particle, XSDError> {
         // "substitutionGroup", "final" and "abstract" are prohibited explicitly in schema of schema.
-        let block = self.extract_final(
-            elem.clone(),
-            "block",
-            Final::Extension | Final::Restriction | Final::Substitution,
-            true,
-        )?;
+        // let block = self.extract_final(
+        //     elem.clone(),
+        //     "block",
+        //     Final::Extension | Final::Restriction | Final::Substitution,
+        //     true,
+        // )?;
+        let block = Some(FinalSet::default());
         let default = elem.remove_attribute("default", None);
         let fixed = elem.remove_attribute("fixed", None);
         let _id = elem.remove_attribute("id", None);
@@ -1283,11 +2066,10 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         else {
             internal_error!(self.handler, elem);
         };
-        let name = self.extract_ncname(elem.clone(), "name", XSDParseError::SrcElement)?;
+        let name = self.extract_ncname(elem.clone(), "name", XSDError::SrcElement)?;
         let r#ref = self.extract_qname(elem.clone(), "ref")?;
 
         let mut children = elem.first_child();
-        let annotation = self.pop_annotation(&mut children)?;
 
         let mut type_definition = None;
         while let Some(child) = children {
@@ -1300,15 +2082,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     }
 
                     match elem.local_name().as_ref() {
-                        SCHEMA_SIMPLETYPE_NAME => {
-                            type_definition =
-                                Some(TypeDefinition::Simple(self.parse_simple_type_definitions(
-                                    elem,
-                                    target_namespace.clone(),
-                                    &mut vec![],
-                                    false,
-                                )?));
-                        }
                         SCHEMA_COMPLEXTYPE_NAME => {
                             type_definition = Some(TypeDefinition::Complex(
                                 self.parse_complex_type_definitions(
@@ -1329,9 +2102,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         }
 
         let mut idc_definitions = vec![];
-        while let Some(idc) = self.pop_idc(&mut children, self.target_namespace.clone())? {
-            idc_definitions.push(idc);
-        }
 
         self.check_unexpected_schema_elements(children)?;
 
@@ -1344,14 +2114,14 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     elem,
                     "One of 'ref' or 'name' must be present, but not both for local 'element'."
                 );
-                Err(XSDParseError::SrcElement)
+                Err(XSDError::SrcElement)
             }
             (Some(name), None) => {
                 let form = self
-                    .extract_qualification_form(elem.clone(), "form", XSDParseError::SrcElement)?
+                    .extract_qualification_form(elem.clone(), "form", XSDError::SrcElement)?
                     .unwrap_or(self.elem_form_default);
                 let nillable = self
-                    .extract_boolean(elem.clone(), "nillable", XSDParseError::SrcElement)?
+                    .extract_boolean(elem.clone(), "nillable", XSDError::SrcElement)?
                     .unwrap_or(false);
                 let r#type = self.extract_qname(elem.clone(), "type")?;
                 let type_definition =
@@ -1376,7 +2146,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     substitution_group_exclusions: FinalSet::default(),
                     disallowed_substitutions: block.unwrap_or(self.block_default),
                     r#abstract: false,
-                    annotation,
+                    annotation: None,
                 };
 
                 self.unnamed += 1;
@@ -1463,7 +2233,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         default: Option<String>,
         fixed: Option<String>,
         typedef: &TypeDefinition,
-    ) -> Result<Option<ValueConstraint>, XSDParseError> {
+    ) -> Result<Option<ValueConstraint>, XSDError> {
         if default.is_some() && fixed.is_some() {
             error!(
                 self.handler,
@@ -1471,7 +2241,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 elem,
                 "The attribute 'default' and 'fixed' of 'element' must not both be present."
             );
-            Err(XSDParseError::SrcElement)
+            Err(XSDError::SrcElement)
         } else if default.is_none() && fixed.is_none() {
             Ok(None)
         } else {
@@ -1479,19 +2249,19 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
             let value = match typedef {
                 TypeDefinition::Simple(def) => {
                     // [cos-valid-default] clause 1
-                    match def.parse_with_elem(value, elem.clone()) {
-                        Ok(value) => value,
-                        Err(err) => todo!("raise error"),
-                    }
+                    // match def.parse_with_elem(value, elem.clone()) {
+                    //     Ok(value) => value,
+                    //     Err(err) => todo!("raise error"),
+                    // }
                 }
                 TypeDefinition::Complex(def) => {
                     match &def.content_type {
                         ContentType::Simple(def) => {
                             // [cos-valid-default] clause 2.2.1
-                            match def.parse_with_elem(value, elem.clone()) {
-                                Ok(value) => value,
-                                Err(err) => todo!("raise error"),
-                            }
+                            // match def.parse_with_elem(value, elem.clone()) {
+                            //     Ok(value) => value,
+                            //     Err(err) => todo!("raise error"),
+                            // }
                         }
                         ContentType::Mixed(particle) => {
                             if !particle.is_emptiable() {
@@ -1502,11 +2272,11 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                     elem,
                                     "Default values must not be set for complex content that is non-empty mixed content."
                                 );
-                                return Err(XSDParseError::CosValidDefault);
+                                return Err(XSDError::CosValidDefault);
                             }
                             // It is unclear what type this should be checked as,
                             // but for now, let's treat it as a string type.
-                            SchemaValue::String(value.into())
+                            // SchemaValue::String(value.into())
                         }
                         _ => {
                             // [cos-valid-default] clause 2.1
@@ -1516,17 +2286,18 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                 elem,
                                 "Default values must not be set for complex content that is either empty or element-only content."
                             );
-                            return Err(XSDParseError::CosValidDefault);
+                            return Err(XSDError::CosValidDefault);
                         }
                     }
                 }
             };
 
-            Ok(if default.is_some() {
-                Some(ValueConstraint::Default(value))
-            } else {
-                Some(ValueConstraint::Fixed(value))
-            })
+            Ok(None)
+            // Ok(if default.is_some() {
+            //     Some(ValueConstraint::Default(value))
+            // } else {
+            //     Some(ValueConstraint::Fixed(value))
+            // })
         }
     }
 
@@ -1536,7 +2307,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         r#type: Option<(Option<Arc<str>>, Arc<str>)>,
         typedef: Option<TypeDefinition>,
         allow_missing: bool,
-    ) -> Result<TypeDefinition, XSDParseError> {
+    ) -> Result<TypeDefinition, XSDError> {
         match (r#type, typedef) {
             (Some(_), Some(_)) | (None, None) => {
                 // [src-element] clause 3
@@ -1546,7 +2317,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     elem,
                     "The attribute 'type' and either a element child 'simpleType' or 'complexType' are mutually exclusive."
                 );
-                Err(XSDParseError::SrcElement)
+                Err(XSDError::SrcElement)
             }
             (Some(key), None) => {
                 if let Some(elem) = self.complex_types.remove(&key) {
@@ -1585,13 +2356,12 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
         loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
-    ) -> Result<(), XSDParseError> {
+    ) -> Result<(), XSDError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_ATTGROUP_NAME);
 
         let _id = elem.remove_attribute("id", None);
-        let Some(name) =
-            self.extract_ncname(elem.clone(), "name", XSDParseError::SrcAttributeGroup)?
+        let Some(name) = self.extract_ncname(elem.clone(), "name", XSDError::SrcAttributeGroup)?
         else {
             todo!("raise error")
         };
@@ -1601,7 +2371,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         self.check_attribute(elem.clone())?;
 
         let mut children = elem.first_child();
-        let annotation = self.pop_annotation(&mut children)?;
         let (attribute_uses, attribute_wildcard) =
             self.pop_attr_decls(&mut children, target_namespace.clone(), loop_guard)?;
 
@@ -1612,7 +2381,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
             target_namespace: target_namespace.clone(),
             attribute_uses,
             attribute_wildcard,
-            annotation,
+            annotation: None,
         };
 
         loop_guard.pop();
@@ -1629,7 +2398,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
-    ) -> Result<(Option<Arc<str>>, Arc<str>), XSDParseError> {
+    ) -> Result<(Option<Arc<str>>, Arc<str>), XSDError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_ATTGROUP_NAME);
 
@@ -1639,8 +2408,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         };
 
         self.check_attribute(elem.clone())?;
-
-        let _annot = self.parse_single_annotation_child(elem.clone())?;
 
         if self.schema.attgroup_defs.contains_key(&r#ref) {
             return Ok(r#ref);
@@ -1657,407 +2424,18 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         Ok(r#ref)
     }
 
-    fn parse_simple_type_definitions(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-        loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
-        global: bool,
-    ) -> Result<Arc<SimpleTypeDefinition>, XSDParseError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_SIMPLETYPE_NAME);
-
-        let r#final = elem.remove_attribute("final", None);
-        let _id = elem.remove_attribute("id", None);
-        let name = match self.extract_ncname(elem.clone(), "name", XSDParseError::SrcSimpleType)? {
-            Some(name) => name,
-            None => {
-                if !global {
-                    self.unnamed += 1;
-                    // Choose a name that is not an NCName to avoid conflicts
-                    // with other type definitions.
-                    format!("#unnamed{}", self.unnamed).into()
-                } else {
-                    todo!("raise error because of missing mandatory attribute");
-                }
-            }
-        };
-        if self
-            .schema
-            .type_defs
-            .contains_key(&(target_namespace.clone(), name.clone()))
-        {
-            todo!("raise error because duplicated definition");
-        }
-        loop_guard.push((target_namespace.clone(), name.clone()));
-
-        self.check_attribute(elem.clone())?;
-
-        let mut children = elem.first_child();
-        // extract annotation
-        let _annot = self.pop_annotation(&mut children)?;
-        // extract derivation method
-        let mut ret = None;
-        while let Some(child) = children {
-            children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(mut elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    match elem.local_name().as_ref() {
-                        SCHEMA_RESTRICTION_NAME => {
-                            if ret.is_some() {
-                                todo!("raise error")
-                            }
-                            let mut children = elem.first_child();
-                            // extract annotation
-                            let _annot = self.pop_annotation(&mut children)?;
-                            // extract simpleType if exists
-                            let mut simple_type = None;
-                            while let Some(child) = children {
-                                children = child.next_sibling();
-
-                                match child.downcast() {
-                                    NodeKind::Element(elem) => {
-                                        if elem.namespace_name().as_deref()
-                                            != Some(XML_SCHEMA_NAMESPACE)
-                                        {
-                                            continue;
-                                        }
-
-                                        match elem.local_name().as_ref() {
-                                            SCHEMA_SIMPLETYPE_NAME => simple_type = Some(elem),
-                                            _ => children = Some(child),
-                                        }
-                                        break;
-                                    }
-                                    NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                                    _ => {}
-                                }
-                            }
-
-                            let _id = elem.remove_attribute("id", None);
-                            let base = match self.extract_qname(elem.clone(), "base")? {
-                                Some((nsname, local)) => {
-                                    if simple_type.is_some() {
-                                        // [src-restriction-base-or-simpleType]
-                                        // If the `base` attribute is present,
-                                        // the child must not have a `simpleType`.
-                                        error!(
-                                            self.handler,
-                                            SrcRestrictionBaseOrSimpleType,
-                                            elem,
-                                            "The attribute 'base' and the element child 'simpleType' of '{}' must not both be present.",
-                                            elem.local_name()
-                                        );
-                                        return Err(XSDParseError::SrcRestrictionBaseOrSimpleType);
-                                    }
-                                    let key = (nsname, local);
-                                    if let Some(elem) = self.simple_types.remove(&key) {
-                                        self.parse_simple_type_definitions(
-                                            elem,
-                                            key.0.clone(),
-                                            loop_guard,
-                                            true,
-                                        )?;
-                                    }
-                                    if let Some(def) = self.schema.type_defs.get(&key) {
-                                        match def {
-                                            TypeDefinition::Simple(simple) => simple.clone(),
-                                            TypeDefinition::Complex(_) => {
-                                                todo!("raise error")
-                                            }
-                                        }
-                                    } else if loop_guard.contains(&key) {
-                                        todo!("raise error because of type reference loop")
-                                    } else {
-                                        todo!("raise error because of undefined type")
-                                    }
-                                }
-                                None => {
-                                    let Some(simple_type) = simple_type else {
-                                        // [src-restriction-base-or-simpleType]
-                                        // If there is no `base` attribute, there
-                                        // must be a child of type `simpleType`.
-                                        todo!("raise error");
-                                    };
-
-                                    self.parse_simple_type_definitions(
-                                        simple_type,
-                                        target_namespace.clone(),
-                                        loop_guard,
-                                        false,
-                                    )?
-                                }
-                            };
-
-                            let mut builder = match base.clone().derive_by_restriction() {
-                                Ok(builder) => builder,
-                                Err(err) => todo!("raise error"),
-                            };
-
-                            // extract facets
-                            let builder = loop {
-                                match self.pop_facet(&mut children, &base, builder)? {
-                                    Ok(b) => builder = b,
-                                    Err(b) => break b,
-                                }
-                            };
-                            ret = Some(builder);
-                        }
-                        SCHEMA_LIST_NAME => {
-                            if ret.is_some() {
-                                todo!("raise error")
-                            }
-                            let mut children = elem.first_child();
-                            // extract annotation
-                            let _annot = self.pop_annotation(&mut children)?;
-                            // extract simpleType if exists
-                            let mut simple_type = None;
-                            while let Some(child) = children {
-                                children = child.next_sibling();
-
-                                match child.downcast() {
-                                    NodeKind::Element(elem) => {
-                                        if elem.namespace_name().as_deref()
-                                            != Some(XML_SCHEMA_NAMESPACE)
-                                        {
-                                            continue;
-                                        }
-
-                                        match elem.local_name().as_ref() {
-                                            SCHEMA_SIMPLETYPE_NAME => simple_type = Some(elem),
-                                            _ => children = Some(child),
-                                        }
-                                        break;
-                                    }
-                                    NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                                    _ => {}
-                                }
-                            }
-
-                            let _id = elem.remove_attribute("id", None);
-                            let item_type = match self.extract_qname(elem.clone(), "itemType")? {
-                                Some((nsname, local)) => {
-                                    if simple_type.is_some() {
-                                        // [src-list-itemType-or-simpleType]
-                                        // If the `itemType` attribute is present,
-                                        // the child must not have a `simpleType`.
-                                        todo!("raise error");
-                                    }
-                                    let key = (nsname, local);
-                                    if let Some(elem) = self.simple_types.remove(&key) {
-                                        self.parse_simple_type_definitions(
-                                            elem,
-                                            key.0.clone(),
-                                            loop_guard,
-                                            true,
-                                        )?;
-                                    }
-                                    if let Some(def) = self.schema.type_defs.get(&key) {
-                                        match def {
-                                            TypeDefinition::Simple(simple) => simple.clone(),
-                                            TypeDefinition::Complex(_) => {
-                                                todo!("raise error")
-                                            }
-                                        }
-                                    } else if loop_guard.contains(&key) {
-                                        todo!("raise error because of type reference loop")
-                                    } else {
-                                        todo!("raise error because of undefined type")
-                                    }
-                                }
-                                None => {
-                                    let Some(simple_type) = simple_type else {
-                                        // [src-list-itemType-or-simpleType]
-                                        // If there is no `itemType` attribute, there
-                                        // must be a child of type `simpleType`.
-                                        todo!("raise error");
-                                    };
-
-                                    self.parse_simple_type_definitions(
-                                        simple_type,
-                                        target_namespace.clone(),
-                                        loop_guard,
-                                        false,
-                                    )?
-                                }
-                            };
-
-                            // Check to see if there are any unexpected children
-                            self.check_unexpected_schema_elements(children)?;
-
-                            let builder = match item_type.clone().derive_by_list() {
-                                Ok(builder) => builder,
-                                Err(err) => todo!("raise error"),
-                            };
-                            ret = Some(builder);
-                        }
-                        SCHEMA_UNION_NAME => {
-                            if ret.is_some() {
-                                todo!("raise error")
-                            }
-                            let mut children = elem.first_child();
-                            // extract annotation
-                            let _annot = self.pop_annotation(&mut children)?;
-                            // extract simpleTypes if exist
-                            let mut members = vec![];
-                            while let Some(child) = children {
-                                children = child.next_sibling();
-
-                                match child.downcast() {
-                                    NodeKind::Element(elem) => {
-                                        if elem.namespace_name().as_deref()
-                                            != Some(XML_SCHEMA_NAMESPACE)
-                                        {
-                                            continue;
-                                        }
-
-                                        match elem.local_name().as_ref() {
-                                            SCHEMA_SIMPLETYPE_NAME => {
-                                                let def = self.parse_simple_type_definitions(
-                                                    elem,
-                                                    target_namespace.clone(),
-                                                    loop_guard,
-                                                    false,
-                                                )?;
-                                                members.push(def);
-                                            }
-                                            _ => unallowed_element!(self.handler, elem),
-                                        }
-                                    }
-                                    NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                                    _ => {}
-                                }
-                            }
-
-                            let _id = elem.remove_attribute("id", None);
-                            if let Some(member_types) = elem.remove_attribute("memberTypes", None) {
-                                for member_type in member_types
-                                    .split(|c| XMLVersion::XML10.is_whitespace(c))
-                                    .filter(|s| !s.is_empty())
-                                {
-                                    match SCHEMA_BUILTIN_QNAME
-                                        .parse_with_elem(member_type, elem.clone())
-                                    {
-                                        Ok(SchemaValue::QName(nsname, local)) => {
-                                            let key = (nsname, local);
-                                            if let Some(elem) = self.simple_types.remove(&key) {
-                                                self.parse_simple_type_definitions(
-                                                    elem,
-                                                    key.0.clone(),
-                                                    loop_guard,
-                                                    true,
-                                                )?;
-                                            }
-                                            let def = if let Some(def) =
-                                                self.schema.type_defs.get(&key)
-                                            {
-                                                match def {
-                                                    TypeDefinition::Simple(simple) => {
-                                                        simple.clone()
-                                                    }
-                                                    TypeDefinition::Complex(_) => {
-                                                        todo!("raise error")
-                                                    }
-                                                }
-                                            } else if loop_guard.contains(&key) {
-                                                todo!("raise error because of type reference loop")
-                                            } else {
-                                                todo!("raise error because of undefined type")
-                                            };
-                                            members.push(def);
-                                        }
-                                        Ok(_) => internal_error!(self.handler, elem),
-                                        Err(err) => {
-                                            error!(
-                                                self.handler,
-                                                SrcSimpleType,
-                                                elem,
-                                                "The attribute 'memberTypes' of '{}' is failed to parse as QName because {}.",
-                                                SCHEMA_UNION_NAME,
-                                                err
-                                            );
-                                            return Err(XSDParseError::SrcSimpleType);
-                                        }
-                                    }
-                                }
-                            } else if members.is_empty() {
-                                // [src-union-memberTypes-or-simpleTypes]
-                                // If there is no `memberType` attribute, there
-                                // must be children of type `simpleType`.
-                                todo!("raise error")
-                            }
-
-                            self.check_attribute(elem)?;
-
-                            let Ok(builder) = SimpleTypeDefinition::derive_by_union(members) else {
-                                todo!("raise error")
-                            };
-                            ret = Some(builder);
-                        }
-                        _ => unallowed_element!(self.handler, elem),
-                    }
-                }
-                NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                _ => {}
-            }
-        }
-
-        loop_guard.pop();
-
-        if let Some(mut builder) = ret {
-            if let Some(r#final) = r#final {
-                let f = r#final.trim_matches(|c| XMLVersion::XML10.is_whitespace(c));
-                let mut set = FinalSet::default();
-                if f == "#all" {
-                    set = Final::List | Final::Union | Final::Restriction;
-                } else {
-                    // Logically, I'd think duplicates wouldn't be allowed, but
-                    // since I can't find any mention in the specs saying they're
-                    // not allowed, I'll put off implementing that for now.
-                    for f in f
-                        .split(|c| XMLVersion::XML10.is_whitespace(c))
-                        .filter(|s| !s.is_empty())
-                    {
-                        match f {
-                            "list" => set = set | Final::List,
-                            "union" => set = set | Final::Union,
-                            "restriction" => set = set | Final::Restriction,
-                            _ => todo!("raise error"),
-                        }
-                    }
-                }
-                builder = builder.r#final(set);
-            }
-            let def = builder.name(name.clone(), target_namespace.clone()).build();
-            if global {
-                self.schema.type_defs.insert(
-                    (target_namespace, name),
-                    TypeDefinition::Simple(def.clone()),
-                );
-            }
-            Ok(def)
-        } else {
-            todo!("raise error")
-        }
-    }
-
     fn parse_complex_type_definitions(
         &mut self,
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
         loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
         global: bool,
-    ) -> Result<Arc<ComplexTypeDefinition>, XSDParseError> {
+    ) -> Result<Arc<ComplexTypeDefinition>, XSDError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_COMPLEXTYPE_NAME);
 
         let r#abstract = self
-            .extract_boolean(elem.clone(), "abstract", XSDParseError::SrcCt)?
+            .extract_boolean(elem.clone(), "abstract", XSDError::SrcCt)?
             .unwrap_or(false);
         let block = self
             .extract_final(
@@ -2077,9 +2455,9 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
             .unwrap_or(self.final_default);
         let _id = elem.remove_attribute("id", None);
         let mixed = self
-            .extract_boolean(elem.clone(), "mixed", XSDParseError::SrcCt)?
+            .extract_boolean(elem.clone(), "mixed", XSDError::SrcCt)?
             .unwrap_or(false);
-        let name = match self.extract_ncname(elem.clone(), "name", XSDParseError::SrcCt)? {
+        let name = match self.extract_ncname(elem.clone(), "name", XSDError::SrcCt)? {
             Some(name) => name,
             None => {
                 if !global {
@@ -2095,7 +2473,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                         "The mandatory attribute 'name' of '{}' is missing.",
                         elem.local_name()
                     );
-                    return Err(XSDParseError::SrcCt);
+                    return Err(XSDError::SrcCt);
                 }
             }
         };
@@ -2111,8 +2489,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         self.check_attribute(elem.clone())?;
 
         let mut children = elem.first_child();
-        // extract annotation
-        let _annot = self.pop_annotation(&mut children)?;
         // simpleContent
         // | complexContent
         // | ((group | all | choice | sequence)?, (attribute | attributeGroup)*, anyAttribute?)
@@ -2279,7 +2655,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
             Vec<AttributeUse>,
             Option<Wildcard>,
         ),
-        XSDParseError,
+        XSDError,
     > {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_SIMPLECONT_NAME);
@@ -2288,8 +2664,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         self.check_attribute(elem.clone())?;
 
         let mut children = elem.first_child();
-        // extract annotation
-        let _annot = self.pop_annotation(&mut children)?;
         // extract derivation method
         let mut content = None;
         let mut attribute_uses = vec![];
@@ -2309,8 +2683,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                         SCHEMA_RESTRICTION_NAME => {
                             derivation_method = DerivationMethod::Restriction;
                             let mut children = elem.first_child();
-                            // extract annotation
-                            let _annot = self.pop_annotation(&mut children)?;
                             // extract simpleType if exists
                             // This `simpleType` may be used to determine the {content type}
                             // property of a `complexType` component.
@@ -2335,7 +2707,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                             //         facets, if any), as defined in Simple Type Restriction
                             //         (Facets) (§3.14.6);
                             // ```
-                            let mut simple_type = None;
+                            let simple_type = None;
                             while let Some(child) = children {
                                 children = child.next_sibling();
 
@@ -2345,19 +2717,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                             != Some(XML_SCHEMA_NAMESPACE)
                                         {
                                             continue;
-                                        }
-
-                                        match elem.local_name().as_ref() {
-                                            SCHEMA_SIMPLETYPE_NAME => {
-                                                simple_type =
-                                                    Some(self.parse_simple_type_definitions(
-                                                        elem,
-                                                        target_namespace.clone(),
-                                                        &mut vec![],
-                                                        false,
-                                                    )?);
-                                            }
-                                            _ => children = Some(child),
                                         }
                                         break;
                                     }
@@ -2375,7 +2734,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                     "The attribute 'base' of '{}' is mandatory, but is absent.",
                                     elem.local_name()
                                 );
-                                return Err(XSDParseError::SrcCt);
+                                return Err(XSDError::SrcCt);
                             };
                             if let Some(elem) = self.complex_types.remove(&key) {
                                 self.parse_complex_type_definitions(
@@ -2396,7 +2755,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                             "The base type of '{}' must not be a simple type.",
                                             SCHEMA_SIMPLECONT_NAME
                                         );
-                                        return Err(XSDParseError::SrcCt);
+                                        return Err(XSDError::SrcCt);
                                     }
                                     TypeDefinition::Complex(complex) => {
                                         match &complex.content_type {
@@ -2421,7 +2780,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                                         "The base type of '{}' must be emptiable if it is a complex type.",
                                                         SCHEMA_SIMPLECONT_NAME
                                                     );
-                                                    return Err(XSDParseError::SrcCt);
+                                                    return Err(XSDError::SrcCt);
                                                 }
                                                 // component property mapping of {content type}
                                                 // clause 2 and [src-ct] 2.2
@@ -2435,7 +2794,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                                         SCHEMA_SIMPLECONT_NAME,
                                                         SCHEMA_SIMPLETYPE_NAME
                                                     );
-                                                    return Err(XSDParseError::SrcCt);
+                                                    return Err(XSDError::SrcCt);
                                                 };
                                                 def
                                             }
@@ -2449,7 +2808,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                                     SCHEMA_SIMPLECONT_NAME,
                                                     elem.local_name()
                                                 );
-                                                return Err(XSDParseError::SrcCt);
+                                                return Err(XSDError::SrcCt);
                                             }
                                         }
                                     }
@@ -2460,19 +2819,12 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                 todo!("raise error because of undefined type")
                             };
 
-                            let mut builder = match base.clone().derive_by_restriction() {
-                                Ok(builder) => builder,
-                                Err(err) => todo!("raise error"),
-                            };
+                            // let mut builder = match base.clone().derive_by_restriction() {
+                            //     Ok(builder) => builder,
+                            //     Err(err) => todo!("raise error"),
+                            // };
 
-                            // extract facets
-                            let builder = loop {
-                                match self.pop_facet(&mut children, &base, builder)? {
-                                    Ok(b) => builder = b,
-                                    Err(b) => break b,
-                                }
-                            };
-                            content = Some(builder.build());
+                            // content = Some(builder.build());
 
                             (attribute_uses, attribute_wildcard) = self.pop_attr_decls(
                                 &mut children,
@@ -2484,8 +2836,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                         SCHEMA_EXTENSION_NAME => {
                             derivation_method = DerivationMethod::Extension;
                             let mut children = elem.first_child();
-                            // extract annotation
-                            let _annot = self.pop_annotation(&mut children)?;
                             let _id = elem.remove_attribute("id", None);
                             let Some(key) = self.extract_qname(elem.clone(), "base")? else {
                                 error!(
@@ -2495,7 +2845,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                     "The attribute 'base' of '{}' is mandatory, but is absent.",
                                     elem.local_name()
                                 );
-                                return Err(XSDParseError::SrcCt);
+                                return Err(XSDError::SrcCt);
                             };
                             if let Some(elem) = self.complex_types.remove(&key) {
                                 self.parse_complex_type_definitions(
@@ -2528,7 +2878,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                                     SCHEMA_SIMPLECONT_NAME,
                                                     elem.local_name()
                                                 );
-                                                return Err(XSDParseError::SrcCt);
+                                                return Err(XSDError::SrcCt);
                                             }
                                         }
                                     }
@@ -2566,7 +2916,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 SCHEMA_RESTRICTION_NAME,
                 SCHEMA_EXTENSION_NAME
             );
-            return Err(XSDParseError::SrcCt);
+            return Err(XSDError::SrcCt);
         };
         Ok((
             base_type_definition,
@@ -2591,7 +2941,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
             Vec<AttributeUse>,
             Option<Wildcard>,
         ),
-        XSDParseError,
+        XSDError,
     > {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_COMPLEXCONT_NAME);
@@ -2599,12 +2949,10 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         let _id = elem.remove_attribute("id", None);
         // reference: "effective mixed"
         let mixed = self
-            .extract_boolean(elem.clone(), "mixed", XSDParseError::SrcCt)?
+            .extract_boolean(elem.clone(), "mixed", XSDError::SrcCt)?
             .unwrap_or(mixed);
 
         let mut children = elem.first_child();
-        // extract annotation
-        let _annot = self.pop_annotation(&mut children)?;
         let mut content_type = None;
         let mut attribute_uses = vec![];
         let mut attribute_wildcard = None;
@@ -2635,7 +2983,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                             "The attribute 'base' of '{}' is mandatory, but is absent.",
                             elem.local_name()
                         );
-                        return Err(XSDParseError::SrcCt);
+                        return Err(XSDError::SrcCt);
                     };
                     self.check_attribute(elem.clone())?;
 
@@ -2661,7 +3009,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                     "The base type of '{}' must be a complex type.",
                                     SCHEMA_COMPLEXCONT_NAME
                                 );
-                                return Err(XSDParseError::SrcCt);
+                                return Err(XSDError::SrcCt);
                             }
                         }
                     } else {
@@ -2677,11 +3025,10 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                             base.1,
                             elem.local_name()
                         );
-                        return Err(XSDParseError::SrcCt);
+                        return Err(XSDError::SrcCt);
                     };
 
                     let mut children = elem.first_child();
-                    let _annot = self.pop_annotation(&mut children)?;
                     let particle =
                         self.pop_type_def_particle(&mut children, target_namespace.clone())?;
                     (attribute_uses, attribute_wildcard) =
@@ -2722,7 +3069,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                         .unwrap_or_default(),
                                     base.name
                                 );
-                                return Err(XSDParseError::DerivationOkRestriction);
+                                return Err(XSDError::DerivationOkRestriction);
                             }
 
                             // merge attribute uses or children and base type definition
@@ -2765,7 +3112,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                         .unwrap_or_default(),
                                     base.name
                                 );
-                                return Err(XSDParseError::CosCtExtends);
+                                return Err(XSDError::CosCtExtends);
                             }
 
                             // merge attribute uses or children and base type definition
@@ -2816,7 +3163,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                                 elem,
                                                 "Complex types with simple content types cannot be extended using 'complexContent'."
                                             );
-                                            return Err(XSDParseError::CosCtExtends);
+                                            return Err(XSDError::CosCtExtends);
                                         }
                                     }
                                 }
@@ -2849,7 +3196,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 SCHEMA_RESTRICTION_NAME,
                 SCHEMA_EXTENSION_NAME
             );
-            return Err(XSDParseError::SrcCt);
+            return Err(XSDError::SrcCt);
         };
 
         self.check_unexpected_schema_elements(children)?;
@@ -2867,7 +3214,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
-    ) -> Result<Wildcard, XSDParseError> {
+    ) -> Result<Wildcard, XSDError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_ANYATT_NAME);
 
@@ -2877,8 +3224,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         let process_contents = self.extract_process_contents(elem.clone(), "processContents")?;
 
         self.check_attribute(elem.clone())?;
-
-        let _annot = self.parse_single_annotation_child(elem)?;
 
         Ok(Wildcard {
             ns_constraint,
@@ -2890,13 +3235,12 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
-    ) -> Result<(), XSDParseError> {
+    ) -> Result<(), XSDError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_GROUP_NAME);
 
         let _id = elem.remove_attribute("id", None);
-        let Some(name) =
-            self.extract_ncname(elem.clone(), "name", XSDParseError::SrcModelGroupDefn)?
+        let Some(name) = self.extract_ncname(elem.clone(), "name", XSDError::SrcModelGroupDefn)?
         else {
             error!(
                 self.handler,
@@ -2905,12 +3249,11 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 "The attribute 'name' of '{}' is mandatory, but is absent.",
                 SCHEMA_GROUP_NAME
             );
-            return Err(XSDParseError::SrcModelGroupDefn);
+            return Err(XSDError::SrcModelGroupDefn);
         };
         self.check_attribute(elem.clone())?;
 
         let mut children = elem.first_child();
-        let annotation = self.pop_annotation(&mut children)?;
         let mut particle = None;
         while let Some(child) = children {
             children = child.next_sibling();
@@ -2937,7 +3280,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                             "The attribute 'minOccurs' of '{}' that is a child of 'group' is not allowed.",
                             elem.local_name()
                         );
-                        return Err(XSDParseError::SrcModelGroupDefn);
+                        return Err(XSDError::SrcModelGroupDefn);
                     }
                     if elem.has_attribute("maxOccurs", None) {
                         error!(
@@ -2947,7 +3290,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                             "The attribute 'maxOccurs' of '{}' that is a child of 'group' is not allowed.",
                             elem.local_name()
                         );
-                        return Err(XSDParseError::SrcModelGroupDefn);
+                        return Err(XSDError::SrcModelGroupDefn);
                     }
 
                     particle = Some(match elem.local_name().as_ref() {
@@ -2973,7 +3316,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 elem,
                 "'group' that is a child of 'schema' or 'redefine' must have 'all', 'choice' or 'sequence' as a child."
             );
-            return Err(XSDParseError::SrcModelGroupDefn);
+            return Err(XSDError::SrcModelGroupDefn);
         };
         let Term::ModelGroup(model_group) = particle.term else {
             internal_error!(self.handler, elem);
@@ -2983,7 +3326,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
             name: name.clone(),
             target_namespace: target_namespace.clone(),
             model_group,
-            annotation,
+            annotation: None,
         };
         self.schema
             .modelgroup_defs
@@ -2995,7 +3338,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
-    ) -> Result<Particle, XSDParseError> {
+    ) -> Result<Particle, XSDError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_GROUP_NAME);
 
@@ -3005,8 +3348,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         else {
             internal_error!(self.handler, elem);
         };
-        let Some(r#ref) = self.extract_ncname(elem.clone(), "ref", XSDParseError::SrcModelGroup)?
-        else {
+        let Some(r#ref) = self.extract_ncname(elem.clone(), "ref", XSDError::SrcModelGroup)? else {
             error!(
                 self.handler,
                 SrcModelGroup,
@@ -3014,12 +3356,11 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 "The attribute 'ref' of '{}' is mandatory, but is absent.",
                 SCHEMA_GROUP_NAME
             );
-            return Err(XSDParseError::SrcModelGroup);
+            return Err(XSDError::SrcModelGroup);
         };
         self.check_attribute(elem.clone())?;
 
         let mut children = elem.first_child();
-        let _annot = self.pop_annotation(&mut children)?;
         self.check_unexpected_schema_elements(children)?;
 
         if let Some(elem) = self
@@ -3044,7 +3385,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
-    ) -> Result<Particle, XSDParseError> {
+    ) -> Result<Particle, XSDError> {
         let _id = elem.remove_attribute("id", None);
         let max_occurs = self.extract_occurs(elem.clone(), "maxOccurs", Some(1), true)?;
         let Some(min_occurs) = self.extract_occurs(elem.clone(), "minOccurs", Some(1), false)?
@@ -3055,7 +3396,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         self.check_attribute(elem.clone())?;
 
         let mut children = elem.first_child();
-        let _annot = self.pop_annotation(&mut children)?;
 
         let mut particles = vec![];
         while let Some(particle) =
@@ -3079,7 +3419,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
-    ) -> Result<Particle, XSDParseError> {
+    ) -> Result<Particle, XSDError> {
         let _id = elem.remove_attribute("id", None);
         let max_occurs = self.extract_occurs(elem.clone(), "maxOccurs", Some(1), true)?;
         let Some(min_occurs) = self.extract_occurs(elem.clone(), "minOccurs", Some(1), false)?
@@ -3090,7 +3430,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         self.check_attribute(elem.clone())?;
 
         let mut children = elem.first_child();
-        let _annot = self.pop_annotation(&mut children)?;
 
         let mut particles = vec![];
         while let Some(particle) =
@@ -3114,7 +3453,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
-    ) -> Result<Particle, XSDParseError> {
+    ) -> Result<Particle, XSDError> {
         let _id = elem.remove_attribute("id", None);
         let Some(max_occurs) = self.extract_occurs(elem.clone(), "maxOccurs", Some(1), false)?
         else {
@@ -3133,7 +3472,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 SCHEMA_ALL_NAME,
                 max_occurs
             );
-            return Err(XSDParseError::SrcModelGroup);
+            return Err(XSDError::SrcModelGroup);
         }
         if min_occurs > 1 {
             error!(
@@ -3144,13 +3483,12 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 SCHEMA_ALL_NAME,
                 min_occurs
             );
-            return Err(XSDParseError::SrcModelGroup);
+            return Err(XSDError::SrcModelGroup);
         }
 
         self.check_attribute(elem.clone())?;
 
         let mut children = elem.first_child();
-        let _annot = self.pop_annotation(&mut children)?;
 
         let mut particles = vec![];
         while let Some(child) = children {
@@ -3191,7 +3529,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
-    ) -> Result<Particle, XSDParseError> {
+    ) -> Result<Particle, XSDError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_ANY_NAME);
 
@@ -3207,8 +3545,6 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
 
         self.check_attribute(elem.clone())?;
 
-        let _annot = self.parse_single_annotation_child(elem)?;
-
         let wildcard = Wildcard {
             ns_constraint,
             process_contents,
@@ -3220,190 +3556,13 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         })
     }
 
-    fn parse_boundary(
-        &mut self,
-        mut elem: Element,
-        base: &SimpleTypeDefinition,
-    ) -> Result<(bool, SchemaValue), XSDParseError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert!(matches!(
-            elem.local_name().as_ref(),
-            SCHEMA_MINEXCLUSIVE_NAME
-                | SCHEMA_MININCLUSIVE_NAME
-                | SCHEMA_MAXEXCLUSIVE_NAME
-                | SCHEMA_MAXINCLUSIVE_NAME
-        ));
-
-        let fixed = self
-            .extract_boolean(elem.clone(), "fixed", XSDParseError::SrcSimpleType)?
-            .unwrap_or(false);
-        let _id = elem.remove_attribute("id", None);
-        let Some(value) = elem.remove_attribute("value", None) else {
-            todo!("raise error because of missing a mandatory attribute");
-        };
-        self.check_attribute(elem.clone())?;
-
-        let _annot = self.parse_single_annotation_child(elem.clone())?;
-
-        let Ok(value) = base.parse_with_elem(&value, elem.clone()) else {
-            todo!("raise error")
-        };
-        Ok((fixed, value))
-    }
-
-    fn parse_total_digits(
-        &mut self,
-        mut elem: Element,
-    ) -> Result<(bool, NonZeroUsize), XSDParseError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert!(elem.local_name().as_ref() == SCHEMA_TOTALDIGITS_NAME);
-
-        let fixed = self
-            .extract_boolean(elem.clone(), "fixed", XSDParseError::SrcSimpleType)?
-            .unwrap_or(false);
-        let _id = elem.remove_attribute("id", None);
-        let Some(value) = elem.remove_attribute("value", None) else {
-            todo!("raise error because of missing a mandatory attribute");
-        };
-        self.check_attribute(elem.clone())?;
-
-        let _annot = self.parse_single_annotation_child(elem.clone())?;
-
-        let Ok(SchemaValue::Integer(value)) =
-            SCHEMA_BUILTIN_POSITIVE_INTEGER.parse_with_elem(&value, elem.clone())
-        else {
-            todo!("raise error")
-        };
-        let Ok(value) = usize::try_from(value) else {
-            todo!("raise error because of too big positive integer")
-        };
-        let Some(value) = NonZeroUsize::new(value) else {
-            internal_error!(self.handler, elem);
-        };
-        Ok((fixed, value))
-    }
-
-    fn parse_fraction_digits(&mut self, mut elem: Element) -> Result<(bool, usize), XSDParseError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert!(elem.local_name().as_ref() == SCHEMA_FRACDIGITS_NAME);
-
-        let fixed = self
-            .extract_boolean(elem.clone(), "fixed", XSDParseError::SrcSimpleType)?
-            .unwrap_or(false);
-        let _id = elem.remove_attribute("id", None);
-        let Some(value) = elem.remove_attribute("value", None) else {
-            todo!("raise error because of missing a mandatory attribute");
-        };
-        self.check_attribute(elem.clone())?;
-
-        let _annot = self.parse_single_annotation_child(elem.clone())?;
-
-        let Ok(SchemaValue::Integer(value)) =
-            SCHEMA_BUILTIN_NONNEGATIVE_INTEGER.parse_with_elem(&value, elem.clone())
-        else {
-            todo!("raise error")
-        };
-        let Ok(value) = usize::try_from(value) else {
-            todo!("raise error because of too big positive integer")
-        };
-        Ok((fixed, value))
-    }
-
-    fn parse_length(&mut self, mut elem: Element) -> Result<(bool, usize), XSDParseError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert!(matches!(
-            elem.local_name().as_ref(),
-            SCHEMA_LENGTH_NAME | SCHEMA_MINLENGTH_NAME | SCHEMA_MAXLENGTH_NAME
-        ));
-
-        let fixed = self
-            .extract_boolean(elem.clone(), "fixed", XSDParseError::SrcSimpleType)?
-            .unwrap_or(false);
-        let _id = elem.remove_attribute("id", None);
-        let Some(value) = elem.remove_attribute("value", None) else {
-            todo!("raise error because of missing a mandatory attribute");
-        };
-        self.check_attribute(elem.clone())?;
-
-        let _annot = self.parse_single_annotation_child(elem.clone())?;
-
-        let Ok(SchemaValue::Integer(value)) =
-            SCHEMA_BUILTIN_NONNEGATIVE_INTEGER.parse_with_elem(&value, elem.clone())
-        else {
-            todo!("raise error")
-        };
-        let Ok(value) = usize::try_from(value) else {
-            todo!("raise error because of too big positive integer")
-        };
-        Ok((fixed, value))
-    }
-
-    fn parse_enumeration(
-        &mut self,
-        mut elem: Element,
-        base: &SimpleTypeDefinition,
-    ) -> Result<SchemaValue, XSDParseError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert!(elem.local_name().as_ref() == SCHEMA_ENUMERATION_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        let Some(value) = elem.remove_attribute("value", None) else {
-            todo!("raise error because of missing a mandatory attribute");
-        };
-        self.check_attribute(elem.clone())?;
-
-        let _annot = self.parse_single_annotation_child(elem.clone())?;
-
-        let Ok(value) = base.parse_with_elem(&value, elem.clone()) else {
-            todo!("raise error")
-        };
-        Ok(value)
-    }
-
-    fn parse_whitespace(&mut self, mut elem: Element) -> Result<(bool, Whitespace), XSDParseError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert!(elem.local_name().as_ref() == SCHEMA_WHITESPACE_NAME);
-
-        let fixed = self
-            .extract_boolean(elem.clone(), "fixed", XSDParseError::SrcSimpleType)?
-            .unwrap_or(false);
-        let _id = elem.remove_attribute("id", None);
-        let Some(value) = elem.remove_attribute("value", None) else {
-            todo!("raise error because of missing a mandatory attribute");
-        };
-        self.check_attribute(elem.clone())?;
-
-        let _annot = self.parse_single_annotation_child(elem.clone())?;
-
-        match value.as_str() {
-            "collapse" => Ok((fixed, Whitespace::Collapse)),
-            "preserve" => Ok((fixed, Whitespace::Preserve)),
-            "replace" => Ok((fixed, Whitespace::Replace)),
-            _ => todo!("raise error"),
-        }
-    }
-
-    fn parse_pattern(&mut self, mut elem: Element) -> Result<String, XSDParseError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert!(elem.local_name().as_ref() == SCHEMA_PATTERN_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        let Some(value) = elem.remove_attribute("value", None) else {
-            todo!("raise error because of missing a mandatory attribute");
-        };
-        self.check_attribute(elem.clone())?;
-
-        let _annot = self.parse_single_annotation_child(elem.clone())?;
-        Ok(value)
-    }
-
-    fn parse_include(&mut self, mut elem: Element) -> Result<(), XSDParseError> {
+    fn parse_include(&mut self, mut elem: Element) -> Result<(), XSDError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_INCLUDE_NAME);
 
         let _id = elem.remove_attribute("id", None);
         let Some(schema_location) =
-            self.extract_any_uri(elem.clone(), "schemaLocation", XSDParseError::SrcInclude)?
+            self.extract_any_uri(elem.clone(), "schemaLocation", XSDError::SrcInclude)?
         else {
             error!(
                 self.handler,
@@ -3411,12 +3570,10 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 elem,
                 "The mandatory attribute 'schemaLocation' of 'include' is missing."
             );
-            return Err(XSDParseError::SrcInclude);
+            return Err(XSDError::SrcInclude);
         };
 
         self.check_attribute(elem.clone())?;
-
-        let _annot = self.parse_single_annotation_child(elem.clone())?;
 
         if self.included_resources.contains(&schema_location) {
             // According to the note in Section 4.2.1 of XSD 1.0 Part 1,
@@ -3431,7 +3588,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         }
 
         let mut reader = XMLReader::builder()
-            .set_handler(create_handler(&mut self.handler))
+            .set_handler(create_handler(&mut *self.handler))
             .build();
 
         let included_doc = match reader.parse_uri(&schema_location, None) {
@@ -3454,7 +3611,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     "The included resource '{}' could not be parsed as XML.",
                     schema_location
                 );
-                return Err(XSDParseError::SrcInclude);
+                return Err(XSDError::SrcInclude);
             }
         };
 
@@ -3479,7 +3636,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     .unwrap_or_default(),
                 schema.local_name()
             );
-            return Err(XSDParseError::SrcInclude);
+            return Err(XSDError::SrcInclude);
         }
 
         if let Some(target_namespace) = schema.get_attribute("targetNamespace", None) {
@@ -3497,7 +3654,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     target_namespace,
                     self.target_namespace.as_deref().unwrap_or("(null)")
                 );
-                return Err(XSDParseError::SrcInclude);
+                return Err(XSDError::SrcInclude);
             }
         } else if let Some(target_namespace) = self.target_namespace.as_deref() {
             schema
@@ -3521,11 +3678,10 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         self.schema.attgroup_defs.extend(schema.attgroup_defs);
         self.schema.modelgroup_defs.extend(schema.modelgroup_defs);
         self.schema.notation_decls.extend(schema.notation_decls);
-        self.schema.annotations.extend(schema.annotations);
         Ok(())
     }
 
-    fn parse_import(&mut self, mut elem: Element) -> Result<(), XSDParseError> {
+    fn parse_import(&mut self, mut elem: Element) -> Result<(), XSDError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_IMPORT_NAME);
 
@@ -3543,16 +3699,14 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                         elem.local_name(),
                         err
                     );
-                    Err(XSDParseError::SrcImport)
+                    Err(XSDError::SrcImport)
                 }
             }
         }).transpose()?;
         let schema_location =
-            self.extract_any_uri(elem.clone(), "schemaLocation", XSDParseError::SrcImport)?;
+            self.extract_any_uri(elem.clone(), "schemaLocation", XSDError::SrcImport)?;
 
         self.check_attribute(elem.clone())?;
-
-        let _annot = self.parse_single_annotation_child(elem.clone())?;
 
         let Some(schema_location) = schema_location else {
             // Unlike 'include', schemaLocation is an optional attribute, so this
@@ -3576,7 +3730,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         }
 
         let mut reader = XMLReader::builder()
-            .set_handler(create_handler(&mut self.handler))
+            .set_handler(create_handler(&mut *self.handler))
             .build();
 
         let included_doc = match reader.parse_uri(&schema_location, None) {
@@ -3599,7 +3753,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     "The imported resource '{}' could not be parsed as XML.",
                     schema_location
                 );
-                return Err(XSDParseError::SrcImport);
+                return Err(XSDError::SrcImport);
             }
         };
 
@@ -3624,7 +3778,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     .unwrap_or_default(),
                 schema.local_name()
             );
-            return Err(XSDParseError::SrcImport);
+            return Err(XSDError::SrcImport);
         }
 
         if self.target_namespace.as_deref() == namespace.as_deref() {
@@ -3636,11 +3790,11 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 "The '{}' must not be the imported schema's namespace because it is as same as the parent schema's one.",
                 namespace.as_deref().unwrap_or("(null)")
             );
-            return Err(XSDParseError::SrcImport);
+            return Err(XSDError::SrcImport);
         }
 
         let target_namespace = self
-            .get_any_uri(schema.clone(), "targetNamespace", XSDParseError::SrcImport)?
+            .get_any_uri(schema.clone(), "targetNamespace", XSDError::SrcImport)?
             .map(|ns| ns.to_string());
         if target_namespace != namespace {
             // [src-import] clause 3
@@ -3652,7 +3806,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 target_namespace.as_deref().unwrap_or("(null)"),
                 namespace.as_deref().unwrap_or("(null)")
             );
-            return Err(XSDParseError::SrcImport);
+            return Err(XSDError::SrcImport);
         }
 
         // It would be easier if child elements could be retrieved and merged into the parse
@@ -3671,17 +3825,16 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         self.schema.attgroup_defs.extend(schema.attgroup_defs);
         self.schema.modelgroup_defs.extend(schema.modelgroup_defs);
         self.schema.notation_decls.extend(schema.notation_decls);
-        self.schema.annotations.extend(schema.annotations);
         Ok(())
     }
 
-    fn parse_redefine(&mut self, mut elem: Element) -> Result<(), XSDParseError> {
+    fn parse_redefine(&mut self, mut elem: Element) -> Result<(), XSDError> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_REDEFINE_NAME);
 
         let _id = elem.remove_attribute("id", None);
         let Some(schema_location) =
-            self.extract_any_uri(elem.clone(), "schemaLocation", XSDParseError::SrcRedefine)?
+            self.extract_any_uri(elem.clone(), "schemaLocation", XSDError::SrcRedefine)?
         else {
             error!(
                 self.handler,
@@ -3690,7 +3843,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 "The mandatory attribute 'schemaLocation' of '{}' is missing.",
                 elem.local_name()
             );
-            return Err(XSDParseError::SrcRedefine);
+            return Err(XSDError::SrcRedefine);
         };
 
         self.check_attribute(elem.clone())?;
@@ -3710,9 +3863,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     }
 
                     match elem.local_name().as_ref() {
-                        SCHEMA_ANNOTATION_NAME => {
-                            let _annot = self.parse_annotation(elem)?;
-                        }
+                        SCHEMA_ANNOTATION_NAME => {}
                         SCHEMA_SIMPLETYPE_NAME => simple_types.push(elem),
                         SCHEMA_COMPLEXTYPE_NAME => complex_types.push(elem),
                         SCHEMA_GROUP_NAME => groups.push(elem),
@@ -3741,7 +3892,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
             && att_groups.is_empty();
 
         let mut reader = XMLReader::builder()
-            .set_handler(create_handler(&mut self.handler))
+            .set_handler(create_handler(&mut *self.handler))
             .build();
 
         let included_doc = match reader.parse_uri(&schema_location, None) {
@@ -3764,7 +3915,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     "The redefined resource '{}' could not be parsed as XML.",
                     schema_location
                 );
-                return Err(XSDParseError::SrcRedefine);
+                return Err(XSDError::SrcRedefine);
             }
         };
 
@@ -3789,7 +3940,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     .unwrap_or_default(),
                 schema.local_name()
             );
-            return Err(XSDParseError::SrcRedefine);
+            return Err(XSDError::SrcRedefine);
         }
 
         if let Some(target_namespace) = schema.get_attribute("targetNamespace", None) {
@@ -3807,7 +3958,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     target_namespace,
                     self.target_namespace.as_deref().unwrap_or("(null)")
                 );
-                return Err(XSDParseError::SrcRedefine);
+                return Err(XSDError::SrcRedefine);
             }
         } else if let Some(target_namespace) = self.target_namespace.as_deref() {
             schema
@@ -3831,157 +3982,14 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         self.schema.attgroup_defs.extend(schema.attgroup_defs);
         self.schema.modelgroup_defs.extend(schema.modelgroup_defs);
         self.schema.notation_decls.extend(schema.notation_decls);
-        self.schema.annotations.extend(schema.annotations);
         Ok(())
-    }
-
-    fn parse_notation(&mut self, mut elem: Element) -> Result<Notation, XSDParseError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_NOTATION_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        let Some(name) = self.extract_ncname(elem.clone(), "name", XSDParseError::SrcNotation)?
-        else {
-            error!(
-                self.handler,
-                SrcNotation,
-                elem,
-                "The attribute 'name' of '{}' is mandatory, but is absent.",
-                elem.local_name()
-            );
-            return Err(XSDParseError::SrcNotation);
-        };
-        let public = match elem.remove_attribute("public", None) {
-            Some(public) => match SCHEMA_BUILTIN_TOKEN.parse_with_elem(&public, elem.clone()) {
-                Ok(SchemaValue::String(token)) => Some(token),
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcNotation,
-                        elem,
-                        "The attribute 'public' of '{}' is failed to parse as token because {}.",
-                        elem.local_name().as_ref(),
-                        err
-                    );
-                    return Err(XSDParseError::SrcNotation);
-                }
-            },
-            None => todo!("raise error"),
-        };
-        let system = match elem.remove_attribute("system", None) {
-            Some(system) => match SCHEMA_BUILTIN_ANYURI.parse_with_elem(&system, elem.clone()) {
-                Ok(SchemaValue::AnyURI(uri)) => Some(uri),
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcNotation,
-                        elem,
-                        "The attribute 'system' of '{}' is failed to parse as anyURI because {}.",
-                        elem.local_name().as_ref(),
-                        err
-                    );
-                    return Err(XSDParseError::SrcNotation);
-                }
-            },
-            None => todo!("raise error"),
-        };
-        let annot = self.parse_single_annotation_child(elem.clone())?;
-
-        self.check_attribute(elem.clone())?;
-
-        Ok(Notation {
-            name,
-            target_namespace: self.target_namespace.clone(),
-            system_id: system,
-            public_id: public,
-            annotation: annot,
-        })
-    }
-
-    fn parse_annotation(&mut self, mut elem: Element) -> Result<Annotation, XSDParseError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_ANNOTATION_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        self.check_attribute(elem.clone())?;
-        elem.set_attribute("id", None, _id.as_deref()).ok();
-
-        let mut appinfo = vec![];
-        let mut documentation = vec![];
-        let mut children = elem.first_child();
-        while let Some(child) = children {
-            children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    match elem.local_name().as_ref() {
-                        SCHEMA_APPINFO_NAME => {
-                            appinfo.push(self.parse_appinfo(elem)?);
-                        }
-                        SCHEMA_DOCUMENTATION_NAME => {
-                            documentation.push(self.parse_documentation(elem)?);
-                        }
-                        _ => unallowed_element!(self.handler, elem),
-                    }
-                }
-                NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                _ => {}
-            }
-        }
-
-        Ok(Annotation {
-            appinfo,
-            documentation,
-            attributes: elem.attributes().collect(),
-        })
-    }
-
-    fn parse_appinfo(&mut self, mut elem: Element) -> Result<Element, XSDParseError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_APPINFO_NAME);
-
-        let source = elem.remove_attribute("source", None);
-        self.check_attribute(elem.clone())?;
-        elem.set_attribute("source", None, source.as_deref()).ok();
-
-        Ok(elem)
-    }
-
-    fn parse_documentation(&mut self, mut elem: Element) -> Result<Element, XSDParseError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_APPINFO_NAME);
-
-        let source = elem.remove_attribute("source", None);
-        self.check_attribute(elem.clone())?;
-        elem.set_attribute("source", None, source.as_deref()).ok();
-        Ok(elem)
-    }
-
-    /// For sequences that are children of `parent`, treat them as if they should contain
-    /// up to one annotation.
-    ///
-    /// The occurrence of any schema elements or text other than annotations is an error.
-    fn parse_single_annotation_child(
-        &mut self,
-        parent: Element,
-    ) -> Result<Option<Annotation>, XSDParseError> {
-        let mut children = parent.first_child();
-        let ret = self.pop_annotation(&mut children)?;
-        self.check_unexpected_schema_elements(children)?;
-        Ok(ret)
     }
 
     fn extract_qname(
         &mut self,
         mut elem: Element,
         name: &str,
-    ) -> Result<Option<(Option<Arc<str>>, Arc<str>)>, XSDParseError> {
+    ) -> Result<Option<(Option<Arc<str>>, Arc<str>)>, XSDError> {
         let Some(name) = elem.remove_attribute(name, None) else {
             return Ok(None);
         };
@@ -3999,7 +4007,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     elem.local_name(),
                     err
                 );
-                Err(XSDParseError::SrcQname)
+                Err(XSDError::SrcQname)
             }
         }
     }
@@ -4008,8 +4016,8 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         name: &str,
-        error: XSDParseError,
-    ) -> Result<Option<Arc<str>>, XSDParseError> {
+        error: XSDError,
+    ) -> Result<Option<Arc<str>>, XSDError> {
         let Some(ncname) = elem.remove_attribute(name, None) else {
             return Ok(None);
         };
@@ -4021,8 +4029,8 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         elem: Element,
         name: &str,
         value: &str,
-        error: XSDParseError,
-    ) -> Result<Option<Arc<str>>, XSDParseError> {
+        error: XSDError,
+    ) -> Result<Option<Arc<str>>, XSDError> {
         match SCHEMA_BUILTIN_NCNAME.parse_with_elem(value, elem.clone()) {
             Ok(SchemaValue::String(ret)) => Ok(Some(ret)),
             Ok(_) => internal_error!(self.handler, elem),
@@ -4045,8 +4053,8 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         name: &str,
-        error: XSDParseError,
-    ) -> Result<Option<bool>, XSDParseError> {
+        error: XSDError,
+    ) -> Result<Option<bool>, XSDError> {
         let Some(boolean) = elem.remove_attribute(name, None) else {
             return Ok(None);
         };
@@ -4073,8 +4081,8 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         name: &str,
-        error: XSDParseError,
-    ) -> Result<Option<Arc<URIStr>>, XSDParseError> {
+        error: XSDError,
+    ) -> Result<Option<Arc<URIStr>>, XSDError> {
         let Some(uri) = elem.remove_attribute(name, None) else {
             return Ok(None);
         };
@@ -4085,8 +4093,8 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         elem: Element,
         name: &str,
-        error: XSDParseError,
-    ) -> Result<Option<Arc<URIStr>>, XSDParseError> {
+        error: XSDError,
+    ) -> Result<Option<Arc<URIStr>>, XSDError> {
         let Some(uri) = elem.get_attribute(name, None) else {
             return Ok(None);
         };
@@ -4098,8 +4106,8 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         elem: Element,
         name: &str,
         value: &str,
-        error: XSDParseError,
-    ) -> Result<Option<Arc<URIStr>>, XSDParseError> {
+        error: XSDError,
+    ) -> Result<Option<Arc<URIStr>>, XSDError> {
         match SCHEMA_BUILTIN_ANYURI.parse_with_elem(value, elem.clone()) {
             Ok(SchemaValue::AnyURI(uri)) => Ok(Some(uri)),
             Ok(_) => internal_error!(self.handler, elem),
@@ -4124,7 +4132,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         name: &str,
         default: Option<usize>,
         allow_unbounded: bool,
-    ) -> Result<Option<usize>, XSDParseError> {
+    ) -> Result<Option<usize>, XSDError> {
         let Some(occur) = elem.remove_attribute(name, None) else {
             return Ok(default);
         };
@@ -4144,7 +4152,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                         "The value of the attribute '{}' is too large.",
                         name
                     );
-                    return Err(XSDParseError::TooLargeOccurence);
+                    return Err(XSDError::TooLargeOccurence);
                 }
                 Ok(Some(occurs as usize))
             }
@@ -4159,7 +4167,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                     SCHEMA_CHOICE_NAME,
                     err
                 );
-                Err(XSDParseError::SrcModelGroup)
+                Err(XSDError::SrcModelGroup)
             }
         }
     }
@@ -4169,7 +4177,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         mut elem: Element,
         target_namespace: Option<Arc<str>>,
         name: &str,
-    ) -> Result<NamespaceConstraint, XSDParseError> {
+    ) -> Result<NamespaceConstraint, XSDError> {
         match elem.remove_attribute(name, None) {
             Some(namespace) => {
                 let namespace = namespace.trim_matches(|c| XMLVersion::XML10.is_whitespace(c));
@@ -4203,7 +4211,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                                         elem.local_name(),
                                         err
                                     );
-                                    return Err(XSDParseError::SrcWildcard);
+                                    return Err(XSDError::SrcWildcard);
                                 }
                             }
                         }
@@ -4224,7 +4232,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         name: &str,
-    ) -> Result<ProcessContent, XSDParseError> {
+    ) -> Result<ProcessContent, XSDError> {
         match elem.remove_attribute(name, None) {
             Some(s) => {
                 let s = s.trim_matches(|c| XMLVersion::XML10.is_whitespace(c));
@@ -4242,7 +4250,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                             elem.local_name(),
                             s
                         );
-                        Err(XSDParseError::SrcWildcard)
+                        Err(XSDError::SrcWildcard)
                     }
                 }
             }
@@ -4256,7 +4264,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         name: &str,
         allow: FinalSet,
         allow_all: bool,
-    ) -> Result<Option<FinalSet>, XSDParseError> {
+    ) -> Result<Option<FinalSet>, XSDError> {
         let Some(fin) = elem.remove_attribute(name, None) else {
             return Ok(None);
         };
@@ -4288,8 +4296,8 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         mut elem: Element,
         name: &str,
-        error: XSDParseError,
-    ) -> Result<Option<QualificationForm>, XSDParseError> {
+        error: XSDError,
+    ) -> Result<Option<QualificationForm>, XSDError> {
         let Some(form) = elem.remove_attribute(name, None) else {
             return Ok(None);
         };
@@ -4313,142 +4321,12 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         }
     }
 
-    fn pop_facet(
-        &mut self,
-        children: &mut Option<Node<dyn NodeSpec>>,
-        base: &SimpleTypeDefinition,
-        builder: SimpleTypeDefinitionBuilder,
-    ) -> Result<Result<SimpleTypeDefinitionBuilder, SimpleTypeDefinitionBuilder>, XSDParseError>
-    {
-        while let Some(child) = children.take() {
-            *children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    let ret = match elem.local_name().as_ref() {
-                        SCHEMA_MINEXCLUSIVE_NAME => {
-                            let (_fixed, value) = self.parse_boundary(elem.clone(), base)?;
-                            builder.min_exclusive(value)
-                        }
-                        SCHEMA_MININCLUSIVE_NAME => {
-                            let (_fixed, value) = self.parse_boundary(elem.clone(), base)?;
-                            builder.min_inclusive(value)
-                        }
-                        SCHEMA_MAXEXCLUSIVE_NAME => {
-                            let (_fixed, value) = self.parse_boundary(elem.clone(), base)?;
-                            builder.max_exclusive(value)
-                        }
-                        SCHEMA_MAXINCLUSIVE_NAME => {
-                            let (_fixed, value) = self.parse_boundary(elem.clone(), base)?;
-                            builder.max_inclusive(value)
-                        }
-                        SCHEMA_TOTALDIGITS_NAME => {
-                            let (_fixed, value) = self.parse_total_digits(elem.clone())?;
-                            builder.total_digits(value)
-                        }
-                        SCHEMA_FRACDIGITS_NAME => {
-                            let (_fixed, value) = self.parse_fraction_digits(elem.clone())?;
-                            builder.fraction_digits(value)
-                        }
-                        SCHEMA_LENGTH_NAME => {
-                            let (_fixed, value) = self.parse_length(elem.clone())?;
-                            builder.length(value)
-                        }
-                        SCHEMA_MINLENGTH_NAME => {
-                            let (_fixed, value) = self.parse_length(elem.clone())?;
-                            builder.min_length(value)
-                        }
-                        SCHEMA_MAXLENGTH_NAME => {
-                            let (_fixed, value) = self.parse_length(elem.clone())?;
-                            builder.max_length(value)
-                        }
-                        SCHEMA_ENUMERATION_NAME => {
-                            let enumeration = self.parse_enumeration(elem.clone(), base)?;
-                            builder.enumeration(enumeration)
-                        }
-                        SCHEMA_WHITESPACE_NAME => {
-                            let (_fixed, ws) = self.parse_whitespace(elem.clone())?;
-                            builder.whitespace(ws)
-                        }
-                        SCHEMA_PATTERN_NAME => {
-                            let value = self.parse_pattern(elem.clone())?;
-                            builder.pattern(value)
-                        }
-                        _ => {
-                            *children = Some(child);
-                            unallowed_element!(self.handler, elem);
-                        }
-                    };
-
-                    match ret {
-                        Ok(builder) => return Ok(Ok(builder)),
-                        Err(err) => {
-                            error!(
-                                self.handler,
-                                SrcSimpleType,
-                                elem,
-                                "The simple type restriction by '{}' is invalid because {}",
-                                elem.local_name(),
-                                err
-                            );
-                            return Err(XSDParseError::SrcSimpleType);
-                        }
-                    }
-                }
-                NodeKind::Text(_) => unallowed_text!(
-                    self.handler,
-                    child.parent_node().unwrap().as_element().unwrap()
-                ),
-                _ => {}
-            }
-        }
-        Ok(Err(builder))
-    }
-
-    fn pop_annotation(
-        &mut self,
-        children: &mut Option<Node<dyn NodeSpec>>,
-    ) -> Result<Option<Annotation>, XSDParseError> {
-        while let Some(child) = children.take() {
-            *children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    match elem.local_name().as_ref() {
-                        SCHEMA_ANNOTATION_NAME => {
-                            let annot = self.parse_annotation(elem)?;
-                            return Ok(Some(annot));
-                        }
-                        _ => {
-                            *children = Some(child);
-                            return Ok(None);
-                        }
-                    }
-                }
-                NodeKind::Text(_) => unallowed_text!(
-                    self.handler,
-                    child.parent_node().unwrap().as_element().unwrap()
-                ),
-                _ => {}
-            }
-        }
-        Ok(None)
-    }
-
     fn pop_attr_decls(
         &mut self,
         children: &mut Option<Node<dyn NodeSpec>>,
         target_namespace: Option<Arc<str>>,
         loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
-    ) -> Result<(Vec<AttributeUse>, Option<Wildcard>), XSDParseError> {
+    ) -> Result<(Vec<AttributeUse>, Option<Wildcard>), XSDError> {
         let mut attribute_uses = vec![];
         // wildcards from attributeGroup
         let mut wildcards = vec![];
@@ -4518,7 +4396,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         children: &mut Option<Node<dyn NodeSpec>>,
         target_namespace: Option<Arc<str>>,
-    ) -> Result<Option<Particle>, XSDParseError> {
+    ) -> Result<Option<Particle>, XSDError> {
         while let Some(child) = children.take() {
             *children = child.next_sibling();
 
@@ -4558,7 +4436,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         &mut self,
         children: &mut Option<Node<dyn NodeSpec>>,
         target_namespace: Option<Arc<str>>,
-    ) -> Result<Option<Particle>, XSDParseError> {
+    ) -> Result<Option<Particle>, XSDError> {
         while let Some(child) = children.take() {
             *children = child.next_sibling();
 
@@ -4595,216 +4473,11 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         Ok(None)
     }
 
-    fn pop_idc(
-        &mut self,
-        children: &mut Option<Node<dyn NodeSpec>>,
-        target_namespace: Option<Arc<str>>,
-    ) -> Result<Option<IDCDefinition>, XSDParseError> {
-        while let Some(child) = children.take() {
-            *children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(mut elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    let idc_category = match elem.local_name().as_ref() {
-                        SCHEMA_UNIQUE_NAME => IDCCategory::Unique,
-                        SCHEMA_KEY_NAME => IDCCategory::Key,
-                        SCHEMA_KEYREF_NAME => IDCCategory::Keyref,
-                        _ => {
-                            *children = Some(child);
-                            return Ok(None);
-                        }
-                    };
-
-                    let _id = elem.remove_attribute("id", None);
-                    let Some(name) = self.extract_ncname(
-                        elem.clone(),
-                        "name",
-                        XSDParseError::SrcIdentityConstraint,
-                    )?
-                    else {
-                        error!(
-                            self.handler,
-                            SrcIdentityConstraint,
-                            elem,
-                            "The attribute 'name' of '{}' is mandatory, but is absent.",
-                            elem.local_name()
-                        );
-                        return Err(XSDParseError::SrcIdentityConstraint);
-                    };
-                    let referenced_key = if matches!(idc_category, IDCCategory::Keyref) {
-                        if let Some(refer) = elem.remove_attribute("refer", None) {
-                            match SCHEMA_BUILTIN_QNAME.parse_with_elem(&refer, elem.clone()) {
-                                Ok(SchemaValue::QName(nsname, local)) => Some((nsname, local)),
-                                Ok(_) => internal_error!(self.handler, elem),
-                                Err(err) => {
-                                    error!(
-                                        self.handler,
-                                        SrcIdentityConstraint,
-                                        elem,
-                                        "The attribute 'refer' of '{}' is failed to parse as ID because {}.",
-                                        elem.local_name().as_ref(),
-                                        err
-                                    );
-                                    return Err(XSDParseError::SrcIdentityConstraint);
-                                }
-                            }
-                        } else {
-                            error!(
-                                self.handler,
-                                SrcIdentityConstraint,
-                                elem.clone(),
-                                "The mandatory attribute 'refer' of '{}' is missing.",
-                                SCHEMA_KEYREF_NAME
-                            );
-                            return Err(XSDParseError::SrcIdentityConstraint);
-                        }
-                    } else {
-                        None
-                    };
-
-                    self.check_attribute(elem.clone())?;
-
-                    let mut children = elem.first_child();
-                    let mut annotation = vec![];
-                    if let Some(annot) = self.pop_annotation(&mut children)? {
-                        annotation.push(annot);
-                    }
-                    let Some((selector, annot)) = self.pop_selector(&mut children)? else {
-                        error!(
-                            self.handler,
-                            SrcIdentityConstraint,
-                            elem.clone(),
-                            "The mandatory element child 'selector' of '{}' is missing.",
-                            elem.local_name()
-                        );
-                        return Err(XSDParseError::SrcIdentityConstraint);
-                    };
-                    if let Some(annot) = annot {
-                        annotation.push(annot);
-                    }
-                    let mut fields = vec![];
-                    while let Some((field, annot)) = self.pop_field(&mut children)? {
-                        fields.push(field);
-                        if let Some(annot) = annot {
-                            annotation.push(annot);
-                        }
-                    }
-                    self.check_unexpected_schema_elements(children)?;
-
-                    return Ok(Some(IDCDefinition {
-                        name,
-                        target_namespace,
-                        idc_category,
-                        selector,
-                        fields,
-                        referenced_key,
-                        annotation,
-                    }));
-                }
-                NodeKind::Text(_) => unallowed_text!(
-                    self.handler,
-                    child.parent_node().unwrap().as_element().unwrap()
-                ),
-                _ => {}
-            }
-        }
-
-        Ok(None)
-    }
-
-    fn pop_selector(
-        &mut self,
-        children: &mut Option<Node<dyn NodeSpec>>,
-    ) -> Result<Option<(String, Option<Annotation>)>, XSDParseError> {
-        while let Some(child) = children.take() {
-            *children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(mut elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    if elem.local_name().as_ref() != SCHEMA_SELECTOR_NAME {
-                        *children = Some(child);
-                        return Ok(None);
-                    }
-
-                    let annot = self.parse_single_annotation_child(elem.clone())?;
-                    let _id = elem.remove_attribute("id", None);
-                    let Some(xpath) = elem.remove_attribute("xpath", None) else {
-                        error!(
-                            self.handler,
-                            SrcIdentityConstraint,
-                            elem.clone(),
-                            "The mandatory attribute 'xpath' of '{}' is missing.",
-                            elem.local_name()
-                        );
-                        return Err(XSDParseError::SrcIdentityConstraint);
-                    };
-                    return Ok(Some((xpath, annot)));
-                }
-                NodeKind::Text(_) => unallowed_text!(
-                    self.handler,
-                    child.parent_node().unwrap().as_element().unwrap()
-                ),
-                _ => {}
-            }
-        }
-        Ok(None)
-    }
-
-    fn pop_field(
-        &mut self,
-        children: &mut Option<Node<dyn NodeSpec>>,
-    ) -> Result<Option<(String, Option<Annotation>)>, XSDParseError> {
-        while let Some(child) = children.take() {
-            *children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(mut elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    if elem.local_name().as_ref() != SCHEMA_FIELD_NAME {
-                        *children = Some(child);
-                        return Ok(None);
-                    }
-
-                    let annot = self.parse_single_annotation_child(elem.clone())?;
-                    let _id = elem.remove_attribute("id", None);
-                    let Some(xpath) = elem.remove_attribute("xpath", None) else {
-                        error!(
-                            self.handler,
-                            SrcIdentityConstraint,
-                            elem.clone(),
-                            "The mandatory attribute 'xpath' of '{}' is missing.",
-                            elem.local_name()
-                        );
-                        return Err(XSDParseError::SrcIdentityConstraint);
-                    };
-                    return Ok(Some((xpath, annot)));
-                }
-                NodeKind::Text(_) => unallowed_text!(
-                    self.handler,
-                    child.parent_node().unwrap().as_element().unwrap()
-                ),
-                _ => {}
-            }
-        }
-        Ok(None)
-    }
-
     /// Raise an errors for attributes whose namespace is NULL or is the XSD namespace.
     ///
     /// Non-foreign attributes for which an error should not be raised must be removed
     /// before calling this method.
-    fn check_attribute(&mut self, elem: Element) -> Result<(), XSDParseError> {
+    fn check_attribute(&mut self, elem: Element) -> Result<(), XSDError> {
         let mut ret = Ok(());
         for att in elem.attributes().filter(|a| {
             a.namespace_name()
@@ -4818,7 +4491,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
                 att.local_name(),
                 elem.local_name()
             );
-            ret = Err(XSDParseError::UnallowedAttribute);
+            ret = Err(XSDError::UnallowedAttribute);
         }
         ret
     }
@@ -4826,7 +4499,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
     fn check_unexpected_schema_elements(
         &mut self,
         mut children: Option<Node<dyn NodeSpec>>,
-    ) -> Result<(), XSDParseError> {
+    ) -> Result<(), XSDError> {
         while let Some(child) = children {
             children = child.next_sibling();
 
@@ -4855,7 +4528,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
         particle: Option<Particle>,
         elem: Element,
         mixed: bool,
-    ) -> Result<Option<Particle>, XSDParseError> {
+    ) -> Result<Option<Particle>, XSDError> {
         match particle {
             Some(particle) => {
                 let Term::ModelGroup(model) = &particle.term else {
@@ -4918,7 +4591,7 @@ impl<'a, H: SAXHandler> XSDParseContext<'a, H> {
 fn attribute_complete_wildcard(
     wildcards: &[Wildcard],
     local_wildcard: Option<Wildcard>,
-) -> Result<Option<Wildcard>, XSDParseError> {
+) -> Result<Option<Wildcard>, XSDError> {
     if wildcards.is_empty() {
         // clause 2.1
         // If there are no <attributeGroup> [children] corresponding to attribute groups
@@ -5087,10 +4760,11 @@ enum Occurrence {
     Required,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 enum QualificationForm {
-    Qualified,
+    #[default]
     Unqualified,
+    Qualified,
 }
 
 #[derive(Debug, Clone)]
@@ -5318,13 +4992,15 @@ impl Wildcard {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 enum IDCCategory {
+    #[default]
     Key,
     Keyref,
     Unique,
 }
 
+#[derive(Default)]
 struct IDCDefinition {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
@@ -5332,7 +5008,6 @@ struct IDCDefinition {
     selector: String,
     fields: Vec<String>,
     referenced_key: Option<(Option<Arc<str>>, Arc<str>)>,
-    annotation: Vec<Annotation>,
 }
 
 struct Notation {
@@ -5340,7 +5015,6 @@ struct Notation {
     target_namespace: Option<Arc<str>>,
     system_id: Option<Arc<URIStr>>,
     public_id: Option<Arc<str>>,
-    annotation: Option<Annotation>,
 }
 
 /// Annotation component.

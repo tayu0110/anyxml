@@ -75,6 +75,7 @@ impl ErrorHandler for XMLConfErrorHandler {
             | XMLErrorDomain::RncParser
             | XMLErrorDomain::RngValid
             | XMLErrorDomain::XSDParser
+            | XMLErrorDomain::XSDValid
             | XMLErrorDomain::C14N
             | XMLErrorDomain::XInclude => self.error += 1,
         }
