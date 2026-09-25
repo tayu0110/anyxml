@@ -33,6 +33,9 @@ impl Atom for char {
     }
 
     fn next(&self) -> Option<Self> {
+        if *self == char::MAX {
+            return None;
+        }
         let mut range = *self..;
         range.next(); // current char
         range.next()

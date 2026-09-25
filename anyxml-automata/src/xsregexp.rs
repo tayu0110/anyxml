@@ -474,7 +474,7 @@ fn parse_cat_esc<'a>(
     if !regexp.starts_with("\\p{") {
         return Err(RegexpError::SyntaxError);
     }
-    *regexp = &regexp[2..];
+    *regexp = &regexp[3..];
     let ret = parse_char_prop(regexp)?;
     if !regexp.starts_with("}") {
         return Err(RegexpError::SyntaxError);
@@ -490,7 +490,7 @@ fn parse_compl_esc<'a>(
     if !regexp.starts_with("\\P{") {
         return Err(RegexpError::SyntaxError);
     }
-    *regexp = &regexp[2..];
+    *regexp = &regexp[3..];
     let ret = complement_ranges(parse_char_prop(regexp)?);
     if !regexp.starts_with("}") {
         return Err(RegexpError::SyntaxError);
@@ -1105,5 +1105,9 @@ mod tests {
         assert!(XSRegexp::compile("[\\]").is_err());
         // nistData/atomic/unsignedInt/Schema+Instance/NISTSchema-SV-IV-atomic-unsignedInt-pattern-3.xsd
         assert!(XSRegexp::compile("\\d{5}").is_ok());
+        // msData/additional/test69275.xsd
+        assert!(XSRegexp::compile("\\p{IsCJKRadicalsSupplement}*").is_ok());
+        // msData/regex/reF42.xsd
+        assert!(XSRegexp::compile("[^\\P{IsBasicLatin}]").is_ok());
     }
 }
