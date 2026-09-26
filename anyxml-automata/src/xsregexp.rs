@@ -1109,5 +1109,7 @@ mod tests {
         assert!(XSRegexp::compile("\\p{IsCJKRadicalsSupplement}*").is_ok());
         // msData/regex/reF42.xsd
         assert!(XSRegexp::compile("[^\\P{IsBasicLatin}]").is_ok());
+        // msData/element/elemE001.xsd
+        assert!(XSRegexp::compile("\\p{IsGreek}").is_ok());
     }
 }
