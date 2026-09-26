@@ -364,26 +364,34 @@ fn parse_pos_char_group(
         };
         if !regexp.starts_with('-') || regexp.starts_with("-[") {
             // If there are no consecutive a hyphen, this is XmlCharIncDash or charClassEsc.
-            // If “-” continues, character class subtraction begins,
+            // If "-" continues, character class subtraction begins,
             // so it is still XmlCharIncDash or charClassEsc.
             return Ok(Box::new(once((start, start))));
         }
-        *regexp = &regexp[1..];
+        assert!(regexp.starts_with('-'));
+        // Since it is unclear whether the leading "-" is a seRange separator or
+        // a character that matches `XmlCharIncDash`, the `regexp` is not rewritten.
+        let after = &regexp[1..];
 
-        if regexp.is_empty() {
+        if after.is_empty() {
             return Err(RegexpError::SyntaxError);
         }
 
-        // If there are consecutive a hyphen, this is seRange.
-        // Furthermore, if there are consecutive backslashes, it is SingleCharEsc.
-        let end = if regexp.starts_with('\\') {
+        // To match seRange, "-" must be followed by a charOrEsc.
+        let end = if after.starts_with('\\') {
+            // If there is a sequence of "\", it is a charOrEsc that matches SingleCharEsc.
+            *regexp = after;
             parse_single_char_esc(regexp)?.next().unwrap().0
         } else {
-            let end = regexp.chars().next().unwrap();
-            *regexp = &regexp[end.len_utf8()..];
+            // If it doesn't match SingleCharEsc, it must match XmlChar.
+            // [21] XmlChar ::= [^\#x2D#x5B#x5D]
+            let end = after.chars().next().unwrap();
             if matches!(end, '\x2D' | '\x5B' | '\x5D') {
-                return Err(RegexpError::InvalidCharacter);
+                // If it doesn't match, it is not part of seRange, so "-" is not
+                // a seRange delimiter but a character that matches XmlCharIncDash.
+                return Ok(Box::new(once((start, start))));
             }
+            *regexp = &after[end.len_utf8()..];
             end
         };
 
@@ -394,24 +402,24 @@ fn parse_pos_char_group(
     }
 
     let mut res = Box::new(empty()) as Box<dyn Iterator<Item = (char, char)>>;
-    let mut hypen = false;
+    let mut hyphen = false;
     let mut init = false;
     let mut last_hyphen = false;
     while !regexp.starts_with("]") && !regexp.starts_with("-[") {
         res = Box::new(union_ranges(
             res,
-            parse_pos_char_group_once(regexp, &mut hypen)?,
+            parse_pos_char_group_once(regexp, &mut hyphen)?,
         ));
         if last_hyphen {
             // If the hyphen that should be at the end is already present, it is incorrect.
             return Err(RegexpError::SyntaxError);
         }
-        if init && hypen {
+        if init && hyphen {
             // If there is a hyphen at any point other than the start of a loop,
             // it must be the last hyphen.
             last_hyphen = true;
         }
-        hypen = false;
+        hyphen = false;
         init = true;
     }
 
@@ -1111,5 +1119,7 @@ mod tests {
         assert!(XSRegexp::compile("[^\\P{IsBasicLatin}]").is_ok());
         // msData/element/elemE001.xsd
         assert!(XSRegexp::compile("\\p{IsGreek}").is_ok());
+        // msData/element/elemU015.xsd
+        assert!(XSRegexp::compile("[ae-]x").is_ok());
     }
 }
