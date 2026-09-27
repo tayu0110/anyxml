@@ -8,3 +8,4 @@
 /resources/*.tar.gz
 /benches/dataset/*.gml
 /.vscode
+/.cargo

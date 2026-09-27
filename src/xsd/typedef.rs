@@ -1451,7 +1451,6 @@ pub struct ComplexTypeDefinition {
     pub(super) attribute_wildcard: Option<Wildcard>,
     pub(super) content_type: ContentType,
     pub(super) prohibited_substitutions: BlockSet,
-    // annotation: (),
 }
 
 #[derive(Clone)]

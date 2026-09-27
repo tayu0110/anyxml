@@ -29,8 +29,8 @@ use crate::{
         },
     },
     xsdtypes::{
-        SCHEMA_BUILTIN_ANYURI, SCHEMA_BUILTIN_BOOLEAN, SCHEMA_BUILTIN_NCNAME,
-        SCHEMA_BUILTIN_NONNEGATIVE_INTEGER, SCHEMA_BUILTIN_QNAME, SchemaValue,
+        SCHEMA_BUILTIN_ANYURI, SCHEMA_BUILTIN_BOOLEAN, SCHEMA_BUILTIN_NCNAME, SCHEMA_BUILTIN_QNAME,
+        SchemaValue,
     },
 };
 
@@ -303,11 +303,11 @@ pub struct XSDParseHandler<H: SAXHandler = DefaultSAXHandler> {
     schema: Schema,
     last_error: Result<(), XMLError>,
     locator: Arc<Locator>,
-    skip_depth: usize,
 
     // context
     target_namespace: Option<Arc<str>>,
     unnamed: usize,
+    skip_depth: usize,
     // context stack
     ns_stack: NamespaceStack,
     element_stack: Vec<&'static str>,
@@ -325,7 +325,13 @@ pub struct XSDParseHandler<H: SAXHandler = DefaultSAXHandler> {
     imports: Vec<(Option<Box<str>>, URIString)>,
 
     // temporary component buffer
-    simple_type: Box<SimpleTypeDefinition>,
+    st_stack: Vec<SimpleTypeDefinition>,
+    ct_stack: Vec<ComplexTypeDefinition>,
+    ed_stack: Vec<ElementDeclaration>,
+    pt_stack: Vec<Particle>,
+    attribute_decl: Box<AttributeDeclaration>,
+    attr_group_def: Box<AttributeGroupDefinition>,
+    model_group_def: Box<ModelGroupDefinition>,
     idc: Box<IDCDefinition>,
 }
 
@@ -347,7 +353,13 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             final_default: FinalSet::default(),
             includes: vec![],
             imports: vec![],
-            simple_type: Box::default(),
+            st_stack: vec![],
+            ct_stack: vec![],
+            ed_stack: vec![],
+            pt_stack: vec![],
+            attribute_decl: Box::default(),
+            attr_group_def: Box::default(),
+            model_group_def: Box::default(),
             idc: Box::default(),
         }
     }
@@ -370,6 +382,129 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             Some((Some(namespace.namespace_name.clone()), value.into()))
         } else {
             Some((None, value.into()))
+        }
+    }
+
+    fn get_element_default(&mut self, atts: &Attributes) -> Option<ValueConstraint> {
+        // The following SCCs should be validated, but since neither the type nor the
+        // element content model is clear at this point, they will be checked later.
+        // - [cos-valid-default] clause 1
+        //   if type is simple, the value must be match to this type.
+        // - [cos-valid-default] clause 2.1
+        //   if type is complex and its content type is empty or elemtn-only,
+        //   any default value must not be set.
+        // - [cos-valid-default] clause 2.2.1
+        //   if type is complex and its content type is simple, the value must be match to the simple type.
+        // - [cos-valid-default] clause 2.2.2
+        //   if type is complex and its content type is mixed and its particle is not emptiable,
+        //   any default value must not be set.
+        match (
+            atts.get_value_by_qname("default"),
+            atts.get_value_by_qname("fixed"),
+        ) {
+            (Some(_), Some(_)) => {
+                let msg =
+                    "The attribute 'default' and 'fixed' of <element> must not both be present.";
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::SrcElement),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Borrowed(msg),
+                });
+                None
+            }
+            (None, None) => None,
+            (Some(default), None) => Some(ValueConstraint::Default(default.into())),
+            (None, Some(fixed)) => Some(ValueConstraint::Fixed(fixed.into())),
+        }
+    }
+
+    fn get_attribute_default(&mut self, atts: &Attributes) -> Option<ValueConstraint> {
+        // The following SCCs should be validated, but since the
+        // type is clear at this point, they will be checked later.
+        // - [a-props-correct] clause 2
+        //   the value must be match to the declarated type.
+        match (
+            atts.get_value_by_qname("default"),
+            atts.get_value_by_qname("fixed"),
+        ) {
+            (Some(_), Some(_)) => {
+                // [src-attribute] clause 1
+                // default and fixed must not both be present.
+                let msg =
+                    "The attribute 'default' and 'fixed' of <attribute> must not both be present.";
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::SrcAttribute),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Borrowed(msg),
+                });
+                None
+            }
+            (None, None) => None,
+            (Some(default), None) => Some(ValueConstraint::Default(default.into())),
+            (None, Some(fixed)) => Some(ValueConstraint::Fixed(fixed.into())),
+        }
+    }
+
+    fn get_namespace_constraint(
+        &self,
+        atts: &Attributes,
+        name: &str,
+    ) -> Option<NamespaceConstraint> {
+        let value = atts.get_value_by_qname(name)?;
+        match value {
+            "##any" => Some(NamespaceConstraint::Any),
+            "##other" => Some(NamespaceConstraint::Not(self.target_namespace.clone())),
+            _ => {
+                let mut list = vec![];
+                for uri in value.split_ascii_whitespace() {
+                    if uri == "##targetNamespace" {
+                        list.push(self.target_namespace.clone());
+                    } else if uri == "##local" {
+                        list.push(None);
+                    } else {
+                        list.push(Some(uri.into()));
+                    }
+                }
+                // It is unclear whether duplicates should be treated as errors,
+                // but for the purposes of this process, they will simply be removed
+                // rather than treated as errors.
+                list.sort_unstable();
+                list.dedup();
+                Some(NamespaceConstraint::List(list))
+            }
+        }
+    }
+
+    fn get_scope(&self) -> Option<Scope> {
+        for &name in self.element_stack.iter().rev() {
+            match name {
+                SCHEMA_COMPLEXTYPE_NAME => {
+                    if let Some(ct) = self.ct_stack.last() {
+                        return Some(Scope::Local(ct.target_namespace.clone(), ct.name.clone()));
+                    }
+                }
+                SCHEMA_GROUP_NAME | SCHEMA_ATTGROUP_NAME => return None,
+                _ => {}
+            }
+        }
+        Some(Scope::Global)
+    }
+
+    fn push_attribute_use(&mut self, attuse: AttributeUse) {
+        if self.element_stack.last() == Some(&SCHEMA_ATTGROUP_NAME) {
+            self.attr_group_def.attribute_uses.push(attuse);
+        } else if let Some(ct) = self.ct_stack.last_mut() {
+            ct.attribute_uses.push(attuse);
         }
     }
 }
@@ -515,7 +650,12 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
             }
             SCHEMA_SIMPLETYPE_NAME => {
                 if self.element_stack.last() == Some(&SCHEMA_RESTRICTION_NAME)
-                    && !self.simple_type.base_type_definition.1.is_empty()
+                    && self.element_stack[..self.element_stack.len() - 1].last()
+                        == Some(&SCHEMA_SIMPLETYPE_NAME)
+                    && !self
+                        .st_stack
+                        .last()
+                        .is_some_and(|st| st.base_type_definition.1.is_empty())
                 {
                     // [src-restriction-base-or-simpleType]
                     // If the "base" attribute is present in <restriction>,
@@ -534,7 +674,10 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 } else if self.element_stack.last() == Some(&SCHEMA_LIST_NAME)
-                    && !self.simple_type.base_type_definition.1.is_empty()
+                    && !self
+                        .st_stack
+                        .last()
+                        .is_some_and(|st| st.base_type_definition.1.is_empty())
                 {
                     // [src-list-itemType-or-simpleType]
                     // If the `itemType` attribute is present,
@@ -558,12 +701,16 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 // declaration. Since the meta-schema validator is responsible for
                 // reporting errors when required attributes are missing, "name" can
                 // be treated as an optional attribute here.
-                self.simple_type.name = atts
-                    .get_value_by_qname("name")
-                    .map(Arc::from)
-                    .unwrap_or_else(|| self.dummy_name());
-                self.simple_type.target_namespace = self.target_namespace.clone();
-                self.simple_type.r#final = get_final(atts, "final").unwrap_or_default();
+                let new = SimpleTypeDefinition {
+                    name: atts
+                        .get_value_by_qname("name")
+                        .map(Arc::from)
+                        .unwrap_or_else(|| self.dummy_name()),
+                    target_namespace: self.target_namespace.clone(),
+                    r#final: get_final(atts, "final").unwrap_or_default(),
+                    ..Default::default()
+                };
+                self.st_stack.push(new);
                 self.element_stack.push(SCHEMA_SIMPLETYPE_NAME);
             }
             SCHEMA_RESTRICTION_NAME
@@ -572,20 +719,26 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 // 'restriction' under a simple type definition
 
                 // Since the child may contain <simpleType>, "base" is not a required element.
-                if let Some((ns, loc)) = self.get_qname(atts, "base") {
-                    self.simple_type.base_type_definition = (ns, loc);
+                if let Some((ns, loc)) = self.get_qname(atts, "base")
+                    && let Some(st) = self.st_stack.last_mut()
+                {
+                    st.base_type_definition = (ns, loc);
                 }
                 self.element_stack.push(SCHEMA_RESTRICTION_NAME);
             }
             SCHEMA_LIST_NAME => {
                 // Since the child may contain <simpleType>, "itemType" is not a required element.
-                if let Some((pre, loc)) = self.get_qname(atts, "itemType") {
-                    self.simple_type.variety = Some(Variety::List(pre, loc));
+                if let Some((pre, loc)) = self.get_qname(atts, "itemType")
+                    && let Some(st) = self.st_stack.last_mut()
+                {
+                    st.variety = Some(Variety::List(pre, loc));
                 }
                 self.element_stack.push(SCHEMA_LIST_NAME);
             }
             SCHEMA_UNION_NAME => {
-                if let Some(member_types) = atts.get_value_by_qname("memberTypes") {
+                if let Some(member_types) = atts.get_value_by_qname("memberTypes")
+                    && let Some(st) = self.st_stack.last_mut()
+                {
                     let mut buf = vec![];
                     for member in member_types.split_ascii_whitespace() {
                         if let Some((pre, loc)) = member.split_once(':') {
@@ -598,7 +751,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                             buf.push((None, member.into()));
                         }
                     }
-                    self.simple_type.variety = Some(Variety::Union(buf.into()));
+                    st.variety = Some(Variety::Union(buf.into()));
                 }
                 self.element_stack.push(SCHEMA_UNION_NAME);
             }
@@ -610,8 +763,10 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 };
-                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
-                self.simple_type.facets.length = Some(Length { value, fixed });
+                if let Some(st) = self.st_stack.last_mut() {
+                    let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                    st.facets.length = Some(Length { value, fixed });
+                }
                 self.element_stack.push(SCHEMA_LENGTH_NAME);
             }
             SCHEMA_MINLENGTH_NAME => {
@@ -622,8 +777,10 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 };
-                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
-                self.simple_type.facets.min_length = Some(Length { value, fixed });
+                if let Some(st) = self.st_stack.last_mut() {
+                    let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                    st.facets.min_length = Some(Length { value, fixed });
+                }
                 self.element_stack.push(SCHEMA_MINLENGTH_NAME);
             }
             SCHEMA_MAXLENGTH_NAME => {
@@ -634,8 +791,10 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 };
-                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
-                self.simple_type.facets.max_length = Some(Length { value, fixed });
+                if let Some(st) = self.st_stack.last_mut() {
+                    let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                    st.facets.max_length = Some(Length { value, fixed });
+                }
                 self.element_stack.push(SCHEMA_MAXLENGTH_NAME);
             }
             SCHEMA_PATTERN_NAME => {
@@ -659,9 +818,11 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 }
-                self.simple_type.facets.pattern.push(Pattern {
-                    value: regex.into(),
-                });
+                if let Some(st) = self.st_stack.last_mut() {
+                    st.facets.pattern.push(Pattern {
+                        value: regex.into(),
+                    });
+                }
                 self.element_stack.push(SCHEMA_PATTERN_NAME);
             }
             SCHEMA_ENUMERATION_NAME => {
@@ -669,9 +830,11 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 };
-                self.simple_type.facets.enumeration.push(Enumeration {
-                    value: value.into(),
-                });
+                if let Some(st) = self.st_stack.last_mut() {
+                    st.facets.enumeration.push(Enumeration {
+                        value: value.into(),
+                    });
+                }
                 self.element_stack.push(SCHEMA_ENUMERATION_NAME);
             }
             SCHEMA_WHITESPACE_NAME => {
@@ -689,7 +852,9 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         return;
                     }
                 };
-                self.simple_type.facets.whitespace = Some(WhitespaceConstraint { value, fixed });
+                if let Some(st) = self.st_stack.last_mut() {
+                    st.facets.whitespace = Some(WhitespaceConstraint { value, fixed });
+                }
                 self.element_stack.push(SCHEMA_WHITESPACE_NAME);
             }
             SCHEMA_MAXINCLUSIVE_NAME => {
@@ -697,11 +862,13 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 };
-                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
-                self.simple_type.facets.max_inclusive = Some(Boundary {
-                    value: value.into(),
-                    fixed,
-                });
+                if let Some(st) = self.st_stack.last_mut() {
+                    let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                    st.facets.max_inclusive = Some(Boundary {
+                        value: value.into(),
+                        fixed,
+                    });
+                }
                 self.element_stack.push(SCHEMA_MAXINCLUSIVE_NAME);
             }
             SCHEMA_MAXEXCLUSIVE_NAME => {
@@ -709,11 +876,13 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 };
-                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
-                self.simple_type.facets.max_exclusive = Some(Boundary {
-                    value: value.into(),
-                    fixed,
-                });
+                if let Some(st) = self.st_stack.last_mut() {
+                    let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                    st.facets.max_exclusive = Some(Boundary {
+                        value: value.into(),
+                        fixed,
+                    });
+                }
                 self.element_stack.push(SCHEMA_MAXEXCLUSIVE_NAME);
             }
             SCHEMA_MINEXCLUSIVE_NAME => {
@@ -721,11 +890,13 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 };
-                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
-                self.simple_type.facets.min_exclusive = Some(Boundary {
-                    value: value.into(),
-                    fixed,
-                });
+                if let Some(st) = self.st_stack.last_mut() {
+                    let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                    st.facets.min_exclusive = Some(Boundary {
+                        value: value.into(),
+                        fixed,
+                    });
+                }
                 self.element_stack.push(SCHEMA_MINEXCLUSIVE_NAME);
             }
             SCHEMA_MININCLUSIVE_NAME => {
@@ -733,11 +904,13 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 };
-                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
-                self.simple_type.facets.min_inclusive = Some(Boundary {
-                    value: value.into(),
-                    fixed,
-                });
+                if let Some(st) = self.st_stack.last_mut() {
+                    let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                    st.facets.min_inclusive = Some(Boundary {
+                        value: value.into(),
+                        fixed,
+                    });
+                }
                 self.element_stack.push(SCHEMA_MININCLUSIVE_NAME);
             }
             SCHEMA_TOTALDIGITS_NAME => {
@@ -748,8 +921,10 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 };
-                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
-                self.simple_type.facets.total_digits = Some(Length { value, fixed });
+                if let Some(st) = self.st_stack.last_mut() {
+                    let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                    st.facets.total_digits = Some(Length { value, fixed });
+                }
                 self.element_stack.push(SCHEMA_TOTALDIGITS_NAME);
             }
             SCHEMA_FRACDIGITS_NAME => {
@@ -760,8 +935,10 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 };
-                let fixed = get_boolean(atts, "fixed").unwrap_or_default();
-                self.simple_type.facets.fraction_digits = Some(Length { value, fixed });
+                if let Some(st) = self.st_stack.last_mut() {
+                    let fixed = get_boolean(atts, "fixed").unwrap_or_default();
+                    st.facets.fraction_digits = Some(Length { value, fixed });
+                }
                 self.element_stack.push(SCHEMA_FRACDIGITS_NAME);
             }
             SCHEMA_COMPLEXTYPE_NAME => {
@@ -780,15 +957,241 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 self.element_stack.push(SCHEMA_EXTENSION_NAME);
             }
             SCHEMA_GROUP_NAME => {
+                let should_named = matches!(
+                    self.element_stack.last().copied(),
+                    Some(SCHEMA_SCHEMA_NAME | SCHEMA_REDEFINE_NAME)
+                );
+                if should_named && let Some(name) = atts.get_value_by_qname("name") {
+                    self.model_group_def.name = name.into();
+                    self.model_group_def.target_namespace = self.target_namespace.clone();
+                    // push dummy data
+                    self.pt_stack.push(Particle {
+                        min_occurs: 1,
+                        max_occurs: 1,
+                        term: Term::ModelGroup(ModelGroup::default()),
+                    });
+                } else if !should_named && let Some((ns, local)) = self.get_qname(atts, "ref") {
+                    let min_occurs = get_occurs(atts, "minOccurs").unwrap_or(1);
+                    let max_occurs = get_occurs(atts, "maxOccurs").unwrap_or(1);
+                    self.pt_stack.push(Particle {
+                        min_occurs,
+                        max_occurs,
+                        term: Term::ModelGroupRef(ns, local),
+                    });
+                } else {
+                    self.skip_depth += 1;
+                    return;
+                }
                 self.element_stack.push(SCHEMA_GROUP_NAME);
             }
             SCHEMA_ATTGROUP_NAME => {
+                let should_named = matches!(
+                    self.element_stack.last().copied(),
+                    Some(SCHEMA_SCHEMA_NAME | SCHEMA_REDEFINE_NAME)
+                );
+                if should_named && let Some(name) = atts.get_value_by_qname("name") {
+                    self.attr_group_def.name = name.into();
+                    self.attr_group_def.target_namespace = self.target_namespace.clone();
+                } else if !should_named && let Some((ns, local)) = self.get_qname(atts, "ref") {
+                    if self.element_stack.last() == Some(&SCHEMA_ATTGROUP_NAME) {
+                        self.attr_group_def.attribute_group_refs.push((ns, local));
+                    } else if let Some(ct) = self.ct_stack.last_mut() {
+                        ct.attribute_group_refs.push((ns, local));
+                    }
+                } else {
+                    self.skip_depth += 1;
+                    return;
+                }
                 self.element_stack.push(SCHEMA_ATTGROUP_NAME);
             }
             SCHEMA_ELEMENT_NAME => {
+                let block = get_block(atts, "block").unwrap_or(self.block_default);
+                let nillable = get_boolean(atts, "nillable").unwrap_or_default();
+                let r#type = self.get_qname(atts, "type");
+                let r#abstract = get_boolean(atts, "abstract").unwrap_or_default();
+                let r#final = get_final(atts, "final").unwrap_or(self.final_default);
+                let substitution_group = self.get_qname(atts, "substitutionGroup");
+                let min_occurs = get_occurs(atts, "minOccurs").unwrap_or(1);
+                let max_occurs = get_occurs(atts, "maxOccurs").unwrap_or(1);
+                if self.element_stack.last() == Some(&SCHEMA_SCHEMA_NAME) {
+                    // top-level element declaration.
+                    // "ref", "form", "minOccurs" and "maxOccurs" are prohibited explicitly in schema of schema.
+                    let Some(name) = atts.get_value_by_qname("name").map(From::from) else {
+                        self.skip_depth += 1;
+                        return;
+                    };
+
+                    let value_constraint = self.get_element_default(atts);
+                    self.ed_stack.push(ElementDeclaration {
+                        name,
+                        target_namespace: self.target_namespace.clone(),
+                        type_definition: r#type.unwrap_or_default(),
+                        scope: Some(Scope::Global),
+                        value_constraint,
+                        nillable,
+                        idc_definitions: vec![],
+                        substitution_group_affiliation: substitution_group,
+                        substitution_group_exclusions: r#final,
+                        disallowed_substitutions: block,
+                        r#abstract,
+                    });
+                } else {
+                    // local element declaration.
+                    // "substitutionGroup", "final" and "abstract" are prohibited explicitly in schema of schema.
+                    match (atts.get_value_by_qname("name"), self.get_qname(atts, "ref")) {
+                        (Some(_), Some(_)) | (None, None) => {
+                            // [src-element] clause 2.1
+                            let msg = "One of 'ref' or 'name' must be present, but not both for local <element>.";
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::SrcElement),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Borrowed(msg),
+                            });
+                            self.skip_depth += 1;
+                            return;
+                        }
+                        (Some(name), None) => {
+                            let form = get_qualification_form(atts, "form")
+                                .unwrap_or(self.elem_form_default);
+                            let value_constraint = self.get_element_default(atts);
+                            self.unnamed += 1;
+                            let name = Arc::<str>::from(format!("#local{}/{}", self.unnamed, name));
+                            let target_namespace = self
+                                .target_namespace
+                                .clone()
+                                .filter(|_| matches!(form, QualificationForm::Qualified));
+                            let particle = Particle {
+                                min_occurs,
+                                max_occurs,
+                                term: Term::ElementDecl(target_namespace.clone(), name.clone()),
+                            };
+                            let scope = self.get_scope();
+                            self.ed_stack.push(ElementDeclaration {
+                                name,
+                                target_namespace,
+                                type_definition: r#type.unwrap_or_default(),
+                                scope,
+                                value_constraint,
+                                nillable,
+                                idc_definitions: vec![],
+                                substitution_group_affiliation: substitution_group,
+                                substitution_group_exclusions: r#final,
+                                disallowed_substitutions: block,
+                                r#abstract,
+                            });
+                            if let Some(pt) = self.pt_stack.last_mut()
+                                && let Term::ModelGroup(mg) = &mut pt.term
+                            {
+                                mg.particles.push(particle);
+                            }
+                        }
+                        (None, Some((ns, local))) => {
+                            // push dummy data
+                            self.ed_stack.push(Default::default());
+                            let particle = Particle {
+                                min_occurs,
+                                max_occurs,
+                                term: Term::ElementDecl(ns, local),
+                            };
+                            if let Some(pt) = self.pt_stack.last_mut()
+                                && let Term::ModelGroup(mg) = &mut pt.term
+                            {
+                                mg.particles.push(particle);
+                            }
+                        }
+                    }
+                }
                 self.element_stack.push(SCHEMA_ELEMENT_NAME);
             }
             SCHEMA_ATTRIBUTE_NAME => {
+                let value_constraint = self.get_attribute_default(atts);
+                if self.element_stack.last() == Some(&SCHEMA_SCHEMA_NAME) {
+                    // top-level attribute declaration
+                    let Some(name) = atts.get_value_by_qname("name") else {
+                        self.skip_depth += 1;
+                        return;
+                    };
+                    // For the {target_namespace} of a top-level attribute declaration,
+                    // the value of "form" must not be used.
+                    self.attribute_decl.target_namespace = self.target_namespace.clone();
+                    self.attribute_decl.name = name.into();
+                    if let Some(type_definition) = self.get_qname(atts, "type") {
+                        self.attribute_decl.type_definition = type_definition;
+                    }
+                    self.attribute_decl.scope = Some(Scope::Global);
+                    self.attribute_decl.value_constraint = value_constraint;
+                } else {
+                    let r#use = get_occurrence(atts, "use").unwrap_or(Occurrence::Optional);
+                    if matches!(value_constraint, Some(ValueConstraint::Default(_)))
+                        && !matches!(r#use, Occurrence::Optional)
+                    {
+                        let msg = "If <attribute> has both 'default' and 'use', 'use' must have \"optional\".";
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::SrcElement),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Borrowed(msg),
+                        });
+                    }
+                    if let Some((ns, local)) = self.get_qname(atts, "ref") {
+                        // local attribute declaration ('ref' is present)
+                        let attuse = AttributeUse {
+                            required: r#use,
+                            attribute_declaration: (ns, local),
+                            value_constraint,
+                        };
+                        self.push_attribute_use(attuse);
+                    } else if let Some(name) = atts.get_value_by_qname("name") {
+                        // local attribute declaration ('ref' is absent)
+                        let form =
+                            get_qualification_form(atts, "form").unwrap_or(self.attr_form_default);
+                        let target_namespace = self
+                            .target_namespace
+                            .clone()
+                            .filter(|_| matches!(form, QualificationForm::Qualified));
+                        let name = Arc::<str>::from(name);
+                        self.attribute_decl.target_namespace = target_namespace.clone();
+                        self.attribute_decl.name = name.clone();
+                        if let Some(type_definition) = self.get_qname(atts, "type") {
+                            self.attribute_decl.type_definition = type_definition;
+                        }
+                        self.attribute_decl.scope = self.get_scope();
+                        self.attribute_decl.value_constraint = None;
+
+                        let attuse = AttributeUse {
+                            required: r#use,
+                            attribute_declaration: (target_namespace, name),
+                            value_constraint,
+                        };
+                        self.push_attribute_use(attuse);
+                    } else {
+                        // [src-attribute]
+                        // 3 If the item's parent is not <schema>, then all of the following must be true:
+                        //   3.1 One of ref or name must be present, but not both.
+                        let msg = "A local attribute declaration must have one of the attribute 'name' or 'ref'.";
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::SrcAttribute),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Borrowed(msg),
+                        });
+                        self.skip_depth += 1;
+                        return;
+                    }
+                }
                 self.element_stack.push(SCHEMA_ATTRIBUTE_NAME);
             }
             SCHEMA_NOTATION_NAME => {
@@ -813,18 +1216,88 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 self.element_stack.push(SCHEMA_NOTATION_NAME);
             }
             SCHEMA_ALL_NAME => {
+                let min_occurs = get_occurs(atts, "minOccurs").unwrap_or(1);
+                let max_occurs = get_occurs(atts, "maxOccurs").unwrap_or(1);
+                let model = ModelGroup {
+                    compositor: Compositor::All,
+                    particles: vec![],
+                };
+                let particle = Particle {
+                    min_occurs,
+                    max_occurs,
+                    term: Term::ModelGroup(model),
+                };
+                self.pt_stack.push(particle);
                 self.element_stack.push(SCHEMA_ALL_NAME);
             }
             SCHEMA_CHOICE_NAME => {
+                let min_occurs = get_occurs(atts, "minOccurs").unwrap_or(1);
+                let max_occurs = get_occurs(atts, "maxOccurs").unwrap_or(1);
+                let model = ModelGroup {
+                    compositor: Compositor::Choice,
+                    particles: vec![],
+                };
+                let particle = Particle {
+                    min_occurs,
+                    max_occurs,
+                    term: Term::ModelGroup(model),
+                };
+                self.pt_stack.push(particle);
                 self.element_stack.push(SCHEMA_CHOICE_NAME);
             }
             SCHEMA_SEQUENCE_NAME => {
+                let min_occurs = get_occurs(atts, "minOccurs").unwrap_or(1);
+                let max_occurs = get_occurs(atts, "maxOccurs").unwrap_or(1);
+                let model = ModelGroup {
+                    compositor: Compositor::Sequence,
+                    particles: vec![],
+                };
+                let particle = Particle {
+                    min_occurs,
+                    max_occurs,
+                    term: Term::ModelGroup(model),
+                };
+                self.pt_stack.push(particle);
                 self.element_stack.push(SCHEMA_SEQUENCE_NAME);
             }
             SCHEMA_ANY_NAME => {
+                let min_occurs = get_occurs(atts, "minOccurs").unwrap_or(1);
+                let max_occurs = get_occurs(atts, "maxOccurs").unwrap_or(1);
+                let process_contents =
+                    get_process_contents(atts, "processContents").unwrap_or(ProcessContent::Strict);
+                let ns_constraint = self
+                    .get_namespace_constraint(atts, "namespace")
+                    .unwrap_or(NamespaceConstraint::Any);
+                let particle = Particle {
+                    min_occurs,
+                    max_occurs,
+                    term: Term::Wildcard(Wildcard {
+                        ns_constraint,
+                        process_contents,
+                    }),
+                };
+                if let Some(pt) = self.pt_stack.last_mut()
+                    && let Term::ModelGroup(mg) = &mut pt.term
+                {
+                    mg.particles.push(particle);
+                }
                 self.element_stack.push(SCHEMA_ANY_NAME);
             }
             SCHEMA_ANYATT_NAME => {
+                let process_contents =
+                    get_process_contents(atts, "processContents").unwrap_or(ProcessContent::Strict);
+                let ns_constraint = self
+                    .get_namespace_constraint(atts, "namespace")
+                    .unwrap_or(NamespaceConstraint::Any);
+                let wildcard = Wildcard {
+                    ns_constraint,
+                    process_contents,
+                };
+                if self.element_stack.last().copied() == Some(SCHEMA_ATTGROUP_NAME) {
+                    self.attr_group_def.attribute_wildcard = Some(wildcard);
+                } else if let Some(ct) = self.ct_stack.last_mut() {
+                    ct.attribute_wildcard = Some(wildcard);
+                }
                 self.element_stack.push(SCHEMA_ANYATT_NAME);
             }
             SCHEMA_UNIQUE_NAME => {
@@ -905,10 +1378,75 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
 
         let local_name = local_name.unwrap();
         match local_name {
+            SCHEMA_SIMPLETYPE_NAME => {
+                if let Some(st) = self.st_stack.pop() {
+                    let target_namespace = st.target_namespace.clone();
+                    let name = st.name.clone();
+                    if let Some(pst) = self.st_stack.last_mut() {
+                        if self.element_stack.last() == Some(&SCHEMA_RESTRICTION_NAME) {
+                            pst.base_type_definition = (target_namespace.clone(), name.clone());
+                        } else if self.element_stack.last() == Some(&SCHEMA_LIST_NAME) {
+                            pst.variety =
+                                Some(Variety::List(target_namespace.clone(), name.clone()));
+                        } else if self.element_stack.last() == Some(&SCHEMA_UNION_NAME) {
+                            if let Some(Variety::Union(member)) = pst.variety.as_mut() {
+                                *member =
+                                    [member.as_ref(), &[(target_namespace.clone(), name.clone())]]
+                                        .concat()
+                                        .into();
+                            } else {
+                                pst.variety = Some(Variety::Union(
+                                    vec![(target_namespace.clone(), name.clone())].into(),
+                                ));
+                            }
+                        }
+                    }
+                    if self.element_stack.last() == Some(&SCHEMA_ATTRIBUTE_NAME) {
+                        if !self.attribute_decl.type_definition.1.is_empty() {
+                            // [src-attribute] clause 4
+                            // 4 type and <simpleType> must not both be present.
+                            let msg = "'type' and <simpleType> must not both be present under <attribute>.";
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::SrcAttribute),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Borrowed(msg),
+                            });
+                        } else if self.attribute_decl.name.is_empty() {
+                            // [src-attribute]
+                            // 3.2 If ref is present, then all of <simpleType>, form and type must be absent.
+                            let msg = "If <attribute> has 'ref', then <simpleType> must be absent.";
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::SrcAttribute),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Borrowed(msg),
+                            });
+                        }
+                        self.attribute_decl.type_definition =
+                            (target_namespace.clone(), name.clone());
+                    }
+                    self.schema
+                        .type_defs
+                        .insert((target_namespace, name), TypeDefinition::Simple(st.into()));
+                }
+            }
             SCHEMA_RESTRICTION_NAME
                 if self.element_stack.last() == Some(&SCHEMA_SIMPLETYPE_NAME) =>
             {
-                if self.simple_type.base_type_definition.1.is_empty() {
+                if self
+                    .st_stack
+                    .last()
+                    .is_some_and(|st| st.base_type_definition.1.is_empty())
+                {
                     // [src-restriction-base-or-simpleType]
                     // If there is no "base" attribute, there
                     // must be a child of type <simpleType>.
@@ -926,7 +1464,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 }
             }
             SCHEMA_LIST_NAME => {
-                if self.simple_type.variety.is_none() {
+                if self.st_stack.last().is_some_and(|st| st.variety.is_none()) {
                     // [src-list-itemType-or-simpleType]
                     // If there is no "itemType" attribute, there
                     // must be a child of type <simpleType>.
@@ -944,7 +1482,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 }
             }
             SCHEMA_UNION_NAME => {
-                if self.simple_type.variety.is_none() {
+                if self.st_stack.last().is_some_and(|st| st.variety.is_none()) {
                     // [src-union-memberTypes-or-simpleTypes]
                     // If there is no `memberType` attribute, there
                     // must be children of type `simpleType`.
@@ -959,6 +1497,83 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         public_id: self.locator.public_id(),
                         message: Cow::Borrowed(msg),
                     });
+                }
+            }
+            SCHEMA_GROUP_NAME => {
+                // top-level model group definition
+                // 1. pop dummy particle
+                // 2. extract model group of dummy particle
+                // 3. extract actual child particle
+                // 4. extract model group of actual child particle
+                if matches!(
+                    self.element_stack.last().copied(),
+                    Some(SCHEMA_SCHEMA_NAME | SCHEMA_REDEFINE_NAME)
+                ) && let Some(pt) = self.pt_stack.pop()
+                    && let Term::ModelGroup(mut mg) = pt.term
+                    && let Some(pt) = mg.particles.pop()
+                    && let Term::ModelGroup(mg) = pt.term
+                {
+                    self.model_group_def.model_group = mg;
+                    let target_namespace = self.model_group_def.target_namespace.clone();
+                    let name = self.model_group_def.name.clone();
+                    self.schema.modelgroup_defs.insert(
+                        (target_namespace, name),
+                        std::mem::take(&mut *self.model_group_def),
+                    );
+                    self.pt_stack.clear();
+                }
+            }
+            SCHEMA_ATTGROUP_NAME => {
+                if matches!(
+                    self.element_stack.last().copied(),
+                    Some(SCHEMA_SCHEMA_NAME | SCHEMA_REDEFINE_NAME)
+                ) {
+                    let target_namespace = self.attr_group_def.target_namespace.clone();
+                    let name = self.attr_group_def.name.clone();
+                    self.schema.attgroup_defs.insert(
+                        (target_namespace, name),
+                        std::mem::take(&mut *self.attr_group_def),
+                    );
+                }
+            }
+            SCHEMA_ELEMENT_NAME => {
+                if let Some(decl) = self.ed_stack.pop()
+                    && !decl.name.is_empty()
+                {
+                    let target_namespace = decl.target_namespace.clone();
+                    let name = decl.name.clone();
+                    self.schema
+                        .elem_decls
+                        .insert((target_namespace, name), decl);
+                }
+            }
+            SCHEMA_ATTRIBUTE_NAME => {
+                if !self.attribute_decl.name.is_empty() {
+                    // 3.2.2 XML Representation of Attribute Declaration Schema Components
+                    // The default when no simple type definition is referenced or provided is
+                    // the ·simple ur-type definition·, which imposes no constraints at all.
+                    self.attribute_decl.type_definition =
+                        (Some(XML_SCHEMA_NAMESPACE.into()), "anySimpleType".into());
+
+                    let target_namespace = self.attribute_decl.target_namespace.clone();
+                    let name = self.attribute_decl.name.clone();
+                    self.schema.att_decls.insert(
+                        (target_namespace, name),
+                        std::mem::take(&mut *self.attribute_decl),
+                    );
+                }
+            }
+            SCHEMA_ALL_NAME | SCHEMA_CHOICE_NAME | SCHEMA_SEQUENCE_NAME => {
+                if let Some(pt) = self.pt_stack.pop()
+                    && let Some(ppt) = self.pt_stack.last_mut()
+                    && let Term::ModelGroup(mg) = &mut ppt.term
+                {
+                    mg.particles.push(pt);
+                }
+            }
+            SCHEMA_UNIQUE_NAME | SCHEMA_KEY_NAME | SCHEMA_KEYREF_NAME => {
+                if let Some(decl) = self.ed_stack.last_mut() {
+                    decl.idc_definitions.push(std::mem::take(&mut *self.idc));
                 }
             }
             _ => {}
@@ -1110,6 +1725,37 @@ fn get_block(atts: &Attributes, name: &str) -> Option<BlockSet> {
         }
     }
     Some(ret)
+}
+
+/// Treat "unbounded" as `usize::MAX` and always allow "unbounded".  \
+/// Errors for attributes that do not allow "unbounded" are reported at meta schema level.
+fn get_occurs(atts: &Attributes, name: &str) -> Option<usize> {
+    let value = atts.get_value_by_qname(name)?;
+    if value == "unbounded" {
+        Some(usize::MAX)
+    } else {
+        value.parse().ok()
+    }
+}
+
+fn get_occurrence(atts: &Attributes, name: &str) -> Option<Occurrence> {
+    let value = atts.get_value_by_qname(name)?;
+    match value {
+        "optional" => Some(Occurrence::Optional),
+        "prohibited" => Some(Occurrence::Prohibited),
+        "required" => Some(Occurrence::Required),
+        _ => None,
+    }
+}
+
+fn get_process_contents(atts: &Attributes, name: &str) -> Option<ProcessContent> {
+    let value = atts.get_value_by_qname(name)?;
+    match value {
+        "lax" => Some(ProcessContent::Lax),
+        "skip" => Some(ProcessContent::Skip),
+        "strict" => Some(ProcessContent::Strict),
+        _ => None,
+    }
 }
 
 struct MetaSchemaParsehandler;
@@ -1549,31 +2195,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                 }
             }
         }
-
-        // Second, resolve the attribute declarations.
-        // Since they do not depend on anything other than simple type definitions,
-        // they can be resolved here.
-        // Because attribute group definitions and complex type definitions depend on
-        // attribute declarations, they must be resolved before these.
-        while let Some((key, value)) = self.attr_decls.iter().next() {
-            let key = key.clone();
-            let value = value.clone();
-
-            self.attr_decls.remove(&key);
-            self.parse_attribute_declaration(value, self.target_namespace.clone(), true)?;
-        }
-        // Third, resolve the attribute group definition.
-        // Since this depends only on attribute declarations, it can be resolved here.
-        // Because it is referenced from complex type definitions through attribute use
-        // and model groups, it must be resolved here.
-        while let Some((key, value)) = self.att_groups.iter().next() {
-            let key = key.clone();
-            let value = value.clone();
-
-            self.att_groups.remove(&key);
-            self.parse_named_attgroup_definition(value, key.0, &mut vec![])?;
-        }
-
         // Finally, resolve everything that remains.
         // Element declarations, complex type definitions, and model group definitions are
         // all interdependent, so it is impossible to resolve any one of them first.
@@ -1586,461 +2207,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
             self.complex_types.remove(&key);
             self.parse_complex_type_definitions(value, key.0, &mut vec![], true)?;
         }
-        // Next, resolve element declarations
-        while let Some((key, value)) = self.elem_decls.iter().next() {
-            let key = key.clone();
-            let value = value.clone();
 
-            self.elem_decls.remove(&key);
-            self.parse_top_level_element(value, key.0)?;
-        }
-        // Next, resolve model group definitions
-        while let Some((key, value)) = self.model_groups.iter().next() {
-            let key = key.clone();
-            let value = value.clone();
-
-            self.model_groups.remove(&key);
-            self.parse_named_group(value, key.0)?;
-        }
-
-        Ok(())
-    }
-
-    /// Parse the `attribute` element.
-    ///
-    /// If this results in the generation of an Attribute component, register it in the
-    /// schema. Additionally, if an Attribute Use component is generated, wrap it in an
-    /// [`Ok`] and return it.
-    fn parse_attribute_declaration(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-        global: bool,
-    ) -> Result<Option<AttributeUse>, XSDError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_ATTRIBUTE_NAME);
-
-        let default = elem.remove_attribute("default", None);
-        let fixed = elem.remove_attribute("fixed", None);
-        let form = self
-            .extract_qualification_form(elem.clone(), "form", XSDError::SrcAttribute)?
-            .or(global.then_some(self.attr_form_default));
-        let target_namespace =
-            target_namespace.filter(|_| matches!(form, Some(QualificationForm::Qualified)));
-        let _id = elem.remove_attribute("id", None);
-        let r#ref = elem.remove_attribute("ref", None);
-        let name = match elem.remove_attribute("name", None) {
-            Some(name) => match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&name, elem.clone()) {
-                Ok(SchemaValue::String(name)) => {
-                    if !global && r#ref.is_some() {
-                        // [src-attribute]
-                        // 3   If the item's parent is not <schema>,
-                        //     then all of the following must be true:
-                        //   3.1   One of ref or name must be present, but not both.
-                        error!(
-                            self.handler,
-                            SrcAttribute,
-                            elem,
-                            "A local attribute declaration must not have both the attribute 'name' and 'ref'."
-                        );
-                        return Err(XSDError::SrcAttribute);
-                    }
-                    name
-                }
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcAttribute,
-                        elem,
-                        "The attribute 'name' of 'attribute' is failed to parse as NCName because {}.",
-                        err
-                    );
-                    return Err(XSDError::SrcAttribute);
-                }
-            },
-            None => {
-                if !global {
-                    if r#ref.is_none() {
-                        // [src-attribute]
-                        // 3   If the item's parent is not <schema>,
-                        //     then all of the following must be true:
-                        //   3.1   One of ref or name must be present, but not both.
-                        error!(
-                            self.handler,
-                            SrcAttribute,
-                            elem,
-                            "A local attribute declaration must have one of the attribute 'name' or 'ref'."
-                        );
-                        return Err(XSDError::SrcAttribute);
-                    }
-                    self.unnamed += 1;
-                    format!("#unnamed{}", self.unnamed).into()
-                } else {
-                    todo!("raise error")
-                }
-            }
-        };
-        let r#type = elem.remove_attribute("type", None);
-        let r#use = match elem.remove_attribute("use", None) {
-            Some(r#use) => {
-                let r#use = r#use.trim_matches(|c| XMLVersion::XML10.is_whitespace(c));
-                match r#use {
-                    "optional" => Occurrence::Optional,
-                    "prohibited" => {
-                        if default.is_some() {
-                            // [src-attribute]
-                            // 2 If default and use are both present,
-                            // use must have the ·actual value· optional.
-                            error!(
-                                self.handler,
-                                SrcAttribute,
-                                elem,
-                                "The attribute 'use' of '{}' must be 'optional' when 'default' is present.",
-                                SCHEMA_ATTRIBUTE_NAME
-                            );
-                            return Err(XSDError::SrcAttribute);
-                        }
-                        Occurrence::Prohibited
-                    }
-                    "required" => {
-                        if default.is_some() {
-                            // [src-attribute]
-                            // 2 If default and use are both present,
-                            // use must have the ·actual value· optional.
-                            error!(
-                                self.handler,
-                                SrcAttribute,
-                                elem,
-                                "The attribute 'use' of '{}' must be 'optional' when 'default' is present.",
-                                SCHEMA_ATTRIBUTE_NAME
-                            );
-                            return Err(XSDError::SrcAttribute);
-                        }
-                        Occurrence::Required
-                    }
-                    _ => todo!("raise error"),
-                }
-            }
-            None => Occurrence::Optional,
-        };
-
-        self.check_attribute(elem.clone())?;
-
-        let simple_type = None;
-
-        let type_definition = match (r#type, simple_type) {
-            (Some(_), Some(_)) => {
-                // [src-attribute]
-                // 4 type and <simpleType> must not both be present.
-                error!(
-                    self.handler,
-                    SrcAttribute,
-                    elem,
-                    "'{}' must not have both the attribute 'type' and the child element '{}'.",
-                    SCHEMA_ATTRIBUTE_NAME,
-                    SCHEMA_SIMPLETYPE_NAME
-                );
-                return Err(XSDError::SrcAttribute);
-            }
-            (Some(r#type), None) => {
-                if !global && r#ref.is_some() {
-                    // [src-attribute]
-                    // 3.2 If ref is present, then all of <simpleType>, form and type must be absent.
-                    error!(
-                        self.handler,
-                        SrcAttribute,
-                        elem,
-                        "The attribute 'type' of '{}' must be absent when 'ref' is present.",
-                        SCHEMA_ATTRIBUTE_NAME
-                    );
-                    return Err(XSDError::SrcAttribute);
-                }
-                match SCHEMA_BUILTIN_QNAME.parse_with_elem(&r#type, elem.clone()) {
-                    Ok(SchemaValue::QName(nsname, local)) => {
-                        match self.schema.type_defs.get(&(nsname, local)) {
-                            Some(TypeDefinition::Simple(simple)) => simple.clone(),
-                            Some(_) => todo!("raise error because of non-simple-type definition"),
-                            None => todo!("raise error because of missing definition"),
-                        }
-                    }
-                    Ok(_) => internal_error!(self.handler, elem),
-                    Err(err) => {
-                        error!(
-                            self.handler,
-                            SrcAttribute,
-                            elem,
-                            "The attribute 'type' of 'attribute' is failed to parse as QName because {}.",
-                            err
-                        );
-                        return Err(XSDError::SrcAttribute);
-                    }
-                }
-            }
-            (None, Some(def)) => {
-                if !global && r#ref.is_some() {
-                    // [src-attribute]
-                    // 3.2 If ref is present, then all of <simpleType>, form and type must be absent.
-                    error!(
-                        self.handler,
-                        SrcAttribute,
-                        elem,
-                        "'{}' must have no '{}' children when the attribute 'ref' is present.",
-                        SCHEMA_ATTRIBUTE_NAME,
-                        SCHEMA_SIMPLETYPE_NAME
-                    );
-                    return Err(XSDError::SrcAttribute);
-                }
-                def
-            }
-            (None, None) => {
-                if global {
-                    // 3.2.2 XML Representation of Attribute Declaration Schema Components
-                    // {type definition}	The simple type definition corresponding to the
-                    // <simpleType> element information item in the [children], if present,
-                    // otherwise the simple type definition ·resolved· to by the ·actual
-                    // value· of the type [attribute], if present, otherwise the ·simple
-                    // ur-type definition·.
-                    // (*SCHEMA_BUILTIN_ANY_SIMPLE_TYPE).clone()
-                    todo!()
-                } else if let Some(r#ref) = r#ref.as_deref() {
-                    // 3.2.2 XML Representation of Attribute Declaration Schema Components
-                    // {attribute declaration}	The (top-level) attribute declaration
-                    // ·resolved· to by the ·actual value· of the ref [attribute]
-
-                    // This branch may be reached during the parsing of a local attribute
-                    // declaration.
-                    // The actual value of `ref` must be resolved to a global attribute
-                    // declaration, but the global attribute declaration has already been
-                    // parsed before the attribute group declaration or composite type
-                    // definition in which the local attribute declaration might appear.
-                    // Therefore, if the actual value of `ref` cannot be resolved to any
-                    // declaration at this point, it is acceptable to treat this as an error.
-                    match SCHEMA_BUILTIN_QNAME.parse_with_elem(r#ref, elem.clone()) {
-                        Ok(SchemaValue::QName(nsname, local)) => {
-                            match self.schema.type_defs.get(&(nsname, local)) {
-                                Some(TypeDefinition::Simple(simple)) => simple.clone(),
-                                Some(_) => {
-                                    todo!("raise error because of non-simple type definition")
-                                }
-                                None => todo!("raise error because of missing definition"),
-                            }
-                        }
-                        Ok(_) => internal_error!(self.handler, elem),
-                        Err(err) => {
-                            error!(
-                                self.handler,
-                                SrcAttribute,
-                                elem,
-                                "The attribute 'ref' of 'attribute' is failed to parse as NCName because {}.",
-                                err
-                            );
-                            return Err(XSDError::SrcAttribute);
-                        }
-                    }
-                } else {
-                    // 3.2.2 XML Representation of Attribute Declaration Schema Components
-                    // {type definition}	The simple type definition corresponding to the
-                    // <simpleType> element information item in the [children], if present,
-                    // otherwise the simple type definition ·resolved· to by the ·actual
-                    // value· of the type [attribute], if present, otherwise the ·simple
-                    // ur-type definition·.
-                    // SCHEMA_BUILTIN_ANY_SIMPLE_TYPE.clone()
-                    todo!()
-                }
-            }
-        };
-        let value_constraint = match (default, fixed) {
-            (Some(_), Some(_)) => {
-                // [src-attribute]
-                // 1 default and fixed must not both be present.
-                error!(
-                    self.handler,
-                    SrcAttribute,
-                    elem,
-                    "The attribute 'default' and 'fixed' must not both be present."
-                );
-                return Err(XSDError::SrcAttribute);
-            }
-            (Some(default), None) => {
-                // match type_definition.parse_with_elem(&default, elem.clone()) {
-                //     Ok(value) => Some(ValueConstraint::Default(value)),
-                //     Err(err) => {
-                //         error!(
-                //             self.handler,
-                //             SrcAttribute,
-                //             elem,
-                //             "The attribute 'default' of '{}' is failed to parse as {} because {}.",
-                //             SCHEMA_ATTRIBUTE_NAME,
-                //             type_definition.name(),
-                //             err
-                //         );
-                //         return Err(XSDError::SrcAttribute);
-                //     }
-                // }
-                None
-            }
-            (None, Some(fixed)) => {
-                // match type_definition.parse_with_elem(&fixed, elem.clone()) {
-                //     Ok(value) => Some(ValueConstraint::Fixed(value)),
-                //     Err(err) => {
-                //         error!(
-                //             self.handler,
-                //             SrcAttribute,
-                //             elem,
-                //             "The attribute 'fixed' of '{}' is failed to parse as {} because {}.",
-                //             SCHEMA_ATTRIBUTE_NAME,
-                //             type_definition.name(),
-                //             err
-                //         );
-                //         return Err(XSDError::SrcAttribute);
-                //     }
-                // }
-                None
-            }
-            (None, None) => None,
-        };
-
-        if global || r#ref.is_none() {
-            let decl = AttributeDeclaration {
-                name: name.clone(),
-                target_namespace: target_namespace.clone(),
-                type_definition,
-                scope: Some(Scope::Global),
-                value_constraint,
-                annotation: None,
-            };
-            self.schema
-                .att_decls
-                .insert((target_namespace.clone(), decl.name.clone()), decl);
-            Ok(None)
-        } else if r#ref.is_none() {
-            let decl = AttributeDeclaration {
-                name: name.clone(),
-                target_namespace: target_namespace.clone(),
-                type_definition,
-                scope: None,
-                value_constraint: None,
-                annotation: None,
-            };
-            self.schema
-                .att_decls
-                .insert((target_namespace.clone(), decl.name.clone()), decl);
-            Ok(Some(AttributeUse {
-                required: r#use,
-                attribute_declaration: (target_namespace, name),
-                value_constraint,
-            }))
-        } else {
-            Ok(Some(AttributeUse {
-                required: r#use,
-                attribute_declaration: (target_namespace, name),
-                value_constraint,
-            }))
-        }
-    }
-
-    fn parse_top_level_element(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-    ) -> Result<(), XSDError> {
-        // "ref", "form", "minOccurs" and "maxOccurs" are prohibited explicitly in schema of schema.
-        let r#abstract = self
-            .extract_boolean(elem.clone(), "abstract", XSDError::SrcElement)?
-            .unwrap_or(false);
-        // let block = self
-        //     .extract_final(
-        //         elem.clone(),
-        //         "block",
-        //         Final::Restriction | Final::Extension | Final::Substitution,
-        //         true,
-        //     )?
-        //     .unwrap_or(self.block_default);
-        let block = FinalSet::default();
-        let default = elem.remove_attribute("default", None);
-        let r#final = self
-            .extract_final(
-                elem.clone(),
-                "final",
-                Final::Extension | Final::Restriction,
-                true,
-            )?
-            .unwrap_or(self.final_default);
-        let fixed = elem.remove_attribute("fixed", None);
-        let _id = elem.remove_attribute("id", None);
-        let Some(name) = self.extract_ncname(elem.clone(), "name", XSDError::SrcElement)? else {
-            todo!("raise error because of missing a mandatory attribute");
-        };
-        let nillable = self
-            .extract_boolean(elem.clone(), "nillable", XSDError::SrcElement)?
-            .unwrap_or(false);
-        let substitution_group = self.extract_qname(elem.clone(), "substitutionGroup")?;
-        let r#type = self.extract_qname(elem.clone(), "type")?;
-
-        self.check_attribute(elem.clone())?;
-
-        let mut children = elem.first_child();
-
-        let mut type_definition = None;
-        while let Some(child) = children {
-            children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    match elem.local_name().as_ref() {
-                        SCHEMA_COMPLEXTYPE_NAME => {
-                            type_definition = Some(TypeDefinition::Complex(
-                                self.parse_complex_type_definitions(
-                                    elem,
-                                    target_namespace.clone(),
-                                    &mut vec![],
-                                    false,
-                                )?,
-                            ));
-                        }
-                        _ => {
-                            children = Some(child);
-                        }
-                    }
-                    break;
-                }
-                NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                _ => {}
-            }
-        }
-
-        let idc_definitions = vec![];
-
-        self.check_unexpected_schema_elements(children)?;
-
-        let type_definition =
-            self.resolve_element_type(elem.clone(), r#type, type_definition, false)?;
-        let value_constraint =
-            self.resolve_element_default(elem.clone(), default, fixed, &type_definition)?;
-
-        let decl = ElementDeclaration {
-            name: name.clone(),
-            target_namespace: target_namespace.clone(),
-            type_definition,
-            scope: Some(Scope::Global),
-            value_constraint,
-            nillable,
-            idc_definitions,
-            substitution_group_affiliation: substitution_group,
-            substitution_group_exclusions: r#final,
-            disallowed_substitutions: block,
-            r#abstract,
-            annotation: None,
-        };
-
-        self.schema
-            .elem_decls
-            .insert((target_namespace, name), decl);
         Ok(())
     }
 
@@ -2051,21 +2218,10 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
         scope: Option<Scope>,
     ) -> Result<Particle, XSDError> {
         // "substitutionGroup", "final" and "abstract" are prohibited explicitly in schema of schema.
-        // let block = self.extract_final(
-        //     elem.clone(),
-        //     "block",
-        //     Final::Extension | Final::Restriction | Final::Substitution,
-        //     true,
-        // )?;
         let block = Some(FinalSet::default());
         let default = elem.remove_attribute("default", None);
         let fixed = elem.remove_attribute("fixed", None);
         let _id = elem.remove_attribute("id", None);
-        let max_occurs = self.extract_occurs(elem.clone(), "maxOccurs", Some(1), true)?;
-        let Some(min_occurs) = self.extract_occurs(elem.clone(), "minOccurs", Some(1), false)?
-        else {
-            internal_error!(self.handler, elem);
-        };
         let name = self.extract_ncname(elem.clone(), "name", XSDError::SrcElement)?;
         let r#ref = self.extract_qname(elem.clone(), "ref")?;
 
@@ -2101,8 +2257,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
             }
         }
 
-        let mut idc_definitions = vec![];
-
         self.check_unexpected_schema_elements(children)?;
 
         match (name, r#ref) {
@@ -2117,50 +2271,9 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                 Err(XSDError::SrcElement)
             }
             (Some(name), None) => {
-                let form = self
-                    .extract_qualification_form(elem.clone(), "form", XSDError::SrcElement)?
-                    .unwrap_or(self.elem_form_default);
-                let nillable = self
-                    .extract_boolean(elem.clone(), "nillable", XSDError::SrcElement)?
-                    .unwrap_or(false);
-                let r#type = self.extract_qname(elem.clone(), "type")?;
-                let type_definition =
-                    self.resolve_element_type(elem.clone(), r#type, type_definition, true)?;
-                let target_namespace =
-                    target_namespace.filter(|_| matches!(form, QualificationForm::Qualified));
-
                 self.check_attribute(elem.clone())?;
 
-                let value_constraint =
-                    self.resolve_element_default(elem.clone(), default, fixed, &type_definition)?;
-
-                let decl = ElementDeclaration {
-                    name,
-                    target_namespace,
-                    type_definition,
-                    scope,
-                    value_constraint,
-                    nillable,
-                    idc_definitions,
-                    substitution_group_affiliation: None,
-                    substitution_group_exclusions: FinalSet::default(),
-                    disallowed_substitutions: block.unwrap_or(self.block_default),
-                    r#abstract: false,
-                    annotation: None,
-                };
-
-                self.unnamed += 1;
-                // Change the name so that it doesn't conflict with the top-level declaration.
-                let local: Arc<str> = format!("#local{}/{}", self.unnamed, decl.name).into();
-                let particle = Particle {
-                    min_occurs,
-                    max_occurs,
-                    term: Term::ElementDecl(decl.target_namespace.clone(), local.clone()),
-                };
-                self.schema
-                    .elem_decls
-                    .insert((decl.target_namespace.clone(), local), decl);
-                Ok(particle)
+                todo!()
             }
             (None, Some(r#ref)) => {
                 let form = elem.remove_attribute("form", None);
@@ -2204,25 +2317,12 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                     type_definition.is_some(),
                     "'simpleType' and 'complexType'"
                 );
-                unallowed_schema_element!(
-                    idc_definitions.is_empty(),
-                    "'key', 'keyref' and 'unique'"
-                );
+                // unallowed_schema_element!(
+                //     idc_definitions.is_empty(),
+                //     "'key', 'keyref' and 'unique'"
+                // );
 
-                self.check_attribute(elem.clone())?;
-
-                if let Some(elem) = self.elem_decls.remove(&r#ref) {
-                    self.parse_top_level_element(elem, target_namespace)?;
-                }
-                if !self.schema.elem_decls.contains_key(&r#ref) {
-                    todo!("raise error because of missing element declaration");
-                }
-
-                Ok(Particle {
-                    min_occurs,
-                    max_occurs,
-                    term: Term::ElementDecl(r#ref.0, r#ref.1),
-                })
+                todo!()
             }
         }
     }
@@ -2337,6 +2437,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                         r#final: FinalSet::default(),
                         r#abstract: false,
                         attribute_uses: vec![],
+                        attribute_group_refs: vec![],
                         attribute_wildcard: None,
                         content_type: ContentType::Empty,
                         prohibited_substitutions: FinalSet::default(),
@@ -2347,81 +2448,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
             }
             (None, Some(type_definition)) => Ok(type_definition),
         }
-    }
-
-    /// # Reference
-    /// - [src-attribute_group](https://www.w3.org/TR/xmlschema-1/#src-attribute_group)
-    fn parse_named_attgroup_definition(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-        loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
-    ) -> Result<(), XSDError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_ATTGROUP_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        let Some(name) = self.extract_ncname(elem.clone(), "name", XSDError::SrcAttributeGroup)?
-        else {
-            todo!("raise error")
-        };
-
-        loop_guard.push((target_namespace.clone(), name.clone()));
-
-        self.check_attribute(elem.clone())?;
-
-        let mut children = elem.first_child();
-        let (attribute_uses, attribute_wildcard) =
-            self.pop_attr_decls(&mut children, target_namespace.clone(), loop_guard)?;
-
-        self.check_unexpected_schema_elements(children)?;
-
-        let def = AttributeGroupDefinition {
-            name: name.clone(),
-            target_namespace: target_namespace.clone(),
-            attribute_uses,
-            attribute_wildcard,
-            annotation: None,
-        };
-
-        loop_guard.pop();
-
-        self.schema
-            .attgroup_defs
-            .insert((target_namespace, name), def);
-        Ok(())
-    }
-
-    /// # Reference
-    /// - [src-attribute_group](https://www.w3.org/TR/xmlschema-1/#src-attribute_group)
-    fn parse_attgroup_reference(
-        &mut self,
-        mut elem: Element,
-        loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
-    ) -> Result<(Option<Arc<str>>, Arc<str>), XSDError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_ATTGROUP_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        let Some(r#ref) = self.extract_qname(elem.clone(), "ref")? else {
-            todo!("raise error")
-        };
-
-        self.check_attribute(elem.clone())?;
-
-        if self.schema.attgroup_defs.contains_key(&r#ref) {
-            return Ok(r#ref);
-        }
-
-        if loop_guard.contains(&r#ref) {
-            todo!("raise error because of a reference loop")
-        }
-
-        let Some(elem) = self.att_groups.remove(&r#ref) else {
-            todo!("raise error because of missing definition")
-        };
-        self.parse_named_attgroup_definition(elem, r#ref.0.clone(), loop_guard)?;
-        Ok(r#ref)
     }
 
     fn parse_complex_type_definitions(
@@ -2525,6 +2551,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                                 r#final,
                                 r#abstract,
                                 attribute_uses,
+                                attribute_group_refs: vec![],
                                 attribute_wildcard,
                                 content_type,
                                 prohibited_substitutions: block,
@@ -2552,6 +2579,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                                 r#final,
                                 r#abstract,
                                 attribute_uses,
+                                attribute_group_refs: vec![],
                                 attribute_wildcard,
                                 content_type,
                                 prohibited_substitutions: block,
@@ -2565,13 +2593,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                             // > content restricting the ·ur-type definition·, and the details
                             // > of the mappings should be modified as necessary.
                             children = Some(child);
-                            let particle = self
-                                .pop_type_def_particle(&mut children, target_namespace.clone())?;
-                            let (attribute_uses, attribute_wildcard) = self.pop_attr_decls(
-                                &mut children,
-                                target_namespace.clone(),
-                                loop_guard,
-                            )?;
+                            let particle = None;
 
                             let effective_content =
                                 self.effective_content(particle, elem, mixed)?;
@@ -2594,8 +2616,9 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                                 derivation_method: DerivationMethod::Restriction,
                                 r#final,
                                 r#abstract,
-                                attribute_uses,
-                                attribute_wildcard,
+                                attribute_uses: vec![],
+                                attribute_group_refs: vec![],
+                                attribute_wildcard: None,
                                 content_type,
                                 prohibited_substitutions: block,
                             }))
@@ -2626,6 +2649,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                 r#final,
                 r#abstract,
                 attribute_uses: vec![],
+                attribute_group_refs: vec![],
                 attribute_wildcard: None,
                 content_type: ContentType::Empty,
                 prohibited_substitutions: block,
@@ -2819,18 +2843,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                                 todo!("raise error because of undefined type")
                             };
 
-                            // let mut builder = match base.clone().derive_by_restriction() {
-                            //     Ok(builder) => builder,
-                            //     Err(err) => todo!("raise error"),
-                            // };
-
-                            // content = Some(builder.build());
-
-                            (attribute_uses, attribute_wildcard) = self.pop_attr_decls(
-                                &mut children,
-                                target_namespace.clone(),
-                                loop_guard,
-                            )?;
                             self.check_unexpected_schema_elements(children)?;
                         }
                         SCHEMA_EXTENSION_NAME => {
@@ -2889,13 +2901,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                                 todo!("raise error because of undefined type")
                             };
                             content = Some(base);
-
-                            (attribute_uses, attribute_wildcard) = self.pop_attr_decls(
-                                &mut children,
-                                target_namespace.clone(),
-                                loop_guard,
-                            )?;
-                            self.check_unexpected_schema_elements(children)?;
                         }
                         _ => unallowed_element!(self.handler, elem),
                     }
@@ -2954,8 +2959,8 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
 
         let mut children = elem.first_child();
         let mut content_type = None;
-        let mut attribute_uses = vec![];
-        let mut attribute_wildcard = None;
+        let mut attribute_uses: Vec<AttributeUse> = vec![];
+        let attribute_wildcard = None::<Wildcard>;
         let mut derivation_method = DerivationMethod::Restriction;
         let mut base_type_defintion = TypeDefinition::Complex(SCHEMA_BUILTIN_ANY_TYPE.clone());
         while let Some(child) = children {
@@ -3028,11 +3033,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                         return Err(XSDError::SrcCt);
                     };
 
-                    let mut children = elem.first_child();
-                    let particle =
-                        self.pop_type_def_particle(&mut children, target_namespace.clone())?;
-                    (attribute_uses, attribute_wildcard) =
-                        self.pop_attr_decls(&mut children, target_namespace.clone(), loop_guard)?;
+                    let particle = None;
 
                     if let Some(sub) = attribute_wildcard.as_ref()
                         && base
@@ -3143,7 +3144,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                                             // clause 3.2.3
                                             let p = Particle {
                                                 min_occurs: 1,
-                                                max_occurs: Some(1),
+                                                max_occurs: 1,
                                                 term: Term::ModelGroup(ModelGroup {
                                                     compositor: Compositor::Sequence,
                                                     particles: vec![p, c].into(),
@@ -3208,352 +3209,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
             attribute_uses,
             attribute_wildcard,
         ))
-    }
-
-    fn parse_any_attribute(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-    ) -> Result<Wildcard, XSDError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_ANYATT_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        let ns_constraint =
-            self.extract_namespace_list(elem.clone(), target_namespace.clone(), "namespace")?;
-        let process_contents = self.extract_process_contents(elem.clone(), "processContents")?;
-
-        self.check_attribute(elem.clone())?;
-
-        Ok(Wildcard {
-            ns_constraint,
-            process_contents,
-        })
-    }
-
-    fn parse_named_group(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-    ) -> Result<(), XSDError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_GROUP_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        let Some(name) = self.extract_ncname(elem.clone(), "name", XSDError::SrcModelGroupDefn)?
-        else {
-            error!(
-                self.handler,
-                SrcModelGroupDefn,
-                elem,
-                "The attribute 'name' of '{}' is mandatory, but is absent.",
-                SCHEMA_GROUP_NAME
-            );
-            return Err(XSDError::SrcModelGroupDefn);
-        };
-        self.check_attribute(elem.clone())?;
-
-        let mut children = elem.first_child();
-        let mut particle = None;
-        while let Some(child) = children {
-            children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    if !matches!(
-                        elem.local_name().as_ref(),
-                        SCHEMA_ALL_NAME | SCHEMA_CHOICE_NAME | SCHEMA_SEQUENCE_NAME
-                    ) {
-                        unallowed_element!(self.handler, elem);
-                    }
-
-                    // 'minOccurs' and 'maxOccurs' are not allowed for simpleExplicitGroup
-                    if elem.has_attribute("minOccurs", None) {
-                        error!(
-                            self.handler,
-                            SrcModelGroupDefn,
-                            elem,
-                            "The attribute 'minOccurs' of '{}' that is a child of 'group' is not allowed.",
-                            elem.local_name()
-                        );
-                        return Err(XSDError::SrcModelGroupDefn);
-                    }
-                    if elem.has_attribute("maxOccurs", None) {
-                        error!(
-                            self.handler,
-                            SrcModelGroupDefn,
-                            elem,
-                            "The attribute 'maxOccurs' of '{}' that is a child of 'group' is not allowed.",
-                            elem.local_name()
-                        );
-                        return Err(XSDError::SrcModelGroupDefn);
-                    }
-
-                    particle = Some(match elem.local_name().as_ref() {
-                        SCHEMA_ALL_NAME => self.parse_all(elem, target_namespace.clone())?,
-                        SCHEMA_CHOICE_NAME => self.parse_choice(elem, target_namespace.clone())?,
-                        SCHEMA_SEQUENCE_NAME => {
-                            self.parse_sequence(elem, target_namespace.clone())?
-                        }
-                        _ => unreachable!(),
-                    });
-                    break;
-                }
-                NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                _ => {}
-            }
-        }
-        self.check_unexpected_schema_elements(children)?;
-
-        let Some(particle) = particle else {
-            error!(
-                self.handler,
-                SrcModelGroupDefn,
-                elem,
-                "'group' that is a child of 'schema' or 'redefine' must have 'all', 'choice' or 'sequence' as a child."
-            );
-            return Err(XSDError::SrcModelGroupDefn);
-        };
-        let Term::ModelGroup(model_group) = particle.term else {
-            internal_error!(self.handler, elem);
-        };
-
-        let model = ModelGroupDefinition {
-            name: name.clone(),
-            target_namespace: target_namespace.clone(),
-            model_group,
-            annotation: None,
-        };
-        self.schema
-            .modelgroup_defs
-            .insert((target_namespace, name), model);
-        Ok(())
-    }
-
-    fn parse_group_ref(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-    ) -> Result<Particle, XSDError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_GROUP_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        let max_occurs = self.extract_occurs(elem.clone(), "maxOccurs", Some(1), true)?;
-        let Some(min_occurs) = self.extract_occurs(elem.clone(), "minOccurs", Some(1), false)?
-        else {
-            internal_error!(self.handler, elem);
-        };
-        let Some(r#ref) = self.extract_ncname(elem.clone(), "ref", XSDError::SrcModelGroup)? else {
-            error!(
-                self.handler,
-                SrcModelGroup,
-                elem,
-                "The attribute 'ref' of '{}' is mandatory, but is absent.",
-                SCHEMA_GROUP_NAME
-            );
-            return Err(XSDError::SrcModelGroup);
-        };
-        self.check_attribute(elem.clone())?;
-
-        let mut children = elem.first_child();
-        self.check_unexpected_schema_elements(children)?;
-
-        if let Some(elem) = self
-            .model_groups
-            .remove(&(target_namespace.clone(), r#ref.clone()))
-        {
-            self.parse_named_group(elem, target_namespace.clone())?;
-        }
-
-        let Some(def) = self.schema.modelgroup_defs.get(&(target_namespace, r#ref)) else {
-            todo!("raise error because of missing definition")
-        };
-
-        Ok(Particle {
-            min_occurs,
-            max_occurs,
-            term: Term::ModelGroup(def.model_group.clone()),
-        })
-    }
-
-    fn parse_choice(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-    ) -> Result<Particle, XSDError> {
-        let _id = elem.remove_attribute("id", None);
-        let max_occurs = self.extract_occurs(elem.clone(), "maxOccurs", Some(1), true)?;
-        let Some(min_occurs) = self.extract_occurs(elem.clone(), "minOccurs", Some(1), false)?
-        else {
-            internal_error!(self.handler, elem);
-        };
-
-        self.check_attribute(elem.clone())?;
-
-        let mut children = elem.first_child();
-
-        let mut particles = vec![];
-        while let Some(particle) =
-            self.pop_nested_particle(&mut children, target_namespace.clone())?
-        {
-            particles.push(particle);
-        }
-
-        let model = ModelGroup {
-            compositor: Compositor::Choice,
-            particles: particles.into(),
-        };
-        Ok(Particle {
-            min_occurs,
-            max_occurs,
-            term: Term::ModelGroup(model),
-        })
-    }
-
-    fn parse_sequence(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-    ) -> Result<Particle, XSDError> {
-        let _id = elem.remove_attribute("id", None);
-        let max_occurs = self.extract_occurs(elem.clone(), "maxOccurs", Some(1), true)?;
-        let Some(min_occurs) = self.extract_occurs(elem.clone(), "minOccurs", Some(1), false)?
-        else {
-            internal_error!(self.handler, elem);
-        };
-
-        self.check_attribute(elem.clone())?;
-
-        let mut children = elem.first_child();
-
-        let mut particles = vec![];
-        while let Some(particle) =
-            self.pop_nested_particle(&mut children, target_namespace.clone())?
-        {
-            particles.push(particle);
-        }
-
-        let model = ModelGroup {
-            compositor: Compositor::Sequence,
-            particles: particles.into(),
-        };
-        Ok(Particle {
-            min_occurs,
-            max_occurs,
-            term: Term::ModelGroup(model),
-        })
-    }
-
-    fn parse_all(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-    ) -> Result<Particle, XSDError> {
-        let _id = elem.remove_attribute("id", None);
-        let Some(max_occurs) = self.extract_occurs(elem.clone(), "maxOccurs", Some(1), false)?
-        else {
-            internal_error!(self.handler, elem);
-        };
-        let Some(min_occurs) = self.extract_occurs(elem.clone(), "minOccurs", Some(1), false)?
-        else {
-            internal_error!(self.handler, elem);
-        };
-        if max_occurs != 1 {
-            error!(
-                self.handler,
-                SrcModelGroup,
-                elem,
-                "The value of attribute 'maxOccurs' of '{}' must be '1', but is '{}'.",
-                SCHEMA_ALL_NAME,
-                max_occurs
-            );
-            return Err(XSDError::SrcModelGroup);
-        }
-        if min_occurs > 1 {
-            error!(
-                self.handler,
-                SrcModelGroup,
-                elem,
-                "The value of attribute 'minOccurs' of '{}' must be '0' or '1', but is '{}'.",
-                SCHEMA_ALL_NAME,
-                min_occurs
-            );
-            return Err(XSDError::SrcModelGroup);
-        }
-
-        self.check_attribute(elem.clone())?;
-
-        let mut children = elem.first_child();
-
-        let mut particles = vec![];
-        while let Some(child) = children {
-            children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    if elem.local_name().as_ref() != SCHEMA_ELEMENT_NAME {
-                        unallowed_element!(self.handler, elem);
-                    }
-
-                    let particle =
-                        self.parse_local_element(elem, target_namespace.clone(), None)?;
-                    particles.push(particle);
-                }
-                NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                _ => {}
-            }
-        }
-
-        let model = ModelGroup {
-            compositor: Compositor::All,
-            particles: particles.into(),
-        };
-
-        Ok(Particle {
-            min_occurs,
-            max_occurs: Some(max_occurs),
-            term: Term::ModelGroup(model),
-        })
-    }
-
-    fn parse_any(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-    ) -> Result<Particle, XSDError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_ANY_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        let max_occurs = self.extract_occurs(elem.clone(), "maxOccurs", Some(1), true)?;
-        let Some(min_occurs) = self.extract_occurs(elem.clone(), "minOccurs", Some(1), false)?
-        else {
-            internal_error!(self.handler, elem);
-        };
-        let ns_constraint =
-            self.extract_namespace_list(elem.clone(), target_namespace.clone(), "namespace")?;
-        let process_contents = self.extract_process_contents(elem.clone(), "processContents")?;
-
-        self.check_attribute(elem.clone())?;
-
-        let wildcard = Wildcard {
-            ns_constraint,
-            process_contents,
-        };
-        Ok(Particle {
-            min_occurs,
-            max_occurs,
-            term: Term::Wildcard(wildcard),
-        })
     }
 
     fn parse_include(&mut self, mut elem: Element) -> Result<(), XSDError> {
@@ -4126,138 +3781,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
         }
     }
 
-    fn extract_occurs(
-        &mut self,
-        mut elem: Element,
-        name: &str,
-        default: Option<usize>,
-        allow_unbounded: bool,
-    ) -> Result<Option<usize>, XSDError> {
-        let Some(occur) = elem.remove_attribute(name, None) else {
-            return Ok(default);
-        };
-        let occur = occur.trim_matches(|c| XMLVersion::XML10.is_whitespace(c));
-
-        if allow_unbounded && occur == "unbounded" {
-            return Ok(None);
-        }
-
-        match SCHEMA_BUILTIN_NONNEGATIVE_INTEGER.parse_with_elem(occur, elem.clone()) {
-            Ok(SchemaValue::Integer(occurs)) => {
-                if occurs > usize::MAX as i128 {
-                    error!(
-                        self.handler,
-                        TooLargeOccurence,
-                        elem,
-                        "The value of the attribute '{}' is too large.",
-                        name
-                    );
-                    return Err(XSDError::TooLargeOccurence);
-                }
-                Ok(Some(occurs as usize))
-            }
-            Ok(_) => internal_error!(self.handler, elem),
-            Err(err) => {
-                error!(
-                    self.handler,
-                    SrcModelGroup,
-                    elem,
-                    "The attribute '{}' of '{}' is failed to parse as nonNegativeInteger because {}.",
-                    name,
-                    SCHEMA_CHOICE_NAME,
-                    err
-                );
-                Err(XSDError::SrcModelGroup)
-            }
-        }
-    }
-
-    fn extract_namespace_list(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-        name: &str,
-    ) -> Result<NamespaceConstraint, XSDError> {
-        match elem.remove_attribute(name, None) {
-            Some(namespace) => {
-                let namespace = namespace.trim_matches(|c| XMLVersion::XML10.is_whitespace(c));
-                if namespace == "##any" {
-                    Ok(NamespaceConstraint::Any)
-                } else if namespace == "##other" {
-                    Ok(NamespaceConstraint::Not(target_namespace))
-                } else {
-                    let mut list = vec![];
-                    for uri in namespace
-                        .split(|c| XMLVersion::XML10.is_whitespace(c))
-                        .filter(|s| !s.is_empty())
-                    {
-                        if uri == "##targetNamespace" {
-                            list.push(target_namespace.clone());
-                        } else if uri == "##local" {
-                            list.push(None);
-                        } else {
-                            match SCHEMA_BUILTIN_ANYURI.parse_with_elem(uri, elem.clone()) {
-                                Ok(SchemaValue::AnyURI(uri)) => {
-                                    list.push(Some(uri.to_string().into()))
-                                }
-                                Ok(_) => internal_error!(self.handler, elem),
-                                Err(err) => {
-                                    error!(
-                                        self.handler,
-                                        SrcWildcard,
-                                        elem,
-                                        "The attribute '{}' of '{}' is failed to parse as anyURI because {}.",
-                                        name,
-                                        elem.local_name(),
-                                        err
-                                    );
-                                    return Err(XSDError::SrcWildcard);
-                                }
-                            }
-                        }
-                    }
-                    // It is unclear whether duplicates should be treated as errors,
-                    // but for the purposes of this process, they will simply be removed
-                    // rather than treated as errors.
-                    list.sort_unstable();
-                    list.dedup();
-                    Ok(NamespaceConstraint::List(list))
-                }
-            }
-            None => Ok(NamespaceConstraint::Any),
-        }
-    }
-
-    fn extract_process_contents(
-        &mut self,
-        mut elem: Element,
-        name: &str,
-    ) -> Result<ProcessContent, XSDError> {
-        match elem.remove_attribute(name, None) {
-            Some(s) => {
-                let s = s.trim_matches(|c| XMLVersion::XML10.is_whitespace(c));
-                match s {
-                    "lax" => Ok(ProcessContent::Lax),
-                    "skip" => Ok(ProcessContent::Skip),
-                    "strict" => Ok(ProcessContent::Strict),
-                    _ => {
-                        error!(
-                            self.handler,
-                            SrcWildcard,
-                            elem,
-                            "The attribute '{}' of '{}' must be 'lax', 'skip' or 'strict', but is '{}'.",
-                            name,
-                            elem.local_name(),
-                            s
-                        );
-                        Err(XSDError::SrcWildcard)
-                    }
-                }
-            }
-            None => Ok(ProcessContent::Strict),
-        }
-    }
-
     fn extract_final(
         &mut self,
         mut elem: Element,
@@ -4290,187 +3813,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
             }
         }
         Ok(Some(ret))
-    }
-
-    fn extract_qualification_form(
-        &mut self,
-        mut elem: Element,
-        name: &str,
-        error: XSDError,
-    ) -> Result<Option<QualificationForm>, XSDError> {
-        let Some(form) = elem.remove_attribute(name, None) else {
-            return Ok(None);
-        };
-
-        let form = form.trim_matches(|c| XMLVersion::XML10.is_whitespace(c));
-        match form {
-            "qualified" => Ok(Some(QualificationForm::Qualified)),
-            "unqualified" => Ok(Some(QualificationForm::Unqualified)),
-            _ => {
-                error!(
-                    self.handler,
-                    error,
-                    elem,
-                    "The attribute '{}' of '{}' must be 'qualified' or 'unqualified', but is '{}'.",
-                    name,
-                    elem.local_name(),
-                    form
-                );
-                Err(error)
-            }
-        }
-    }
-
-    fn pop_attr_decls(
-        &mut self,
-        children: &mut Option<Node<dyn NodeSpec>>,
-        target_namespace: Option<Arc<str>>,
-        loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
-    ) -> Result<(Vec<AttributeUse>, Option<Wildcard>), XSDError> {
-        let mut attribute_uses = vec![];
-        // wildcards from attributeGroup
-        let mut wildcards = vec![];
-        // a wildcard from anyAttribute
-        let mut any_attribute = None;
-        while let Some(child) = children.take() {
-            *children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    match elem.local_name().as_ref() {
-                        SCHEMA_ATTRIBUTE_NAME => {
-                            if any_attribute.is_some() {
-                                todo!("raise error")
-                            }
-                            if let Some(attuse) = self.parse_attribute_declaration(
-                                elem,
-                                target_namespace.clone(),
-                                false,
-                            )? {
-                                attribute_uses.push(attuse);
-                            }
-                        }
-                        SCHEMA_ATTGROUP_NAME => {
-                            if any_attribute.is_some() {
-                                todo!("raise error")
-                            }
-                            let r#ref = self.parse_attgroup_reference(elem, loop_guard)?;
-                            if let Some(def) = self.schema.attgroup_defs.get(&r#ref) {
-                                attribute_uses.extend(def.attribute_uses.iter().cloned());
-                                if let Some(wildcard) = def.attribute_wildcard.as_ref() {
-                                    wildcards.push(wildcard.clone());
-                                }
-                            } else {
-                                todo!("raise error because of definition registration failure")
-                            }
-                        }
-                        SCHEMA_ANYATT_NAME => {
-                            if any_attribute.is_some() {
-                                todo!("raise error")
-                            }
-                            any_attribute =
-                                Some(self.parse_any_attribute(elem, target_namespace.clone())?);
-                        }
-                        _ => {
-                            *children = Some(child);
-                            break;
-                        }
-                    }
-                }
-                NodeKind::Text(_) => unallowed_text!(
-                    self.handler,
-                    child.parent_node().unwrap().as_element().unwrap()
-                ),
-                _ => {}
-            }
-        }
-        let attribute_wildcard = attribute_complete_wildcard(&wildcards, any_attribute)?;
-        Ok((attribute_uses, attribute_wildcard))
-    }
-
-    fn pop_type_def_particle(
-        &mut self,
-        children: &mut Option<Node<dyn NodeSpec>>,
-        target_namespace: Option<Arc<str>>,
-    ) -> Result<Option<Particle>, XSDError> {
-        while let Some(child) = children.take() {
-            *children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    let particle = match elem.local_name().as_ref() {
-                        SCHEMA_GROUP_NAME => {
-                            self.parse_group_ref(elem, target_namespace.clone())?
-                        }
-                        SCHEMA_ALL_NAME => self.parse_all(elem, target_namespace.clone())?,
-                        SCHEMA_CHOICE_NAME => self.parse_choice(elem, target_namespace.clone())?,
-                        SCHEMA_SEQUENCE_NAME => {
-                            self.parse_sequence(elem, target_namespace.clone())?
-                        }
-                        _ => {
-                            *children = Some(child);
-                            break;
-                        }
-                    };
-                    return Ok(Some(particle));
-                }
-                NodeKind::Text(_) => unallowed_text!(
-                    self.handler,
-                    child.parent_node().unwrap().as_element().unwrap()
-                ),
-                _ => {}
-            }
-        }
-        Ok(None)
-    }
-
-    fn pop_nested_particle(
-        &mut self,
-        children: &mut Option<Node<dyn NodeSpec>>,
-        target_namespace: Option<Arc<str>>,
-    ) -> Result<Option<Particle>, XSDError> {
-        while let Some(child) = children.take() {
-            *children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    return match elem.local_name().as_ref() {
-                        SCHEMA_ELEMENT_NAME => Ok(Some(self.parse_local_element(
-                            elem,
-                            target_namespace,
-                            None,
-                        )?)),
-                        SCHEMA_GROUP_NAME => {
-                            Ok(Some(self.parse_group_ref(elem, target_namespace)?))
-                        }
-                        SCHEMA_CHOICE_NAME => Ok(Some(self.parse_choice(elem, target_namespace)?)),
-                        SCHEMA_SEQUENCE_NAME => {
-                            Ok(Some(self.parse_sequence(elem, target_namespace)?))
-                        }
-                        SCHEMA_ANY_NAME => Ok(Some(self.parse_any(elem, target_namespace)?)),
-                        _ => unallowed_element!(self.handler, elem),
-                    };
-                }
-                NodeKind::Text(_) => unallowed_text!(
-                    self.handler,
-                    child.parent_node().unwrap().as_element().unwrap()
-                ),
-                _ => {}
-            }
-        }
-        Ok(None)
     }
 
     /// Raise an errors for attributes whose namespace is NULL or is the XSD namespace.
@@ -4547,7 +3889,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                         // clause 2.1.4
                         Ok(Some(Particle {
                             min_occurs: 1,
-                            max_occurs: Some(1),
+                            max_occurs: 1,
                             term: Term::ModelGroup(ModelGroup {
                                 compositor: Compositor::Sequence,
                                 particles: vec![].into(),
@@ -4568,7 +3910,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                     // clause 2.1.4
                     Ok(Some(Particle {
                         min_occurs: 1,
-                        max_occurs: Some(1),
+                        max_occurs: 1,
                         term: Term::ModelGroup(ModelGroup {
                             compositor: Compositor::Sequence,
                             particles: vec![].into(),
@@ -4648,28 +3990,29 @@ enum Scope {
     Local(Option<Arc<str>>, Arc<str>),
 }
 
+#[derive(Default)]
 struct AttributeDeclaration {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
-    type_definition: Arc<SimpleTypeDefinition>,
+    type_definition: (Option<Arc<str>>, Arc<str>),
     scope: Option<Scope>,
     value_constraint: Option<ValueConstraint>,
     annotation: Option<Annotation>,
 }
 
+#[derive(Default)]
 struct ElementDeclaration {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
-    type_definition: TypeDefinition,
+    type_definition: (Option<Arc<str>>, Arc<str>),
     scope: Option<Scope>,
     value_constraint: Option<ValueConstraint>,
     nillable: bool,
     idc_definitions: Vec<IDCDefinition>,
     substitution_group_affiliation: Option<(Option<Arc<str>>, Arc<str>)>,
     substitution_group_exclusions: FinalSet,
-    disallowed_substitutions: FinalSet,
+    disallowed_substitutions: BlockSet,
     r#abstract: bool,
-    annotation: Option<Annotation>,
 }
 
 #[derive(Clone)]
@@ -4703,14 +4046,10 @@ struct ComplexTypeDefinition {
     r#final: FinalSet,
     r#abstract: bool,
     attribute_uses: Vec<AttributeUse>,
+    attribute_group_refs: Vec<(Option<Arc<str>>, Arc<str>)>,
     attribute_wildcard: Option<Wildcard>,
     content_type: ContentType,
     prohibited_substitutions: FinalSet,
-    // Since `Annotation` holds an `Element`, and `Element` is neither `Sync` nor `Send`,
-    // attempting to add an annotation would prevent `ComplexTypeDefinition` from being
-    // declared as static.
-    // Since this does not affect validation, omit the annotation for now. Implement
-    // improvements in the future (e.g., using Thread Local Storage?).
 }
 
 /// [3.4.7 Built-in Complex Type Definition](https://www.w3.org/TR/xmlschema-1/#d0e9252).
@@ -4723,18 +4062,19 @@ static SCHEMA_BUILTIN_ANY_TYPE: LazyLock<Arc<ComplexTypeDefinition>> = LazyLock:
         r#final: FinalSet::default(),
         r#abstract: false,
         attribute_uses: vec![],
+        attribute_group_refs: vec![],
         attribute_wildcard: Some(Wildcard {
             ns_constraint: NamespaceConstraint::Any,
             process_contents: ProcessContent::Lax,
         }),
         content_type: ContentType::Mixed(Particle {
             min_occurs: 1,
-            max_occurs: Some(1),
+            max_occurs: 1,
             term: Term::ModelGroup(ModelGroup {
                 compositor: Compositor::Sequence,
                 particles: vec![Particle {
                     min_occurs: 0,
-                    max_occurs: None,
+                    max_occurs: usize::MAX,
                     term: Term::Wildcard(Wildcard {
                         ns_constraint: NamespaceConstraint::Any,
                         process_contents: ProcessContent::Lax,
@@ -4749,8 +4089,8 @@ static SCHEMA_BUILTIN_ANY_TYPE: LazyLock<Arc<ComplexTypeDefinition>> = LazyLock:
 
 #[derive(Debug, Clone)]
 enum ValueConstraint {
-    Default(SchemaValue),
-    Fixed(SchemaValue),
+    Default(Arc<str>),
+    Fixed(Arc<str>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -4776,38 +4116,42 @@ pub(super) struct AttributeUse {
     value_constraint: Option<ValueConstraint>,
 }
 
+#[derive(Default)]
 struct AttributeGroupDefinition {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
     attribute_uses: Vec<AttributeUse>,
+    // references to attribute group definitions
+    attribute_group_refs: Vec<(Option<Arc<str>>, Arc<str>)>,
     attribute_wildcard: Option<Wildcard>,
-    annotation: Option<Annotation>,
 }
 
+#[derive(Default)]
 struct ModelGroupDefinition {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
     model_group: ModelGroup,
-    annotation: Option<Annotation>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 enum Compositor {
+    #[default]
     All,
     Choice,
     Sequence,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct ModelGroup {
     compositor: Compositor,
-    particles: Arc<[Particle]>,
-    // annotation: Option<Annotation>,
+    particles: Vec<Particle>,
 }
 
 #[derive(Debug, Clone)]
 enum Term {
     ModelGroup(ModelGroup),
+    // Only <group> can store references to model group definitions.
+    ModelGroupRef(Option<Arc<str>>, Arc<str>),
     Wildcard(Wildcard),
     ElementDecl(Option<Arc<str>>, Arc<str>),
 }
@@ -4815,7 +4159,7 @@ enum Term {
 #[derive(Debug, Clone)]
 pub(super) struct Particle {
     min_occurs: usize,
-    max_occurs: Option<usize>,
+    max_occurs: usize,
     term: Term,
 }
 
