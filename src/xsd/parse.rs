@@ -3997,7 +3997,6 @@ struct AttributeDeclaration {
     type_definition: (Option<Arc<str>>, Arc<str>),
     scope: Option<Scope>,
     value_constraint: Option<ValueConstraint>,
-    annotation: Option<Annotation>,
 }
 
 #[derive(Default)]
@@ -4016,9 +4015,25 @@ struct ElementDeclaration {
 }
 
 #[derive(Clone)]
-enum TypeDefinition {
+pub(super) enum TypeDefinition {
     Simple(Arc<SimpleTypeDefinition>),
     Complex(Arc<ComplexTypeDefinition>),
+}
+
+impl TypeDefinition {
+    pub(super) fn target_namespace(&self) -> Option<Arc<str>> {
+        match self {
+            TypeDefinition::Simple(def) => def.target_namespace.clone(),
+            TypeDefinition::Complex(def) => def.target_namespace.clone(),
+        }
+    }
+
+    pub(super) fn name(&self) -> Arc<str> {
+        match self {
+            TypeDefinition::Simple(def) => def.name.clone(),
+            TypeDefinition::Complex(def) => def.name.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -4359,14 +4374,4 @@ struct Notation {
     target_namespace: Option<Arc<str>>,
     system_id: Option<Arc<URIStr>>,
     public_id: Option<Arc<str>>,
-}
-
-/// Annotation component.
-///
-/// # Reference
-/// - [3.13.1 The Annotation Schema Component](https://www.w3.org/TR/xmlschema-1/#Annotation_details)
-struct Annotation {
-    appinfo: Vec<Element>,
-    documentation: Vec<Element>,
-    attributes: Vec<Attribute>,
 }
