@@ -17,9 +17,7 @@ use crate::{
         AttributeType, Attributes, DefaultDecl, DefaultSAXHandler, EntityResolver, ErrorHandler,
         InputSource, Locator, NamespaceStack, SAXHandler, XMLReader, error::SAXParseError,
     },
-    tree::{
-        Attribute, Document, Element, Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec,
-    },
+    tree::{Document, Element, Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec},
     uri::URIStr,
     xsd::{
         XML_SCHEMA_NAMESPACE, XSDSchema,
@@ -942,18 +940,129 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 self.element_stack.push(SCHEMA_FRACDIGITS_NAME);
             }
             SCHEMA_COMPLEXTYPE_NAME => {
+                let r#abstract = get_boolean(atts, "abstract").unwrap_or_default();
+                let block = get_block(atts, "block").unwrap_or(self.block_default);
+                let r#final = get_final(atts, "final").unwrap_or(self.final_default);
+                let mixed = get_boolean(atts, "mixed").unwrap_or_default();
+                // Although "name" is a required attribute in the top-level declaration,
+                // validation for required attributes is not performed because this is
+                // covered by meta schema validation.
+                let name = atts
+                    .get_value_by_qname("name")
+                    .map(Arc::<str>::from)
+                    .unwrap_or_else(|| self.dummy_name());
+                self.ct_stack.push(ComplexTypeDefinition {
+                    name,
+                    target_namespace: self.target_namespace.clone(),
+                    r#final,
+                    r#abstract,
+                    content_type: if mixed {
+                        // Set a value in case {content type} is not updated.
+                        // component property mapping of {content type}
+                        // - clause 1.2
+                        // - clause 2.1.1
+                        // - clause 2.1.4
+                        // - clause 3.1.2.1
+                        //
+                        // As described in the note to [src-ct] clause 2.2, when <simpleContent>
+                        // alternative is selected, the `mixed` attribute has no meaning, and
+                        // {content type} is overridden by a simple type.
+                        ContentType::Mixed(Particle {
+                            min_occurs: 1,
+                            max_occurs: 1,
+                            term: Term::ModelGroup(ModelGroup {
+                                compositor: Compositor::Sequence,
+                                particles: vec![],
+                            }),
+                        })
+                    } else {
+                        // Set a value in case {content type} is not updated.
+                        // component property mapping of {content type}
+                        // - clause 1.3
+                        // - clause 2.1.1
+                        // - clause 2.1.5
+                        // - clause 3.1.1
+                        ContentType::Empty
+                    },
+                    prohibited_substitutions: block,
+                    ..Default::default()
+                });
                 self.element_stack.push(SCHEMA_COMPLEXTYPE_NAME);
             }
             SCHEMA_SIMPLECONT_NAME => {
+                // push dummy decl for collecting facets
+                let name = self.dummy_name();
+                let target_namespace = self.target_namespace.clone();
+                self.st_stack.push(SimpleTypeDefinition {
+                    name,
+                    target_namespace,
+                    ..Default::default()
+                });
                 self.element_stack.push(SCHEMA_SIMPLECONT_NAME);
             }
             SCHEMA_COMPLEXCONT_NAME => {
+                let mixed = get_boolean(atts, "mixed");
+                if let Some(ct) = self.ct_stack.last_mut() {
+                    // component property mapping of {content type} (<complexType> alternative)
+                    // - clause 1.1 (effective mixed)
+                    let effective_mixed =
+                        mixed.unwrap_or(matches!(ct.content_type, ContentType::Mixed(_)));
+                    // - clause 2.1.1 (effective content in case no children appear)
+                    let effective_content = Particle {
+                        min_occurs: 1,
+                        max_occurs: 1,
+                        term: Term::ModelGroup(ModelGroup {
+                            compositor: Compositor::Sequence,
+                            particles: vec![],
+                        }),
+                    };
+                    // Set a value in case {content type} is not updated.
+                    // component property mapping of {content type} (<complexType> alternative)
+                    // - clause 3.1.1
+                    // - clause 3.1.2
+                    if effective_mixed {
+                        ct.content_type = ContentType::Mixed(effective_content);
+                    } else {
+                        ct.content_type = ContentType::ElementOnly(effective_content);
+                    }
+                }
                 self.element_stack.push(SCHEMA_COMPLEXCONT_NAME);
             }
             SCHEMA_RESTRICTION_NAME => {
+                // 'restriction' under a complex type definition
+
+                let Some((ns, local)) = self.get_qname(atts, "base") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                if let Some(ct) = self.ct_stack.last_mut() {
+                    if self.element_stack.last() == Some(&SCHEMA_SIMPLECONT_NAME)
+                        && let Some(st) = self.st_stack.last_mut()
+                    {
+                        // component property mapping of {content type} clause 1.2
+                        //
+                        // If there is a <simpleType> child, this will be overridden.
+                        st.base_type_definition = (ns.clone(), local.clone());
+                    }
+                    ct.base_type_definition = (ns, local);
+                    ct.derivation_method = DerivationMethod::Restriction;
+                }
                 self.element_stack.push(SCHEMA_RESTRICTION_NAME);
             }
             SCHEMA_EXTENSION_NAME => {
+                let Some(base) = self.get_qname(atts, "base") else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                if let Some(ct) = self.ct_stack.last_mut() {
+                    ct.base_type_definition = base;
+                    ct.derivation_method = DerivationMethod::Extension;
+                    if self.element_stack.last() == Some(&SCHEMA_SIMPLECONT_NAME) {
+                        // To indicate that <simpleContent> alternative has been selected,
+                        // set an empty `ContentType::Simple`.
+                        ct.content_type = ContentType::Simple(None, "".into());
+                    }
+                }
                 self.element_stack.push(SCHEMA_EXTENSION_NAME);
             }
             SCHEMA_GROUP_NAME => {
@@ -1433,6 +1542,17 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         }
                         self.attribute_decl.type_definition =
                             (target_namespace.clone(), name.clone());
+                    } else if matches!(
+                        self.element_stack[..],
+                        [.., SCHEMA_SIMPLECONT_NAME, SCHEMA_RESTRICTION_NAME]
+                    ) {
+                        // local simple type under <simpleContent>
+                        if let Some(st) = self.st_stack.last_mut() {
+                            // component property mapping of {content type} clause 1.1
+                            // 1.1 the simple type definition corresponding to the <simpleType>
+                            //     among the [children] of <restriction> if there is one;
+                            st.base_type_definition = (target_namespace.clone(), name.clone());
+                        }
                     }
                     self.schema
                         .type_defs
@@ -1499,16 +1619,45 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     });
                 }
             }
-            SCHEMA_GROUP_NAME => {
+            SCHEMA_COMPLEXTYPE_NAME => {
+                if let Some(ct) = self.ct_stack.pop() {
+                    let target_namespace = ct.target_namespace.clone();
+                    let name = ct.name.clone();
+                    self.schema.type_defs.insert(
+                        (target_namespace, name),
+                        TypeDefinition::Complex(Arc::new(ct)),
+                    );
+                }
+            }
+            SCHEMA_SIMPLECONT_NAME => {
+                // pop dummy decl
+                if let Some(st) = self.st_stack.pop()
+                    && let Some(ct) = self.ct_stack.last_mut()
+                {
+                    let target_namespace = st.target_namespace.clone();
+                    let name = st.name.clone();
+                    if matches!(ct.derivation_method, DerivationMethod::Restriction) {
+                        ct.content_type =
+                            ContentType::Simple(target_namespace.clone(), name.clone());
+                        self.schema.type_defs.insert(
+                            (target_namespace, name),
+                            TypeDefinition::Simple(Arc::new(st)),
+                        );
+                    }
+                }
+            }
+            SCHEMA_GROUP_NAME
+                if matches!(
+                    self.element_stack.last().copied(),
+                    Some(SCHEMA_SCHEMA_NAME | SCHEMA_REDEFINE_NAME)
+                ) =>
+            {
                 // top-level model group definition
                 // 1. pop dummy particle
                 // 2. extract model group of dummy particle
                 // 3. extract actual child particle
                 // 4. extract model group of actual child particle
-                if matches!(
-                    self.element_stack.last().copied(),
-                    Some(SCHEMA_SCHEMA_NAME | SCHEMA_REDEFINE_NAME)
-                ) && let Some(pt) = self.pt_stack.pop()
+                if let Some(pt) = self.pt_stack.pop()
                     && let Term::ModelGroup(mut mg) = pt.term
                     && let Some(pt) = mg.particles.pop()
                     && let Term::ModelGroup(mg) = pt.term
@@ -1520,7 +1669,6 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         (target_namespace, name),
                         std::mem::take(&mut *self.model_group_def),
                     );
-                    self.pt_stack.clear();
                 }
             }
             SCHEMA_ATTGROUP_NAME => {
@@ -1563,12 +1711,98 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     );
                 }
             }
-            SCHEMA_ALL_NAME | SCHEMA_CHOICE_NAME | SCHEMA_SEQUENCE_NAME => {
-                if let Some(pt) = self.pt_stack.pop()
-                    && let Some(ppt) = self.pt_stack.last_mut()
-                    && let Term::ModelGroup(mg) = &mut ppt.term
-                {
-                    mg.particles.push(pt);
+            SCHEMA_GROUP_NAME | SCHEMA_ALL_NAME | SCHEMA_CHOICE_NAME | SCHEMA_SEQUENCE_NAME => {
+                if let Some(pt) = self.pt_stack.pop() {
+                    // model group reference
+                    if let Some(bpt) = self.pt_stack.last_mut()
+                        && let Term::ModelGroup(mg) = &mut bpt.term
+                    {
+                        // If a parent particle exists, push to its child particle.
+                        mg.particles.push(pt);
+                    } else {
+                        // If not, this is the child of <complexType>, <restriction> or <extension>.
+                        // (in other words, this this particle is used for {content type} of a complex type)
+                        if let Some(ct) = self.ct_stack.last_mut() {
+                            if self.element_stack.last() == Some(&SCHEMA_COMPLEXTYPE_NAME) {
+                                // Neither <simpleContent> nor <complexContent> appears under <complexType>.
+                                // In this case, it is assumed that ur-type is considered to be restricted.
+                                //
+                                // Reference: 3.4.2 XML Representation of Complex Type Definitions
+                                // > The property mappings below are also used in the case where the
+                                // > third alternative (neither <simpleContent> nor <complexContent>)
+                                // > is chosen. This case is understood as shorthand for complex
+                                // > content restricting the ·ur-type definition·, and the details
+                                // > of the mappings should be modified as necessary.
+                                ct.base_type_definition =
+                                    SCHEMA_BUILTIN_ANY_TYPE.base_type_definition.clone();
+                                ct.derivation_method = DerivationMethod::Restriction;
+                            }
+
+                            // component property mapping of {content type}
+                            // clause 2 (effective content)
+                            let effective_mixed = matches!(ct.content_type, ContentType::Mixed(_));
+                            let effective_content = match &pt.term {
+                                Term::ModelGroup(model) => {
+                                    // <all>, <choice> or <sequence>
+                                    if (matches!(
+                                        model.compositor,
+                                        Compositor::All | Compositor::Sequence
+                                    ) || (matches!(model.compositor, Compositor::Choice)
+                                        && pt.min_occurs == 0))
+                                        && model.particles.is_empty()
+                                    {
+                                        // clause 2.1.2, 2.1.3, 2.1.4, 2.1.5
+                                        effective_mixed.then_some(Particle {
+                                            min_occurs: 1,
+                                            max_occurs: 1,
+                                            term: Term::ModelGroup(ModelGroup {
+                                                compositor: Compositor::Sequence,
+                                                particles: vec![],
+                                            }),
+                                        })
+                                    } else {
+                                        // clause 2.1.5
+                                        Some(pt)
+                                    }
+                                }
+                                Term::ModelGroupRef(_, _) => {
+                                    // <group ref=...>
+                                    // clause 2.1.5
+                                    Some(pt)
+                                }
+                                Term::ElementDecl(_, _) | Term::Wildcard(_) => {
+                                    // forbidden. simply ignore
+                                    None
+                                }
+                            };
+
+                            // component property mapping of {content type}
+                            // clause 3
+                            match ct.derivation_method {
+                                DerivationMethod::Restriction => {
+                                    // clause 3.1
+                                    ct.content_type =
+                                        if let Some(effective_content) = effective_content {
+                                            // clause 3.1.2
+                                            if effective_mixed {
+                                                ContentType::Mixed(effective_content)
+                                            } else {
+                                                ContentType::ElementOnly(effective_content)
+                                            }
+                                        } else {
+                                            // clause 3.1.1
+                                            ContentType::Empty
+                                        };
+                                }
+                                DerivationMethod::Extension => {
+                                    // clause 3.2
+                                    // Since the base type must be clear,
+                                    // this cannot be resolved at this point.
+                                    ct.content_type = ContentType::Pending(effective_content);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             SCHEMA_UNIQUE_NAME | SCHEMA_KEY_NAME | SCHEMA_KEYREF_NAME => {
@@ -1596,6 +1830,15 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
         // it doesn't matter because everything works out by the time the other callbacks are
         // invoked.
         self.ns_stack.pop();
+    }
+
+    fn end_document(&mut self) {
+        assert!(self.ct_stack.is_empty());
+        assert!(self.st_stack.is_empty());
+        assert!(self.ed_stack.is_empty());
+        assert!(self.element_stack.is_empty(), "{:?}", self.element_stack);
+        assert!(self.pt_stack.is_empty(), "{:?}", self.pt_stack);
+        self.child.end_document();
     }
 
     // unused callbacks
@@ -1627,9 +1870,6 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
     }
     fn start_document(&mut self) {
         self.child.start_document();
-    }
-    fn end_document(&mut self) {
-        self.child.end_document();
     }
     fn start_dtd(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
         self.child.start_dtd(name, public_id, system_id);
@@ -2327,129 +2567,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
         }
     }
 
-    fn resolve_element_default(
-        &mut self,
-        elem: Element,
-        default: Option<String>,
-        fixed: Option<String>,
-        typedef: &TypeDefinition,
-    ) -> Result<Option<ValueConstraint>, XSDError> {
-        if default.is_some() && fixed.is_some() {
-            error!(
-                self.handler,
-                SrcElement,
-                elem,
-                "The attribute 'default' and 'fixed' of 'element' must not both be present."
-            );
-            Err(XSDError::SrcElement)
-        } else if default.is_none() && fixed.is_none() {
-            Ok(None)
-        } else {
-            let value = default.as_deref().or(fixed.as_deref()).unwrap();
-            let value = match typedef {
-                TypeDefinition::Simple(def) => {
-                    // [cos-valid-default] clause 1
-                    // match def.parse_with_elem(value, elem.clone()) {
-                    //     Ok(value) => value,
-                    //     Err(err) => todo!("raise error"),
-                    // }
-                }
-                TypeDefinition::Complex(def) => {
-                    match &def.content_type {
-                        ContentType::Simple(def) => {
-                            // [cos-valid-default] clause 2.2.1
-                            // match def.parse_with_elem(value, elem.clone()) {
-                            //     Ok(value) => value,
-                            //     Err(err) => todo!("raise error"),
-                            // }
-                        }
-                        ContentType::Mixed(particle) => {
-                            if !particle.is_emptiable() {
-                                // [cos-valid-default] clause 2.2.2
-                                error!(
-                                    self.handler,
-                                    CosValidDefault,
-                                    elem,
-                                    "Default values must not be set for complex content that is non-empty mixed content."
-                                );
-                                return Err(XSDError::CosValidDefault);
-                            }
-                            // It is unclear what type this should be checked as,
-                            // but for now, let's treat it as a string type.
-                            // SchemaValue::String(value.into())
-                        }
-                        _ => {
-                            // [cos-valid-default] clause 2.1
-                            error!(
-                                self.handler,
-                                CosValidDefault,
-                                elem,
-                                "Default values must not be set for complex content that is either empty or element-only content."
-                            );
-                            return Err(XSDError::CosValidDefault);
-                        }
-                    }
-                }
-            };
-
-            Ok(None)
-            // Ok(if default.is_some() {
-            //     Some(ValueConstraint::Default(value))
-            // } else {
-            //     Some(ValueConstraint::Fixed(value))
-            // })
-        }
-    }
-
-    fn resolve_element_type(
-        &mut self,
-        elem: Element,
-        r#type: Option<(Option<Arc<str>>, Arc<str>)>,
-        typedef: Option<TypeDefinition>,
-        allow_missing: bool,
-    ) -> Result<TypeDefinition, XSDError> {
-        match (r#type, typedef) {
-            (Some(_), Some(_)) | (None, None) => {
-                // [src-element] clause 3
-                error!(
-                    self.handler,
-                    SrcElement,
-                    elem,
-                    "The attribute 'type' and either a element child 'simpleType' or 'complexType' are mutually exclusive."
-                );
-                Err(XSDError::SrcElement)
-            }
-            (Some(key), None) => {
-                if let Some(elem) = self.complex_types.remove(&key) {
-                    self.parse_complex_type_definitions(elem, key.0.clone(), &mut vec![], true)?;
-                }
-
-                if let Some(def) = self.schema.type_defs.get(&key) {
-                    Ok(def.clone())
-                } else if allow_missing {
-                    // Since the complex type definition may not have been
-                    // resolved yet, set a temporary type definition.
-                    Ok(TypeDefinition::Complex(Arc::new(ComplexTypeDefinition {
-                        name: key.1,
-                        target_namespace: key.0,
-                        base_type_definition: None,
-                        derivation_method: DerivationMethod::Restriction,
-                        r#final: FinalSet::default(),
-                        r#abstract: false,
-                        attribute_uses: vec![],
-                        attribute_group_refs: vec![],
-                        attribute_wildcard: None,
-                        content_type: ContentType::Empty,
-                        prohibited_substitutions: FinalSet::default(),
-                    })))
-                } else {
-                    todo!("raise error because of missing type definitions");
-                }
-            }
-            (None, Some(type_definition)) => Ok(type_definition),
-        }
-    }
-
     fn parse_complex_type_definitions(
         &mut self,
         mut elem: Element,
@@ -2460,59 +2577,12 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
         assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
         assert_eq!(elem.local_name().as_ref(), SCHEMA_COMPLEXTYPE_NAME);
 
-        let r#abstract = self
-            .extract_boolean(elem.clone(), "abstract", XSDError::SrcCt)?
-            .unwrap_or(false);
-        let block = self
-            .extract_final(
-                elem.clone(),
-                "block",
-                Final::Extension | Final::Restriction,
-                true,
-            )?
-            .unwrap_or(self.block_default);
-        let r#final = self
-            .extract_final(
-                elem.clone(),
-                "final",
-                Final::Extension | Final::Restriction,
-                true,
-            )?
-            .unwrap_or(self.final_default);
+        let r#abstract = false;
+        let block = BlockSet::default();
+        let r#final = self.final_default;
         let _id = elem.remove_attribute("id", None);
-        let mixed = self
-            .extract_boolean(elem.clone(), "mixed", XSDError::SrcCt)?
-            .unwrap_or(false);
-        let name = match self.extract_ncname(elem.clone(), "name", XSDError::SrcCt)? {
-            Some(name) => name,
-            None => {
-                if !global {
-                    self.unnamed += 1;
-                    // Choose a name that is not an NCName to avoid conflicts
-                    // with other type definitions.
-                    format!("#unnamed{}", self.unnamed).into()
-                } else {
-                    error!(
-                        self.handler,
-                        SrcCt,
-                        elem,
-                        "The mandatory attribute 'name' of '{}' is missing.",
-                        elem.local_name()
-                    );
-                    return Err(XSDError::SrcCt);
-                }
-            }
-        };
-        if self
-            .schema
-            .type_defs
-            .contains_key(&(target_namespace.clone(), name.clone()))
-        {
-            todo!("raise error because duplicated definition");
-        }
-        loop_guard.push((target_namespace.clone(), name.clone()));
-
-        self.check_attribute(elem.clone())?;
+        let mixed = false;
+        let name = Arc::<str>::default();
 
         let mut children = elem.first_child();
         // simpleContent
@@ -2546,7 +2616,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                             Some(Arc::new(ComplexTypeDefinition {
                                 name: name.clone(),
                                 target_namespace: target_namespace.clone(),
-                                base_type_definition: Some(base_type_definition),
+                                base_type_definition: Default::default(),
                                 derivation_method,
                                 r#final,
                                 r#abstract,
@@ -2574,7 +2644,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                             Some(Arc::new(ComplexTypeDefinition {
                                 name: name.clone(),
                                 target_namespace: target_namespace.clone(),
-                                base_type_definition: Some(base_type_definition),
+                                base_type_definition: Default::default(),
                                 derivation_method,
                                 r#final,
                                 r#abstract,
@@ -2610,9 +2680,9 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                             Some(Arc::new(ComplexTypeDefinition {
                                 name: name.clone(),
                                 target_namespace: target_namespace.clone(),
-                                base_type_definition: Some(TypeDefinition::Complex(
-                                    SCHEMA_BUILTIN_ANY_TYPE.clone(),
-                                )),
+                                base_type_definition: SCHEMA_BUILTIN_ANY_TYPE
+                                    .base_type_definition
+                                    .clone(),
                                 derivation_method: DerivationMethod::Restriction,
                                 r#final,
                                 r#abstract,
@@ -2642,9 +2712,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
             Arc::new(ComplexTypeDefinition {
                 name: name.clone(),
                 target_namespace: target_namespace.clone(),
-                base_type_definition: Some(TypeDefinition::Complex(
-                    SCHEMA_BUILTIN_ANY_TYPE.clone(),
-                )),
+                base_type_definition: SCHEMA_BUILTIN_ANY_TYPE.base_type_definition.clone(),
                 derivation_method: DerivationMethod::Restriction,
                 r#final,
                 r#abstract,
@@ -2690,8 +2758,8 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
         let mut children = elem.first_child();
         // extract derivation method
         let mut content = None;
-        let mut attribute_uses = vec![];
-        let mut attribute_wildcard = None;
+        let attribute_uses = vec![];
+        let attribute_wildcard = None;
         let mut derivation_method = DerivationMethod::Restriction;
         let mut base_type_definition = TypeDefinition::Complex(SCHEMA_BUILTIN_ANY_TYPE.clone());
         while let Some(child) = children {
@@ -2706,7 +2774,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                     match elem.local_name().as_ref() {
                         SCHEMA_RESTRICTION_NAME => {
                             derivation_method = DerivationMethod::Restriction;
-                            let mut children = elem.first_child();
+                            let children = elem.first_child();
                             // extract simpleType if exists
                             // This `simpleType` may be used to determine the {content type}
                             // property of a `complexType` component.
@@ -2732,23 +2800,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                             //         (Facets) (§3.14.6);
                             // ```
                             let simple_type = None;
-                            while let Some(child) = children {
-                                children = child.next_sibling();
-
-                                match child.downcast() {
-                                    NodeKind::Element(elem) => {
-                                        if elem.namespace_name().as_deref()
-                                            != Some(XML_SCHEMA_NAMESPACE)
-                                        {
-                                            continue;
-                                        }
-                                        break;
-                                    }
-                                    NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                                    _ => {}
-                                }
-                            }
-
                             let _id = elem.remove_attribute("id", None);
                             let Some(key) = self.extract_qname(elem.clone(), "base")? else {
                                 error!(
@@ -2783,17 +2834,17 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                                     }
                                     TypeDefinition::Complex(complex) => {
                                         match &complex.content_type {
-                                            ContentType::Simple(simple) => {
-                                                if let Some(def) = simple_type {
-                                                    // component property mapping of {content type}
-                                                    // clause 1.1
-                                                    def
-                                                } else {
-                                                    // component property mapping of {content type}
-                                                    // clause 1.2 and [src-ct] 2.1.1
-                                                    simple.clone()
-                                                }
-                                            }
+                                            // ContentType::Simple(simple) => {
+                                            //     if let Some(def) = simple_type {
+                                            //         // component property mapping of {content type}
+                                            //         // clause 1.1
+                                            //         def
+                                            //     } else {
+                                            //         // component property mapping of {content type}
+                                            //         // clause 1.2 and [src-ct] 2.1.1
+                                            //         simple.clone()
+                                            //     }
+                                            // }
                                             ContentType::Mixed(mixed) => {
                                                 // [src-ct] 2.1.2
                                                 if !mixed.is_emptiable() {
@@ -2847,7 +2898,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                         }
                         SCHEMA_EXTENSION_NAME => {
                             derivation_method = DerivationMethod::Extension;
-                            let mut children = elem.first_child();
                             let _id = elem.remove_attribute("id", None);
                             let Some(key) = self.extract_qname(elem.clone(), "base")? else {
                                 error!(
@@ -2876,10 +2926,10 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                                     }
                                     TypeDefinition::Complex(complex) => {
                                         match &complex.content_type {
-                                            ContentType::Simple(simple) => {
-                                                // [src-ct] 2.1.1
-                                                simple.clone()
-                                            }
+                                            // ContentType::Simple(simple) => {
+                                            //     // [src-ct] 2.1.1
+                                            //     simple.clone()
+                                            // }
                                             _ => {
                                                 // [src-ct] 2.1
                                                 error!(
@@ -2926,7 +2976,8 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
         Ok((
             base_type_definition,
             derivation_method,
-            ContentType::Simple(content),
+            // ContentType::Simple(content),
+            todo!(),
             attribute_uses,
             attribute_wildcard,
         ))
@@ -3892,7 +3943,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                             max_occurs: 1,
                             term: Term::ModelGroup(ModelGroup {
                                 compositor: Compositor::Sequence,
-                                particles: vec![].into(),
+                                particles: vec![],
                             }),
                         }))
                     } else {
@@ -4036,27 +4087,32 @@ impl TypeDefinition {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 enum DerivationMethod {
+    #[default]
     Restriction,
     Extension,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 enum ContentType {
+    #[default]
     Empty,
-    Simple(Arc<SimpleTypeDefinition>),
+    Simple(Option<Arc<str>>, Arc<str>),
     Mixed(Particle),
     ElementOnly(Particle),
+    // component property mapping of {content type} clause 3.2
+    // Although a complex type extension requires a base type,
+    // specify this value if the base type is unknown at that point.
+    // Store the effective content (clause 2).
+    Pending(Option<Particle>),
 }
 
+#[derive(Default)]
 struct ComplexTypeDefinition {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
-    // The specification stipulates that every complex type definition must have a base type
-    // definition, and that `anyType` itself is defined as a base type definition.
-    // However, in this implementation, it is defined as `Option` to avoid self-reference.
-    base_type_definition: Option<TypeDefinition>,
+    base_type_definition: (Option<Arc<str>>, Arc<str>),
     derivation_method: DerivationMethod,
     r#final: FinalSet,
     r#abstract: bool,
@@ -4064,15 +4120,17 @@ struct ComplexTypeDefinition {
     attribute_group_refs: Vec<(Option<Arc<str>>, Arc<str>)>,
     attribute_wildcard: Option<Wildcard>,
     content_type: ContentType,
-    prohibited_substitutions: FinalSet,
+    prohibited_substitutions: BlockSet,
 }
 
 /// [3.4.7 Built-in Complex Type Definition](https://www.w3.org/TR/xmlschema-1/#d0e9252).
 static SCHEMA_BUILTIN_ANY_TYPE: LazyLock<Arc<ComplexTypeDefinition>> = LazyLock::new(|| {
+    let target_namespace = Arc::<str>::from(XML_SCHEMA_NAMESPACE);
+    let name = Arc::<str>::from("anyType");
     Arc::new(ComplexTypeDefinition {
-        name: "anyType".into(),
-        target_namespace: Some(XML_SCHEMA_NAMESPACE.into()),
-        base_type_definition: None,
+        name: name.clone(),
+        target_namespace: Some(target_namespace.clone()),
+        base_type_definition: (Some(target_namespace), name),
         derivation_method: DerivationMethod::Restriction,
         r#final: FinalSet::default(),
         r#abstract: false,
@@ -4094,11 +4152,10 @@ static SCHEMA_BUILTIN_ANY_TYPE: LazyLock<Arc<ComplexTypeDefinition>> = LazyLock:
                         ns_constraint: NamespaceConstraint::Any,
                         process_contents: ProcessContent::Lax,
                     }),
-                }]
-                .into(),
+                }],
             }),
         }),
-        prohibited_substitutions: FinalSet::default(),
+        prohibited_substitutions: BlockSet::default(),
     })
 });
 
@@ -4171,7 +4228,13 @@ enum Term {
     ElementDecl(Option<Arc<str>>, Arc<str>),
 }
 
-#[derive(Debug, Clone)]
+impl Default for Term {
+    fn default() -> Self {
+        Term::ModelGroup(ModelGroup::default())
+    }
+}
+
+#[derive(Debug, Clone, Default)]
 pub(super) struct Particle {
     min_occurs: usize,
     max_occurs: usize,
