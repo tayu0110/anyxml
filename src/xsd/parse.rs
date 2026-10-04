@@ -6,19 +6,16 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use anyxml_automata::xsregexp::XSRegexp;
-use anyxml_uri::uri::URIString;
-
 use crate::{
-    XML_XML_NAMESPACE, XMLVersion,
-    automata::xsregexp::RegexpError,
+    XML_XML_NAMESPACE,
+    automata::xsregexp::{RegexpError, XSRegexp},
     error::{XMLError, XMLErrorDomain, XMLErrorLevel},
     sax::{
         AttributeType, Attributes, DefaultDecl, DefaultSAXHandler, EntityResolver, ErrorHandler,
         InputSource, Locator, NamespaceStack, SAXHandler, XMLReader, error::SAXParseError,
     },
     tree::{Document, Element, Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec},
-    uri::URIStr,
+    uri::{URIStr, URIString},
     xsd::{
         XML_SCHEMA_NAMESPACE, XSDSchema,
         typedef::{
@@ -26,10 +23,7 @@ use crate::{
             SimpleTypeDefinition, Variety, Whitespace, WhitespaceConstraint,
         },
     },
-    xsdtypes::{
-        SCHEMA_BUILTIN_ANYURI, SCHEMA_BUILTIN_BOOLEAN, SCHEMA_BUILTIN_NCNAME, SCHEMA_BUILTIN_QNAME,
-        SchemaValue,
-    },
+    xsdtypes::{SCHEMA_BUILTIN_ANYURI, SCHEMA_BUILTIN_NCNAME, SCHEMA_BUILTIN_QNAME, SchemaValue},
 };
 
 const SCHEMA_SCHEMA_NAME: &str = "schema";
@@ -504,6 +498,13 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         } else if let Some(ct) = self.ct_stack.last_mut() {
             ct.attribute_uses.push(attuse);
         }
+    }
+
+    /// Check if the current position is under <redefine>.
+    fn in_redefine(&self) -> bool {
+        // Since <redefine> appears only directly under <schema>,
+        // there is no need to scan the entire stack.
+        self.element_stack.len() >= 2 && self.element_stack[1] == SCHEMA_REDEFINE_NAME
     }
 }
 
@@ -1553,6 +1554,23 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                             //     among the [children] of <restriction> if there is one;
                             st.base_type_definition = (target_namespace.clone(), name.clone());
                         }
+                    } else if self.element_stack.last() == Some(&SCHEMA_REDEFINE_NAME) {
+                        let target_namespace = st.target_namespace.clone();
+                        let name = st.name.clone();
+                        if st.base_type_definition != (target_namespace, name) {
+                            // [src-redefine] clause 5
+                            let msg = "The base type of redefined simple type definition must match to its own name.";
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::SrcRedefine),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Borrowed(msg),
+                            });
+                        }
                     }
                     self.schema
                         .type_defs
@@ -1623,6 +1641,23 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 if let Some(ct) = self.ct_stack.pop() {
                     let target_namespace = ct.target_namespace.clone();
                     let name = ct.name.clone();
+                    if self.in_redefine()
+                        && (ct.base_type_definition.0 != target_namespace
+                            || ct.base_type_definition.1 != name)
+                    {
+                        // [src-redefine] clause 5
+                        let msg = "The base type of redefined complex type definition must match to its own name.";
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::SrcRedefine),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Borrowed(msg),
+                        });
+                    }
                     self.schema.type_defs.insert(
                         (target_namespace, name),
                         TypeDefinition::Complex(Arc::new(ct)),
@@ -1670,6 +1705,9 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         std::mem::take(&mut *self.model_group_def),
                     );
                 }
+
+                // Since SRC checks related to <redefine> cannot be performed until after the
+                // schema to be <redefine>d has been built, we will not take any action here.
             }
             SCHEMA_ATTGROUP_NAME => {
                 if matches!(
@@ -1678,10 +1716,33 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 ) {
                     let target_namespace = self.attr_group_def.target_namespace.clone();
                     let name = self.attr_group_def.name.clone();
-                    self.schema.attgroup_defs.insert(
-                        (target_namespace, name),
-                        std::mem::take(&mut *self.attr_group_def),
-                    );
+                    let key = (target_namespace, name);
+                    if self.element_stack.last() == Some(&SCHEMA_REDEFINE_NAME) {
+                        let count = self
+                            .attr_group_def
+                            .attribute_group_refs
+                            .iter()
+                            .filter(|r| r == &&key)
+                            .count();
+                        if count > 1 {
+                            // [src-redefine] clause 7.1
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::SrcRedefine),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Borrowed("Redefined attribute group definition must not contain two or more self-references."),
+                            });
+                        }
+                        // The case where `count == 0` (clause 7.2) cannot be validated
+                        // until after the schema to be redefined has been constructed.
+                    }
+                    self.schema
+                        .attgroup_defs
+                        .insert(key, std::mem::take(&mut *self.attr_group_def));
                 }
             }
             SCHEMA_ELEMENT_NAME => {
@@ -3003,10 +3064,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
         assert_eq!(elem.local_name().as_ref(), SCHEMA_COMPLEXCONT_NAME);
 
         let _id = elem.remove_attribute("id", None);
-        // reference: "effective mixed"
-        let mixed = self
-            .extract_boolean(elem.clone(), "mixed", XSDError::SrcCt)?
-            .unwrap_or(mixed);
 
         let mut children = elem.first_child();
         let mut content_type = None;
@@ -3755,34 +3812,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
         }
     }
 
-    fn extract_boolean(
-        &mut self,
-        mut elem: Element,
-        name: &str,
-        error: XSDError,
-    ) -> Result<Option<bool>, XSDError> {
-        let Some(boolean) = elem.remove_attribute(name, None) else {
-            return Ok(None);
-        };
-
-        match SCHEMA_BUILTIN_BOOLEAN.parse_with_elem(&boolean, elem.clone()) {
-            Ok(SchemaValue::Boolean(ret)) => Ok(Some(ret)),
-            Ok(_) => internal_error!(self.handler, elem),
-            Err(err) => {
-                error!(
-                    self.handler,
-                    error,
-                    elem,
-                    "The attribute '{}' of '{}' is failed to parse as boolean because {}.",
-                    name,
-                    elem.local_name(),
-                    err
-                );
-                Err(error)
-            }
-        }
-    }
-
     fn extract_any_uri(
         &mut self,
         mut elem: Element,
@@ -3830,40 +3859,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                 Err(error)
             }
         }
-    }
-
-    fn extract_final(
-        &mut self,
-        mut elem: Element,
-        name: &str,
-        allow: FinalSet,
-        allow_all: bool,
-    ) -> Result<Option<FinalSet>, XSDError> {
-        let Some(fin) = elem.remove_attribute(name, None) else {
-            return Ok(None);
-        };
-
-        let fin = fin.trim_matches(|c| XMLVersion::XML10.is_whitespace(c));
-        if allow_all && fin == "#all" {
-            return Ok(Some(allow));
-        }
-
-        let mut ret = FinalSet::default();
-        for fin in fin
-            .split(|c| XMLVersion::XML10.is_whitespace(c))
-            .filter(|s| !s.is_empty())
-        {
-            match fin {
-                "extension" if allow.extension() => ret = ret | Final::Extension,
-                "restriction" if allow.restriction() => ret = ret | Final::Restriction,
-                "list" if allow.list() => ret = ret | Final::List,
-                "union" if allow.union() => ret = ret | Final::Union,
-                _ => {
-                    todo!("raise error because of unallowed value");
-                }
-            }
-        }
-        Ok(Some(ret))
     }
 
     /// Raise an errors for attributes whose namespace is NULL or is the XSD namespace.
@@ -3964,7 +3959,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                         max_occurs: 1,
                         term: Term::ModelGroup(ModelGroup {
                             compositor: Compositor::Sequence,
-                            particles: vec![].into(),
+                            particles: vec![],
                         }),
                     }))
                 } else {
