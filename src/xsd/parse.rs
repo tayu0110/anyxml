@@ -17,7 +17,7 @@ use crate::{
     tree::{Document, Element, Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec},
     uri::{URIStr, URIString},
     xsd::{
-        XML_SCHEMA_NAMESPACE, XSDSchema,
+        XML_SCHEMA_INSTANCE_NAMESPACE, XML_SCHEMA_NAMESPACE, XSDSchema,
         typedef::{
             Block, BlockSet, Boundary, Enumeration, Final, FinalSet, Length, Pattern,
             SimpleTypeDefinition, Variety, Whitespace, WhitespaceConstraint,
@@ -184,12 +184,35 @@ thread_local! {
 
 #[derive(Default)]
 pub struct Schema {
-    type_defs: HashMap<(Option<Arc<str>>, Arc<str>), TypeDefinition>,
-    att_decls: HashMap<(Option<Arc<str>>, Arc<str>), AttributeDeclaration>,
-    elem_decls: HashMap<(Option<Arc<str>>, Arc<str>), ElementDeclaration>,
-    attgroup_defs: HashMap<(Option<Arc<str>>, Arc<str>), AttributeGroupDefinition>,
-    modelgroup_defs: HashMap<(Option<Arc<str>>, Arc<str>), ModelGroupDefinition>,
-    notation_decls: HashMap<(Option<Arc<str>>, Arc<str>), Notation>,
+    pub(super) type_defs: HashMap<(Option<Arc<str>>, Arc<str>), TypeDefinition>,
+    pub(super) att_decls: HashMap<(Option<Arc<str>>, Arc<str>), AttributeDeclaration>,
+    pub(super) elem_decls: HashMap<(Option<Arc<str>>, Arc<str>), ElementDeclaration>,
+    pub(super) attgroup_defs: HashMap<(Option<Arc<str>>, Arc<str>), AttributeGroupDefinition>,
+    pub(super) modelgroup_defs: HashMap<(Option<Arc<str>>, Arc<str>), ModelGroupDefinition>,
+    pub(super) notation_decls: HashMap<(Option<Arc<str>>, Arc<str>), Notation>,
+}
+
+impl Schema {
+    pub(super) fn extend(&mut self, other: Self) {
+        for (key, value) in other.type_defs {
+            self.type_defs.entry(key).or_insert(value);
+        }
+        for (key, value) in other.att_decls {
+            self.att_decls.entry(key).or_insert(value);
+        }
+        for (key, value) in other.elem_decls {
+            self.elem_decls.entry(key).or_insert(value);
+        }
+        for (key, value) in other.attgroup_defs {
+            self.attgroup_defs.entry(key).or_insert(value);
+        }
+        for (key, value) in other.modelgroup_defs {
+            self.modelgroup_defs.entry(key).or_insert(value);
+        }
+        for (key, value) in other.notation_decls {
+            self.notation_decls.entry(key).or_insert(value);
+        }
+    }
 }
 
 impl XSDSchema {
@@ -644,6 +667,19 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     return;
                 };
                 let namespace = atts.get_value_by_qname("namespace").map(Box::<str>::from);
+                if self.target_namespace.as_deref() == namespace.as_deref() {
+                    // [src-import] clause 1
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::SrcImport),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Borrowed("'namespace' of <import> must not match target namespace of the schema."),
+                    });
+                }
                 self.imports.push((namespace, schema_location));
                 self.element_stack.push(SCHEMA_IMPORT_NAME);
             }
@@ -1219,6 +1255,52 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 self.element_stack.push(SCHEMA_ELEMENT_NAME);
             }
             SCHEMA_ATTRIBUTE_NAME => {
+                macro_rules! check_unallowed_xmlns {
+                    ($name:expr) => {
+                        if $name == "xmlns" {
+                            // [no-xmlns]
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::NoXmlns),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Borrowed(
+                                    "The attribute declaration 'xmlns' is not allowed.",
+                                ),
+                            });
+                            self.skip_depth += 1;
+                            return;
+                        }
+                    };
+                }
+                macro_rules! check_unallowed_xsi {
+                    ($target_namespace:expr) => {
+                        if $target_namespace == Some(XML_SCHEMA_INSTANCE_NAMESPACE) {
+                            // [no-xsi]
+                            let msg = format!(
+                                "The attribute declaration whose target name space is '{}' is not allowed.",
+                                XML_SCHEMA_INSTANCE_NAMESPACE
+                            );
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::NoXsi),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Owned(msg),
+                            });
+                            self.skip_depth += 1;
+                            return;
+                        }
+
+                    };
+                }
+
                 let value_constraint = self.get_attribute_default(atts);
                 if self.element_stack.last() == Some(&SCHEMA_SCHEMA_NAME) {
                     // top-level attribute declaration
@@ -1226,6 +1308,8 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         self.skip_depth += 1;
                         return;
                     };
+                    check_unallowed_xmlns!(name);
+                    check_unallowed_xsi!(self.target_namespace.as_deref());
                     // For the {target_namespace} of a top-level attribute declaration,
                     // the value of "form" must not be used.
                     self.attribute_decl.target_namespace = self.target_namespace.clone();
@@ -1262,12 +1346,18 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         self.push_attribute_use(attuse);
                     } else if let Some(name) = atts.get_value_by_qname("name") {
                         // local attribute declaration ('ref' is absent)
+
+                        check_unallowed_xmlns!(name);
+
                         let form =
                             get_qualification_form(atts, "form").unwrap_or(self.attr_form_default);
                         let target_namespace = self
                             .target_namespace
                             .clone()
                             .filter(|_| matches!(form, QualificationForm::Qualified));
+
+                        check_unallowed_xsi!(target_namespace.as_deref());
+
                         let name = Arc::<str>::from(name);
                         self.attribute_decl.target_namespace = target_namespace.clone();
                         self.attribute_decl.name = name.clone();
@@ -2123,6 +2213,7 @@ pub enum XSDError {
     TooLargeOccurence,
     MissingSubComponent,
     RegexpError(RegexpError),
+    Unsupported,
 
     // Schema Representation Constraints
     /// Schema Document Location Strategy
@@ -2319,6 +2410,64 @@ pub enum XSDError {
     WPropsCorrect,
     /// whiteSpace valid restriction
     WhiteSpaceValidRestriction,
+
+    // Validation Rules
+    /// Schema-Validity Assessment (Attribute)
+    CvcAssessAttr,
+    /// Schema-Validity Assessment (Element)
+    CvcAssessElt,
+    /// Attribute Locally Valid
+    CvcAttribute,
+    /// Attribute Locally Valid (Use)
+    CvcAu,
+    /// Element Locally Valid (Complex Type)
+    CvcComplexType,
+    /// Datatype Valid
+    CvcDatatypeValid,
+    /// Element Locally Valid (Element)
+    CvcElt,
+    /// enumeration valid
+    CvcEnumerationValid,
+    /// Facet Valid
+    CvcFacetValid,
+    /// fractionDigits Valid
+    CvcFractionDigitsValid,
+    /// Validation Root Valid (ID/IDREF)
+    CvcId,
+    /// Identity-constraint Satisfied
+    CvcIdentityConstraint,
+    /// Length Valid
+    CvcLengthValid,
+    /// maxExclusive Valid
+    CvcMaxExclusiveValid,
+    /// maxInclusive Valid
+    CvcMaxInclusiveValid,
+    /// maxLength Valid
+    CvcMaxLengthValid,
+    /// minExclusive Valid
+    CvcMinExclusiveValid,
+    /// minInclusive Valid
+    CvcMinInclusiveValid,
+    /// minLength Valid
+    CvcMinLengthValid,
+    /// Element Sequence Valid
+    CvcModelGroup,
+    /// Element Sequence Locally Valid (Particle)
+    CvcParticle,
+    /// pattern valid
+    CvcPatternValid,
+    /// QName resolution (Instance)
+    CvcResolveInstance,
+    /// String Valid
+    CvcSimpleType,
+    /// totalDigits Valid
+    CvcTotalDigitsValid,
+    /// Element Locally Valid (Type)
+    CvcType,
+    /// Item Valid (Wildcard)
+    CvcWildcard,
+    /// Wildcard allows Namespace Name
+    CvcWildcardNamespace,
 }
 
 impl std::fmt::Display for XSDError {
@@ -4029,6 +4178,7 @@ fn attribute_complete_wildcard(
     }
 }
 
+#[derive(Debug)]
 enum Scope {
     /// top-level declaration or definition
     Global,
@@ -4036,8 +4186,8 @@ enum Scope {
     Local(Option<Arc<str>>, Arc<str>),
 }
 
-#[derive(Default)]
-struct AttributeDeclaration {
+#[derive(Debug, Default)]
+pub(super) struct AttributeDeclaration {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
     type_definition: (Option<Arc<str>>, Arc<str>),
@@ -4045,8 +4195,8 @@ struct AttributeDeclaration {
     value_constraint: Option<ValueConstraint>,
 }
 
-#[derive(Default)]
-struct ElementDeclaration {
+#[derive(Debug, Default)]
+pub(super) struct ElementDeclaration {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
     type_definition: (Option<Arc<str>>, Arc<str>),
@@ -4184,7 +4334,7 @@ pub(super) struct AttributeUse {
 }
 
 #[derive(Default)]
-struct AttributeGroupDefinition {
+pub(super) struct AttributeGroupDefinition {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
     attribute_uses: Vec<AttributeUse>,
@@ -4194,7 +4344,7 @@ struct AttributeGroupDefinition {
 }
 
 #[derive(Default)]
-struct ModelGroupDefinition {
+pub(super) struct ModelGroupDefinition {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
     model_group: ModelGroup,
@@ -4417,7 +4567,7 @@ enum IDCCategory {
     Unique,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct IDCDefinition {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
@@ -4427,7 +4577,7 @@ struct IDCDefinition {
     referenced_key: Option<(Option<Arc<str>>, Arc<str>)>,
 }
 
-struct Notation {
+pub(super) struct Notation {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
     system_id: Option<Arc<URIStr>>,

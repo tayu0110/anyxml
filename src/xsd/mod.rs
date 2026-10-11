@@ -1,3 +1,4 @@
+//! APIs for parsing XML Schema 1.0 document and validate XML document using parsed schema.
 mod parse;
 mod typedef;
 mod validate;
@@ -17,5 +18,9 @@ pub struct XSDSchema {
 impl XSDSchema {
     pub fn new_validate_handler<H: SAXHandler>(&mut self, child: H) -> ValidateHandler<'_, H> {
         ValidateHandler::new(&mut self.schema, child)
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        self.schema.extend(other.schema);
     }
 }

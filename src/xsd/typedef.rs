@@ -1400,7 +1400,7 @@ impl std::ops::BitOr<FinalSet> for Final {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct FinalSet(u8);
 
 impl FinalSet {
@@ -1462,7 +1462,7 @@ impl std::ops::BitOr<BlockSet> for Block {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct BlockSet(u8);
 
 impl BlockSet {
