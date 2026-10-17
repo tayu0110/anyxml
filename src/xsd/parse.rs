@@ -11,8 +11,9 @@ use crate::{
     automata::xsregexp::{RegexpError, XSRegexp},
     error::{XMLError, XMLErrorDomain, XMLErrorLevel},
     sax::{
-        AttributeType, Attributes, DefaultDecl, DefaultSAXHandler, EntityResolver, ErrorHandler,
-        InputSource, Locator, NamespaceStack, SAXHandler, XMLReader, error::SAXParseError,
+        AttributeType, Attributes, DOCUMENT_ENTITY_NAME, DefaultDecl, DefaultSAXHandler,
+        EntityResolver, ErrorHandler, InputSource, Locator, NamespaceStack, SAXHandler, XMLReader,
+        error::SAXParseError,
     },
     tree::{Document, Element, Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec},
     uri::{URIStr, URIString},
@@ -184,6 +185,7 @@ thread_local! {
 
 #[derive(Default)]
 pub struct Schema {
+    merged_uris: HashSet<Arc<URIStr>>,
     pub(super) type_defs: HashMap<(Option<Arc<str>>, Arc<str>), TypeDefinition>,
     pub(super) att_decls: HashMap<(Option<Arc<str>>, Arc<str>), AttributeDeclaration>,
     pub(super) elem_decls: HashMap<(Option<Arc<str>>, Arc<str>), ElementDeclaration>,
@@ -296,20 +298,25 @@ impl XSDSchema {
     }
 
     fn parse_meta_schema() -> Self {
-        META_SCHEMA_HOLDER_V1_0.with_borrow_mut(|holder| {
-            if let Some(meta) = holder.pop() {
-                return meta;
-            }
-            let mut parser = XMLReader::builder()
-                .set_handler(XSDParseHandler::with_handler(MetaSchemaParsehandler))
-                .build();
-            let xml = include_str!("../../resources/xsd/XMLSchema-compact.xsd");
-            parser.parse_str(xml, None).unwrap();
-            Self {
-                schema: parser.handler.schema,
-            }
-        })
+        if let Some(meta) = META_SCHEMA_HOLDER_V1_0.with_borrow_mut(|holder| holder.pop()) {
+            return meta;
+        }
+        let mut handler = XSDParseHandler::with_handler(MetaSchemaParseHandler);
+        handler.meta = true;
+        let mut parser = XMLReader::builder().set_handler(handler).build();
+        let xml = include_str!("../../resources/xsd/XMLSchema-compact.xsd");
+        parser.parse_str(xml, None).unwrap();
+        Self {
+            schema: parser.handler.schema,
+        }
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InclusionState {
+    TopLevel,
+    InInclude,
+    InImport,
 }
 
 /// SAX handler for parsing XSD schema documents.
@@ -318,11 +325,15 @@ pub struct XSDParseHandler<H: SAXHandler = DefaultSAXHandler> {
     schema: Schema,
     last_error: Result<(), XMLError>,
     locator: Arc<Locator>,
+    // if true, this handler is in used for meta-schema parsing.
+    meta: bool,
 
     // context
     target_namespace: Option<Arc<str>>,
+    parent_target_namespace: Option<Arc<str>>,
     unnamed: usize,
     skip_depth: usize,
+    inclusion_state: InclusionState,
     // context stack
     ns_stack: NamespaceStack,
     element_stack: Vec<&'static str>,
@@ -337,7 +348,7 @@ pub struct XSDParseHandler<H: SAXHandler = DefaultSAXHandler> {
 
     // external schemas
     includes: Vec<URIString>,
-    imports: Vec<(Option<Box<str>>, URIString)>,
+    imports: Vec<(Option<Arc<str>>, URIString)>,
 
     // temporary component buffer
     st_stack: Vec<SimpleTypeDefinition>,
@@ -357,8 +368,11 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             schema: Schema::default(),
             last_error: Ok(()),
             locator: Arc::new(Locator::default()),
+            meta: false,
             skip_depth: 0,
+            inclusion_state: InclusionState::TopLevel,
             target_namespace: None,
+            parent_target_namespace: None,
             unnamed: 0,
             ns_stack: NamespaceStack::default(),
             element_stack: vec![],
@@ -529,6 +543,207 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         // there is no need to scan the entire stack.
         self.element_stack.len() >= 2 && self.element_stack[1] == SCHEMA_REDEFINE_NAME
     }
+
+    fn process_include(&mut self, include: URIString, meta: Option<&mut XSDSchema>) {
+        let locator = self.locator.clone();
+        let include_abs = locator.system_id().resolve(&include);
+        if self.schema.merged_uris.contains(include_abs.as_ref()) {
+            return;
+        }
+        let target_namespace = self.target_namespace.clone();
+        let state = self.inclusion_state;
+        match self
+            .child
+            .resolve_entity(DOCUMENT_ENTITY_NAME, None, &locator.system_id(), &include)
+        {
+            Ok(source) => {
+                self.parent_target_namespace = target_namespace.clone();
+                self.target_namespace = None;
+                self.inclusion_state = InclusionState::InInclude;
+                let last_error = std::mem::replace(&mut self.last_error, Ok(()));
+                let ret = if let Some(meta) = meta {
+                    let validator = meta.new_validate_handler(&mut *self);
+                    let mut parser = XMLReader::builder().set_handler(validator).build();
+                    parser.parse_source(Box::new(source), None)
+                } else {
+                    let mut parser = XMLReader::builder().set_handler(&mut *self).build();
+                    parser.parse_source(Box::new(source), None)
+                };
+                match ret {
+                    Ok(()) => {
+                        if let Err(err) = std::mem::replace(&mut self.last_error, Ok(())) {
+                            // [src-include] clause 1
+                            let msg = format!(
+                                "Included schema '{}' cannot be parsed because '{}'.",
+                                include, err
+                            );
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::SrcInclude),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: locator.line(),
+                                column: locator.column(),
+                                system_id: locator.system_id(),
+                                public_id: locator.public_id(),
+                                message: Cow::Owned(msg),
+                            });
+                        }
+                    }
+                    Err(err) => {
+                        // It is an error for it to resolve but the rest of clause 1
+                        // above to fail to be satisfied. Failure to resolve may well
+                        // cause less than complete ·assessment· outcomes, of course.
+                        //
+                        // [src-include] clause 1
+                        let msg = format!(
+                            "Included schema '{}' cannot be parsed because '{}'.",
+                            include, err
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::SrcInclude),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: locator.line(),
+                            column: locator.column(),
+                            system_id: locator.system_id(),
+                            public_id: locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                    }
+                }
+                self.last_error = std::mem::replace(&mut self.last_error, Ok(())).and(last_error);
+            }
+            Err(err) => {
+                // A resource resolution failure is not an error. However, since it
+                // is better for the user to be able to identify a resource resolution
+                // failure, report a warning to indicate that the resolution failed.
+                //
+                // [src-include]
+                // It is not an error for the ·actual value· of the schemaLocation
+                // [attribute] to fail to resolve it all, in which case no corresponding
+                // inclusion is performed.
+                let msg = format!(
+                    "The included resource '{}' cannot be resolved because {}.",
+                    include, err
+                );
+                self.warning(SAXParseError {
+                    error: XMLError::XSDError(XSDError::SrcInclude),
+                    level: XMLErrorLevel::Warning,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: locator.line(),
+                    column: locator.column(),
+                    system_id: locator.system_id(),
+                    public_id: locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+            }
+        }
+        self.target_namespace = target_namespace;
+        self.locator = locator;
+        self.inclusion_state = state;
+    }
+
+    fn process_import(
+        &mut self,
+        import: URIString,
+        namespace: Option<Arc<str>>,
+        meta: Option<&mut XSDSchema>,
+    ) {
+        let locator = self.locator.clone();
+        let import_abs = locator.system_id().resolve(&import);
+        if self.schema.merged_uris.contains(import_abs.as_ref()) {
+            return;
+        }
+        let target_namespace = self.target_namespace.clone();
+        let state = self.inclusion_state;
+        match self
+            .child
+            .resolve_entity(DOCUMENT_ENTITY_NAME, None, &locator.system_id(), &import)
+        {
+            Ok(source) => {
+                // Since cases where the `namespace` attribute and the target namespace are the
+                // same are ignored as errors during parsing, `parent_target_namespace` is used
+                // to check [src-import] clause 3.
+                self.parent_target_namespace = namespace;
+                self.target_namespace = None;
+                self.inclusion_state = InclusionState::InImport;
+                let last_error = std::mem::replace(&mut self.last_error, Ok(()));
+                let ret = if let Some(meta) = meta {
+                    let validator = meta.new_validate_handler(&mut *self);
+                    let mut parser = XMLReader::builder().set_handler(validator).build();
+                    parser.parse_source(Box::new(source), None)
+                } else {
+                    let mut parser = XMLReader::builder().set_handler(&mut *self).build();
+                    parser.parse_source(Box::new(source), None)
+                };
+                match ret {
+                    Ok(()) => {
+                        if let Err(err) = std::mem::replace(&mut self.last_error, Ok(())) {
+                            // [src-import] clause 2
+                            let msg = format!(
+                                "Imported schema '{}' cannot be parsed because '{}'.",
+                                import, err
+                            );
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::SrcImport),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: locator.line(),
+                                column: locator.column(),
+                                system_id: locator.system_id(),
+                                public_id: locator.public_id(),
+                                message: Cow::Owned(msg),
+                            });
+                        }
+                    }
+                    Err(err) => {
+                        // It is an error for it to resolve but the rest of clause 2 above to
+                        // fail to be satisfied. Failure to find a referent may well cause less
+                        // than complete ·assessment· outcomes, of course.
+                        //
+                        // [src-import] clause 2
+                        let msg = format!(
+                            "Imported schema '{}' cannot be parsed because '{}'.",
+                            import, err
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::SrcImport),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: locator.line(),
+                            column: locator.column(),
+                            system_id: locator.system_id(),
+                            public_id: locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                    }
+                }
+                self.last_error = std::mem::replace(&mut self.last_error, Ok(())).and(last_error);
+            }
+            Err(_) => {
+                // A resource resolution failure is not an error. However, since it
+                // is better for the user to be able to identify a resource resolution
+                // failure, report a warning to indicate that the resolution failed.
+                //
+                // [src-import]
+                // It is not an error for the application schema reference strategy to fail.
+                let msg = format!("The imported resource '{}' cannot be resolved.", import);
+                self.warning(SAXParseError {
+                    error: XMLError::XSDError(XSDError::SrcImport),
+                    level: XMLErrorLevel::Warning,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: locator.line(),
+                    column: locator.column(),
+                    system_id: locator.system_id(),
+                    public_id: locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+            }
+        }
+        self.target_namespace = target_namespace;
+        self.locator = locator;
+        self.inclusion_state = state;
+    }
 }
 
 impl<H: SAXHandler> EntityResolver for XSDParseHandler<H> {
@@ -640,6 +855,83 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 self.block_default = get_block(atts, "blockDefault").unwrap_or_default();
                 self.final_default = get_final(atts, "finalDefault").unwrap_or_default();
                 self.target_namespace = atts.get_value_by_qname("targetNamespace").map(From::from);
+                match self.inclusion_state {
+                    InclusionState::InInclude => {
+                        // [src-include] clause 2
+                        if let Some(parent_target_namespace) = self.parent_target_namespace.clone()
+                        {
+                            if let Some(tn) = self.target_namespace.as_deref()
+                                && tn != parent_target_namespace.as_ref()
+                            {
+                                let msg = format!(
+                                    "Included schema's target namespace is '{}', but parent's is '{}'.",
+                                    tn, parent_target_namespace
+                                );
+                                self.error(SAXParseError {
+                                    error: XMLError::XSDError(XSDError::SrcInclude),
+                                    level: XMLErrorLevel::Error,
+                                    domain: XMLErrorDomain::XSDParser,
+                                    line: self.locator.line(),
+                                    column: self.locator.column(),
+                                    system_id: self.locator.system_id(),
+                                    public_id: self.locator.public_id(),
+                                    message: Cow::Owned(msg),
+                                });
+                                self.skip_depth += 1;
+                                return;
+                            }
+                            self.target_namespace = Some(parent_target_namespace);
+                        } else if let Some(tn) = self.target_namespace.as_deref() {
+                            let msg = format!(
+                                "Included schema's target namespace is '{}', but parent's is absent.",
+                                tn
+                            );
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::SrcInclude),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Owned(msg),
+                            });
+                            self.skip_depth += 1;
+                            return;
+                        }
+                    }
+                    InclusionState::InImport => {
+                        // [src-import] clause 3
+                        if self.parent_target_namespace != self.target_namespace {
+                            let msg = format!(
+                                "Imported schema's target namespace is {}, but parent schema's 'namespace' of <import> is {}.",
+                                self.target_namespace
+                                    .as_deref()
+                                    .map(|ns| format!("'{ns}'"))
+                                    .as_deref()
+                                    .unwrap_or("absent"),
+                                self.parent_target_namespace
+                                    .as_deref()
+                                    .map(|ns| format!("'{ns}'"))
+                                    .as_deref()
+                                    .unwrap_or("absent"),
+                            );
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::SrcImport),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Owned(msg),
+                            });
+                            self.skip_depth += 1;
+                            return;
+                        }
+                    }
+                    InclusionState::TopLevel => {}
+                }
                 self.element_stack.push(SCHEMA_SCHEMA_NAME);
             }
             SCHEMA_INCLUDE_NAME => {
@@ -666,7 +958,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 };
-                let namespace = atts.get_value_by_qname("namespace").map(Box::<str>::from);
+                let namespace = atts.get_value_by_qname("namespace").map(Arc::<str>::from);
                 if self.target_namespace.as_deref() == namespace.as_deref() {
                     // [src-import] clause 1
                     self.error(SAXParseError {
@@ -679,6 +971,8 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         public_id: self.locator.public_id(),
                         message: Cow::Borrowed("'namespace' of <import> must not match target namespace of the schema."),
                     });
+                    self.skip_depth += 1;
+                    return;
                 }
                 self.imports.push((namespace, schema_location));
                 self.element_stack.push(SCHEMA_IMPORT_NAME);
@@ -1989,7 +2283,35 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
         assert!(self.ed_stack.is_empty());
         assert!(self.element_stack.is_empty(), "{:?}", self.element_stack);
         assert!(self.pt_stack.is_empty(), "{:?}", self.pt_stack);
+
+        // Before processing <include>, <redefine>, or <import>, notify the
+        // handler that the current schema document has been fully parsed.
         self.child.end_document();
+
+        let base_uri = self.locator.system_id();
+        self.schema.merged_uris.insert(base_uri.clone());
+        // Since the handler will be reused, save the lists.
+        self.includes.sort_unstable();
+        self.includes.dedup();
+        self.imports.sort_unstable();
+        self.imports.dedup();
+        let includes = std::mem::take(&mut self.includes);
+        let imports = std::mem::take(&mut self.imports);
+        if includes.is_empty() && imports.is_empty() {
+            return;
+        }
+        let mut meta = (!self.meta).then(XSDSchema::parse_meta_schema);
+        // process <include>
+        for include in includes {
+            self.process_include(include, meta.as_mut());
+        }
+        // process <import>
+        for (namespace, import) in imports {
+            self.process_import(import, namespace, meta.as_mut());
+        }
+        if let Some(meta) = meta {
+            META_SCHEMA_HOLDER_V1_0.with_borrow_mut(|holder| holder.push(meta));
+        }
     }
 
     // unused callbacks
@@ -2149,8 +2471,8 @@ fn get_process_contents(atts: &Attributes, name: &str) -> Option<ProcessContent>
     }
 }
 
-struct MetaSchemaParsehandler;
-impl ErrorHandler for MetaSchemaParsehandler {
+struct MetaSchemaParseHandler;
+impl ErrorHandler for MetaSchemaParseHandler {
     fn error(&mut self, error: SAXParseError) {
         DefaultSAXHandler.error(error);
     }
@@ -2161,7 +2483,7 @@ impl ErrorHandler for MetaSchemaParsehandler {
         DefaultSAXHandler.warning(error);
     }
 }
-impl EntityResolver for MetaSchemaParsehandler {
+impl EntityResolver for MetaSchemaParseHandler {
     fn resolve_entity(
         &mut self,
         _name: &str,
@@ -2185,7 +2507,7 @@ impl EntityResolver for MetaSchemaParsehandler {
         }
     }
 }
-impl SAXHandler for MetaSchemaParsehandler {}
+impl SAXHandler for MetaSchemaParseHandler {}
 
 fn create_handler<H: SAXHandler>(handler: H) -> TreeBuildHandler<H> {
     let mut h = TreeBuildHandler::with_handler(handler);
@@ -2562,7 +2884,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                         continue;
                     }
                     match elem.local_name().as_ref() {
-                        SCHEMA_INCLUDE_NAME => self.parse_include(elem)?,
                         SCHEMA_IMPORT_NAME => self.parse_import(elem)?,
                         SCHEMA_REDEFINE_NAME => todo!(),
                         SCHEMA_ANNOTATION_NAME => {}
@@ -3466,131 +3787,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
             attribute_uses,
             attribute_wildcard,
         ))
-    }
-
-    fn parse_include(&mut self, mut elem: Element) -> Result<(), XSDError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_INCLUDE_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        let Some(schema_location) =
-            self.extract_any_uri(elem.clone(), "schemaLocation", XSDError::SrcInclude)?
-        else {
-            error!(
-                self.handler,
-                SrcInclude,
-                elem,
-                "The mandatory attribute 'schemaLocation' of 'include' is missing."
-            );
-            return Err(XSDError::SrcInclude);
-        };
-
-        self.check_attribute(elem.clone())?;
-
-        if self.included_resources.contains(&schema_location) {
-            // According to the note in Section 4.2.1 of XSD 1.0 Part 1,
-            // including the same resource multiple times does not result in an error.
-            //
-            // According to clause 2 of [sch-props-correct], components with the same
-            // target namespace and name pair are not allowed. To distinguish between
-            // components that are duplicates due to multiple inclusions and those that
-            // are not, it is necessary to prevent the same resource from being included
-            // multiple times.
-            return Ok(());
-        }
-
-        let mut reader = XMLReader::builder()
-            .set_handler(create_handler(&mut *self.handler))
-            .build();
-
-        let included_doc = match reader.parse_uri(&schema_location, None) {
-            Ok(()) if !reader.handler.fatal_error => {
-                // Register it as an included resource.
-                self.included_resources.insert(schema_location.clone());
-                reader.handler.document
-            }
-            Err(XMLError::IOError(_)) => {
-                // It is not an error if the resource referenced by `schemaLocation` cannot be resolved.
-                // In this context, an I/O error is treated as a failure to resolve the resource.
-                return Ok(());
-            }
-            _ => {
-                // [src-include] 1.1 and 1.2
-                error!(
-                    self.handler,
-                    SrcInclude,
-                    elem,
-                    "The included resource '{}' could not be parsed as XML.",
-                    schema_location
-                );
-                return Err(XSDError::SrcInclude);
-            }
-        };
-
-        let Some(mut schema) = included_doc.document_element() else {
-            internal_error!(self.handler, elem);
-        };
-
-        if schema.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE)
-            || schema.local_name().as_ref() != SCHEMA_SCHEMA_NAME
-        {
-            // [src-include] 1.1 and 1.2
-            error!(
-                self.handler,
-                SrcInclude,
-                schema,
-                "The document element of the included resource '{}' must be '{{{}}}schema', but is '{}{}'.",
-                schema_location,
-                XML_SCHEMA_NAMESPACE,
-                schema
-                    .namespace_name()
-                    .map(|ns| format!("{{{ns}}}"))
-                    .unwrap_or_default(),
-                schema.local_name()
-            );
-            return Err(XSDError::SrcInclude);
-        }
-
-        if let Some(target_namespace) = schema.get_attribute("targetNamespace", None) {
-            if self
-                .target_namespace
-                .as_deref()
-                .is_none_or(|ns| ns != target_namespace)
-            {
-                // [src-include] clause 2
-                error!(
-                    self.handler,
-                    SrcInclude,
-                    schema,
-                    "The included schema's target namespace is '{}', but parent schema's one is '{}'.",
-                    target_namespace,
-                    self.target_namespace.as_deref().unwrap_or("(null)")
-                );
-                return Err(XSDError::SrcInclude);
-            }
-        } else if let Some(target_namespace) = self.target_namespace.as_deref() {
-            schema
-                .set_attribute("targetNamespace", None, Some(target_namespace))
-                .ok();
-        }
-
-        // It would be easier if child elements could be retrieved and merged into the parse
-        // context, but given the differences in values for `blockDefault`, `finalDefault`,
-        // `xxxFormDefault`, and others, the only option is to parse them as separate schemas
-        // and then merge them.
-        let mut context = XSDParseContext::new(&mut self.handler);
-        context.unnamed = self.unnamed;
-        context.parse(included_doc)?;
-        self.unnamed = context.unnamed;
-        let schema = context.schema;
-        // Merge schemas
-        self.schema.type_defs.extend(schema.type_defs);
-        self.schema.att_decls.extend(schema.att_decls);
-        self.schema.elem_decls.extend(schema.elem_decls);
-        self.schema.attgroup_defs.extend(schema.attgroup_defs);
-        self.schema.modelgroup_defs.extend(schema.modelgroup_defs);
-        self.schema.notation_decls.extend(schema.notation_decls);
-        Ok(())
     }
 
     fn parse_import(&mut self, mut elem: Element) -> Result<(), XSDError> {

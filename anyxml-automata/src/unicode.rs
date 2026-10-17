@@ -1549,13 +1549,10 @@ pub const GENERAL_CATEGORY_LO: &[(char, char)] = &[
     ('\u{3105}', '\u{312c}'),
     ('\u{3131}', '\u{318e}'),
     ('\u{31a0}', '\u{31b7}'),
-    ('\u{3400}', '\u{3400}'),
-    ('\u{4db5}', '\u{4db5}'),
-    ('\u{4e00}', '\u{4e00}'),
-    ('\u{9fa5}', '\u{9fa5}'),
+    ('\u{3400}', '\u{4db5}'),
+    ('\u{4e00}', '\u{9fa5}'),
     ('\u{a000}', '\u{a48c}'),
-    ('\u{ac00}', '\u{ac00}'),
-    ('\u{d7a3}', '\u{d7a3}'),
+    ('\u{ac00}', '\u{d7a3}'),
     ('\u{f900}', '\u{fa2d}'),
     ('\u{fb1d}', '\u{fb1d}'),
     ('\u{fb1f}', '\u{fb28}'),
@@ -1581,8 +1578,7 @@ pub const GENERAL_CATEGORY_LO: &[(char, char)] = &[
     ('\u{ffda}', '\u{ffdc}'),
     ('\u{10300}', '\u{1031e}'),
     ('\u{10330}', '\u{10349}'),
-    ('\u{20000}', '\u{20000}'),
-    ('\u{2a6d6}', '\u{2a6d6}'),
+    ('\u{20000}', '\u{2a6d6}'),
     ('\u{2f800}', '\u{2fa1d}'),
 ];
 
@@ -1890,12 +1886,9 @@ pub fn negate_general_category_zp() -> ASTNode<char> {
 }
 
 pub const GENERAL_CATEGORY_CO: &[(char, char)] = &[
-    ('\u{e000}', '\u{e000}'),
-    ('\u{f8ff}', '\u{f8ff}'),
-    ('\u{f0000}', '\u{f0000}'),
-    ('\u{ffffd}', '\u{ffffd}'),
-    ('\u{100000}', '\u{100000}'),
-    ('\u{10fffd}', '\u{10fffd}'),
+    ('\u{e000}', '\u{f8ff}'),
+    ('\u{f0000}', '\u{ffffd}'),
+    ('\u{100000}', '\u{10fffd}'),
 ];
 
 pub fn alternate_general_category_co() -> ASTNode<char> {

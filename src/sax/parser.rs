@@ -513,7 +513,7 @@ impl<'a, H: SAXHandler> XMLReader<DefaultParserSpec<'a>, H> {
         self.parse_source(source, Some(UTF8_NAME.into()))
     }
 
-    fn parse_source(
+    pub(crate) fn parse_source(
         &mut self,
         source: Box<InputSource<'a>>,
         encoding: Option<Box<str>>,
