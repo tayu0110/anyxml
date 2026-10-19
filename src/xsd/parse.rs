@@ -7,7 +7,6 @@ use std::{
 };
 
 use crate::{
-    XML_XML_NAMESPACE,
     automata::xsregexp::{RegexpError, XSRegexp},
     error::{XMLError, XMLErrorDomain, XMLErrorLevel},
     sax::{
@@ -15,7 +14,7 @@ use crate::{
         EntityResolver, ErrorHandler, InputSource, Locator, NamespaceStack, SAXHandler, XMLReader,
         error::SAXParseError,
     },
-    tree::{Document, Element, Node, TreeBuildHandler, convert::NodeKind, node::NodeSpec},
+    tree::{Element, Node, convert::NodeKind, node::NodeSpec},
     uri::{URIStr, URIString},
     xsd::{
         XML_SCHEMA_INSTANCE_NAMESPACE, XML_SCHEMA_NAMESPACE, XSDSchema,
@@ -24,7 +23,7 @@ use crate::{
             SimpleTypeDefinition, Variety, Whitespace, WhitespaceConstraint,
         },
     },
-    xsdtypes::{SCHEMA_BUILTIN_ANYURI, SCHEMA_BUILTIN_NCNAME, SCHEMA_BUILTIN_QNAME, SchemaValue},
+    xsdtypes::{SCHEMA_BUILTIN_NCNAME, SCHEMA_BUILTIN_QNAME, SchemaValue},
 };
 
 const SCHEMA_SCHEMA_NAME: &str = "schema";
@@ -317,6 +316,14 @@ enum InclusionState {
     TopLevel,
     InInclude,
     InImport,
+    InRedefine,
+}
+
+#[derive(Default)]
+struct RedefinedComponents {
+    pub(super) type_defs: HashMap<(Option<Arc<str>>, Arc<str>), OwnedTypeDefinition>,
+    pub(super) attgroup_defs: HashMap<(Option<Arc<str>>, Arc<str>), AttributeGroupDefinition>,
+    pub(super) modelgroup_defs: HashMap<(Option<Arc<str>>, Arc<str>), ModelGroupDefinition>,
 }
 
 /// SAX handler for parsing XSD schema documents.
@@ -349,6 +356,8 @@ pub struct XSDParseHandler<H: SAXHandler = DefaultSAXHandler> {
     // external schemas
     includes: Vec<URIString>,
     imports: Vec<(Option<Arc<str>>, URIString)>,
+    redefined_schema_location: Option<Arc<URIStr>>,
+    redefines: HashMap<Arc<URIStr>, RedefinedComponents>,
 
     // temporary component buffer
     st_stack: Vec<SimpleTypeDefinition>,
@@ -382,6 +391,8 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             final_default: FinalSet::default(),
             includes: vec![],
             imports: vec![],
+            redefined_schema_location: None,
+            redefines: HashMap::new(),
             st_stack: vec![],
             ct_stack: vec![],
             ed_stack: vec![],
@@ -744,6 +755,685 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         self.locator = locator;
         self.inclusion_state = state;
     }
+
+    fn process_redefine(
+        &mut self,
+        location: Arc<URIStr>,
+        components: RedefinedComponents,
+        meta: Option<&mut XSDSchema>,
+    ) {
+        let locator = self.locator.clone();
+        let location_abs = locator.system_id().resolve(&location);
+        if !self.schema.merged_uris.contains(location_abs.as_ref()) {
+            let target_namespace = self.target_namespace.clone();
+            let state = self.inclusion_state;
+            match self.child.resolve_entity(
+                DOCUMENT_ENTITY_NAME,
+                None,
+                &locator.system_id(),
+                &location,
+            ) {
+                Ok(source) => {
+                    self.parent_target_namespace = target_namespace.clone();
+                    self.target_namespace = None;
+                    self.inclusion_state = InclusionState::InRedefine;
+                    let last_error = std::mem::replace(&mut self.last_error, Ok(()));
+                    let ret = if let Some(meta) = meta {
+                        let validator = meta.new_validate_handler(&mut *self);
+                        let mut parser = XMLReader::builder().set_handler(validator).build();
+                        parser.parse_source(Box::new(source), None)
+                    } else {
+                        let mut parser = XMLReader::builder().set_handler(&mut *self).build();
+                        parser.parse_source(Box::new(source), None)
+                    };
+                    let ret = ret.and(std::mem::replace(&mut self.last_error, Ok(())));
+                    if let Err(err) = ret {
+                        // [src-redefine] clause 2
+                        let msg = format!(
+                            "Redefined schema '{}' cannot be parsed because '{}'.",
+                            location, err
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::SrcRedefine),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: locator.line(),
+                            column: locator.column(),
+                            system_id: locator.system_id(),
+                            public_id: locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                        self.last_error = Err(err);
+                    }
+                    self.last_error =
+                        std::mem::replace(&mut self.last_error, Ok(())).and(last_error);
+                }
+                Err(err) => {
+                    // If one or more components are redefined, unlike with <include>
+                    // and <import>, a resource resolution failure is considered an error.
+                    // If no components are redefined, a resource resolution failure is
+                    // not considered an error, just as with <include> and <import>.
+                    //
+                    // [src-redefine] clause 1
+                    // 1 If there are any element information items among the [children]
+                    //   other than <annotation> then the ·actual value· of the schemaLocation
+                    //   [attribute] must successfully resolve.
+                    let msg = format!(
+                        "The redefined resource '{}' cannot be resolved because {}.",
+                        location, err
+                    );
+                    if components.attgroup_defs.is_empty()
+                        && components.modelgroup_defs.is_empty()
+                        && components.type_defs.is_empty()
+                    {
+                        self.warning(SAXParseError {
+                            error: XMLError::XSDError(XSDError::SrcRedefine),
+                            level: XMLErrorLevel::Warning,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: locator.line(),
+                            column: locator.column(),
+                            system_id: locator.system_id(),
+                            public_id: locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                    } else {
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::SrcRedefine),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: locator.line(),
+                            column: locator.column(),
+                            system_id: locator.system_id(),
+                            public_id: locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                    }
+                }
+            }
+            self.target_namespace = target_namespace;
+            self.locator = locator;
+            self.inclusion_state = state;
+        }
+
+        // Overwrite redefined components.
+        // It is unclear how to handle situations where a component being redefined contains
+        // a reference to another component being redefined—or even where such references form
+        // a cycle—but I will overwrite without considering that.
+
+        for ((ns, name), def) in components.type_defs {
+            if name.starts_with('#') {
+                // This definition is a local definition, so just insert it as is.
+                let def = match def {
+                    OwnedTypeDefinition::Simple(st) => TypeDefinition::Simple(st.into()),
+                    OwnedTypeDefinition::Complex(ct) => TypeDefinition::Complex(ct.into()),
+                };
+                self.schema.type_defs.insert((ns, name), def);
+                continue;
+            }
+            match self.schema.type_defs.remove(&(ns.clone(), name.clone())) {
+                Some(redefined) => {
+                    self.unnamed += 1;
+                    let redefined_name =
+                        Arc::<str>::from(format!("#redefined{}/{}", self.unnamed, name));
+                    let def = match def {
+                        OwnedTypeDefinition::Simple(mut st) => {
+                            st.base_type_definition = (ns.clone(), redefined_name.clone());
+                            TypeDefinition::Simple(st.into())
+                        }
+                        OwnedTypeDefinition::Complex(mut ct) => {
+                            ct.base_type_definition = (ns.clone(), redefined_name.clone());
+                            TypeDefinition::Complex(ct.into())
+                        }
+                    };
+                    self.schema
+                        .type_defs
+                        .insert((ns.clone(), redefined_name), redefined);
+                    self.schema.type_defs.insert((ns, name), def);
+                }
+                None => {
+                    // [src-expredef]
+                    // In all cases there must be a top-level definition item of the
+                    // appropriate name and kind in the <redefine>d schema document.
+                    let msg = format!(
+                        "The type definition '{}{}' is redefined, but it is not contained in redefined schema '{}'.",
+                        ns.map(|ns| format!("{{{ns}}}")).unwrap_or_default(),
+                        name,
+                        location
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::SrcExpredef),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                }
+            }
+        }
+        for ((ns, name), mut def) in components.modelgroup_defs {
+            if name.starts_with('#') {
+                // This definition is a local definition, so just insert it as is.
+                self.schema.modelgroup_defs.insert((ns, name), def);
+                continue;
+            }
+            match self
+                .schema
+                .modelgroup_defs
+                .remove(&(ns.clone(), name.clone()))
+            {
+                Some(redefined) => {
+                    self.unnamed += 1;
+                    let redefined_name =
+                        Arc::<str>::from(format!("#redefined{}/{}", self.unnamed, name));
+                    let cnt = self.overwrite_group_reference(
+                        &mut def.model_group,
+                        ns.clone(),
+                        name.clone(),
+                        redefined_name.clone(),
+                    );
+                    if cnt > 1 {
+                        // [src-redefine] clause 6.1.1
+                        let msg = format!(
+                            "<group> referring to redefined <group> must not appear more than once, but appears {} times.",
+                            cnt
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::SrcRedefine),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                    } else if cnt == 0 {
+                        // [src-redefine] clause 6.2
+
+                        // Since [cos-particle-restrict] only defines rules for Particles,
+                        // it cannot directly inspect Model Groups, so a dummy Particle is
+                        // required.
+                        let dummy = Particle {
+                            min_occurs: 1,
+                            max_occurs: 1,
+                            ..Default::default()
+                        };
+                        if !self.is_valid_restriction_model_group(
+                            &dummy,
+                            &def.model_group,
+                            &dummy,
+                            &redefined.model_group,
+                        ) {
+                            let msg = format!(
+                                "'{}{}' is not restricted validly by redefined model group definition.",
+                                ns.as_deref()
+                                    .map(|ns| format!("{{{ns}}}"))
+                                    .unwrap_or_default(),
+                                name
+                            );
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::SrcRedefine),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Owned(msg),
+                            });
+                        }
+                    }
+                    self.schema
+                        .modelgroup_defs
+                        .insert((ns.clone(), redefined_name), redefined);
+                    self.schema.modelgroup_defs.insert((ns, name), def);
+                }
+                None => {
+                    // [src-expredef]
+                    // In all cases there must be a top-level definition item of the
+                    // appropriate name and kind in the <redefine>d schema document.
+                    let msg = format!(
+                        "The model group definition '{}{}' is redefined, but it is not contained in redefined schema '{}'.",
+                        ns.map(|ns| format!("{{{ns}}}")).unwrap_or_default(),
+                        name,
+                        location
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::SrcExpredef),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                }
+            }
+        }
+        for ((ns, name), mut def) in components.attgroup_defs {
+            if name.starts_with('#') {
+                // This definition is a local definition, so just insert it as is.
+                self.schema.attgroup_defs.insert((ns, name), def);
+                continue;
+            }
+            match self
+                .schema
+                .attgroup_defs
+                .remove(&(ns.clone(), name.clone()))
+            {
+                Some(redefined) => {
+                    self.unnamed += 1;
+                    let redefined_name =
+                        Arc::<str>::from(format!("#redefined{}/{}", self.unnamed, name));
+                    let cnt = self.overwrite_attribute_group_reference(
+                        &mut def,
+                        ns.clone(),
+                        name.clone(),
+                        redefined_name.clone(),
+                    );
+                    if cnt > 1 {
+                        // [src-redefine] clause 7.1
+                        let msg = format!(
+                            "<attributeGroup> referring to redefined <attributeGroup> must not appear more than once, but appears {} times.",
+                            cnt
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::SrcRedefine),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                    } else if cnt == 0 {
+                        // todo!("[src-redefine] clause 7.2")
+                    }
+                    self.schema
+                        .attgroup_defs
+                        .insert((ns.clone(), redefined_name), redefined);
+                    self.schema.attgroup_defs.insert((ns, name), def);
+                }
+                None => {
+                    // [src-expredef]
+                    // In all cases there must be a top-level definition item of the
+                    // appropriate name and kind in the <redefine>d schema document.
+                    let msg = format!(
+                        "The attribute group definition '{}{}' is redefined, but it is not contained in redefined schema '{}'.",
+                        ns.map(|ns| format!("{{{ns}}}")).unwrap_or_default(),
+                        name,
+                        location
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::SrcExpredef),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Rewrite references to model groups according to the semantics of <redefine>.
+    ///
+    /// The return value indicates the number of references that were rewritten.
+    /// If this number is 2 or greater, it constitutes a violation of [src-redefine] clause 6.1.1.
+    ///
+    /// When rewriting references, perform the check specified in [src-redefine] clause 6.1.2.
+    /// Specifically, if the minOccurs or maxOccurs of a reference being rewritten is not 1,
+    /// an error is reported.
+    fn overwrite_group_reference(
+        &mut self,
+        group: &mut ModelGroup,
+        target_namespace: Option<Arc<str>>,
+        from: Arc<str>,
+        to: Arc<str>,
+    ) -> usize {
+        let mut cnt = 0;
+        for particle in group.particles.iter_mut() {
+            match &mut particle.term {
+                Term::ModelGroupRef(ns, name) if *ns == target_namespace && *name == from => {
+                    *name = to.clone();
+                    cnt += 1;
+
+                    // [src-redefine] clause 6.1.2
+                    if particle.min_occurs != 1 {
+                        let msg = format!(
+                            "'minOccurs' of <group> referring to redefined <group> must have '1' or be absent, but has '{}'.",
+                            particle.min_occurs
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::SrcRedefine),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                    }
+                    if particle.max_occurs != 1 {
+                        let msg = format!(
+                            "'maxOccurs' of <group> referring to redefined <group> must have '1' or be absent, but has '{}'.",
+                            particle.max_occurs
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::SrcRedefine),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                    }
+                }
+                Term::ModelGroup(model) => {
+                    cnt += self.overwrite_group_reference(
+                        model,
+                        target_namespace.clone(),
+                        from.clone(),
+                        to.clone(),
+                    );
+                }
+                _ => {}
+            }
+        }
+        cnt
+    }
+
+    /// Rewrite references to attribute groups according to the semantics of <redefine>.
+    ///
+    /// The return value indicates the number of references that were rewritten.
+    /// If this number is 2 or greater, it constitutes a violation of [src-redefine] clause 7.1.
+    fn overwrite_attribute_group_reference(
+        &mut self,
+        attgroup: &mut AttributeGroupDefinition,
+        target_namespace: Option<Arc<str>>,
+        from: Arc<str>,
+        to: Arc<str>,
+    ) -> usize {
+        let mut cnt = 0;
+        for def in attgroup.attribute_group_refs.iter_mut() {
+            if def.0 == target_namespace && def.1 == from {
+                def.1 = to.clone();
+                cnt += 1;
+            }
+        }
+        cnt
+    }
+
+    /// Check if this particle is a valid restriction of another particle `base`.
+    ///
+    /// # Reference
+    /// - [cos-particle-restrict](https://www.w3.org/TR/xmlschema-1/#cos-particle-restrict)
+    fn is_valid_restriction(&self, restricted: &Particle, base: &Particle) -> bool {
+        if std::ptr::eq(restricted, base) {
+            // [cos-particle-restrict] clause 1
+            return true;
+        }
+
+        match (&base.term, &restricted.term) {
+            (Term::ElementDecl(lns, lloc), Term::ElementDecl(rns, rloc)) => {
+                // "NameAnd- TypeOK" [rcase-NameAndTypeOK]
+
+                // [rcase-NameAndTypeOK] clause 1
+                todo!()
+            }
+            (Term::ElementDecl(_, _), _) => false, // Forbidden
+            (Term::Wildcard(wc), Term::ElementDecl(ns, _)) => {
+                // "NSCompat" [rcase-NSCompat]
+
+                restricted.check_range_ok(base) && wc.is_match(ns.as_deref())
+            }
+            (Term::Wildcard(base_wc), Term::Wildcard(restricted_wc)) => {
+                // "NSSubset" [rcase-NSSubset]
+
+                // [rcase-NSSubset] clause 1
+                let mut ret = restricted.check_range_ok(base);
+                // [rcase-NSSubset] clause 2
+                ret &= restricted_wc.is_subset_of(base_wc);
+                ret
+            }
+            (Term::Wildcard(_), Term::ModelGroup(mg)) => {
+                // "NSRecurse- CheckCardinality" [rcase-NSRecurseCheckCardinality]
+
+                let Some((min, max)) = restricted.effective_total_range(&self.schema) else {
+                    return false;
+                };
+                mg.particles
+                    .iter()
+                    .all(|p| self.is_valid_restriction(p, base))
+                    && base.min_occurs <= min
+                    && max <= base.max_occurs
+                    && max != usize::MAX
+            }
+            (Term::Wildcard(_), Term::ModelGroupRef(ns, loc)) => {
+                // "NSRecurse- CheckCardinality" [rcase-NSRecurseCheckCardinality]
+
+                let Some(mg) = self.schema.modelgroup_defs.get(&(ns.clone(), loc.clone())) else {
+                    return false;
+                };
+                let Some((min, max)) = mg.model_group.effective_total_range(&self.schema, 1, 1)
+                else {
+                    return false;
+                };
+                mg.model_group
+                    .particles
+                    .iter()
+                    .all(|p| self.is_valid_restriction(p, base))
+                    && base.min_occurs <= min
+                    && max <= base.max_occurs
+                    && max != usize::MAX
+            }
+            (Term::ModelGroup(mg), Term::ElementDecl(_, _)) => {
+                // "Recurse- AsIfGroup" [rcase-RecurseAsIfGroup]
+
+                let compositor = mg.compositor;
+                let restricted = Particle {
+                    min_occurs: 1,
+                    max_occurs: 1,
+                    term: Term::ModelGroup(ModelGroup {
+                        compositor,
+                        particles: vec![restricted.clone()],
+                    }),
+                };
+                self.is_valid_restriction(&restricted, base)
+            }
+            (Term::ModelGroupRef(ns, loc), Term::ElementDecl(_, _)) => {
+                // "Recurse- AsIfGroup" [rcase-RecurseAsIfGroup]
+
+                let Some(def) = self.schema.modelgroup_defs.get(&(ns.clone(), loc.clone())) else {
+                    return false;
+                };
+                let compositor = def.model_group.compositor;
+                let restricted = Particle {
+                    min_occurs: 1,
+                    max_occurs: 1,
+                    term: Term::ModelGroup(ModelGroup {
+                        compositor,
+                        particles: vec![restricted.clone()],
+                    }),
+                };
+                self.is_valid_restriction(&restricted, base)
+            }
+            (Term::ModelGroup(base_mg), Term::ModelGroup(restricted_mg)) => {
+                // model group specific constraint
+                //
+                // all-all:             "Recurse" [rcase-Recurse]
+                // choice-choice:       "RecurseLax" [rcase-RecurseLax]
+                // sequence-sequence:   "Recurse" [rcase-Recurse]
+                // other:               Forbidden
+                self.is_valid_restriction_model_group(restricted, restricted_mg, base, base_mg)
+            }
+            (Term::ModelGroup(mg), Term::ModelGroupRef(ns, loc)) => {
+                let Some(def) = self.schema.modelgroup_defs.get(&(ns.clone(), loc.clone())) else {
+                    return false;
+                };
+                self.is_valid_restriction_model_group(restricted, &def.model_group, base, mg)
+            }
+            (Term::ModelGroupRef(ns, loc), Term::ModelGroup(mg)) => {
+                let Some(def) = self.schema.modelgroup_defs.get(&(ns.clone(), loc.clone())) else {
+                    return false;
+                };
+                self.is_valid_restriction_model_group(restricted, mg, base, &def.model_group)
+            }
+            (Term::ModelGroupRef(lns, lloc), Term::ModelGroupRef(rns, rloc)) => {
+                let Some(bdef) = self
+                    .schema
+                    .modelgroup_defs
+                    .get(&(lns.clone(), lloc.clone()))
+                else {
+                    return false;
+                };
+                let Some(rdef) = self
+                    .schema
+                    .modelgroup_defs
+                    .get(&(rns.clone(), rloc.clone()))
+                else {
+                    return false;
+                };
+                self.is_valid_restriction_model_group(
+                    restricted,
+                    &rdef.model_group,
+                    base,
+                    &bdef.model_group,
+                )
+            }
+            _ => false, // Forbidden
+        }
+    }
+
+    /// # Reference
+    /// - [cos-particle-restrict](https://www.w3.org/TR/xmlschema-1/#cos-particle-restrict)
+    /// - [rcase-Recurse](https://www.w3.org/TR/xmlschema-1/#rcase-Recurse)
+    fn is_valid_restriction_model_group(
+        &self,
+        restricted: &Particle,
+        restricted_mg: &ModelGroup,
+        base: &Particle,
+        base_mg: &ModelGroup,
+    ) -> bool {
+        match (base_mg.compositor, restricted_mg.compositor) {
+            (Compositor::All, Compositor::All) | (Compositor::Sequence, Compositor::Sequence) => {
+                // "Recurse" [rcase-Recurse]
+
+                // [rcase-Recurse] clause 1
+                let mut ret = restricted.check_range_ok(base);
+                let mut ps = base_mg.particles.iter();
+                // [rcase-Recurse] clause 2
+                for particle in &restricted_mg.particles {
+                    loop {
+                        if let Some(base_particle) = ps.next() {
+                            if self.is_valid_restriction(particle, base_particle) {
+                                // [rcase-Recurse] clause 2.1
+                                break;
+                            }
+                            if !base_particle.is_emptiable(&self.schema) {
+                                // [rcase-Recurse] clause 2.2
+                                ret = false;
+                            }
+                        } else {
+                            if ret {
+                                // [rcase-Recurse] clause 2
+                                ret = false;
+                            }
+                            break;
+                        }
+                    }
+                }
+                ret
+            }
+            (Compositor::Choice, Compositor::Choice) => {
+                // "RecurseLax" [rcase-RecurseLax]
+
+                // [rcase-RecurseLax] clause 1
+                let mut ret = restricted.check_range_ok(base);
+                let mut ps = base_mg.particles.iter();
+                // [rcase-RecurseLax] clause 2
+                for particle in &restricted_mg.particles {
+                    loop {
+                        if let Some(base_particle) = ps.next() {
+                            if self.is_valid_restriction(particle, base_particle) {
+                                break;
+                            }
+                        } else {
+                            if ret {
+                                // [rcase-Recurse] clause 2
+                                ret = false;
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                ret
+            }
+            (Compositor::All, Compositor::Sequence) => {
+                // "Recurse- Unordered" [rcase-RecurseUnordered]
+
+                // [rcase-RecurseUnordered] clause 1
+                let mut ret = restricted.check_range_ok(base);
+                // [rcase-RecurseUnordered] clause 2
+                let mut ok = vec![false; restricted_mg.particles.len()];
+                'b: for base in &base_mg.particles {
+                    for (i, ok) in ok.iter_mut().enumerate() {
+                        if *ok {
+                            continue;
+                        }
+                        if self.is_valid_restriction(&restricted_mg.particles[i], base) {
+                            *ok = true;
+                            continue 'b;
+                        }
+                    }
+
+                    // [rcase-RecurseUnordered] clause 2.3
+                    ret &= base.is_emptiable(&self.schema);
+                }
+                ret
+            }
+            (Compositor::Choice, Compositor::Sequence) => {
+                // "MapAndSum" [rcase-MapAndSum]
+                let min_occurs = restricted
+                    .min_occurs
+                    .saturating_mul(restricted_mg.particles.len());
+                let max_occurs = restricted
+                    .max_occurs
+                    .saturating_mul(restricted_mg.particles.len());
+                let tmp = Particle {
+                    min_occurs,
+                    max_occurs,
+                    term: Term::ModelGroup(ModelGroup {
+                        compositor: Compositor::Choice,
+                        particles: vec![],
+                    }),
+                };
+                // [rcase-MapAndSum] clause 2
+                let mut ret = tmp.check_range_ok(base);
+                // [rcase-MapAndSum] clause 1
+                for particle in &restricted_mg.particles {
+                    ret &= base_mg
+                        .particles
+                        .iter()
+                        .any(|base| self.is_valid_restriction(particle, base));
+                }
+                ret
+            }
+            _ => false, // Forbidden
+        }
+    }
 }
 
 impl<H: SAXHandler> EntityResolver for XSDParseHandler<H> {
@@ -856,8 +1546,14 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 self.final_default = get_final(atts, "finalDefault").unwrap_or_default();
                 self.target_namespace = atts.get_value_by_qname("targetNamespace").map(From::from);
                 match self.inclusion_state {
-                    InclusionState::InInclude => {
+                    InclusionState::InInclude | InclusionState::InRedefine => {
                         // [src-include] clause 2
+                        // [src-redefine] clause 3
+                        let etype = if matches!(self.inclusion_state, InclusionState::InInclude) {
+                            XSDError::SrcInclude
+                        } else {
+                            XSDError::SrcRedefine
+                        };
                         if let Some(parent_target_namespace) = self.parent_target_namespace.clone()
                         {
                             if let Some(tn) = self.target_namespace.as_deref()
@@ -868,7 +1564,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                                     tn, parent_target_namespace
                                 );
                                 self.error(SAXParseError {
-                                    error: XMLError::XSDError(XSDError::SrcInclude),
+                                    error: XMLError::XSDError(etype),
                                     level: XMLErrorLevel::Error,
                                     domain: XMLErrorDomain::XSDParser,
                                     line: self.locator.line(),
@@ -887,7 +1583,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                                 tn
                             );
                             self.error(SAXParseError {
-                                error: XMLError::XSDError(XSDError::SrcInclude),
+                                error: XMLError::XSDError(etype),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
                                 line: self.locator.line(),
@@ -946,6 +1642,14 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 self.element_stack.push(SCHEMA_INCLUDE_NAME);
             }
             SCHEMA_REDEFINE_NAME => {
+                let Some(value) = atts
+                    .get_value_by_qname("schemaLocation")
+                    .and_then(|loc| URIString::parse(loc).ok())
+                else {
+                    self.skip_depth += 1;
+                    return;
+                };
+                self.redefined_schema_location = Some(value.into());
                 self.element_stack.push(SCHEMA_REDEFINE_NAME);
             }
             SCHEMA_IMPORT_NAME => {
@@ -1872,6 +2576,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
 
         let local_name = local_name.unwrap();
         match local_name {
+            SCHEMA_REDEFINE_NAME => self.redefined_schema_location = None,
             SCHEMA_SIMPLETYPE_NAME => {
                 if let Some(st) = self.st_stack.pop() {
                     let target_namespace = st.target_namespace.clone();
@@ -1956,9 +2661,19 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                             });
                         }
                     }
-                    self.schema
-                        .type_defs
-                        .insert((target_namespace, name), TypeDefinition::Simple(st.into()));
+                    if self.in_redefine() {
+                        if let Some(loc) = self.redefined_schema_location.clone() {
+                            self.redefines
+                                .entry(loc)
+                                .or_default()
+                                .type_defs
+                                .insert((target_namespace, name), OwnedTypeDefinition::Simple(st));
+                        }
+                    } else {
+                        self.schema
+                            .type_defs
+                            .insert((target_namespace, name), TypeDefinition::Simple(st.into()));
+                    }
                 }
             }
             SCHEMA_RESTRICTION_NAME
@@ -2025,7 +2740,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 if let Some(ct) = self.ct_stack.pop() {
                     let target_namespace = ct.target_namespace.clone();
                     let name = ct.name.clone();
-                    if self.in_redefine()
+                    if self.element_stack.last() == Some(&SCHEMA_REDEFINE_NAME)
                         && (ct.base_type_definition.0 != target_namespace
                             || ct.base_type_definition.1 != name)
                     {
@@ -2042,10 +2757,19 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                             message: Cow::Borrowed(msg),
                         });
                     }
-                    self.schema.type_defs.insert(
-                        (target_namespace, name),
-                        TypeDefinition::Complex(Arc::new(ct)),
-                    );
+                    if self.in_redefine() {
+                        if let Some(loc) = self.redefined_schema_location.clone() {
+                            self.redefines
+                                .entry(loc)
+                                .or_default()
+                                .type_defs
+                                .insert((target_namespace, name), OwnedTypeDefinition::Complex(ct));
+                        }
+                    } else {
+                        self.schema
+                            .type_defs
+                            .insert((target_namespace, name), TypeDefinition::Complex(ct.into()));
+                    }
                 }
             }
             SCHEMA_SIMPLECONT_NAME => {
@@ -2084,10 +2808,20 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.model_group_def.model_group = mg;
                     let target_namespace = self.model_group_def.target_namespace.clone();
                     let name = self.model_group_def.name.clone();
-                    self.schema.modelgroup_defs.insert(
-                        (target_namespace, name),
-                        std::mem::take(&mut *self.model_group_def),
-                    );
+                    let def = std::mem::take(&mut *self.model_group_def);
+                    if self.in_redefine() {
+                        if let Some(loc) = self.redefined_schema_location.clone() {
+                            self.redefines
+                                .entry(loc)
+                                .or_default()
+                                .modelgroup_defs
+                                .insert((target_namespace, name), def);
+                        }
+                    } else {
+                        self.schema
+                            .modelgroup_defs
+                            .insert((target_namespace, name), def);
+                    }
                 }
 
                 // Since SRC checks related to <redefine> cannot be performed until after the
@@ -2124,9 +2858,18 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         // The case where `count == 0` (clause 7.2) cannot be validated
                         // until after the schema to be redefined has been constructed.
                     }
-                    self.schema
-                        .attgroup_defs
-                        .insert(key, std::mem::take(&mut *self.attr_group_def));
+                    let def = std::mem::take(&mut *self.attr_group_def);
+                    if self.in_redefine() {
+                        if let Some(loc) = self.redefined_schema_location.clone() {
+                            self.redefines
+                                .entry(loc)
+                                .or_default()
+                                .attgroup_defs
+                                .insert(key, def);
+                        }
+                    } else {
+                        self.schema.attgroup_defs.insert(key, def);
+                    }
                 }
             }
             SCHEMA_ELEMENT_NAME => {
@@ -2297,7 +3040,8 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
         self.imports.dedup();
         let includes = std::mem::take(&mut self.includes);
         let imports = std::mem::take(&mut self.imports);
-        if includes.is_empty() && imports.is_empty() {
+        let redefines = std::mem::take(&mut self.redefines);
+        if includes.is_empty() && imports.is_empty() && redefines.is_empty() {
             return;
         }
         let mut meta = (!self.meta).then(XSDSchema::parse_meta_schema);
@@ -2308,6 +3052,10 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
         // process <import>
         for (namespace, import) in imports {
             self.process_import(import, namespace, meta.as_mut());
+        }
+        // process <redefine>
+        for (location, components) in redefines {
+            self.process_redefine(location, components, meta.as_mut());
         }
         if let Some(meta) = meta {
             META_SCHEMA_HOLDER_V1_0.with_borrow_mut(|holder| holder.push(meta));
@@ -2508,23 +3256,6 @@ impl EntityResolver for MetaSchemaParseHandler {
     }
 }
 impl SAXHandler for MetaSchemaParseHandler {}
-
-fn create_handler<H: SAXHandler>(handler: H) -> TreeBuildHandler<H> {
-    let mut h = TreeBuildHandler::with_handler(handler);
-    h.expand_entity_reference = true;
-    h.coalescing = true;
-    h.ignoring_comments = true;
-    h
-}
-
-fn parse_schema<H: SAXHandler + ?Sized>(
-    document: Document,
-    handler: &mut H,
-) -> Result<Schema, XSDError> {
-    let mut context = XSDParseContext::new(handler);
-    context.parse(document)?;
-    Ok(context.schema)
-}
 
 #[derive(Debug, Clone, Copy)]
 pub enum XSDError {
@@ -2828,160 +3559,6 @@ struct XSDParseContext<'a, H: SAXHandler + ?Sized> {
 }
 
 impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
-    fn new(handler: &'a mut H) -> Self {
-        XSDParseContext {
-            schema: Schema::default(),
-            target_namespace: None,
-            included_resources: HashSet::new(),
-            unnamed: 0,
-            simple_types: HashMap::new(),
-            complex_types: HashMap::new(),
-            att_groups: HashMap::new(),
-            model_groups: HashMap::new(),
-            elem_decls: HashMap::new(),
-            attr_decls: HashMap::new(),
-            attr_form_default: QualificationForm::Unqualified,
-            elem_form_default: QualificationForm::Unqualified,
-            block_default: FinalSet::default(),
-            final_default: FinalSet::default(),
-            handler,
-        }
-    }
-
-    fn parse(&mut self, document: Document) -> Result<(), XSDError> {
-        self.included_resources
-            .insert(document.document_base_uri().as_ref().into());
-        self.parse_schema(document)?;
-        Ok(())
-    }
-
-    fn parse_schema(&mut self, document: Document) -> Result<(), XSDError> {
-        let Some(mut schema) = document.document_element() else {
-            internal_error!(self.handler, document);
-        };
-
-        if schema.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE)
-            || schema.local_name().as_ref() != SCHEMA_SCHEMA_NAME
-        {
-            unallowed_element!(self.handler, schema);
-        }
-
-        let _id = self.extract_ncname(schema.clone(), "id", XSDError::SchPropsCorrect)?;
-        let _version = schema.remove_attribute("version", None);
-        let _lang = schema.remove_attribute("lang", Some(XML_XML_NAMESPACE));
-
-        self.check_attribute(schema.clone())?;
-
-        // include/import/redefine phase
-        let mut children = schema.first_child();
-        while let Some(child) = children {
-            children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        // skip foreign element
-                        continue;
-                    }
-                    match elem.local_name().as_ref() {
-                        SCHEMA_IMPORT_NAME => self.parse_import(elem)?,
-                        SCHEMA_REDEFINE_NAME => todo!(),
-                        SCHEMA_ANNOTATION_NAME => {}
-                        SCHEMA_SIMPLETYPE_NAME
-                        | SCHEMA_COMPLEXTYPE_NAME
-                        | SCHEMA_GROUP_NAME
-                        | SCHEMA_ATTGROUP_NAME
-                        | SCHEMA_ELEMENT_NAME
-                        | SCHEMA_ATTRIBUTE_NAME
-                        | SCHEMA_NOTATION_NAME => {
-                            children = Some(child);
-                            break;
-                        }
-                        _ => unallowed_element!(self.handler, elem),
-                    }
-                }
-                NodeKind::Text(_) => unallowed_text!(self.handler, schema),
-                _ => {
-                    // PI can be ignored.
-                    // Since the settings are configured so that CDATA sections, entity
-                    // references, and comments do not appear, they can also be ignored.
-                }
-            }
-        }
-
-        // global definition/declaration phase
-        while let Some(child) = children {
-            children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    use XSDError::*;
-
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        // skip foreign element
-                        continue;
-                    }
-                    let (memo, error) = match elem.local_name().as_ref() {
-                        SCHEMA_ANNOTATION_NAME => {
-                            continue;
-                        }
-                        SCHEMA_SIMPLETYPE_NAME => (&mut self.simple_types, SrcSimpleType),
-                        SCHEMA_COMPLEXTYPE_NAME => (&mut self.complex_types, SrcCt),
-                        SCHEMA_GROUP_NAME => (&mut self.model_groups, SrcModelGroupDefn),
-                        SCHEMA_ATTGROUP_NAME => (&mut self.att_groups, SrcAttributeGroup),
-                        SCHEMA_ELEMENT_NAME => (&mut self.elem_decls, SrcElement),
-                        SCHEMA_ATTRIBUTE_NAME => (&mut self.attr_decls, SrcAttribute),
-                        SCHEMA_NOTATION_NAME => {
-                            continue;
-                        }
-                        _ => unallowed_element!(self.handler, elem),
-                    };
-
-                    let Some(value) = elem.get_attribute("name", None) else {
-                        todo!("raise error");
-                    };
-                    match SCHEMA_BUILTIN_NCNAME.parse_with_elem(&value, elem.clone()) {
-                        Ok(SchemaValue::String(ncname)) => {
-                            memo.insert((self.target_namespace.clone(), ncname), elem);
-                        }
-                        Ok(_) => internal_error!(self.handler, elem),
-                        Err(err) => {
-                            error!(
-                                self.handler,
-                                error,
-                                elem,
-                                "The attribute 'name' of '{}' is failed to parse as NCName because {}.",
-                                elem.local_name(),
-                                err
-                            );
-                            return Err(error);
-                        }
-                    }
-                }
-                NodeKind::Text(_) => unallowed_text!(self.handler, schema),
-                _ => {
-                    // PI can be ignored.
-                    // Since the settings are configured so that CDATA sections, entity
-                    // references, and comments do not appear, they can also be ignored.
-                }
-            }
-        }
-        // Finally, resolve everything that remains.
-        // Element declarations, complex type definitions, and model group definitions are
-        // all interdependent, so it is impossible to resolve any one of them first.
-        // Therefore, the only option is to resolve the dependencies recursively.
-        // As a starting point, try the complex type definitions first.
-        while let Some((key, value)) = self.complex_types.iter().next() {
-            let key = key.clone();
-            let value = value.clone();
-
-            self.complex_types.remove(&key);
-            self.parse_complex_type_definitions(value, key.0, &mut vec![], true)?;
-        }
-
-        Ok(())
-    }
-
     fn parse_local_element(
         &mut self,
         mut elem: Element,
@@ -3378,7 +3955,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                                             // }
                                             ContentType::Mixed(mixed) => {
                                                 // [src-ct] 2.1.2
-                                                if !mixed.is_emptiable() {
+                                                if !mixed.is_emptiable(&self.schema) {
                                                     error!(
                                                         self.handler,
                                                         SrcCt,
@@ -3789,310 +4366,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
         ))
     }
 
-    fn parse_import(&mut self, mut elem: Element) -> Result<(), XSDError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_IMPORT_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        let namespace = elem.remove_attribute("namespace", None).map(|ns| {
-            match SCHEMA_BUILTIN_ANYURI.parse_with_elem(&ns, elem.clone()) {
-                Ok(SchemaValue::AnyURI(uri)) => Ok(uri.to_string()),
-                Ok(_) => internal_error!(self.handler, elem),
-                Err(err) => {
-                    error!(
-                        self.handler,
-                        SrcImport,
-                        elem,
-                        "The attribute 'namespace' of '{}' is failed to parse as anyURI because {}.",
-                        elem.local_name(),
-                        err
-                    );
-                    Err(XSDError::SrcImport)
-                }
-            }
-        }).transpose()?;
-        let schema_location =
-            self.extract_any_uri(elem.clone(), "schemaLocation", XSDError::SrcImport)?;
-
-        self.check_attribute(elem.clone())?;
-
-        let Some(schema_location) = schema_location else {
-            // Unlike 'include', schemaLocation is an optional attribute, so this
-            // is not an error. However, since the processor cannot do anything
-            // further, it simply returns `Ok` and terminates processing.
-            return Ok(());
-        };
-        // Manage imported URIs within the same set as included URIs.
-        // Considering cases where an imported schema includes additional schemas, it
-        // is better not to separate duplicate management between include and import.
-        if self.included_resources.contains(&schema_location) {
-            // According to the note in Section 4.2.3 of XSD 1.0 Part 1,
-            // including the same resource multiple times does not result in an error.
-            //
-            // According to clause 2 of [sch-props-correct], components with the same
-            // target namespace and name pair are not allowed. To distinguish between
-            // components that are duplicates due to multiple inclusions and those that
-            // are not, it is necessary to prevent the same resource from being included
-            // multiple times.
-            return Ok(());
-        }
-
-        let mut reader = XMLReader::builder()
-            .set_handler(create_handler(&mut *self.handler))
-            .build();
-
-        let included_doc = match reader.parse_uri(&schema_location, None) {
-            Ok(()) if !reader.handler.fatal_error => {
-                // Register it as an imported resource.
-                self.included_resources.insert(schema_location.clone());
-                reader.handler.document
-            }
-            Err(XMLError::IOError(_)) => {
-                // It is not an error if the resource referenced by `schemaLocation` cannot be resolved.
-                // In this context, an I/O error is treated as a failure to resolve the resource.
-                return Ok(());
-            }
-            _ => {
-                // [src-import] 2.1 and 2.2
-                error!(
-                    self.handler,
-                    SrcImport,
-                    elem,
-                    "The imported resource '{}' could not be parsed as XML.",
-                    schema_location
-                );
-                return Err(XSDError::SrcImport);
-            }
-        };
-
-        let Some(schema) = included_doc.document_element() else {
-            internal_error!(self.handler, elem);
-        };
-
-        if schema.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE)
-            || schema.local_name().as_ref() != SCHEMA_SCHEMA_NAME
-        {
-            // [src-import] 2.1 and 2.2
-            error!(
-                self.handler,
-                SrcImport,
-                schema,
-                "The document element of the imported resource '{}' must be '{{{}}}schema', but is '{}{}'.",
-                schema_location,
-                XML_SCHEMA_NAMESPACE,
-                schema
-                    .namespace_name()
-                    .map(|ns| format!("{{{ns}}}"))
-                    .unwrap_or_default(),
-                schema.local_name()
-            );
-            return Err(XSDError::SrcImport);
-        }
-
-        if self.target_namespace.as_deref() == namespace.as_deref() {
-            // [src-import] clause 1
-            error!(
-                self.handler,
-                SrcImport,
-                elem,
-                "The '{}' must not be the imported schema's namespace because it is as same as the parent schema's one.",
-                namespace.as_deref().unwrap_or("(null)")
-            );
-            return Err(XSDError::SrcImport);
-        }
-
-        let target_namespace = self
-            .get_any_uri(schema.clone(), "targetNamespace", XSDError::SrcImport)?
-            .map(|ns| ns.to_string());
-        if target_namespace != namespace {
-            // [src-import] clause 3
-            error!(
-                self.handler,
-                SrcImport,
-                schema,
-                "The imported schema's target namespace is '{}', but the attribute value of 'namespace' is '{}'.",
-                target_namespace.as_deref().unwrap_or("(null)"),
-                namespace.as_deref().unwrap_or("(null)")
-            );
-            return Err(XSDError::SrcImport);
-        }
-
-        // It would be easier if child elements could be retrieved and merged into the parse
-        // context, but given the differences in values for `blockDefault`, `finalDefault`,
-        // `xxxFormDefault`, and others, the only option is to parse them as separate schemas
-        // and then merge them.
-        let mut context = XSDParseContext::new(&mut self.handler);
-        context.unnamed = self.unnamed;
-        context.parse(included_doc)?;
-        self.unnamed = context.unnamed;
-        let schema = context.schema;
-        // Merge schemas
-        self.schema.type_defs.extend(schema.type_defs);
-        self.schema.att_decls.extend(schema.att_decls);
-        self.schema.elem_decls.extend(schema.elem_decls);
-        self.schema.attgroup_defs.extend(schema.attgroup_defs);
-        self.schema.modelgroup_defs.extend(schema.modelgroup_defs);
-        self.schema.notation_decls.extend(schema.notation_decls);
-        Ok(())
-    }
-
-    fn parse_redefine(&mut self, mut elem: Element) -> Result<(), XSDError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_REDEFINE_NAME);
-
-        let _id = elem.remove_attribute("id", None);
-        let Some(schema_location) =
-            self.extract_any_uri(elem.clone(), "schemaLocation", XSDError::SrcRedefine)?
-        else {
-            error!(
-                self.handler,
-                SrcRedefine,
-                elem,
-                "The mandatory attribute 'schemaLocation' of '{}' is missing.",
-                elem.local_name()
-            );
-            return Err(XSDError::SrcRedefine);
-        };
-
-        self.check_attribute(elem.clone())?;
-
-        let mut children = elem.first_child();
-        let mut simple_types = vec![];
-        let mut complex_types = vec![];
-        let mut groups = vec![];
-        let mut att_groups = vec![];
-        while let Some(child) = children {
-            children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    match elem.local_name().as_ref() {
-                        SCHEMA_ANNOTATION_NAME => {}
-                        SCHEMA_SIMPLETYPE_NAME => simple_types.push(elem),
-                        SCHEMA_COMPLEXTYPE_NAME => complex_types.push(elem),
-                        SCHEMA_GROUP_NAME => groups.push(elem),
-                        SCHEMA_ATTGROUP_NAME => att_groups.push(elem),
-                        _ => unallowed_element!(self.handler, elem),
-                    }
-                }
-                NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                _ => {}
-            }
-        }
-        self.check_unexpected_schema_elements(children)?;
-
-        if self.included_resources.contains(&schema_location) {
-            // It is unclear how to handle 'redefine' that have different sets
-            // of children for the same resource, but for now, simply skip them.
-            // Although this is not explicitly stated in the specification, one
-            // possible strategy might be to group 'include' and 'redefine' that
-            // target the same resource and treat them as a single 'redefine'.
-            return Ok(());
-        }
-
-        let empty = simple_types.is_empty()
-            && complex_types.is_empty()
-            && groups.is_empty()
-            && att_groups.is_empty();
-
-        let mut reader = XMLReader::builder()
-            .set_handler(create_handler(&mut *self.handler))
-            .build();
-
-        let included_doc = match reader.parse_uri(&schema_location, None) {
-            Ok(()) if !reader.handler.fatal_error => {
-                // Register it as an included resource.
-                self.included_resources.insert(schema_location.clone());
-                reader.handler.document
-            }
-            Err(XMLError::IOError(_)) if empty => {
-                // Resource errors are treated the same as an 'include' only
-                // when the resource has no children other than 'annotation's.
-                return Ok(());
-            }
-            _ => {
-                // [src-redefine] clause 1 and 2
-                error!(
-                    self.handler,
-                    SrcRedefine,
-                    elem,
-                    "The redefined resource '{}' could not be parsed as XML.",
-                    schema_location
-                );
-                return Err(XSDError::SrcRedefine);
-            }
-        };
-
-        let Some(mut schema) = included_doc.document_element() else {
-            internal_error!(self.handler, elem);
-        };
-
-        if schema.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE)
-            || schema.local_name().as_ref() != SCHEMA_SCHEMA_NAME
-        {
-            // [src-redefine] clause 2
-            error!(
-                self.handler,
-                SrcRedefine,
-                schema,
-                "The document element of the redefined resource '{}' must be '{{{}}}schema', but is '{}{}'.",
-                schema_location,
-                XML_SCHEMA_NAMESPACE,
-                schema
-                    .namespace_name()
-                    .map(|ns| format!("{{{ns}}}"))
-                    .unwrap_or_default(),
-                schema.local_name()
-            );
-            return Err(XSDError::SrcRedefine);
-        }
-
-        if let Some(target_namespace) = schema.get_attribute("targetNamespace", None) {
-            if self
-                .target_namespace
-                .as_deref()
-                .is_none_or(|ns| ns != target_namespace)
-            {
-                // [src-redefine] clause 3
-                error!(
-                    self.handler,
-                    SrcRedefine,
-                    schema,
-                    "The redefine schema's target namespace is '{}', but parent schema's one is '{}'.",
-                    target_namespace,
-                    self.target_namespace.as_deref().unwrap_or("(null)")
-                );
-                return Err(XSDError::SrcRedefine);
-            }
-        } else if let Some(target_namespace) = self.target_namespace.as_deref() {
-            schema
-                .set_attribute("targetNamespace", None, Some(target_namespace))
-                .ok();
-        }
-
-        // It would be easier if child elements could be retrieved and merged into the parse
-        // context, but given the differences in values for `blockDefault`, `finalDefault`,
-        // `xxxFormDefault`, and others, the only option is to parse them as separate schemas
-        // and then merge them.
-        let mut context = XSDParseContext::new(&mut self.handler);
-        context.unnamed = self.unnamed;
-        context.parse(included_doc)?;
-        self.unnamed = context.unnamed;
-        let schema = context.schema;
-        // Merge schemas
-        self.schema.type_defs.extend(schema.type_defs);
-        self.schema.att_decls.extend(schema.att_decls);
-        self.schema.elem_decls.extend(schema.elem_decls);
-        self.schema.attgroup_defs.extend(schema.attgroup_defs);
-        self.schema.modelgroup_defs.extend(schema.modelgroup_defs);
-        self.schema.notation_decls.extend(schema.notation_decls);
-        Ok(())
-    }
-
     fn extract_qname(
         &mut self,
         mut elem: Element,
@@ -4148,55 +4421,6 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                     error,
                     elem,
                     "The attribute '{}' of '{}' is failed to parse as NCName because {}.",
-                    name,
-                    elem.local_name(),
-                    err
-                );
-                Err(error)
-            }
-        }
-    }
-
-    fn extract_any_uri(
-        &mut self,
-        mut elem: Element,
-        name: &str,
-        error: XSDError,
-    ) -> Result<Option<Arc<URIStr>>, XSDError> {
-        let Some(uri) = elem.remove_attribute(name, None) else {
-            return Ok(None);
-        };
-        self.parse_any_uri(elem, name, &uri, error)
-    }
-
-    fn get_any_uri(
-        &mut self,
-        elem: Element,
-        name: &str,
-        error: XSDError,
-    ) -> Result<Option<Arc<URIStr>>, XSDError> {
-        let Some(uri) = elem.get_attribute(name, None) else {
-            return Ok(None);
-        };
-        self.parse_any_uri(elem, name, &uri, error)
-    }
-
-    fn parse_any_uri(
-        &mut self,
-        elem: Element,
-        name: &str,
-        value: &str,
-        error: XSDError,
-    ) -> Result<Option<Arc<URIStr>>, XSDError> {
-        match SCHEMA_BUILTIN_ANYURI.parse_with_elem(value, elem.clone()) {
-            Ok(SchemaValue::AnyURI(uri)) => Ok(Some(uri)),
-            Ok(_) => internal_error!(self.handler, elem),
-            Err(err) => {
-                error!(
-                    self.handler,
-                    error,
-                    elem,
-                    "The attribute '{}' of '{}' is failed to parse as anyURI because {}.",
                     name,
                     elem.local_name(),
                     err
@@ -4428,6 +4652,11 @@ impl TypeDefinition {
     }
 }
 
+enum OwnedTypeDefinition {
+    Simple(SimpleTypeDefinition),
+    Complex(ComplexTypeDefinition),
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 enum DerivationMethod {
     #[default]
@@ -4450,7 +4679,7 @@ enum ContentType {
 }
 
 #[derive(Default)]
-struct ComplexTypeDefinition {
+pub(super) struct ComplexTypeDefinition {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
     base_type_definition: (Option<Arc<str>>, Arc<str>),
@@ -4560,6 +4789,59 @@ struct ModelGroup {
     particles: Vec<Particle>,
 }
 
+impl ModelGroup {
+    fn effective_total_range(
+        &self,
+        schema: &Schema,
+        min_occurs: usize,
+        max_occurs: usize,
+    ) -> Option<(usize, usize)> {
+        if matches!(self.compositor, Compositor::Choice) {
+            // [cos-choice-range]
+            let mut ret = None::<(usize, usize)>;
+            for p in &self.particles {
+                let m = match &p.term {
+                    Term::ModelGroup(_) => p.effective_total_range(schema)?,
+                    Term::ModelGroupRef(ns, loc) => {
+                        let def = schema.modelgroup_defs.get(&(ns.clone(), loc.clone()))?;
+                        def.model_group.effective_total_range(schema, 1, 1)?
+                    }
+                    _ => (p.min_occurs, p.max_occurs),
+                };
+                let ret = ret.get_or_insert((usize::MAX, 0));
+                ret.0 = ret.0.min(m.0);
+                ret.1 = ret.1.max(m.1);
+            }
+            let (min, max) = ret?;
+            Some((
+                min_occurs.saturating_mul(min),
+                max_occurs.saturating_mul(max),
+            ))
+        } else {
+            // [cos-seq-range]
+            let mut sum = None::<(usize, usize)>;
+            for p in &self.particles {
+                let m = match &p.term {
+                    Term::ModelGroup(_) => p.effective_total_range(schema)?,
+                    Term::ModelGroupRef(ns, loc) => {
+                        let def = schema.modelgroup_defs.get(&(ns.clone(), loc.clone()))?;
+                        def.model_group.effective_total_range(schema, 1, 1)?
+                    }
+                    _ => (p.min_occurs, p.max_occurs),
+                };
+                let sum = sum.get_or_insert_default();
+                sum.0 = sum.0.saturating_add(m.0);
+                sum.1 = sum.1.saturating_add(m.1);
+            }
+            let (min, max) = sum?;
+            Some((
+                min_occurs.saturating_mul(min),
+                max_occurs.saturating_mul(max),
+            ))
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum Term {
     ModelGroup(ModelGroup),
@@ -4583,7 +4865,7 @@ pub(super) struct Particle {
 }
 
 impl Particle {
-    /// Compute the minimum effective total range.
+    /// Compute the effective total range.
     ///
     /// If `term` is not a group, return [`None`].
     ///
@@ -4592,33 +4874,17 @@ impl Particle {
     /// # Reference
     /// - [cos-seq-range](https://www.w3.org/TR/xmlschema-1/#cos-seq-range)
     /// - [cos-choice-range](https://www.w3.org/TR/xmlschema-1/#cos-choice-range)
-    fn minimum_effective_total_range(&self) -> Option<usize> {
-        let Term::ModelGroup(group) = &self.term else {
-            return None;
-        };
-        if matches!(group.compositor, Compositor::Choice) {
-            // [cos-choice-range]
-            let min = group
-                .particles
-                .iter()
-                .map(|p| match &p.term {
-                    Term::ModelGroup(_) => p.minimum_effective_total_range().unwrap(),
-                    _ => p.min_occurs,
-                })
-                .min()
-                .unwrap_or(0);
-            Some(self.min_occurs.saturating_mul(min))
-        } else {
-            // [cos-seq-range]
-            let sum = group
-                .particles
-                .iter()
-                .map(|p| match &p.term {
-                    Term::ModelGroup(_) => p.minimum_effective_total_range().unwrap(),
-                    _ => p.min_occurs,
-                })
-                .fold(0usize, |s, v| s.saturating_add(v));
-            Some(self.min_occurs.saturating_mul(sum))
+    fn effective_total_range(&self, schema: &Schema) -> Option<(usize, usize)> {
+        match &self.term {
+            Term::ModelGroup(group) => {
+                group.effective_total_range(schema, self.min_occurs, self.max_occurs)
+            }
+            Term::ModelGroupRef(ns, loc) => {
+                let def = schema.modelgroup_defs.get(&(ns.clone(), loc.clone()))?;
+                def.model_group
+                    .effective_total_range(schema, self.min_occurs, self.max_occurs)
+            }
+            _ => None,
         }
     }
 
@@ -4626,7 +4892,7 @@ impl Particle {
     ///
     /// # Reference
     /// - [cos-group-emptiable](https://www.w3.org/TR/xmlschema-1/#cos-group-emptiable)
-    fn is_emptiable(&self) -> bool {
+    fn is_emptiable(&self, schema: &Schema) -> bool {
         // clause 1
         // Its {min occurs} is 0.
         if self.min_occurs == 0 {
@@ -4637,7 +4903,21 @@ impl Particle {
         // Its {term} is a group and the minimum part of the effective total range of that group,
         // as defined by Effective Total Range (all and sequence) (§3.8.6) (if the group is all
         // or sequence) or Effective Total Range (choice) (§3.8.6) (if it is choice), is 0.
-        self.minimum_effective_total_range().is_some_and(|m| m == 0)
+        self.effective_total_range(schema).is_some_and(|m| m.0 == 0)
+    }
+
+    /// # Reference
+    /// - [range-ok](https://www.w3.org/TR/xmlschema-1/#range-ok)
+    fn check_range_ok(&self, base: &Particle) -> bool {
+        if self.min_occurs < base.min_occurs {
+            // [range-ok] clause 1
+            return false;
+        }
+        if base.max_occurs < self.max_occurs || self.max_occurs == usize::MAX {
+            // [range-ok] clause 2
+            return false;
+        }
+        true
     }
 }
 
@@ -4751,6 +5031,24 @@ impl Wildcard {
                 !l.contains(r) && !l.contains(&None)
             }
             _ => false,
+        }
+    }
+
+    /// # Reference
+    /// - [cvc-wildcard-namespace](https://www.w3.org/TR/xmlschema-1/#cvc-wildcard-namespace)
+    fn is_match(&self, namespace_name: Option<&str>) -> bool {
+        match &self.ns_constraint {
+            NamespaceConstraint::Any => true, // clause 1
+            NamespaceConstraint::Not(ns) => {
+                // clause 2
+                ns.as_deref() != namespace_name && namespace_name.is_some()
+            }
+            NamespaceConstraint::List(ns) => {
+                // clause 3
+                ns.iter()
+                    .map(|ns| ns.as_deref())
+                    .any(|ns| ns == namespace_name)
+            }
         }
     }
 }

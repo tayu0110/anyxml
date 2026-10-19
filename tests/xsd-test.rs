@@ -1299,6 +1299,48 @@ const SKIP_SCHEMA_TESTS: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "MS-Regex2006-07-15",
+        "RegexTest_442",
+        "RegexTest_442",
+        "'[' cannot appear standalone as Char in XSD 1.0 regex.",
+    ),
+    (
+        "MS-Regex2006-07-15",
+        "RegexTest_443",
+        "RegexTest_443",
+        "'[' cannot appear standalone as Char in XSD 1.0 regex.",
+    ),
+    (
+        "MS-Regex2006-07-15",
+        "RegexTest_448",
+        "RegexTest_448",
+        "']' cannot appear standalone as Char in XSD 1.0 regex.",
+    ),
+    (
+        "MS-Regex2006-07-15",
+        "RegexTest_449",
+        "RegexTest_449",
+        "']' cannot appear standalone as Char in XSD 1.0 regex.",
+    ),
+    (
+        "MS-Regex2006-07-15",
+        "RegexTest_450",
+        "RegexTest_450",
+        "']' cannot appear standalone as Char in XSD 1.0 regex.",
+    ),
+    (
+        "MS-Regex2006-07-15",
+        "RegexTest_451",
+        "RegexTest_451",
+        "']' cannot appear standalone as Char in XSD 1.0 regex.",
+    ),
+    (
+        "MS-Regex2006-07-15",
+        "RegexTest_458",
+        "RegexTest_458",
+        "']' cannot appear standalone as Char in XSD 1.0 regex.",
+    ),
+    (
+        "MS-Regex2006-07-15",
         "RegexTest_464",
         "RegexTest_464",
         "'[[abcd]-[bc]]' is invalid in XSD 1.0 regex because charClassExpr cannot contain another charClassExpr.",
