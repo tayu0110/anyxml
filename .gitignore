@@ -1,3 +1,4 @@
+*.log
 /target
 /resources/xmlconf
 /resources/XSLT-testsuite-04
@@ -7,3 +8,4 @@
 /resources/*.tar.gz
 /benches/dataset/*.gml
 /.vscode
+/.cargo
