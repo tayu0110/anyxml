@@ -1477,6 +1477,10 @@ impl BlockSet {
     pub fn substitution(&self) -> bool {
         self.0 & Block::Substitution as u8 != 0
     }
+
+    pub fn is_subset_of(&self, base: &Self) -> bool {
+        self.0 & base.0 == self.0
+    }
 }
 
 impl std::ops::BitOr<Block> for BlockSet {

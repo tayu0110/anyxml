@@ -1189,8 +1189,96 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             (Term::ElementDecl(lns, lloc), Term::ElementDecl(rns, rloc)) => {
                 // "NameAnd- TypeOK" [rcase-NameAndTypeOK]
 
+                // [rcase-NameAndTypeOK] clause 2
+                if !restricted.check_range_ok(base) {
+                    return false;
+                }
+
+                if lns == rns && lloc == rloc {
+                    // Since each declaration distinguishes keys from those in other declarations,
+                    // if the keys match, they are the same declaration, which is a valid restriction.
+                    return true;
+                }
+
                 // [rcase-NameAndTypeOK] clause 1
-                todo!()
+                let Some((bdecl, rdecl)) = self
+                    .schema
+                    .elem_decls
+                    .get(&(lns.clone(), lloc.clone()))
+                    .zip(self.schema.elem_decls.get(&(rns.clone(), rloc.clone())))
+                    .filter(|(b, r)| b.target_namespace == r.target_namespace && b.name == r.name)
+                else {
+                    return false;
+                };
+
+                // [rcase-NameAndTypeOK] clause 3
+                if matches!(bdecl.scope, Some(Scope::Global))
+                    && matches!(rdecl.scope, Some(Scope::Global))
+                {
+                    // clause 3.1
+                    true
+                } else {
+                    // clause 3.2
+                    if !bdecl.nillable && rdecl.nillable {
+                        // clause 3.2.1
+                        return false;
+                    }
+                    if let Some(ValueConstraint::Fixed(bfixed)) = bdecl.value_constraint.as_ref() {
+                        // clause 3.2.2
+                        if rdecl.value_constraint.is_none() {
+                            return false;
+                        }
+                        if let Some(ValueConstraint::Fixed(rfixed)) =
+                            rdecl.value_constraint.as_ref()
+                            && bfixed != rfixed
+                        {
+                            return false;
+                        }
+                    }
+                    if !rdecl.idc_definitions.iter().any(|idc| {
+                        bdecl.idc_definitions.iter().all(|bidc| {
+                            bidc.target_namespace != idc.target_namespace || bidc.name != idc.name
+                        })
+                    }) {
+                        // clause 3.2.3
+                        // This clause is very strange.
+                        // There is no definition of what it means for a set of IDCs to be a
+                        // subset of another set of IDCs.
+                        // According to Section 3.11.1, which states that "Identity-constraint
+                        // definitions are identified by their {name} and {target namespace}",
+                        // it is natural to assume that the equivalence of IDCs can be determined
+                        // by their names.
+                        // On the other hand, IDCs can only be defined as descendants of element
+                        // declarations; they cannot reference other IDCs to incorporate them as
+                        // part of their own IDC, nor can multiple IDCs with the same name exist
+                        // within the same schema.
+                        // Therefore, it is impossible—except for the empty set—for an element
+                        // declaration to have a set of IDCs that is a subset of the set of IDCs
+                        // of any other element declaration.
+                        // The following bug has been reported regarding the XSD specification
+                        // in relation to this unnatural clause. However, since I was unable to
+                        // find a response to this bug report, the true meaning of this clause
+                        // remains unclear.
+                        // https://www.w3.org/Bugs/Public/show_bug.cgi?id=2084
+                        //
+                        // Here, the implementation follows the principle that IDC equivalence
+                        // is determined by name. In other words, an element declaration that
+                        // is a valid restriction of an element declaration with IDCs can have
+                        // no IDCs of its own.
+                        return false;
+                    }
+                    if !bdecl
+                        .disallowed_substitutions
+                        .is_subset_of(&rdecl.disallowed_substitutions)
+                    {
+                        // clause 3.2.4
+                        return false;
+                    }
+
+                    // TODO: check clause 3.2.5
+
+                    true
+                }
             }
             (Term::ElementDecl(_, _), _) => false, // Forbidden
             (Term::Wildcard(wc), Term::ElementDecl(ns, _)) => {
@@ -2204,7 +2292,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                                 .unwrap_or(self.elem_form_default);
                             let value_constraint = self.get_element_default(atts);
                             self.unnamed += 1;
-                            let name = Arc::<str>::from(format!("#local{}/{}", self.unnamed, name));
+                            let name = Arc::<str>::from(name);
                             let target_namespace = self
                                 .target_namespace
                                 .clone()
@@ -2878,9 +2966,17 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 {
                     let target_namespace = decl.target_namespace.clone();
                     let name = decl.name.clone();
-                    self.schema
-                        .elem_decls
-                        .insert((target_namespace, name), decl);
+                    if !matches!(decl.scope, Some(Scope::Global)) {
+                        self.unnamed += 1;
+                        let name = format!("#local{}/{}", self.unnamed, name).into();
+                        self.schema
+                            .elem_decls
+                            .insert((target_namespace, name), decl);
+                    } else {
+                        self.schema
+                            .elem_decls
+                            .insert((target_namespace, name), decl);
+                    }
                 }
             }
             SCHEMA_ATTRIBUTE_NAME => {
