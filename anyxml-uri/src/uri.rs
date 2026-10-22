@@ -288,6 +288,21 @@ impl URIStr {
     }
 }
 
+impl PartialOrd for URIStr {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for URIStr {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self.as_unescaped_str(), other.as_unescaped_str()) {
+            (Some(s), Some(o)) => s.cmp(&o),
+            _ => self.as_escaped_str().cmp(other.as_escaped_str()),
+        }
+    }
+}
+
 impl ToOwned for URIStr {
     type Owned = URIString;
 
@@ -634,6 +649,18 @@ impl URIString {
             uri.push_str(fragment);
         }
         self.uri = uri;
+    }
+}
+
+impl PartialOrd for URIString {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for URIString {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_ref().cmp(other)
     }
 }
 
