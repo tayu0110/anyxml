@@ -36,6 +36,9 @@ pub struct XSLTContext {
     /// If the second argument of the `document` function is omitted, it may
     /// be used to resolve the relative reference that is the first argument.
     pub stylesheet_base_uri: URIString,
+    /// A set of defined `xsl:key` elements.  \
+    /// Each key consists of a pair of namespace name and local name—the result of
+    /// expanding the `name` attribute—and its value is a pair of `match` and `use`.
     pub keys: HashMap<(Option<Cow<'static, str>>, Cow<'static, str>), KeyDef>,
 }
 

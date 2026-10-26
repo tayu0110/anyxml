@@ -1,3 +1,16 @@
+//! [`sax`]: crate::sax
+//! [`stax`]: crate::stax
+//! [`relaxng`]: crate::relaxng
+//! [`SAXHandler`]: crate::sax::SAXHandler
+//! [`EntityResolver`]: crate::sax::EntityResolver
+//! [`ErrorHandler`]: crate::sax::ErrorHandler
+//! [`Document`]: crate::tree::Document
+//! [`XPathExpression::xslt_context`]: crate::xpath::XPathExpression::xslt_context
+//! [`compile`]: crate::xpath::compile
+//! [`evaluate_str`]: crate::xpath::evaluate_str
+//! [`anyxml-encoding`]: anyxml_encoding
+//! [`anyxml_encoding::Encoder`]: anyxml_encoding::Encoder
+//! [`anyxml_encoding::Decoder`]: anyxml_encoding::Decoder
 #![doc = include_str!("../README.md")]
 
 pub mod automata;
