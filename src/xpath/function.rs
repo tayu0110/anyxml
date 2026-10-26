@@ -20,6 +20,10 @@ impl FunctionLibrary {
             .copied()
             .ok_or(XPathError::UnresolvableFunctionName)
     }
+
+    pub(super) fn register_function(&mut self, name: &'static str, func: XPathFunction) {
+        self.map.insert(Cow::Borrowed(name), func);
+    }
 }
 
 impl Default for FunctionLibrary {

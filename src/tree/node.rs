@@ -350,6 +350,10 @@ impl<Spec: NodeSpec + ?Sized> Node<Spec> {
     pub(super) fn set_column(&mut self, column: usize) {
         self.core.borrow_mut().column = column;
     }
+
+    pub(crate) fn generate_id(&self) -> usize {
+        self.core.as_ptr().addr()
+    }
 }
 
 impl Node<dyn NodeSpec> {

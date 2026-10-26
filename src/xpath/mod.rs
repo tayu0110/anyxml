@@ -57,10 +57,12 @@ mod compile;
 mod function;
 mod ops;
 mod step;
+mod xslt;
 
 use std::{borrow::Cow, collections::HashMap, io::Read, sync::Arc};
 
 pub use compile::*;
+pub use xslt::{XML_XSLT_NAMESPACE, XSLTContext, compile_pattern};
 
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
@@ -83,8 +85,11 @@ pub enum XPathError {
     WrongTypeConversion,
     UnresolvableFunctionName,
     UnresolvableVariableName,
+    UnresolvableURI,
+    UnresolvableKey,
     InvalidNamespacePrefix,
     UnsupportedNodeType,
+    InvalidXSLTContext,
     CompileError(XPathCompileError),
     InternalError,
 }
@@ -138,6 +143,7 @@ pub fn evaluate_str(xpath: &str, xml: &str, uri: Option<&URIStr>) -> Result<XPat
     let mut expression = compile(xpath)?;
     let mut handler = TreeBuildHandler::default();
     handler.coalescing = true;
+    handler.expand_entity_reference = true;
     let mut reader = XMLReader::builder().set_handler(handler).build();
     reader.parse_str(xml, uri)?;
 
@@ -162,6 +168,7 @@ pub fn evaluate_uri(
     let mut expression = compile(xpath)?;
     let mut handler = TreeBuildHandler::default();
     handler.coalescing = true;
+    handler.expand_entity_reference = true;
     let mut reader = XMLReader::builder().set_handler(handler).build();
     reader.parse_uri(uri, encoding)?;
 
@@ -187,9 +194,10 @@ pub fn evaluate_reader<'a>(
     uri: Option<&URIStr>,
 ) -> Result<XPathObject, XMLError> {
     let mut expression = compile(xpath)?;
-    let mut parser = XMLReader::builder()
-        .set_handler(TreeBuildHandler::default())
-        .build();
+    let mut handler = TreeBuildHandler::default();
+    handler.coalescing = true;
+    handler.expand_entity_reference = true;
+    let mut parser = XMLReader::builder().set_handler(handler).build();
     parser.parse_reader(reader, encoding, uri)?;
 
     let document = parser.handler.document;
@@ -224,7 +232,14 @@ impl XPathExpression {
         &mut self,
         context_node: impl Into<Node<dyn NodeSpec>>,
     ) -> Result<XPathObject, XPathError> {
-        self.evaluate_node(context_node.into())
+        let context_node: Node<dyn NodeSpec + 'static> = context_node.into();
+        self.context.xslt.current_node = Some(context_node.clone());
+        let doc = context_node.owner_document();
+        self.context
+            .xslt
+            .doc_cache
+            .insert(doc.document_base_uri().as_ref().into(), doc);
+        self.evaluate_node(context_node)
     }
 
     fn evaluate_node(
@@ -590,6 +605,11 @@ impl XPathExpression {
     pub fn add_namespace(&mut self, prefix: &str, namespace_name: &str) -> Result<(), XPathError> {
         self.context.namespaces.insert(prefix, namespace_name)
     }
+
+    /// Get the mutable XSLT context.
+    pub fn xslt_context(&mut self) -> &mut XSLTContext {
+        &mut self.context.xslt
+    }
 }
 
 /// XPath evaluation context.
@@ -612,6 +632,7 @@ pub struct XPathContext {
     functions: FunctionLibrary,
     namespaces: NamespaceSet,
     stack: Vec<XPathObject>,
+    xslt: XSLTContext,
 }
 
 impl XPathContext {
