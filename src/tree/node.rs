@@ -691,14 +691,15 @@ impl Node<dyn NodeSpec> {
     /// if they are the same node, return `Equal`.
     ///
     /// If `self` and `other` do not belong to the same document tree
-    /// (i.e., they have no common ancestor), return `None`.
+    /// (i.e., they have no common ancestor), a comparison is attempted
+    /// using base URIs or node addresses, but the result is undefined.
     ///
     /// # Reference
     /// [5 Data Model in XPath 1.0](https://www.w3.org/TR/1999/REC-xpath-19991116/#dt-document-order)
     pub fn compare_document_order(
         &self,
         other: impl Into<Node<dyn NodeSpec>>,
-    ) -> Option<std::cmp::Ordering> {
+    ) -> std::cmp::Ordering {
         compare_document_order(self.clone(), other.into())
     }
 
@@ -982,7 +983,7 @@ impl Node<dyn InternalNodeSpec> {
     pub fn compare_document_order(
         &self,
         other: impl Into<Node<dyn NodeSpec>>,
-    ) -> Option<std::cmp::Ordering> {
+    ) -> std::cmp::Ordering {
         compare_document_order(self.into(), other.into())
     }
 
@@ -1069,7 +1070,7 @@ impl<Spec: NodeSpec + 'static> Node<Spec> {
     pub fn compare_document_order(
         &self,
         other: impl Into<Node<dyn NodeSpec>>,
-    ) -> Option<std::cmp::Ordering> {
+    ) -> std::cmp::Ordering {
         compare_document_order(self.into(), other.into())
     }
 
@@ -1348,30 +1349,24 @@ mod tests {
             let mut pre = true;
             while let Some(other) = others {
                 if now.is_same_node(other.clone()) {
-                    assert!(now.compare_document_order(other.clone()).unwrap().is_eq());
+                    assert!(now.compare_document_order(other.clone()).is_eq());
                     pre = false;
                     if let Some(element) = now.as_element() {
                         for att in element.attributes() {
-                            assert!(att.compare_document_order(other.clone()).unwrap().is_gt());
-                            assert!(now.compare_document_order(att).unwrap().is_lt());
+                            assert!(att.compare_document_order(other.clone()).is_gt());
+                            assert!(now.compare_document_order(att).is_lt());
                         }
                     }
                 } else {
-                    assert_eq!(
-                        pre,
-                        now.compare_document_order(other.clone()).unwrap().is_gt()
-                    );
+                    assert_eq!(pre, now.compare_document_order(other.clone()).is_gt());
                     if let Some(element) = now.as_element() {
                         for att in element.attributes() {
-                            assert_eq!(
-                                pre,
-                                att.compare_document_order(other.clone()).unwrap().is_gt()
-                            );
+                            assert_eq!(pre, att.compare_document_order(other.clone()).is_gt());
                         }
                     }
                     if let Some(element) = other.as_element() {
                         for att in element.attributes() {
-                            assert_eq!(pre, now.compare_document_order(att).unwrap().is_gt());
+                            assert_eq!(pre, now.compare_document_order(att).is_gt());
                         }
                     }
                 }

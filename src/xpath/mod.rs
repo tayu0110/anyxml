@@ -62,7 +62,7 @@ mod xslt;
 use std::{borrow::Cow, collections::HashMap, io::Read, sync::Arc};
 
 pub use compile::*;
-pub use xslt::{XML_XSLT_NAMESPACE, XSLTContext, compile_pattern};
+pub use xslt::{KeyDef, XML_XSLT_NAMESPACE, XSLTContext, compile_pattern};
 
 use crate::{
     XML_NS_NAMESPACE, XML_XML_NAMESPACE, XMLVersion,
@@ -914,12 +914,12 @@ impl XPathNodeSet {
 
     pub(crate) fn sort(&mut self) {
         self.nodes
-            .sort_unstable_by(|l, r| l.compare_document_order(r).unwrap());
+            .sort_unstable_by(|l, r| l.compare_document_order(r));
     }
 
     pub(crate) fn reverse_sort(&mut self) {
         self.nodes
-            .sort_unstable_by(|l, r| r.compare_document_order(l).unwrap());
+            .sort_unstable_by(|l, r| r.compare_document_order(l));
     }
 
     /// Returns the union of node-sets.
