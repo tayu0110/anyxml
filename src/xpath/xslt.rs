@@ -1079,12 +1079,11 @@ impl DecimalFormat {
             return Ok(());
         }
 
-        let mut buffer = vec![];
         if default_sign {
-            buffer.push(self.minus_sign);
+            result.push(self.minus_sign);
         }
 
-        buffer.extend(
+        result.extend(
             prefix[..prefix_length]
                 .chars()
                 .filter(|&c| c != SYMBOL_QUOTE),
@@ -1101,13 +1100,13 @@ impl DecimalFormat {
         number += 0.5 / scale;
         number -= number % (1.0 / scale);
         format_decimal(
-            &mut buffer,
+            result,
             number.floor(),
             self.zero_digit,
             format_info.integer_digits as usize,
             format_info.group as usize,
             self.grouping_separator,
-        );
+        )?;
 
         // Special case: java treats '.#' like '.0', '.##' like '.0#', etc.
         if (format_info.integer_digits + format_info.integer_hash + format_info.frac_digits == 0)
@@ -1119,18 +1118,18 @@ impl DecimalFormat {
 
         // Add leading zero, if required
         if number.floor() == 0.0 && format_info.integer_digits + format_info.frac_digits == 0 {
-            buffer.push(self.zero_digit);
+            result.push(self.zero_digit);
         }
 
         // Next the fractional part, if required
         if format_info.frac_digits + format_info.frac_hash == 0 {
             if format_info.add_decimal {
-                buffer.push(self.decimal_separator);
+                result.push(self.decimal_separator);
             }
         } else {
             number -= number.floor();
             if number != 0.0 || format_info.frac_digits != 0 {
-                buffer.push(self.decimal_separator);
+                result.push(self.decimal_separator);
                 number = (scale * number + 0.5).floor();
                 let mut j = format_info.frac_hash;
                 while j > 0 {
@@ -1141,22 +1140,20 @@ impl DecimalFormat {
                     j -= 1;
                 }
                 format_decimal(
-                    &mut buffer,
+                    result,
                     number.floor(),
                     self.zero_digit,
                     format_info.frac_digits as usize + j as usize,
                     0,
                     '\0',
-                );
+                )?;
             }
         }
-        buffer.extend(
+        result.extend(
             suffix[..suffix_length]
                 .chars()
                 .filter(|&c| c != SYMBOL_QUOTE),
         );
-
-        result.extend(buffer);
         Ok(())
     }
 }
@@ -1179,51 +1176,31 @@ impl Default for DecimalFormat {
 }
 
 fn format_decimal(
-    buffer: &mut Vec<char>,
+    buffer: &mut String,
     mut number: f64,
     digit_zero: char,
     width: usize,
     digits_per_group: usize,
     grouping_character: char,
-) {
-    let mut temp_string = ['\0'; 500];
-    let mut pointer = temp_string.len();
-    let mut i = 0i32;
-    while pointer > 0 {
-        if i as usize >= width && number.abs() < 1.0 {
-            break;
-        }
-        if i > 0
-            && grouping_character != '\0'
-            && digits_per_group > 0
-            && i as usize % digits_per_group == 0
+) -> Result<(), XPathError> {
+    assert!(number >= 0.0);
+
+    let mut formatted = Vec::with_capacity(64);
+    let mut i = 0;
+    while i < width || number >= 1.0 {
+        if i > 0 && grouping_character != '\0' && digits_per_group > 0 && i % digits_per_group == 0
         {
-            if pointer == 0 {
-                i = -1;
-                break;
-            }
-            pointer -= 1;
-            temp_string[pointer] = grouping_character;
+            formatted.push(grouping_character);
         }
 
-        if pointer == 0 {
-            i = -1;
-            break;
-        }
         let val = (digit_zero as u32) + (number % 10.0) as u32;
-        let Some(val) = char::from_u32(val) else {
-            i = -1;
-            break;
-        };
-        pointer -= 1;
-        temp_string[pointer] = val;
+        let val = char::from_u32(val).ok_or(XPathError::NumberFormatApplicationFailure)?;
+        formatted.push(val);
         number /= 10.0;
         i += 1;
     }
-    if i < 0 {
-        todo!("raise error");
-    }
-    buffer.extend(&temp_string[pointer..]);
+    buffer.extend(formatted.into_iter().rev());
+    Ok(())
 }
 
 #[cfg(test)]

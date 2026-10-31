@@ -90,8 +90,9 @@ pub enum XPathError {
     UnresolvableKey,
     UnresolvableNumberFormat,
     InvalidNamespacePrefix,
-    UnsupportedNodeType,
     InvalidXSLTContext,
+    UnsupportedNodeType,
+    NumberFormatApplicationFailure,
     CompileError(XPathCompileError),
     InternalError,
 }
