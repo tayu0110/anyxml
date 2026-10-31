@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use anyxml::{
     c14n::CanonicalizeHandler,
@@ -9,7 +9,7 @@ use anyxml::{
         error::SAXParseError,
     },
     tree::{Element, Node, TreeBuildHandler, node::InternalNodeSpec},
-    uri::{URIStr, URIString},
+    uri::{Component, URIStr, URIString},
     xpath::evaluate_uri,
 };
 
@@ -337,7 +337,7 @@ fn compact_schema_regression_tests() {
     let mut reader = XMLReader::builder().set_handler(validator).build();
     for dir in std::fs::read_dir("resources/relaxng/compact/").unwrap() {
         let mut path = dir.unwrap().path();
-        if path.extension().unwrap() == "rnc" {
+        if path.extension().and_then(|e| e.to_str()) == Some("rnc") {
             let uri = URIString::parse_file_path(path.as_path()).unwrap();
             path.set_extension("");
             path.set_extension("out");
@@ -351,4 +351,81 @@ fn compact_schema_regression_tests() {
             assert!(reader.handler.last_error.is_ok());
         }
     }
+}
+
+fn ecma_376_rnc_common_parse_tests(path: impl AsRef<Path>) {
+    fn is_skipped(uri: &URIStr) -> bool {
+        let Component::Segment(file) = uri.components().last().unwrap() else {
+            return false;
+        };
+        matches!(
+            file,
+            "any.rnc"
+                | "dml-chart.rnc"
+                | "dml-chartDrawing.rnc"
+                | "dml-diagram.rnc"
+                | "dml-lockedCanvas.rnc"
+                | "dml-main.rnc"
+                | "dml-picture.rnc"
+                | "dml-spreadsheetDrawing.rnc"
+                | "dml-wordprocessingDrawing.rnc"
+                | "pml.rnc"
+                | "shared-additionalCharacteristics.rnc"
+                | "shared-bibliography.rnc"
+                | "shared-commonSimpleTypes.rnc"
+                | "shared-customXmlDataProperties.rnc"
+                | "shared-customXmlSchemaProperties.rnc"
+                | "shared-documentPropertiesCustom.rnc"
+                | "shared-documentPropertiesExtended.rnc"
+                | "shared-documentPropertiesVariantTypes.rnc"
+                | "shared-relationshipReference.rnc"
+                | "shared-math.rnc"
+                | "sml.rnc"
+                | "vml-main.rnc"
+                | "vml-officeDrawing.rnc"
+                | "vml-presentationDrawing.rnc"
+                | "vml-spreadsheetDrawing.rnc"
+                | "vml-wordprocessingDrawing.rnc"
+                | "wml.rnc"
+                | "xml.rnc"
+        )
+    }
+    fn test_recursive(path: &Path) {
+        for dir in std::fs::read_dir(path).unwrap() {
+            let ent = dir.unwrap();
+            let path = ent.path();
+            if ent.metadata().unwrap().is_dir() {
+                test_recursive(&path);
+                continue;
+            }
+
+            if path.extension().and_then(|e| e.to_str()) == Some("rnc") {
+                let uri = URIString::parse_file_path(path).unwrap();
+                if is_skipped(&uri) {
+                    continue;
+                }
+                eprintln!("testing: {uri}");
+                let mut handler = TreeBuildHandler::default();
+                let ret = RelaxNGSchema::parse_compact_uri(uri, None, Some(&mut handler));
+                // eprintln!("tree: {}", handler.document);
+                ret.unwrap();
+            }
+        }
+    }
+    test_recursive(path.as_ref());
+}
+
+#[test]
+fn ecma_376_rnc_ooxml_strict_parse_tests() {
+    ecma_376_rnc_common_parse_tests("resources/relaxng/compact/ecma376/ooxml/strict");
+}
+
+#[test]
+fn ecma_376_rnc_ooxml_transitional_parse_tests() {
+    ecma_376_rnc_common_parse_tests("resources/relaxng/compact/ecma376/ooxml/transitional");
+}
+
+#[test]
+fn ecma_376_rnc_opc_parse_tests() {
+    ecma_376_rnc_common_parse_tests("resources/relaxng/compact/ecma376/opc");
 }

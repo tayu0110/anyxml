@@ -1051,9 +1051,8 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
         let mut memo = HashSet::new();
         self.check_attributes_restrictions(grammar.root, false, &grammar, &mut names, &mut memo);
         self.last_error.clone()?;
-        names.clear();
         memo.clear();
-        self.check_interleave_restrictions(grammar.root, &grammar, &mut names, &mut memo);
+        self.check_interleave_restrictions(grammar.root, &grammar, &mut vec![], &mut memo);
         self.last_error.clone().map(|_| grammar)
     }
 
@@ -2903,32 +2902,34 @@ impl<H: SAXHandler + ?Sized> RelaxNGParseHandler<H> {
         &mut self,
         current: usize,
         grammar: &Grammar,
-        names: &mut Vec<Arc<NameClass>>,
+        names: &mut Vec<Option<Arc<NameClass>>>,
         memo: &mut HashSet<usize>,
     ) {
         match grammar.patterns[current].as_ref() {
             Pattern::Element(nc, pattern) => {
-                if names.iter().any(|nc2| nc.overlap(nc2)) {
+                if names
+                    .iter()
+                    .any(|nc2| nc2.as_deref().is_some_and(|nc2| nc.overlap(nc2)))
+                {
                     error!(
                         self,
                         ConflictElementNameClass, "The nameclass of element is duplicate."
                     );
                 }
-                names.push(nc.clone());
+                names.push(Some(nc.clone()));
                 if memo.insert(*pattern) {
                     self.check_interleave_restrictions(*pattern, grammar, &mut vec![], memo);
                 }
             }
             Pattern::Text => {
-                let dum = Arc::new(NameClass::Name("".into(), "#text".into()));
-                if names.contains(&dum) {
+                if names.contains(&None) {
                     error!(
                         self,
                         ConflictElementNameClass,
                         "A text pattern shall not occur in both children of 'interleave'."
                     );
                 } else {
-                    names.push(dum);
+                    names.push(None);
                 }
             }
             Pattern::Choice(p1, p2) | Pattern::Group(p1, p2) => {
