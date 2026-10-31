@@ -40,6 +40,10 @@ pub struct XSLTContext {
     /// Each key consists of a pair of namespace name and local name—the result of
     /// expanding the `name` attribute—and its value is a pair of `match` and `use`.
     pub keys: HashMap<(Option<Cow<'static, str>>, Cow<'static, str>), KeyDef>,
+    /// A set of defined `xsl:decimal-format` elements.  \
+    /// Each key consists of a pair of namespace name and local name—the result of
+    /// expanding the `name` attribute—and its value is a pair of `match` and `use`.
+    pub fmts: HashMap<(Option<Cow<'static, str>>, Cow<'static, str>), DecimalFormat>,
 }
 
 impl Default for XSLTContext {
@@ -54,6 +58,7 @@ impl Default for XSLTContext {
             doc_cache: HashMap::new(),
             stylesheet_base_uri,
             keys: HashMap::new(),
+            fmts: HashMap::new(),
         }
     }
 }
@@ -69,8 +74,8 @@ pub(super) fn register_xslt_functions(library: &mut FunctionLibrary) {
     library.register_function("document", document);
     // 12.2 Keys
     library.register_function("key", key);
-    // // 12.3 Number Formatting
-    // library.register_function("format-number", format_number);
+    // 12.3 Number Formatting
+    library.register_function("format-number", format_number);
     // 12.4 Miscellaneous Additional Functions
     library.register_function("current", current);
     library.register_function("unparsed-entity-uri", unparsed_entity_uri);
@@ -184,13 +189,11 @@ fn key(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPath
     }
 
     let (namespace, name) = if let Some((pre, loc)) = name.split_once(':') {
-        let namespace = Cow::Borrowed(
-            context
-                .namespaces
-                .get(Some(pre))
-                .ok_or(XPathError::InvalidNamespacePrefix)?,
-        );
-        (Some(namespace), loc)
+        let namespace = context
+            .namespaces
+            .get(Some(pre))
+            .ok_or(XPathError::InvalidNamespacePrefix)?;
+        (Some(Cow::Borrowed(namespace)), loc)
     } else {
         (None, name.as_ref())
     };
@@ -248,14 +251,54 @@ fn key(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPath
     Ok(ret.into())
 }
 
-// This is planed to be implemented on a future version.
-// /// "format-number" function.
-// ///
-// /// # Reference
-// /// - [Function: string format-number(number, string, string?)](https://www.w3.org/TR/xslt-10/#function-format-number)
-// fn format_number(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPathError> {
-//     todo!()
-// }
+/// "format-number" function.
+///
+/// # Reference
+/// - [Function: string format-number(number, string, string?)](https://www.w3.org/TR/xslt-10/#function-format-number)
+fn format_number(context: &mut XPathContext, num_args: usize) -> Result<XPathObject, XPathError> {
+    if num_args != 2 && num_args != 3 {
+        return Err(XPathError::IncorrectNumberOfArgument);
+    }
+
+    let name = (num_args == 3)
+        .then(|| context.pop_object())
+        .map(|obj| obj.ok_or(XPathError::IncorrectNumberOfArgument))
+        .transpose()?
+        .map(|obj| obj.as_string())
+        .transpose()?;
+    let name = name.as_deref().unwrap_or_default();
+    let pattern = context
+        .pop_object()
+        .ok_or(XPathError::IncorrectNumberOfArgument)?
+        .as_string()?;
+    let number = context
+        .pop_object()
+        .ok_or(XPathError::IncorrectNumberOfArgument)?
+        .as_number()?;
+
+    if !name.is_empty() && !XMLVersion::XML10.validate_qname(name) {
+        return Err(XPathError::IncorrectArgumentType);
+    }
+
+    let (namespace, name) = if let Some((pre, loc)) = name.split_once(':') {
+        let namespace = context
+            .namespaces
+            .get(Some(pre))
+            .ok_or(XPathError::InvalidNamespacePrefix)?;
+        (Some(Cow::Borrowed(namespace)), loc)
+    } else {
+        (None, name)
+    };
+    let format = context
+        .xslt
+        .fmts
+        .get(&(namespace, Cow::Borrowed(name)))
+        .ok_or(XPathError::UnresolvableNumberFormat)?;
+
+    let mut result = String::new();
+    format_number_conversion(format, &pattern, number, &mut result)?;
+    Ok(result.into())
+}
 
 /// "current" function.
 ///
@@ -772,6 +815,433 @@ fn parse_child_or_attribute_axis_specifier(pattern: &mut &str) -> Result<Axis, X
     }
 }
 
+const SYMBOL_QUOTE: char = '\'';
+
+struct FormatNumberInfo {
+    integer_hash: i32,         // Number of '#' in integer part
+    integer_digits: i32,       // Number of '0' in integer part
+    frac_digits: i32,          // Number of '0' in fractional part
+    frac_hash: i32,            // Number of '#' in fractional part
+    group: i32,                // Number of chars per display 'group'
+    multiplier: i32,           // Scaling for percent or permille
+    add_decimal: bool,         // Flag for whether decimal point appears in pattern
+    is_multiplier_set: bool,   // Flag to catch multiple occurences of percent/permille
+    is_negative_pattern: bool, // Flag for processing -ve prefix/suffix
+}
+
+#[derive(Clone)]
+pub struct DecimalFormat {
+    pub decimal_separator: char,
+    pub grouping_separator: char,
+    pub infinity: Option<String>,
+    pub minus_sign: char,
+    pub nan: Option<String>,
+    pub percent: char,
+    pub permille: char,
+    pub zero_digit: char,
+    pub digit: char,
+    pub pattern_separator: char,
+}
+
+impl DecimalFormat {
+    fn is_special(&self, letter: char) -> bool {
+        self.zero_digit == letter
+            || self.digit == letter
+            || self.decimal_separator == letter
+            || self.grouping_separator == letter
+            || self.pattern_separator == letter
+    }
+}
+
+impl Default for DecimalFormat {
+    fn default() -> Self {
+        Self {
+            decimal_separator: '.',
+            grouping_separator: ',',
+            infinity: Some("Infinity".into()),
+            minus_sign: '-',
+            nan: Some("NaN".into()),
+            percent: '%',
+            permille: '\u{2030}',
+            zero_digit: '0',
+            digit: '#',
+            pattern_separator: ';',
+        }
+    }
+}
+
+fn number_format_decimal(
+    buffer: &mut Vec<char>,
+    mut number: f64,
+    digit_zero: char,
+    width: usize,
+    digits_per_group: usize,
+    grouping_character: char,
+) {
+    let mut temp_string = ['\0'; 500];
+    let mut pointer = temp_string.len();
+    let mut i = 0i32;
+    while pointer > 0 {
+        if i as usize >= width && number.abs() < 1.0 {
+            break;
+        }
+        if i > 0
+            && grouping_character != '\0'
+            && digits_per_group > 0
+            && i as usize % digits_per_group == 0
+        {
+            if pointer == 0 {
+                i = -1;
+                break;
+            }
+            pointer -= 1;
+            temp_string[pointer] = grouping_character;
+        }
+
+        if pointer == 0 {
+            i = -1;
+            break;
+        }
+        let val = (digit_zero as u32) + (number % 10.0) as u32;
+        let Some(val) = char::from_u32(val) else {
+            i = -1;
+            break;
+        };
+        pointer -= 1;
+        temp_string[pointer] = val;
+        number /= 10.0;
+        i += 1;
+    }
+    if i < 0 {
+        todo!("raise error");
+    }
+    buffer.extend(&temp_string[pointer..]);
+}
+
+fn format_number_pre_suffix(
+    slf: &DecimalFormat,
+    format: &mut &str,
+    info: &mut FormatNumberInfo,
+) -> Result<usize, XPathError> {
+    let mut count = 0;
+
+    loop {
+        if format.is_empty() {
+            break Ok(count);
+        }
+        if format.starts_with(SYMBOL_QUOTE) {
+            *format = &format[SYMBOL_QUOTE.len_utf8()..];
+            if format.is_empty() {
+                break Err(XPathError::WrongNumberFormat);
+            }
+        } else if slf.is_special(format.chars().next().unwrap()) {
+            break Ok(count);
+        } else if format.starts_with(slf.percent) {
+            if info.is_multiplier_set {
+                break Err(XPathError::WrongNumberFormat);
+            }
+            info.multiplier = 100;
+            info.is_multiplier_set = true;
+        } else if format.starts_with(slf.permille) {
+            if info.is_multiplier_set {
+                break Err(XPathError::WrongNumberFormat);
+            }
+            info.multiplier = 1000;
+            info.is_multiplier_set = true;
+        }
+
+        let c = format.chars().next().unwrap();
+        let len = c.len_utf8();
+        *format = &format[len..];
+        count += len;
+    }
+}
+
+fn format_number_conversion(
+    slf: &DecimalFormat,
+    format: &str,
+    mut number: f64,
+    result: &mut String,
+) -> Result<(), XPathError> {
+    let mut delayed_multiplier = 0;
+
+    if format.is_empty() {
+        return Err(XPathError::WrongNumberFormat);
+    }
+    result.clear();
+    if number.is_nan() {
+        if let Some(no_number) = slf.nan.as_deref() {
+            *result = no_number.to_owned();
+        } else {
+            *result = "NaN".into();
+        }
+        return Ok(());
+    }
+
+    let mut format_info = FormatNumberInfo {
+        integer_hash: 0,
+        integer_digits: 0,
+        frac_digits: 0,
+        frac_hash: 0,
+        group: -1,
+        multiplier: 1,
+        add_decimal: false,
+        is_multiplier_set: false,
+        is_negative_pattern: false,
+    };
+
+    let mut the_format = format;
+
+    let mut prefix = the_format;
+    let mut prefix_length = format_number_pre_suffix(slf, &mut the_format, &mut format_info)?;
+
+    while !the_format.is_empty()
+        && !the_format.starts_with(slf.decimal_separator)
+        && !the_format.starts_with(slf.pattern_separator)
+    {
+        if delayed_multiplier != 0 {
+            format_info.multiplier = delayed_multiplier;
+            format_info.is_multiplier_set = true;
+            delayed_multiplier = 0;
+        }
+        if the_format.starts_with(slf.digit) {
+            if format_info.integer_digits > 0 {
+                return Err(XPathError::WrongNumberFormat);
+            }
+            format_info.integer_hash += 1;
+            if format_info.group >= 0 {
+                format_info.group += 1;
+            }
+        } else if the_format.starts_with(slf.zero_digit) {
+            format_info.integer_digits += 1;
+            if format_info.group >= 0 {
+                format_info.group += 1;
+            }
+        } else if the_format.starts_with(slf.grouping_separator) {
+            format_info.group = 0;
+            the_format = &the_format[slf.grouping_separator.len_utf8()..];
+            continue;
+        } else if the_format.starts_with(slf.percent) {
+            if format_info.is_multiplier_set {
+                return Err(XPathError::WrongNumberFormat);
+            }
+            delayed_multiplier = 100;
+        } else if the_format.starts_with(slf.permille) {
+            if format_info.is_multiplier_set {
+                return Err(XPathError::WrongNumberFormat);
+            }
+            delayed_multiplier = 1000;
+        } else {
+            break;
+        }
+        let c = the_format.chars().next().unwrap();
+        let len = c.len_utf8();
+        the_format = &the_format[len..];
+    }
+
+    if !the_format.is_empty() && the_format.starts_with(slf.decimal_separator) {
+        format_info.add_decimal = true;
+        the_format = &the_format[slf.decimal_separator.len_utf8()..];
+    }
+
+    while !the_format.is_empty() {
+        if the_format.starts_with(slf.zero_digit) {
+            if format_info.frac_hash != 0 {
+                return Err(XPathError::WrongNumberFormat);
+            }
+            format_info.frac_digits += 1;
+        } else if the_format.starts_with(slf.digit) {
+            format_info.frac_hash += 1;
+        } else if the_format.starts_with(slf.percent) {
+            if format_info.is_multiplier_set {
+                return Err(XPathError::WrongNumberFormat);
+            }
+            delayed_multiplier = 100;
+            the_format = &the_format[slf.percent.len_utf8()..];
+            continue;
+        } else if the_format.starts_with(slf.permille) {
+            if format_info.is_multiplier_set {
+                return Err(XPathError::WrongNumberFormat);
+            }
+            delayed_multiplier = 1000;
+            the_format = &the_format[slf.permille.len_utf8()..];
+            continue;
+        } else if !the_format.starts_with(slf.grouping_separator) {
+            break;
+        }
+        let c = the_format.chars().next().unwrap();
+        the_format = &the_format[c.len_utf8()..];
+        if delayed_multiplier != 0 {
+            format_info.multiplier = delayed_multiplier;
+            delayed_multiplier = 0;
+            format_info.is_multiplier_set = true;
+        }
+    }
+
+    if delayed_multiplier != 0 {
+        let pre = &format[..format.len() - the_format.len()];
+        let back = pre.chars().next_back().unwrap();
+        the_format = &pre[pre.len() - back.len_utf8()..];
+        delayed_multiplier = 0;
+    }
+
+    let mut suffix = the_format;
+    let mut suffix_length = format_number_pre_suffix(slf, &mut the_format, &mut format_info)?;
+    if !the_format.is_empty() && !the_format.starts_with(slf.pattern_separator) {
+        return Err(XPathError::WrongNumberFormat);
+    }
+
+    let mut default_sign = number < 0.0;
+    if default_sign && let Some((_, fmt)) = format.split_once(slf.pattern_separator) {
+        the_format = fmt;
+        format_info.is_negative_pattern = true;
+        format_info.is_multiplier_set = false;
+
+        let nprefix = the_format;
+        let nprefix_length = format_number_pre_suffix(slf, &mut the_format, &mut format_info)?;
+        while !the_format.is_empty() {
+            if the_format.starts_with(slf.percent) || the_format.starts_with(slf.permille) {
+                if format_info.is_multiplier_set {
+                    return Err(XPathError::WrongNumberFormat);
+                }
+                format_info.is_multiplier_set = true;
+                delayed_multiplier = 1;
+            } else if slf.is_special(the_format.chars().next().unwrap()) {
+                delayed_multiplier = 0;
+            } else {
+                break;
+            }
+            let c = the_format.chars().next().unwrap();
+            the_format = &the_format[c.len_utf8()..];
+        }
+        if delayed_multiplier != 0 {
+            format_info.is_multiplier_set = false;
+            let pre = &format[..format.len() - the_format.len()];
+            let back = pre.chars().next_back().unwrap();
+            the_format = &pre[pre.len() - back.len_utf8()..];
+        }
+
+        let (nsuffix, nsuffix_length) = if !the_format.is_empty() {
+            let nsuffix = the_format;
+            let len = format_number_pre_suffix(slf, &mut the_format, &mut format_info)?;
+            (&nsuffix[..len], len)
+        } else {
+            ("", 0)
+        };
+        if !the_format.is_empty() {
+            return Err(XPathError::WrongNumberFormat);
+        }
+        if (nprefix_length != prefix_length)
+            || (nsuffix_length != suffix_length)
+            || (nprefix_length > 0 && nprefix[..prefix_length] != prefix[..prefix_length])
+            || (nsuffix_length > 0 && nsuffix[..suffix_length] != suffix[..suffix_length])
+        {
+            prefix = nprefix;
+            prefix_length = nprefix_length;
+            suffix = nsuffix;
+            suffix_length = nsuffix_length;
+        }
+        default_sign = prefix_length == 0;
+    }
+
+    number *= format_info.multiplier as f64;
+    if number.is_infinite() {
+        if number.is_sign_negative() {
+            result.push(slf.minus_sign);
+            if let Some(inf) = slf.infinity.as_deref() {
+                result.push_str(inf);
+            } else {
+                result.push_str("Infinity");
+            }
+        } else if let Some(inf) = slf.infinity.as_deref() {
+            result.push_str(inf);
+        } else {
+            result.push_str("Infinity");
+        }
+        return Ok(());
+    }
+
+    let mut buffer = vec![];
+    if default_sign {
+        buffer.push(slf.minus_sign);
+    }
+
+    buffer.extend(
+        prefix[..prefix_length as usize]
+            .chars()
+            .filter(|&c| c != SYMBOL_QUOTE),
+    );
+
+    number = number.abs();
+    let mut exp10 = format_info.frac_digits + format_info.frac_hash;
+    if exp10 > f64::MAX_10_EXP {
+        format_info.frac_digits = format_info.frac_digits.min(f64::MAX_10_EXP);
+        format_info.frac_hash = f64::MAX_10_EXP - format_info.frac_digits;
+        exp10 = f64::MAX_10_EXP;
+    }
+    let scale = 10.0f64.powf(exp10 as f64);
+    number += 0.5 / scale;
+    number -= number % (1.0 / scale);
+    number_format_decimal(
+        &mut buffer,
+        number.floor(),
+        slf.zero_digit,
+        format_info.integer_digits as usize,
+        format_info.group as usize,
+        slf.grouping_separator,
+    );
+
+    // Special case: java treats '.#' like '.0', '.##' like '.0#', etc.
+    if (format_info.integer_digits + format_info.integer_hash + format_info.frac_digits == 0)
+        && (format_info.frac_hash > 0)
+    {
+        format_info.frac_digits += 1;
+        format_info.frac_hash -= 1;
+    }
+
+    // Add leading zero, if required
+    if number.floor() == 0.0 && format_info.integer_digits + format_info.frac_digits == 0 {
+        buffer.push(slf.zero_digit);
+    }
+
+    // Next the fractional part, if required
+    if format_info.frac_digits + format_info.frac_hash == 0 {
+        if format_info.add_decimal {
+            buffer.push(slf.decimal_separator);
+        }
+    } else {
+        number -= number.floor();
+        if number != 0.0 || format_info.frac_digits != 0 {
+            buffer.push(slf.decimal_separator);
+            number = (scale * number + 0.5).floor();
+            let mut j = format_info.frac_hash;
+            while j > 0 {
+                if number % 10.0 >= 1.0 {
+                    break;
+                }
+                number /= 10.0;
+                j -= 1;
+            }
+            number_format_decimal(
+                &mut buffer,
+                number.floor(),
+                slf.zero_digit,
+                format_info.frac_digits as usize + j as usize,
+                0,
+                '\0',
+            );
+        }
+    }
+    buffer.extend(
+        suffix[..suffix_length as usize]
+            .chars()
+            .filter(|&c| c != SYMBOL_QUOTE),
+    );
+
+    result.extend(buffer);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::tree::NodeType;
@@ -845,6 +1315,190 @@ mod tests {
             crate::xpath::compile("generate-id(document('testsuite.xml',.))=generate-id(.)")
                 .unwrap();
         assert!(exp.evaluate(doc.clone()).unwrap().as_boolean().unwrap());
+    }
+
+    #[test]
+    fn format_number_function_tests() {
+        let mut doc = Document::new();
+        let elem = doc.create_element("dummy", None).unwrap();
+        doc.append_child(elem).unwrap();
+
+        macro_rules! execute {
+            ($expr:literal, $( $field:ident : $value:expr ),*) => {{
+                let mut exp = compile($expr).unwrap();
+                #[allow(unused_mut)]
+                let mut format = DecimalFormat::default();
+                $( format.$field = $value; )*
+                exp.xslt_context().fmts.insert((None, "".into()), format);
+                exp.evaluate(doc.clone()).unwrap().as_string().unwrap()
+            }};
+            ($expr:literal) => {
+                execute!($expr,)
+            }
+        }
+
+        // numberformat1
+        let ret = execute!("format-number(2392.14*36.58,'000,000.000000')");
+        assert_eq!(&*ret, "087,504.481200");
+        // numberformat2
+        let ret = execute!("format-number(12792.14*96.58,'##,###,000.000###')");
+        assert_eq!(&*ret, "1,235,464.8812");
+        // numberformat3
+        let ret = execute!("format-number(2792.14*(-36.58),'000,000.000###')");
+        assert_eq!(&*ret, "-102,136.4812");
+        // numberformat4
+        let ret = execute!("format-number(2392.14*(-36.58),'###,###.000###;(###,###.000###)')");
+        assert_eq!(&*ret, "(87,504.4812)");
+        // numberformat5
+        let ret = execute!("format-number(0.4857,'###.###%')");
+        assert_eq!(&*ret, "48.57%");
+        // numberformat6
+        let ret = execute!("format-number(0.4857,'###.###\u{2030}')");
+        assert_eq!(&*ret, "485.7\u{2030}");
+        // numberformat7
+        let ret = execute!("format-number(95.4857,'\u{A4}###.####')");
+        assert_eq!(&*ret, "\u{A4}95.4857");
+        // numberformat8
+        let ret = execute!("format-number(2.14*86.58,'PREFIX##00.000###SUFFIX')");
+        assert_eq!(&*ret, "PREFIX185.2812SUFFIX");
+        // numberformat9
+        let ret = execute!("format-number(931.4857,'000.000|###')", decimal_separator: '|', grouping_separator: '.');
+        assert_eq!(&*ret, "000.931|486");
+        // numberformat11
+        let ret = execute!("format-number(26931.4,'+!!!,!!!.!!!\\-!!,!!!.!!!')", digit: '!', pattern_separator: '\\');
+        assert_eq!(&*ret, "+26,931.4");
+        // numberformat12
+        let ret = execute!("format-number(-26931.4,'+!!,!!!.!!!\\-!!!,!!!.!!!')", digit: '!', pattern_separator: '\\');
+        assert_eq!(&*ret, "-26,931.4");
+        // numberformat13
+        let ret =
+            execute!("format-number(-26931.4,'!!!,!!!.!!!')", digit: '!', pattern_separator: '\\');
+        assert_eq!(&*ret, "-26,931.4");
+        // numberformat14
+        let ret = execute!("format-number(1 div 0,'###############################')", infinity: Some("off-the-scale".into()));
+        assert_eq!(&*ret, "off-the-scale");
+        // numberformat15
+        let ret = execute!("format-number('foo','#############')", nan: Some("non-numeric".into()));
+        assert_eq!(&*ret, "non-numeric");
+        // numberformat16
+        let ret = execute!("format-number(0.4857,'###.###m')", permille: 'm');
+        assert_eq!(&*ret, "485.7m");
+        // numberformat17
+        let ret = execute!("format-number(-26931.4,'+###,###.###;-###,###.###')", minus_sign: '_');
+        assert_eq!(&*ret, "-26,931.4");
+        // numberformat18
+        let ret = execute!("format-number(-26931.4,'###,###.###')", minus_sign: '_');
+        assert_eq!(&*ret, "_26,931.4");
+        // numberformat19
+        let ret = execute!("format-number(-26931.4,'###,###.###')", minus_sign: '_');
+        assert_eq!(&*ret, "_26,931.4");
+        let ret = execute!("format-number(-42857.1,'###,###.###')");
+        assert_eq!(&*ret, "-42,857.1");
+        // numberformat20
+        let ret = execute!("format-number(1234.567,'#*###*###!###')", decimal_separator: '!', grouping_separator: '*');
+        assert_eq!(&*ret, "1*234!567");
+        // numberformat21
+        let ret = execute!("format-number(-26931.4,'###.###,###')", decimal_separator: ',', grouping_separator: '.');
+        assert_eq!(&*ret, "-26.931,4");
+        let ret = execute!("format-number(-42857.1,'###,###.###')", minus_sign: '_');
+        assert_eq!(&*ret, "_42,857.1");
+        let ret = execute!("format-number(-73816.9,'###,###.###')");
+        assert_eq!(&*ret, "-73,816.9");
+
+        // The expected behavior of this test is questionable.
+        // Neither the JDK specification nor the XSLT specification mentions how the system
+        // should behave when symbols conflict. Since newer versions of the JDK state that
+        // symbols must not conflict, it is unclear what the intended behavior is.
+        // // numberformat25
+        // let ret = execute!("format-number(931.4857,'###!###!###')", decimal_separator: '!', grouping_separator: '!');
+        // assert_eq!(&*ret, "931");
+
+        // numberformat26
+        let ret = execute!("format-number(7654321.4857,'### ### ###,#####')", decimal_separator: ',', grouping_separator: ' ');
+        assert_eq!(&*ret, "7 654 321,4857");
+        // numberformat27
+        let ret = execute!("format-number(2392.14*36.58,'000,000.000000')", minus_sign: '_');
+        assert_eq!(&*ret, "087,504.481200");
+        let ret = execute!("format-number(2392.14*36.58,'000,000.000000;###,###.000###')");
+        assert_eq!(&*ret, "087,504.481200");
+        let ret = execute!("format-number(2392.14*36.58,'000,000.000000;###,###.000###')", minus_sign: '_');
+        assert_eq!(&*ret, "087,504.481200");
+        // numberformat28
+        let ret = execute!("format-number(2392.14*(-36.58),'+###,###.000###;-###,###.000###')");
+        assert_eq!(&*ret, "-87,504.4812");
+        // numberformat29
+        let ret = execute!("format-number(-26931.4,'+###,###.###;_###,###.###')");
+        assert_eq!(&*ret, "_26,931.4");
+        // numberformat30
+        let ret = execute!("format-number(-26931.4,'-###,###.###')");
+        assert_eq!(&*ret, "--26,931.4");
+        let ret = execute!("format-number(-26931.4,'-###,###.###')", minus_sign: '_');
+        assert_eq!(&*ret, "_-26,931.4");
+        let ret = execute!("format-number(-26931.4,'_###,###.###')", minus_sign: '_');
+        assert_eq!(&*ret, "__26,931.4");
+        // numberformat31
+        let ret = execute!("format-number(-26931.4,'###,###.###;###,###.###')", minus_sign: '_');
+        assert_eq!(&*ret, "_26,931.4");
+        // numberformat32
+        let ret = execute!("format-number(0.4857,'###.###c')", percent: 'c');
+        assert_eq!(&*ret, "48.57c");
+        // numberformat34
+        let ret = execute!("format-number(4030201.0506,'#!!!,!!!,aaa.aaaaaa0')", digit: '!', zero_digit: 'a');
+        assert_eq!(&*ret, "#e,ada,cab.afagaa0");
+        // numberformat35
+        let ret = execute!("format-number(987654321,'###,##0,00.00')");
+        assert_eq!(&*ret, "9,87,65,43,21.00");
+        // numberformat36
+        let ret = execute!("format-number(239236.588,'00000.00')");
+        assert_eq!(&*ret, "239236.59");
+        // numberformat37
+        let ret = execute!("format-number(1 div 0,'###############################')");
+        assert_eq!(&*ret, "Infinity");
+        // numberformat38
+        let ret = execute!("format-number('foo','#############')");
+        assert_eq!(&*ret, "NaN");
+        // numberformat39
+        let ret = execute!("format-number(-1 div 0,'###############################')");
+        assert_eq!(&*ret, "-Infinity");
+        // numberformat40
+        let ret = execute!("format-number(-1 div 0,'###############################')", infinity: Some("huge".into()));
+        assert_eq!(&*ret, "-huge");
+        // numberformat41
+        let ret = execute!("format-number('NaN','###')", minus_sign: '-', nan: Some("not a number".into()));
+        assert_eq!(&*ret, "not a number");
+        let ret = execute!("format-number(-13.2,'###.0')", minus_sign: '-', nan: Some("not a number".into()));
+        assert_eq!(&*ret, "-13.2");
+        let ret = execute!("format-number('NaN','###')", nan: Some("not a number".into()), decimal_separator: '.');
+        assert_eq!(&*ret, "not a number");
+        let ret = execute!("format-number(-13.2,'###.0')", nan: Some("not a number".into()), decimal_separator: '.');
+        assert_eq!(&*ret, "-13.2");
+        // numberformat42
+        let ret = execute!("format-number('NaN','###')", nan: Some("not a number".into()), decimal_separator: '.');
+        assert_eq!(&*ret, "not a number");
+        let ret = execute!("format-number(3.2,'###.0')", nan: Some("not a number".into()), decimal_separator: '.');
+        assert_eq!(&*ret, "3.2");
+        // numberformat43
+        let ret = execute!("format-number('NaN','###')", nan: Some("not a number".into()), decimal_separator: '.');
+        assert_eq!(&*ret, "not a number");
+        let ret = execute!("format-number(-13.2,'###.0')", nan: Some("not a number".into()), decimal_separator: '.');
+        assert_eq!(&*ret, "-13.2");
+        // numberformat44
+        let ret =
+            execute!("format-number('NaN','###')", digit: '#', nan: Some("not a number".into()));
+        assert_eq!(&*ret, "not a number");
+        let ret =
+            execute!("format-number(-13.2,'###.0')", digit: '#', nan: Some("not a number".into()));
+        assert_eq!(&*ret, "-13.2");
+        // numberformat45
+        let ret = execute!("format-number(12345.67,'000.000,###')", decimal_separator: ',', grouping_separator: '.');
+        assert_eq!(&*ret, "012.345,67");
+        let ret = execute!("format-number(-98765.4321,'##0.000,000')", decimal_separator: ',', grouping_separator: '.');
+        assert_eq!(&*ret, "-98.765,432");
+        // numberformat46
+        let ret = execute!("format-number(12345.67,'000.000,###')", decimal_separator: ',', grouping_separator: '.');
+        assert_eq!(&*ret, "012.345,67");
+        let ret = execute!("format-number(-98765.4321,'##0.000,000')", decimal_separator: ',', grouping_separator: '.');
+        assert_eq!(&*ret, "-98.765,432");
     }
 
     #[test]
