@@ -42,7 +42,7 @@ pub struct XSLTContext {
     pub keys: HashMap<(Option<Cow<'static, str>>, Cow<'static, str>), KeyDef>,
     /// A set of defined `xsl:decimal-format` elements.  \
     /// Each key consists of a pair of namespace name and local name—the result of
-    /// expanding the `name` attribute—and its value is a pair of `match` and `use`.  \
+    /// expanding the `name` attribute.  \
     /// Default decimal-format must be registered with the name (None, "").
     pub fmts: HashMap<(Option<Cow<'static, str>>, Cow<'static, str>), DecimalFormat>,
 }

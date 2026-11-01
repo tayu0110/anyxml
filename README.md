@@ -211,7 +211,7 @@ assert_eq!(text.as_ref(), "こんにちは");
 ```
 
 ### XSLT extension functions
-All functions extended by the XSLT 1.0 specification are available, with the exception of `format-number`.
+All functions extended by the XSLT 1.0 specification are available.
 
 Some functions require a specific context that is only available when an XSL transformation is being executed. For example, `document` may use the base URI of the stylesheet, and `key` requires a set of defined keys.
 This can be configured by retrieving the context from [`XPathExpression::xslt_context`][] and modifying its public fields.
