@@ -17,7 +17,7 @@ package.rust-version = "1.89.0"
 
 [package]
 name = "anyxml"
-version = "0.15.1"
+version = "0.16.2"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -83,3 +83,11 @@ path = "tests/xsd-test.rs"
 type_complexity = "allow"
 too_many_arguments = "allow"
 enum_variant_names = "allow"
+
+[profile.dev]
+# Since the recursion in the RELAX NG schema parser is too heavy
+# without optimization, increase the optimization level by one step.
+# This is a very ugly workaround, but since eliminating recursion in
+# `RelaxNGParseHandler::do_build` is difficult and time-consuming,
+# use this as a temporary solution for now.
+opt-level = 1

@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use crate::{
     XMLVersion,
-    xpath::{Axis, NodeTest, XPathCompileError, XPathContext, XPathExpression, XPathSyntaxTree},
+    xpath::{
+        Axis, NodeTest, XPathCompileError, XPathContext, XPathExpression, XPathSyntaxTree,
+        xslt::register_xslt_functions,
+    },
 };
 
 /// Compile `xpath` as a XPath expression.
@@ -21,10 +24,12 @@ pub fn compile(mut xpath: &str) -> Result<XPathExpression, XPathCompileError> {
     // Optimization will not be implemented yet.
     // For now, the priority is correct operation over performance.
 
+    let mut context = XPathContext::default();
+    register_xslt_functions(&mut context.functions);
     Ok(XPathExpression {
         root,
         tree,
-        context: XPathContext::default(),
+        context,
     })
 }
 
@@ -299,7 +304,7 @@ fn parse_axis_specifier(xpath: &mut &str) -> Result<Axis, XPathCompileError> {
 ///                     | 'processing-instruction'
 ///                     | 'node'
 /// ```
-fn parse_node_test(
+pub(super) fn parse_node_test(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<NodeTest, XPathCompileError> {
@@ -391,7 +396,7 @@ fn parse_node_test(
 /// [8] Predicate       ::= '[' PredicateExpr ']'
 /// [9] PredicateExpr   ::= Expr
 /// ```
-fn parse_predicate(
+pub(super) fn parse_predicate(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
@@ -804,7 +809,7 @@ fn parse_unary_expr(
 /// ```text
 /// [29] Literal ::= '"' [^"]* '"' | "'" [^']* "'"
 /// ```
-fn parse_literal(
+pub(super) fn parse_literal(
     xpath: &mut &str,
     tree: &mut Vec<XPathSyntaxTree>,
 ) -> Result<usize, XPathCompileError> {
@@ -935,7 +940,7 @@ fn parse_qname(xpath: &str) -> Result<(&str, &str), XPathCompileError> {
     }
 }
 
-fn skip_whitespaces(xpath: &mut &str) {
+pub(super) fn skip_whitespaces(xpath: &mut &str) {
     const XML_VERSION: XMLVersion = XMLVersion::XML10;
     *xpath = xpath.trim_start_matches(|c| XML_VERSION.is_whitespace(c));
 }

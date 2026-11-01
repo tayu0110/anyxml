@@ -2,7 +2,7 @@
 //!
 //! The implementation is generally based on [ISO/IEC 19757-2 Annex C RELAX NG Compact syntax](https://www.iso.org/standard/52348.html);
 //! however, because the specifications are very unclear, it also references the original
-//! source, the [RELAX NG Compact Syntax OASIS Committee Specification 21 November 2002],
+//! source, the [RELAX NG Compact Syntax OASIS Committee Specification 21 November 2002](https://relaxng.org/compact-20021121.html),
 //! to resolve any ambiguities.
 //!
 //! # Limitation
@@ -603,6 +603,14 @@ fn parse(
 ) -> Result<(usize, Vec<Node>, NamespaceStack), XMLError> {
     let mut ns_stack = NamespaceStack::default();
     let mut dt_stack = NamespaceStack::default();
+    // The prefix 'xsd' must be assumed that it is pre-declared as datatype prefix.
+    // OASIS 4. Declarations
+    // A datatypes declaration declares a prefix used in a QName identifying a datatype. For example,
+    //     datatypes xsd = "http://www.w3.org/2001/XMLSchema-datatypes"
+    //     element height { xsd:double }
+    // In fact, in the above example, the datatypes declaration is not required: the xsd prefix is
+    // predeclared to the above URI.
+    dt_stack.push("xsd", XML_SCHEMA_DATATYPES_NAMESPACE);
     parse_preamble(&mut source, &mut ns_stack, &mut dt_stack)?;
     let mut tree = vec![];
     let root = parse_top_level_body(&mut source, base_uri, &mut tree, &ns_stack, &dt_stack)?;
@@ -856,14 +864,20 @@ fn parse_preamble(
                 let mut value = String::new();
                 parse_literal(source, &mut value)?;
                 datatype_prefix!(pre, &value);
-                set_namespace(dt, pre, &value)?;
+                if pre != "xsd" {
+                    // "xsd" is pre-declared, it is unnecessry to add to dt_stack.
+                    set_namespace(dt, pre, &value)?;
+                }
             }
             [Keyword("datatypes"), Keyword(pre), Assign, rest @ ..] => {
                 *source = rest;
                 let mut value = String::new();
                 parse_literal(source, &mut value)?;
                 datatype_prefix!(*pre, &value);
-                set_namespace(dt, pre, &value)?;
+                if *pre != "xsd" {
+                    // "xsd" is pre-declared, it is unnecessry to add to dt_stack.
+                    set_namespace(dt, pre, &value)?;
+                }
             }
             _ => break Ok(()),
         }
@@ -888,6 +902,9 @@ fn parse_top_level_body(
     dt: &NamespaceStack,
 ) -> Result<usize, XMLError> {
     use TokenType::*;
+    // Check whether it matches `pattern` or `grammarContent`.
+    // Since annotations are processed by `parse_grammar` and `parse_pattern`,
+    // ensure that `source` is not consumed.
     let mut tmp = *source;
     parse_annotations(&mut tmp, &mut vec![], ns)?;
     let node = match tmp {
@@ -1224,6 +1241,7 @@ fn parse_opt_include_body(
             if !matches!(source, [TokenType::CloseBlock, ..]) {
                 return Err(XMLError::RncParseError(RncParseError::UnclosedBlock));
             }
+            *source = &source[1..];
             Ok(ret)
         }
         _ => Ok(vec![]),
@@ -1506,11 +1524,9 @@ fn parse_annotated_primary(
     ns: &NamespaceStack,
     dt: &NamespaceStack,
 ) -> Result<Vec<usize>, XMLError> {
-    Ok([
-        parse_lead_annotated_primary(source, base_uri, tree, ns, dt)?,
-        parse_follow_annotations(source, tree, ns)?,
-    ]
-    .concat())
+    let lead = parse_lead_annotated_primary(source, base_uri, tree, ns, dt)?;
+    let follow = parse_follow_annotations(source, tree, ns)?;
+    Ok([lead, follow].concat())
 }
 fn parse_follow_annotations(
     source: &mut &[TokenType],
@@ -1701,6 +1717,19 @@ fn parse_primary(
                 *source = &source[1..];
                 (NodeType::Data, parse_opt_params(source, tree, ns)?)
             };
+            let mut node = Node {
+                r#type,
+                atts: Attributes::default(),
+                children,
+            };
+            node.push_attribute(lib)?;
+            node.push_attribute(ty)?;
+            node
+        }
+        [Keyword("string" | "token")] | [CName(_, _)] => {
+            let (lib, ty) = parse_datatype_name(source, dt)?;
+            *source = &source[1..];
+            let (r#type, children) = (NodeType::Data, parse_opt_params(source, tree, ns)?);
             let mut node = Node {
                 r#type,
                 atts: Attributes::default(),

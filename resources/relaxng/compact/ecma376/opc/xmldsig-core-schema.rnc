@@ -1,0 +1,155 @@
+# http://www.xml.com/lpt/a/2002/01/23/relaxng.html
+
+# http://www.oasis-open.org/committees/relax-ng/tutorial-20011203.html
+
+# http://www.zvon.org/xxl/XMLSchemaTutorial/Output/ser_wildcards_st8.html
+
+# http://lists.oasis-open.org/archives/relax-ng-comment/200206/maillist.html
+
+default namespace ds = "http://www.w3.org/2000/09/xmldsig#"
+namespace xsi = "http://www.w3.org/2001/XMLSchema-instance"
+
+start = element Signature { SignatureType }
+CryptoBinary = xsd:base64Binary
+SignatureType =
+  element SignedInfo { SignedInfoType },
+  element SignatureValue { SignatureValueType },
+  element KeyInfo { KeyInfoType }?,
+  element Object { ObjectType }*,
+  attribute Id { xsd:ID }?,
+  attribute xsi:schemaLocation { text }?
+SignatureValueType =
+  xsd:base64Binary,
+  attribute Id { xsd:ID }?
+# Start SignedInfo
+SignedInfoType =
+  element CanonicalizationMethod { CanonicalizationMethodType },
+  element SignatureMethod { SignatureMethodType },
+  element KeyInfo { KeyInfoType }?,
+  element Reference { ReferenceType }+,
+  attribute Id { xsd:ID }?
+CanonicalizationMethodType =
+  anyThing*,
+  attribute Algorithm { xsd:anyURI }?
+SignatureMethodType =
+  element HMACOutputLength { xsd:integer }?,
+  anyThing*,
+  attribute Algorithm { xsd:anyURI }?
+# Start Reference
+ReferenceType =
+  element Transforms { TransformsType }?,
+  element DigestMethod { DigestMethodType },
+  element DigestValue { DigestValueType },
+  attribute Type { xsd:anyURI }?,
+  attribute URI { xsd:anyURI }?,
+  attribute Id { xsd:ID }?
+TransformsType = element Transform { TransformType }+
+TransformType =
+  element XPath { xsd:string }?,
+  anyThing*,
+  attribute Algorithm { xsd:anyURI }
+# End Reference
+DigestMethodType =
+  anyThing*,
+  attribute Algorithm { xsd:anyURI }
+DigestValueType = xsd:base64Binary
+# End SignedInfo
+
+# Start KeyInfo
+KeyInfoType =
+  (element KeyName { xsd:string }
+   | element KeyValue { KeyValueType }
+   | element RetrievalMethod { RetrievalMethodType }
+   | element X509Data { X509DataType }
+   | element PGPData { PGPDataType }
+   | element SPKIData { SPKIDataType }
+   | element MgmtData { xsd:string }
+   | anyThing)+,
+  attribute Id { xsd:ID }?
+KeyValueType =
+  text
+  | element DSAKeyValue { DSAKeyValueType }
+  | element RSAKeyValue { RSAKeyValueType }
+  | anyThing
+RetrievalMethodType =
+  element Transforms { TransformsType }?,
+  attribute Type { xsd:anyURI }?,
+  attribute URI { xsd:anyURI }?
+# Start X509Data
+X509DataType =
+  (element X509IssuerSerial {
+     element X509IssuerName { xsd:string },
+     element X509SerialNumber { xsd:integer }
+   }
+   | element X509SKI { xsd:base64Binary }
+   | element X509SubjectName { xsd:string }
+   | element X509Certificate { xsd:base64Binary }
+   | element X509CRL { xsd:base64Binary }
+   | anyThing)+
+# End X509Data
+
+# Begin PGPData
+PGPDataType =
+  (element PGPKeyID { xsd:base64Binary },
+   element PGPKeyPacket { xsd:base64Binary }?,
+   anyThing*)
+  | (element PGPKeyPacket { xsd:base64Binary },
+     anyThing*)
+# End PGPData
+
+# Begin SPKIData
+SPKIDataType =
+  (element SPKISexp { xsd:base64Binary },
+   anyThing?)+
+# End SPKIData
+
+# End KeyInfo
+
+# Start Object (Manifest, SignatureProperty)
+ObjectType =
+  (element Manifest { ManifestType }
+   | element SignatureProperties { SignaturePropertiesType }
+   | anyThing)*,
+  attribute Encoding { xsd:anyURI }?,
+  attribute MimeType { xsd:string }?,
+  attribute Id { xsd:ID }?
+ManifestType =
+  element Reference { ReferenceType }+,
+  attribute Id { xsd:ID }?
+SignaturePropertiesType =
+  element SignatureProperty { SignaturePropertyType }+,
+  attribute Id { xsd:ID }?
+SignaturePropertyType =
+  anyThing+,
+  attribute Id { xsd:ID }?,
+  attribute Target { xsd:anyURI }
+# End Object (Manifest, SignatureProperty)
+
+# Start KeyValue Element-types
+DSAKeyValueType =
+  (element P { CryptoBinary },
+   element Q { CryptoBinary })?,
+  element G { CryptoBinary }?,
+  element Y { CryptoBinary },
+  element J { CryptoBinary }?,
+  (element Seed { CryptoBinary },
+   element PgenCounter { CryptoBinary })?
+RSAKeyValueType =
+  element Modulus { CryptoBinary },
+  element Exponent { CryptoBinary }
+# End KeyValue Element-types
+
+# End Signature
+
+# This should emulate the ANY content model under lax validation
+anyThing =
+  (text
+   | element # "except" provided for DTD compatibility
+             
+             # [1] ns='http://www.oasis-open.org/committees/relax-ng/compatibility.html#id'
+             * - ds:*
+                 # <nsName ns='http://www.w3.org/2001/04/xmlenc#'/>
+                  {
+       anyThing,
+       attribute * { text }*
+     })*

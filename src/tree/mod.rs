@@ -619,14 +619,20 @@ impl<H: SAXHandler> SAXHandler for TreeBuildHandler<H> {
 fn compare_document_order(
     left: Node<dyn NodeSpec>,
     right: Node<dyn NodeSpec>,
-) -> Option<std::cmp::Ordering> {
+) -> std::cmp::Ordering {
     use std::cmp::Ordering::*;
 
     if left.is_same_node(right.clone()) {
-        return Some(Equal);
+        return Equal;
     }
     if !left.is_same_owner_document(&right) {
-        return None;
+        let ldoc = left.owner_document();
+        let rdoc = right.owner_document();
+        return if ldoc.document_base_uri() != rdoc.document_base_uri() {
+            ldoc.document_base_uri().cmp(&rdoc.document_base_uri())
+        } else {
+            ldoc.core.as_ptr().addr().cmp(&rdoc.core.as_ptr().addr())
+        };
     }
 
     let mut ldepth = 0;
@@ -643,8 +649,12 @@ fn compare_document_order(
     }
 
     // they are not on the same document tree
-    if !lp.is_same_node(rp) {
-        return None;
+    if !lp.is_same_node(&rp) {
+        return if lp.node_type() != rp.node_type() {
+            (lp.node_type() as isize).cmp(&(rp.node_type() as isize))
+        } else {
+            lp.core.as_ptr().addr().cmp(&rp.core.as_ptr().addr())
+        };
     }
 
     let mut lp = left.clone();
@@ -654,14 +664,14 @@ fn compare_document_order(
         lp = lp.parent_node().unwrap().into();
     }
     if lp.is_same_node(rp.clone()) {
-        return Some(Greater);
+        return Greater;
     }
     while ldepth < rdepth {
         rdepth -= 1;
         rp = rp.parent_node().unwrap().into();
     }
     if lp.is_same_node(rp.clone()) {
-        return Some(Less);
+        return Less;
     }
 
     while let Some(lpar) = lp.parent_node()
@@ -699,11 +709,11 @@ fn compare_document_order(
             // a declaration derived from an ancestor element.
             // (And such ancestor-derived declarations are treated as preceding.)
             if li < usize::MAX && ri < usize::MAX {
-                return li.partial_cmp(&ri);
+                return li.cmp(&ri);
             } else if li < usize::MAX {
-                return Some(Greater);
+                return Greater;
             } else if ri < usize::MAX {
-                return Some(Less);
+                return Less;
             }
 
             let mut parent = elem.parent_node();
@@ -723,11 +733,11 @@ fn compare_document_order(
                     }
 
                     if li < usize::MAX && ri < usize::MAX {
-                        return li.partial_cmp(&ri);
+                        return li.cmp(&ri);
                     } else if li < usize::MAX {
-                        return Some(Greater);
+                        return Greater;
                     } else if ri < usize::MAX {
-                        return Some(Less);
+                        return Less;
                     }
                 }
                 parent = now.parent_node();
@@ -737,37 +747,36 @@ fn compare_document_order(
             return lp
                 .prefix()
                 .unwrap_or_default()
-                .partial_cmp(&rp.prefix().unwrap_or_default());
+                .cmp(&rp.prefix().unwrap_or_default());
         }
-        (NodeType::Namespace, _) => return Some(Less),
-        (_, NodeType::Namespace) => return Some(Greater),
+        (NodeType::Namespace, _) => return Less,
+        (_, NodeType::Namespace) => return Greater,
         (NodeType::Attribute, NodeType::Attribute) => {
             let elem = lp.parent_node().unwrap().as_element().unwrap();
             for att in elem.attributes() {
                 if lp.is_same_node(att.clone()) {
-                    return Some(Less);
+                    return Less;
                 } else if rp.is_same_node(att.clone()) {
-                    return Some(Greater);
+                    return Greater;
                 }
             }
-            // is it possible to reach here?
-            return None;
+            unreachable!()
         }
-        (NodeType::Attribute, _) => return Some(Less),
-        (_, NodeType::Attribute) => return Some(Greater),
+        (NodeType::Attribute, _) => return Less,
+        (_, NodeType::Attribute) => return Greater,
         // DocumentType always precedes Element.
-        (NodeType::DocumentType, NodeType::Element) => return Some(Less),
-        (NodeType::Element, NodeType::DocumentType) => return Some(Greater),
+        (NodeType::DocumentType, NodeType::Element) => return Less,
+        (NodeType::Element, NodeType::DocumentType) => return Greater,
         _ => {}
     }
 
     while let Some(rprev) = rp.previous_sibling() {
         if lp.is_same_node(rprev.clone()) {
-            return Some(Less);
+            return Less;
         }
         rp = rprev;
     }
-    Some(Greater)
+    Greater
 }
 
 impl<Spec: ?Sized> Node<Spec>
