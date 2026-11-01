@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, io::Write, path::Path};
 
 use anyxml::{
     c14n::CanonicalizeHandler,
@@ -405,6 +405,7 @@ fn ecma_376_rnc_common_parse_tests(path: impl AsRef<Path>) {
                     continue;
                 }
                 eprintln!("testing: {uri}");
+                std::io::stderr().flush().unwrap();
                 let mut handler = TreeBuildHandler::default();
                 let ret = RelaxNGSchema::parse_compact_uri(uri, None, Some(&mut handler));
                 // eprintln!("tree: {}", handler.document);
