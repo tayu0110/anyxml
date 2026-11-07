@@ -8,955 +8,7 @@ use crate::{
     xsd::{XML_SCHEMA_NAMESPACE, XSDError, parse::TypeDefinition},
 };
 
-static ANY_SIMPLE_TYPE: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let xsd_ns: Arc<str> = Arc::from(XML_SCHEMA_NAMESPACE);
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("anySimpleType"),
-        target_namespace: Some(xsd_ns.clone()),
-        base_type_definition: (Some(xsd_ns), Arc::from("anyType")),
-        facets: Facets::default(),
-        fundamental_facets: FundamentalFacets::default(),
-        r#final: FinalSet::default(),
-        variety: None,
-    }))
-});
-static STRING: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("string");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Preserve,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static BOOLEAN: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("boolean");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            cardinality: Cardinality::Finite,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static DECIMAL: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("decimal");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            numeric: true,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static FLOAT: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("float");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Partial,
-            bounded: true,
-            cardinality: Cardinality::Finite,
-            numeric: true,
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static DOUBLE: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("double");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Partial,
-            bounded: true,
-            cardinality: Cardinality::Finite,
-            numeric: true,
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static DURATION: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("duration");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Partial,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static DATETIME: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("dateTime");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Partial,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static TIME: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("time");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Partial,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static DATE: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("date");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Partial,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static GYEARMONTH: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("gYearMonth");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Partial,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static GYEAR: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("gYear");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Partial,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static GMONTHDAY: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("gMonthDay");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Partial,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static GDAY: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("gDay");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Partial,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static GMONTH: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("gMonth");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Partial,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static HEXBINARY: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("hexBinary");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static BASE64BINARY: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("base64Binary");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static ANYURI: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("anyURI");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static QNAME: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("QName");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static NOTATION: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    let name: Arc<str> = Arc::from("NOTATION");
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: name.clone(),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(ANY_SIMPLE_TYPE.target_namespace(), name)),
-    }))
-});
-static NORMALIZED_STRING: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("normalizedString"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), STRING.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Preserve,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(STRING.target_namespace(), STRING.name())),
-    }))
-});
-static TOKEN: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("token"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), NORMALIZED_STRING.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Preserve,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(STRING.target_namespace(), STRING.name())),
-    }))
-});
-static LANGUAGE: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("language"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), TOKEN.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Preserve,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(STRING.target_namespace(), STRING.name())),
-    }))
-});
-static NMTOKEN: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("NMTOKEN"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), TOKEN.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Preserve,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(STRING.target_namespace(), STRING.name())),
-    }))
-});
-static NMTOKENS: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("NMTOKENS"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::List(TOKEN.target_namespace(), TOKEN.name())),
-    }))
-});
-static NAME: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("Name"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), TOKEN.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Preserve,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(STRING.target_namespace(), STRING.name())),
-    }))
-});
-static NCNAME: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("NCName"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), NAME.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Preserve,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(STRING.target_namespace(), STRING.name())),
-    }))
-});
-static ID: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("ID"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), NCNAME.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Preserve,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(STRING.target_namespace(), STRING.name())),
-    }))
-});
-static IDREF: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("IDREF"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), NCNAME.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Preserve,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(STRING.target_namespace(), STRING.name())),
-    }))
-});
-static IDREFS: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("IDREFS"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::List(IDREF.target_namespace(), IDREF.name())),
-    }))
-});
-static ENTITY: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("ENTITY"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), NCNAME.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Preserve,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(STRING.target_namespace(), STRING.name())),
-    }))
-});
-static ENTITIES: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("ENTITIES"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), ANY_SIMPLE_TYPE.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::False,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::List(ENTITY.target_namespace(), ENTITY.name())),
-    }))
-});
-static INTEGER: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("integer"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), DECIMAL.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            numeric: true,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-static NONPOSITIVE_INTEGER: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("nonPositiveInteger"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), INTEGER.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            numeric: true,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-static NEGATIVE_INTEGER: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("negativeInteger"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (
-            ANY_SIMPLE_TYPE.target_namespace(),
-            NONPOSITIVE_INTEGER.name(),
-        ),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            numeric: true,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-static LONG: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("long"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), INTEGER.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            bounded: true,
-            cardinality: Cardinality::Finite,
-            numeric: true,
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-static INT: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("int"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), LONG.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            bounded: true,
-            cardinality: Cardinality::Finite,
-            numeric: true,
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-static SHORT: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("short"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), INT.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            bounded: true,
-            cardinality: Cardinality::Finite,
-            numeric: true,
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-static BYTE: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("byte"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), SHORT.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            bounded: true,
-            cardinality: Cardinality::Finite,
-            numeric: true,
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-static NONNEGATIVE_INTEGER: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("nonNegativeInteger"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), INTEGER.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            numeric: true,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-static UNSIGNED_LONG: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("unsignedLong"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (
-            ANY_SIMPLE_TYPE.target_namespace(),
-            NONNEGATIVE_INTEGER.name(),
-        ),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            bounded: true,
-            cardinality: Cardinality::Finite,
-            numeric: true,
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-static UNSIGNED_INT: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("unsignedInt"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), UNSIGNED_LONG.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            bounded: true,
-            cardinality: Cardinality::Finite,
-            numeric: true,
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-static UNSIGNED_SHORT: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("unsignedShort"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), UNSIGNED_INT.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            bounded: true,
-            cardinality: Cardinality::Finite,
-            numeric: true,
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-static UNSIGNED_BYTE: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("unsignedByte"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (ANY_SIMPLE_TYPE.target_namespace(), UNSIGNED_SHORT.name()),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            bounded: true,
-            cardinality: Cardinality::Finite,
-            numeric: true,
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-static POSITIVE_INTEGER: LazyLock<TypeDefinition> = LazyLock::new(|| {
-    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
-        name: Arc::from("positiveInteger"),
-        target_namespace: ANY_SIMPLE_TYPE.target_namespace(),
-        base_type_definition: (
-            ANY_SIMPLE_TYPE.target_namespace(),
-            NONNEGATIVE_INTEGER.name(),
-        ),
-        facets: Facets {
-            whitespace: Some(WhitespaceConstraint {
-                value: Whitespace::Collapse,
-                fixed: false,
-            }),
-            ..Default::default()
-        },
-        fundamental_facets: FundamentalFacets {
-            ordered: Ordered::Total,
-            numeric: true,
-            ..Default::default()
-        },
-        r#final: FinalSet::default(),
-        variety: Some(Variety::Atomic(DECIMAL.target_namespace(), DECIMAL.name())),
-    }))
-});
-
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct SimpleTypeDefinition {
     pub(super) name: Arc<str>,
     pub(super) target_namespace: Option<Arc<str>>,
@@ -1287,9 +339,61 @@ impl SimpleTypeDefinition {
         self.target_namespace.as_deref() == Some(XML_SCHEMA_NAMESPACE)
             && self.name.as_ref() == "anySimpleType"
     }
+
+    pub fn is_builtin_type(&self) -> bool {
+        self.target_namespace.as_deref() == Some(XML_SCHEMA_NAMESPACE)
+            && matches!(
+                self.name.as_ref(),
+                "anySimpleType"
+                    | "string"
+                    | "boolean"
+                    | "decimal"
+                    | "float"
+                    | "double"
+                    | "duration"
+                    | "dateTime"
+                    | "time"
+                    | "date"
+                    | "gYearMonth"
+                    | "gYear"
+                    | "gMonthDay"
+                    | "gDay"
+                    | "gMonth"
+                    | "hexBinary"
+                    | "base64Binary"
+                    | "anyURI"
+                    | "QName"
+                    | "NOTATION"
+                    | "normalizedString"
+                    | "token"
+                    | "language"
+                    | "NMTOKEN"
+                    | "NMTOKENS"
+                    | "Name"
+                    | "NCName"
+                    | "ID"
+                    | "IDREF"
+                    | "IDREFS"
+                    | "ENTITY"
+                    | "ENTITIES"
+                    | "integer"
+                    | "nonPositiveInteger"
+                    | "negativeInteger"
+                    | "long"
+                    | "int"
+                    | "short"
+                    | "byte"
+                    | "nonNegativeInteger"
+                    | "unsignedLong"
+                    | "unsignedInt"
+                    | "unsignedShort"
+                    | "unsignedByte"
+                    | "positiveInteger"
+            )
+    }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Facets {
     pub(super) length: Option<Length>,
     pub(super) min_length: Option<Length>,
@@ -1311,10 +415,12 @@ pub(super) struct Length {
     pub(super) fixed: bool,
 }
 
+#[derive(Clone)]
 pub(super) struct Pattern {
     pub(super) value: String,
 }
 
+#[derive(Clone)]
 pub(super) struct Enumeration {
     pub(super) value: String,
 }
@@ -1339,12 +445,13 @@ pub enum Whitespace {
     Collapse = 2,
 }
 
+#[derive(Clone, Default)]
 pub(super) struct Boundary {
     pub(super) value: String,
     pub(super) fixed: bool,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct FundamentalFacets {
     pub(super) ordered: Ordered,
     pub(super) bounded: bool,
@@ -1367,7 +474,7 @@ pub(super) enum Cardinality {
     Finite,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(super) enum Variety {
     Atomic(Option<Arc<str>>, Arc<str>),
     List(Option<Arc<str>>, Arc<str>),
@@ -1493,5 +600,1221 @@ impl std::ops::BitOr<Block> for BlockSet {
 impl std::ops::BitOrAssign<Block> for BlockSet {
     fn bitor_assign(&mut self, rhs: Block) {
         *self = *self | rhs;
+    }
+}
+
+pub(super) static XSD_ANY_SIMPLE_TYPE: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let xsd_ns: Arc<str> = Arc::from(XML_SCHEMA_NAMESPACE);
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("anySimpleType"),
+        target_namespace: Some(xsd_ns.clone()),
+        base_type_definition: (Some(xsd_ns), Arc::from("anyType")),
+        facets: Facets::default(),
+        fundamental_facets: FundamentalFacets::default(),
+        r#final: FinalSet::default(),
+        variety: None,
+    }))
+});
+static XSD_STRING: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("string");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Preserve,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_BOOLEAN: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("boolean");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            cardinality: Cardinality::Finite,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_DECIMAL: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("decimal");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            numeric: true,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_FLOAT: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("float");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Partial,
+            bounded: true,
+            cardinality: Cardinality::Finite,
+            numeric: true,
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_DOUBLE: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("double");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Partial,
+            bounded: true,
+            cardinality: Cardinality::Finite,
+            numeric: true,
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_DURATION: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("duration");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Partial,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_DATETIME: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("dateTime");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Partial,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_TIME: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("time");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Partial,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_DATE: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("date");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Partial,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_GYEARMONTH: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("gYearMonth");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Partial,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_GYEAR: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("gYear");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Partial,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_GMONTHDAY: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("gMonthDay");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Partial,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_GDAY: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("gDay");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Partial,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_GMONTH: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("gMonth");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Partial,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_HEXBINARY: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("hexBinary");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_BASE64BINARY: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("base64Binary");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_ANYURI: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("anyURI");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_QNAME: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("QName");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_NOTATION: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    let name: Arc<str> = Arc::from("NOTATION");
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: name.clone(),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            name,
+        )),
+    }))
+});
+static XSD_NORMALIZED_STRING: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("normalizedString"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_STRING.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Preserve,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_STRING.target_namespace(),
+            XSD_STRING.name(),
+        )),
+    }))
+});
+static XSD_TOKEN: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("token"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_NORMALIZED_STRING.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Preserve,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_STRING.target_namespace(),
+            XSD_STRING.name(),
+        )),
+    }))
+});
+static XSD_LANGUAGE: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("language"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_TOKEN.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Preserve,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_STRING.target_namespace(),
+            XSD_STRING.name(),
+        )),
+    }))
+});
+static XSD_NMTOKEN: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("NMTOKEN"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_TOKEN.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Preserve,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_STRING.target_namespace(),
+            XSD_STRING.name(),
+        )),
+    }))
+});
+static XSD_NMTOKENS: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("NMTOKENS"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::List(
+            XSD_TOKEN.target_namespace(),
+            XSD_TOKEN.name(),
+        )),
+    }))
+});
+static XSD_NAME: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("Name"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_TOKEN.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Preserve,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_STRING.target_namespace(),
+            XSD_STRING.name(),
+        )),
+    }))
+});
+static XSD_NCNAME: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("NCName"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_NAME.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Preserve,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_STRING.target_namespace(),
+            XSD_STRING.name(),
+        )),
+    }))
+});
+static XSD_ID: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("ID"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_NCNAME.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Preserve,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_STRING.target_namespace(),
+            XSD_STRING.name(),
+        )),
+    }))
+});
+static XSD_IDREF: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("IDREF"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_NCNAME.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Preserve,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_STRING.target_namespace(),
+            XSD_STRING.name(),
+        )),
+    }))
+});
+static XSD_IDREFS: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("IDREFS"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::List(
+            XSD_IDREF.target_namespace(),
+            XSD_IDREF.name(),
+        )),
+    }))
+});
+static XSD_ENTITY: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("ENTITY"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_NCNAME.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Preserve,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_STRING.target_namespace(),
+            XSD_STRING.name(),
+        )),
+    }))
+});
+static XSD_ENTITIES: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("ENTITIES"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_ANY_SIMPLE_TYPE.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::False,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::List(
+            XSD_ENTITY.target_namespace(),
+            XSD_ENTITY.name(),
+        )),
+    }))
+});
+static XSD_INTEGER: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("integer"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_DECIMAL.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            numeric: true,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+static XSD_NONPOSITIVE_INTEGER: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("nonPositiveInteger"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_INTEGER.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            numeric: true,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+static XSD_NEGATIVE_INTEGER: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("negativeInteger"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_NONPOSITIVE_INTEGER.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            numeric: true,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+static XSD_LONG: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("long"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_INTEGER.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            bounded: true,
+            cardinality: Cardinality::Finite,
+            numeric: true,
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+static XSD_INT: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("int"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_LONG.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            bounded: true,
+            cardinality: Cardinality::Finite,
+            numeric: true,
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+static XSD_SHORT: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("short"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_INT.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            bounded: true,
+            cardinality: Cardinality::Finite,
+            numeric: true,
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+static XSD_BYTE: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("byte"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_SHORT.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            bounded: true,
+            cardinality: Cardinality::Finite,
+            numeric: true,
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+static XSD_NONNEGATIVE_INTEGER: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("nonNegativeInteger"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (XSD_ANY_SIMPLE_TYPE.target_namespace(), XSD_INTEGER.name()),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            numeric: true,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+static XSD_UNSIGNED_LONG: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("unsignedLong"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_NONNEGATIVE_INTEGER.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            bounded: true,
+            cardinality: Cardinality::Finite,
+            numeric: true,
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+static XSD_UNSIGNED_INT: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("unsignedInt"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_UNSIGNED_LONG.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            bounded: true,
+            cardinality: Cardinality::Finite,
+            numeric: true,
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+static XSD_UNSIGNED_SHORT: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("unsignedShort"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_UNSIGNED_INT.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            bounded: true,
+            cardinality: Cardinality::Finite,
+            numeric: true,
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+static XSD_UNSIGNED_BYTE: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("unsignedByte"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_UNSIGNED_SHORT.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            bounded: true,
+            cardinality: Cardinality::Finite,
+            numeric: true,
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+static XSD_POSITIVE_INTEGER: LazyLock<TypeDefinition> = LazyLock::new(|| {
+    TypeDefinition::Simple(Arc::new(SimpleTypeDefinition {
+        name: Arc::from("positiveInteger"),
+        target_namespace: XSD_ANY_SIMPLE_TYPE.target_namespace(),
+        base_type_definition: (
+            XSD_ANY_SIMPLE_TYPE.target_namespace(),
+            XSD_NONNEGATIVE_INTEGER.name(),
+        ),
+        facets: Facets {
+            whitespace: Some(WhitespaceConstraint {
+                value: Whitespace::Collapse,
+                fixed: false,
+            }),
+            ..Default::default()
+        },
+        fundamental_facets: FundamentalFacets {
+            ordered: Ordered::Total,
+            numeric: true,
+            ..Default::default()
+        },
+        r#final: FinalSet::default(),
+        variety: Some(Variety::Atomic(
+            XSD_DECIMAL.target_namespace(),
+            XSD_DECIMAL.name(),
+        )),
+    }))
+});
+
+pub(super) fn get_builtin_simple_type(
+    target_namespace: Option<&str>,
+    name: &str,
+) -> Option<Arc<SimpleTypeDefinition>> {
+    if target_namespace != Some(XML_SCHEMA_NAMESPACE) {
+        return None;
+    }
+
+    match name {
+        "anySimpleType" => XSD_ANY_SIMPLE_TYPE.as_simple_type(),
+        "anyURI" => XSD_ANYURI.as_simple_type(),
+        "base64Binary" => XSD_BASE64BINARY.as_simple_type(),
+        "boolean" => XSD_BOOLEAN.as_simple_type(),
+        "byte" => XSD_BYTE.as_simple_type(),
+        "date" => XSD_DATE.as_simple_type(),
+        "dateTime" => XSD_DATETIME.as_simple_type(),
+        "decimal" => XSD_DECIMAL.as_simple_type(),
+        "double" => XSD_DOUBLE.as_simple_type(),
+        "duration" => XSD_DURATION.as_simple_type(),
+        "ENTITIES" => XSD_ENTITIES.as_simple_type(),
+        "ENTITY" => XSD_ENTITY.as_simple_type(),
+        "float" => XSD_FLOAT.as_simple_type(),
+        "gDay" => XSD_GDAY.as_simple_type(),
+        "gMonth" => XSD_GMONTH.as_simple_type(),
+        "gMonthDay" => XSD_GMONTHDAY.as_simple_type(),
+        "gYear" => XSD_GYEAR.as_simple_type(),
+        "gYearMonth" => XSD_GYEARMONTH.as_simple_type(),
+        "hexBinary" => XSD_HEXBINARY.as_simple_type(),
+        "ID" => XSD_ID.as_simple_type(),
+        "IDREF" => XSD_IDREF.as_simple_type(),
+        "IDREFS" => XSD_IDREFS.as_simple_type(),
+        "int" => XSD_INT.as_simple_type(),
+        "integer" => XSD_INTEGER.as_simple_type(),
+        "language" => XSD_LANGUAGE.as_simple_type(),
+        "long" => XSD_LONG.as_simple_type(),
+        "NCName" => XSD_NCNAME.as_simple_type(),
+        "NMTOKEN" => XSD_NMTOKEN.as_simple_type(),
+        "NMTOKENS" => XSD_NMTOKENS.as_simple_type(),
+        "NOTATION" => XSD_NOTATION.as_simple_type(),
+        "Name" => XSD_NAME.as_simple_type(),
+        "negativeInteger" => XSD_NEGATIVE_INTEGER.as_simple_type(),
+        "nonNegativeInteger" => XSD_NONNEGATIVE_INTEGER.as_simple_type(),
+        "nonPositiveInteger" => XSD_NONPOSITIVE_INTEGER.as_simple_type(),
+        "normalizedString" => XSD_NORMALIZED_STRING.as_simple_type(),
+        "positiveInteger" => XSD_POSITIVE_INTEGER.as_simple_type(),
+        "QName" => XSD_QNAME.as_simple_type(),
+        "short" => XSD_SHORT.as_simple_type(),
+        "string" => XSD_STRING.as_simple_type(),
+        "time" => XSD_TIME.as_simple_type(),
+        "token" => XSD_TOKEN.as_simple_type(),
+        "unsignedByte" => XSD_UNSIGNED_BYTE.as_simple_type(),
+        "unsignedInt" => XSD_UNSIGNED_INT.as_simple_type(),
+        "unsignedLong" => XSD_UNSIGNED_LONG.as_simple_type(),
+        "unsignedShort" => XSD_UNSIGNED_SHORT.as_simple_type(),
+        _ => None,
     }
 }

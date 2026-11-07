@@ -20,7 +20,8 @@ use crate::{
         XML_SCHEMA_INSTANCE_NAMESPACE, XML_SCHEMA_NAMESPACE, XSDSchema,
         typedef::{
             Block, BlockSet, Boundary, Enumeration, Final, FinalSet, Length, Pattern,
-            SimpleTypeDefinition, Variety, Whitespace, WhitespaceConstraint,
+            SimpleTypeDefinition, Variety, Whitespace, WhitespaceConstraint, XSD_ANY_SIMPLE_TYPE,
+            get_builtin_simple_type,
         },
     },
     xsdtypes::{SCHEMA_BUILTIN_NCNAME, SCHEMA_BUILTIN_QNAME, SchemaValue},
@@ -1522,6 +1523,488 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             _ => false, // Forbidden
         }
     }
+
+    fn check_all_simple_type_derivation(&mut self) -> Result<(), XMLError> {
+        let mut ret = self
+            .schema
+            .type_defs
+            .extract_if(|_, ty| matches!(*ty, TypeDefinition::Simple(_)))
+            .collect::<HashMap<_, _>>();
+        while let Some(key) = ret.keys().next().cloned() {
+            let value = ret.remove(&key).and_then(|st| st.as_simple_type()).unwrap();
+            let mut stack = vec![(key, value)];
+            while let Some((key, value)) = stack.pop() {
+                if let Some(builtin) =
+                    get_builtin_simple_type(value.target_namespace.as_deref(), &value.name)
+                {
+                    self.schema
+                        .type_defs
+                        .insert(key, TypeDefinition::Simple(builtin));
+                    continue;
+                }
+
+                match value.variety.as_ref() {
+                    Some(Variety::List(ns, name)) => {
+                        let ikey = (ns.clone(), name.clone());
+                        if let Some(item_type) = ret.remove(&ikey).and_then(|t| t.as_simple_type())
+                        {
+                            stack.push((key, value));
+                            stack.push((ikey, item_type));
+                            continue;
+                        } else if stack.iter().any(|entry| entry.0 == ikey) {
+                            // [st-props-correct] clause 2
+                            let msg = format!(
+                                "A circluar definition is found in the simple type '{}{}'",
+                                value
+                                    .target_namespace
+                                    .as_deref()
+                                    .map(|ns| format!("{{{ns}}}"))
+                                    .unwrap_or_default(),
+                                value.name
+                            );
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::StPropsCorrect),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Owned(msg),
+                            });
+                            stack.clear();
+                            break;
+                        }
+                    }
+                    Some(Variety::Union(members)) => {
+                        if let Some((member, member_type)) =
+                            members.iter().find_map(|m| ret.remove_entry(m))
+                        {
+                            stack.push((key, value));
+                            stack.push((member, member_type.as_simple_type().unwrap()));
+                            continue;
+                        } else if members
+                            .iter()
+                            .any(|m| stack.iter().any(|entry| entry.0 == *m))
+                        {
+                            // [st-props-correct] clause 2
+                            let msg = format!(
+                                "A circluar definition is found in the simple type '{}{}'",
+                                value
+                                    .target_namespace
+                                    .as_deref()
+                                    .map(|ns| format!("{{{ns}}}"))
+                                    .unwrap_or_default(),
+                                value.name
+                            );
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::StPropsCorrect),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Owned(msg),
+                            });
+                            stack.clear();
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+
+                let base = value.base_type_definition.clone();
+                if let Some(base_type) = ret.remove(&base).and_then(|st| st.as_simple_type()) {
+                    stack.push((key, value));
+                    stack.push((base, base_type));
+                    continue;
+                }
+
+                if let Some(base) = self
+                    .schema
+                    .type_defs
+                    .get(&base)
+                    .and_then(|st| st.as_simple_type())
+                    .or_else(|| {
+                        let base_t = get_builtin_simple_type(base.0.as_deref(), &base.1)?;
+                        self.schema
+                            .type_defs
+                            .insert(base.clone(), TypeDefinition::Simple(base_t.clone()));
+                        Some(base_t)
+                    })
+                {
+                    if let Ok(new) = self.check_simple_type_derivation(base, value.clone()) {
+                        self.schema
+                            .type_defs
+                            .insert(key, TypeDefinition::Simple(new));
+                    } else {
+                        stack.clear();
+                        break;
+                    }
+                } else {
+                    let self_ns = value
+                        .target_namespace
+                        .as_deref()
+                        .map(|ns| format!("{{{ns}}}"))
+                        .unwrap_or_default();
+                    let base_ns = base.0.map(|ns| format!("{{{ns}}}")).unwrap_or_default();
+                    let msg = format!(
+                        "The simple type '{}{}' is derived from '{}{}', but '{}{}' is not found in this schema.",
+                        self_ns, value.name, base_ns, base.1, base_ns, base.1
+                    );
+                    // [st-props-correct] clause 2 ?
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::StPropsCorrect),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    stack.clear();
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn check_simple_type_derivation(
+        &mut self,
+        base: Arc<SimpleTypeDefinition>,
+        ty: Arc<SimpleTypeDefinition>,
+    ) -> Result<Arc<SimpleTypeDefinition>, XMLError> {
+        macro_rules! prohibited_derivation {
+            ( $type:literal, $error:ident ) => {
+                let msg = format!(
+                    "'{}{}' cannot be derived from '{}{}' because '{}' is prohibited.",
+                    ty.target_namespace
+                        .as_deref()
+                        .map(|ns| format!("{{{ns}}}"))
+                        .unwrap_or_default(),
+                    ty.name,
+                    base.target_namespace
+                        .as_deref()
+                        .map(|ns| format!("{{{ns}}}"))
+                        .unwrap_or_default(),
+                    base.name,
+                    $type
+                );
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::$error),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+                return Err(XMLError::XSDError(XSDError::$error));
+            };
+        }
+
+        let mut ret = Ok(());
+        let ty_ns = ty
+            .target_namespace
+            .as_deref()
+            .map(|ns| format!("{{{ns}}}"))
+            .unwrap_or_default();
+        let mut new = SimpleTypeDefinition::clone(&ty);
+        if matches!(new.variety, None | Some(Variety::Atomic(_, _))) {
+            new.variety = base.variety.clone();
+        }
+
+        macro_rules! unapplicable_facet {
+            ( $field:ident, $facet:literal, $check_method:ident ) => {
+                if !new.facets.$field.$check_method() {
+                    let msg = format!(
+                        "The simple type '{}{}' must not have the facet '{}'.",
+                        ty_ns, ty.name, $facet
+                    );
+                    // [cos-applicable-facets]
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::CosApplicableFacets),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::CosApplicableFacets));
+                }
+            };
+        }
+
+        match new.variety.as_ref() {
+            Some(Variety::Atomic(_, name)) => {
+                match name.as_ref() {
+                    "string" | "hexBinary" | "base64Binary" | "anyURI" | "QName" | "NOTATION" => {
+                        unapplicable_facet!(max_inclusive, "maxInclusive", is_none);
+                        unapplicable_facet!(max_exclusive, "maxExclusive", is_none);
+                        unapplicable_facet!(min_exclusive, "minExclusive", is_none);
+                        unapplicable_facet!(min_inclusive, "minInclusive", is_none);
+                        unapplicable_facet!(total_digits, "totalDigits", is_none);
+                        unapplicable_facet!(fraction_digits, "fractionDigits", is_none);
+                    }
+                    "boolean" => {
+                        unapplicable_facet!(length, "length", is_none);
+                        unapplicable_facet!(min_length, "minLength", is_none);
+                        unapplicable_facet!(max_length, "maxLength", is_none);
+                        unapplicable_facet!(enumeration, "enumeration", is_empty);
+                        unapplicable_facet!(max_inclusive, "maxInclusive", is_none);
+                        unapplicable_facet!(max_exclusive, "maxExclusive", is_none);
+                        unapplicable_facet!(min_exclusive, "minExclusive", is_none);
+                        unapplicable_facet!(min_inclusive, "minInclusive", is_none);
+                        unapplicable_facet!(total_digits, "totalDigits", is_none);
+                        unapplicable_facet!(fraction_digits, "fractionDigits", is_none);
+                    }
+                    "float" | "double" | "duration" | "dateTime" | "time" | "date"
+                    | "gYearMonth" | "gYear" | "gMonthDay" | "gDay" | "gMonth" => {
+                        unapplicable_facet!(length, "length", is_none);
+                        unapplicable_facet!(min_length, "minLength", is_none);
+                        unapplicable_facet!(max_length, "maxLength", is_none);
+                        unapplicable_facet!(total_digits, "totalDigits", is_none);
+                        unapplicable_facet!(fraction_digits, "fractionDigits", is_none);
+                    }
+                    "decimal" => {
+                        unapplicable_facet!(length, "length", is_none);
+                        unapplicable_facet!(min_length, "minLength", is_none);
+                        unapplicable_facet!(max_length, "maxLength", is_none);
+                    }
+                    _ => unreachable!(),
+                }
+                if !matches!(base.variety, None | Some(Variety::Atomic(_, _))) {
+                    // [cos-st-restricts] clause 1.1
+                    let msg = format!(
+                        "The base type of the atomic simple type '{}{}' must be atomic, but '{}{}' is not.",
+                        new.target_namespace
+                            .as_deref()
+                            .map(|ns| format!("{{{ns}}}"))
+                            .unwrap_or_default(),
+                        new.name,
+                        base.target_namespace
+                            .as_deref()
+                            .map(|ns| format!("{{{ns}}}"))
+                            .unwrap_or_default(),
+                        base.name
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::CosStRestricts),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    return Err(XMLError::XSDError(XSDError::CosStRestricts));
+                }
+
+                // [cos-st-restricts] clause 1.2
+                if base.r#final.restriction() {
+                    prohibited_derivation!("restriction", CosStRestricts);
+                }
+            }
+            Some(Variety::List(ns, name)) => {
+                let Some(item_type) = self
+                    .schema
+                    .type_defs
+                    .get(&(ns.clone(), name.clone()))
+                    .and_then(|t| t.as_simple_type())
+                else {
+                    // [cos-st-restricts] ?
+                    // It is unclear what kind of error occurs when `itemType` cannot
+                    // be resolved , but for now, it will be treated as cos-st-restricts.
+                    let msg = format!(
+                        "The list itemType '{}{}' cannot be resolved.",
+                        ns.as_deref()
+                            .map(|ns| format!("{{{ns}}}"))
+                            .unwrap_or_default(),
+                        name
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::CosStRestricts),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    return Err(XMLError::XSDError(XSDError::CosStRestricts));
+                };
+
+                if !matches!(
+                    item_type.variety,
+                    Some(Variety::Atomic(_, _) | Variety::Union(_))
+                ) {
+                    // [cos-st-restricts] clause 2.1
+                    let msg = format!(
+                        "The list itemType must be either atomic or union, but '{}{}' is not.",
+                        item_type
+                            .target_namespace
+                            .as_deref()
+                            .map(|ns| format!("{{{ns}}}"))
+                            .unwrap_or_default(),
+                        item_type.name
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::CosStRestricts),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    return Err(XMLError::XSDError(XSDError::CosStRestricts));
+                }
+
+                // [cos-st-restricts] clause 2.3
+                if base.is_simple_ur_type() {
+                    // clause 2.3.1
+                    if item_type.r#final.list() {
+                        // clause 2.3.1.1
+                        prohibited_derivation!("list", CosStRestricts);
+                    }
+                    // clause 2.3.1.2
+                    unapplicable_facet!(length, "length", is_none);
+                    unapplicable_facet!(min_length, "minLength", is_none);
+                    unapplicable_facet!(max_length, "maxLength", is_none);
+                    unapplicable_facet!(pattern, "pattern", is_empty);
+                    unapplicable_facet!(enumeration, "enumeration", is_empty);
+                } else {
+                    // clause 2.3.2
+                    let Some(Variety::List(bns, bname)) = base.variety.as_ref() else {
+                        // clause 2.3.2.1
+                        let msg = format!(
+                            "The base type of list type '{}{}' must be list, but is not.",
+                            item_type
+                                .target_namespace
+                                .as_deref()
+                                .map(|ns| format!("{{{ns}}}"))
+                                .unwrap_or_default(),
+                            item_type.name
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::CosStRestricts),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                        return Err(XMLError::XSDError(XSDError::CosStRestricts));
+                    };
+
+                    // clause 2.3.2.2
+                    if base.r#final.restriction() {
+                        prohibited_derivation!("restriction", CosStRestricts);
+                    }
+
+                    // clause 2.3.2.3
+                    let Some(base_item_type) = self
+                        .schema
+                        .type_defs
+                        .get(&(bns.clone(), bname.clone()))
+                        .and_then(|t| t.as_simple_type())
+                    else {
+                        // If the itemType of the base type cannot be resolved,
+                        // an error should have already occurred during the base
+                        // type derivation check, so no error is reported here.
+                        return Err(XMLError::XSDError(XSDError::CosStRestricts));
+                    };
+                    self.check_cos_st_derived_ok(&item_type, &base_item_type, FinalSet::default())?;
+
+                    // clause 2.3.2.4
+                    // This is identical with [cos-applicable-facets].
+                }
+
+                unapplicable_facet!(max_inclusive, "maxInclusive", is_none);
+                unapplicable_facet!(max_exclusive, "maxExclusive", is_none);
+                unapplicable_facet!(min_exclusive, "minExclusive", is_none);
+                unapplicable_facet!(min_inclusive, "minInclusive", is_none);
+                unapplicable_facet!(total_digits, "totalDigits", is_none);
+                unapplicable_facet!(fraction_digits, "fractionDigits", is_none);
+            }
+            Some(Variety::Union(members)) => {
+                unapplicable_facet!(length, "length", is_none);
+                unapplicable_facet!(min_length, "minLength", is_none);
+                unapplicable_facet!(max_length, "maxLength", is_none);
+                unapplicable_facet!(whitespace, "whiteSpace", is_none);
+                unapplicable_facet!(max_inclusive, "maxInclusive", is_none);
+                unapplicable_facet!(max_exclusive, "maxExclusive", is_none);
+                unapplicable_facet!(min_exclusive, "minExclusive", is_none);
+                unapplicable_facet!(min_inclusive, "minInclusive", is_none);
+                unapplicable_facet!(total_digits, "totalDigits", is_none);
+                unapplicable_facet!(fraction_digits, "fractionDigits", is_none);
+            }
+            None => {}
+        }
+        ret.map(|_| new.into())
+    }
+
+    /// # Reference
+    /// - [Schema Component Constraint: Type Derivation OK (Simple)](https://www.w3.org/TR/xmlschema-1/#cos-st-derived-ok)
+    fn check_cos_st_derived_ok(
+        &self,
+        d: &SimpleTypeDefinition,
+        b: &SimpleTypeDefinition,
+        subset: FinalSet,
+    ) -> Result<(), XMLError> {
+        if d.target_namespace == b.target_namespace && d.name == b.name {
+            // clause 1
+            return Ok(());
+        }
+
+        // clause 2
+        if subset.restriction() || b.r#final.restriction() {
+            // clause 2.1
+            return Err(XMLError::XSDError(XSDError::CosStDerivedOk));
+        }
+        let base = self
+            .schema
+            .type_defs
+            .get(&d.base_type_definition)
+            .and_then(|t| t.as_simple_type())
+            .ok_or(XMLError::XSDError(XSDError::CosStDerivedOk))?;
+        if b.target_namespace == base.target_namespace && b.name == base.name {
+            // clause 2.2.1
+            return Ok(());
+        }
+        if !base.is_simple_ur_type() && self.check_cos_st_derived_ok(&base, b, subset).is_ok() {
+            // clause 2.2.2
+            return Ok(());
+        }
+        if b.is_simple_ur_type()
+            && matches!(d.variety, Some(Variety::List(_, _) | Variety::Union(_)))
+        {
+            // clause 2.2.3
+            return Ok(());
+        }
+        if let Some(Variety::Union(members)) = b.variety.as_ref()
+            && members
+                .iter()
+                .filter_map(|member| self.schema.type_defs.get(member))
+                .filter_map(|t| t.as_simple_type())
+                .any(|t| self.check_cos_st_derived_ok(d, &t, subset).is_ok())
+        {
+            // clause 2.2.4
+            return Ok(());
+        }
+        Err(XMLError::XSDError(XSDError::CosStDerivedOk))
+    }
 }
 
 impl<H: SAXHandler> EntityResolver for XSDParseHandler<H> {
@@ -1795,10 +2278,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     self.skip_depth += 1;
                     return;
                 } else if self.element_stack.last() == Some(&SCHEMA_LIST_NAME)
-                    && !self
-                        .st_stack
-                        .last()
-                        .is_some_and(|st| st.base_type_definition.1.is_empty())
+                    && self.st_stack.last().is_some_and(|st| st.variety.is_some())
                 {
                     // [src-list-itemType-or-simpleType]
                     // If the `itemType` attribute is present,
@@ -1849,30 +2329,39 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
             }
             SCHEMA_LIST_NAME => {
                 // Since the child may contain <simpleType>, "itemType" is not a required element.
-                if let Some((pre, loc)) = self.get_qname(atts, "itemType")
-                    && let Some(st) = self.st_stack.last_mut()
-                {
-                    st.variety = Some(Variety::List(pre, loc));
+                let item_type = self.get_qname(atts, "itemType");
+                if let Some(st) = self.st_stack.last_mut() {
+                    if let Some((pre, loc)) = item_type {
+                        st.variety = Some(Variety::List(pre, loc));
+                    }
+                    st.base_type_definition = (
+                        XSD_ANY_SIMPLE_TYPE.target_namespace(),
+                        XSD_ANY_SIMPLE_TYPE.name(),
+                    );
                 }
                 self.element_stack.push(SCHEMA_LIST_NAME);
             }
             SCHEMA_UNION_NAME => {
-                if let Some(member_types) = atts.get_value_by_qname("memberTypes")
-                    && let Some(st) = self.st_stack.last_mut()
-                {
-                    let mut buf = vec![];
-                    for member in member_types.split_ascii_whitespace() {
-                        if let Some((pre, loc)) = member.split_once(':') {
-                            if let Some(ns) = self.ns_stack.get(pre) {
-                                buf.push((Some(ns.namespace_name.clone()), loc.into()));
+                if let Some(st) = self.st_stack.last_mut() {
+                    if let Some(member_types) = atts.get_value_by_qname("memberTypes") {
+                        let mut buf = vec![];
+                        for member in member_types.split_ascii_whitespace() {
+                            if let Some((pre, loc)) = member.split_once(':') {
+                                if let Some(ns) = self.ns_stack.get(pre) {
+                                    buf.push((Some(ns.namespace_name.clone()), loc.into()));
+                                }
+                            } else if let Some(ns) = self.ns_stack.get("") {
+                                buf.push((Some(ns.namespace_name.clone()), member.into()));
+                            } else {
+                                buf.push((None, member.into()));
                             }
-                        } else if let Some(ns) = self.ns_stack.get("") {
-                            buf.push((Some(ns.namespace_name.clone()), member.into()));
-                        } else {
-                            buf.push((None, member.into()));
                         }
+                        st.variety = Some(Variety::Union(buf.into()));
                     }
-                    st.variety = Some(Variety::Union(buf.into()));
+                    st.base_type_definition = (
+                        XSD_ANY_SIMPLE_TYPE.target_namespace(),
+                        XSD_ANY_SIMPLE_TYPE.name(),
+                    );
                 }
                 self.element_stack.push(SCHEMA_UNION_NAME);
             }
@@ -3153,6 +3642,9 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
         for (location, components) in redefines {
             self.process_redefine(location, components, meta.as_mut());
         }
+        if matches!(self.inclusion_state, InclusionState::TopLevel) {
+            let _ = self.check_all_simple_type_derivation();
+        }
         if let Some(meta) = meta {
             META_SCHEMA_HOLDER_V1_0.with_borrow_mut(|holder| holder.push(meta));
         }
@@ -3633,7 +4125,6 @@ struct XSDParseContext<'a, H: SAXHandler + ?Sized> {
 
     // context
     target_namespace: Option<Arc<str>>,
-    included_resources: HashSet<Arc<URIStr>>,
     unnamed: usize,
     simple_types: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
     complex_types: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
@@ -3642,11 +4133,6 @@ struct XSDParseContext<'a, H: SAXHandler + ?Sized> {
     elem_decls: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
     attr_decls: HashMap<(Option<Arc<str>>, Arc<str>), Element>,
 
-    // qualification form
-    attr_form_default: QualificationForm,
-    elem_form_default: QualificationForm,
-    // block
-    block_default: FinalSet,
     // final
     final_default: FinalSet,
 
@@ -4744,6 +5230,22 @@ impl TypeDefinition {
         match self {
             TypeDefinition::Simple(def) => def.name.clone(),
             TypeDefinition::Complex(def) => def.name.clone(),
+        }
+    }
+
+    pub(super) fn as_simple_type(&self) -> Option<Arc<SimpleTypeDefinition>> {
+        if let TypeDefinition::Simple(st) = self {
+            Some(st.clone())
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn as_complex_type(&self) -> Option<Arc<ComplexTypeDefinition>> {
+        if let TypeDefinition::Complex(ct) = self {
+            Some(ct.clone())
+        } else {
+            None
         }
     }
 }
