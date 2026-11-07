@@ -1396,6 +1396,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn digit_compile_tests() {
+        const DOCUMENT: &str = "<doc/>";
+        let mut reader = XMLReader::builder()
+            .set_handler(TreeBuildHandler::default())
+            .build();
+        reader.parse_str(DOCUMENT, None).unwrap();
+        let doc = reader.handler.document;
+
+        let mut expr = compile(".5").unwrap();
+        let ret = expr.evaluate(&doc).unwrap().as_number().unwrap();
+        assert_eq!(ret, 0.5);
+
+        let mut expr = compile("string(.5)").unwrap();
+        let ret = expr.evaluate(&doc).unwrap().as_string().unwrap();
+        assert_eq!(&*ret, "0.5");
+    }
+
+    #[test]
     fn element_context_node_tests() {
         const DOCUMENT: &str = r#"<doc>
             <ch1>ch1-1</ch1>
