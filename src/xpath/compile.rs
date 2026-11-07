@@ -543,9 +543,13 @@ fn parse_path_expr(
         if xpath.starts_with(|c: char| matches!(c, '$' | '(' | '"' | '\'') || c.is_ascii_digit()) {
             // VariableReference, grouped Expr, Literal, Number
             true
-        } else if xpath.starts_with(['/', '.', '@', '*']) {
+        } else if xpath.starts_with(['/', '@', '*']) {
             // some LocationPath types
             false
+        } else if let Some(rem) = xpath.strip_prefix('.') {
+            // Number that starts with '.'
+            // or LocationPath that starts with AbbreviatedStep '.'
+            rem.starts_with(|c: char| c.is_ascii_digit())
         } else {
             // Check if `xpath` starts with FunctionCall.
             parse_function_name(xpath).is_ok_and(|(_, mut rem)| {
