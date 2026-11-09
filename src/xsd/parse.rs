@@ -20,11 +20,10 @@ use crate::{
         XML_SCHEMA_INSTANCE_NAMESPACE, XML_SCHEMA_NAMESPACE, XSDSchema,
         typedef::{
             Block, BlockSet, Boundary, Cardinality, Enumeration, Facets, Final, FinalSet, Length,
-            Ordered, Pattern, SimpleTypeDefinition, Variety, Whitespace, WhitespaceConstraint,
-            XSD_ANY_SIMPLE_TYPE, get_builtin_simple_type,
+            Ordered, Pattern, SchemaValue, SchemaValueType, SimpleTypeDefinition, Variety,
+            Whitespace, WhitespaceConstraint, XSD_ANY_SIMPLE_TYPE, get_builtin_simple_type,
         },
     },
-    xsdtypes::{SCHEMA_BUILTIN_NCNAME, SCHEMA_BUILTIN_QNAME, SchemaValue},
 };
 
 const SCHEMA_SCHEMA_NAME: &str = "schema";
@@ -2113,22 +2112,24 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             | (Some(Variety::Union(_)), Some(Variety::Union(_))) => {}
             _ => {
                 // [st-restrict-facets] clause 1
-                let msg = format!(
-                    "Derivation type does not match between '{}' and '{}'",
-                    new.display_name(),
-                    base.display_name()
-                );
-                self.error(SAXParseError {
-                    error: XMLError::XSDError(XSDError::StRestrictFacets),
-                    level: XMLErrorLevel::Error,
-                    domain: XMLErrorDomain::XSDParser,
-                    line: self.locator.line(),
-                    column: self.locator.column(),
-                    system_id: self.locator.system_id(),
-                    public_id: self.locator.public_id(),
-                    message: Cow::Owned(msg),
-                });
-                return Err(XMLError::XSDError(XSDError::StRestrictFacets));
+                if !base.is_simple_ur_type() {
+                    let msg = format!(
+                        "Derivation type does not match between '{}' and '{}'",
+                        new.display_name(),
+                        base.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::StRestrictFacets),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    return Err(XMLError::XSDError(XSDError::StRestrictFacets));
+                }
             }
         }
 
@@ -2197,10 +2198,79 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         message: Cow::Owned(msg),
                     });
                     ret = Err(XMLError::XSDError(XSDError::MinLengthValidRestriction));
+                } else if nl.value != bl.value && new.facets.length.is_some() {
+                    // [length-minLength-maxLength] clause 1.2
+                    // minLength    length
+                    // A            None
+                    // B            C       << Now (Bad)
+                    // D            C       << Now (Bad)
+                    let msg = format!(
+                        "'minLength' cannot be applied to '{}' because it is constrained by 'length'.",
+                        new.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::LengthMinLengthMaxLength),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::LengthMinLengthMaxLength));
+                } else if new
+                    .facets
+                    .length
+                    .is_some_and(|length| nl.value > length.value)
+                {
+                    // [length-minLength-maxLength] clause 1.1
+                    let msg = format!(
+                        "The value 'minLength' of '{}' is larger than its 'length'.",
+                        new.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::LengthMinLengthMaxLength),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::LengthMinLengthMaxLength));
                 }
             }
             (None, Some(l)) => new.facets.min_length = Some(l),
-            (Some(_), None) | (None, None) => {}
+            (Some(_), None) => {
+                if new.facets.length.is_some() {
+                    // [length-minLength-maxLength] clause 1.2
+                    // minLength    length
+                    // None         A
+                    // B            A       << Now (Bad)
+                    //
+                    // minLength    length
+                    // None         None
+                    // A            B       << Now (Bad)
+                    let msg = format!(
+                        "'minLength' cannot be applied to '{}' because it is constrained by 'length'.",
+                        new.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::LengthMinLengthMaxLength),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::LengthMinLengthMaxLength));
+                }
+            }
+            (None, None) => {}
         }
         match (new.facets.max_length, base.facets.max_length) {
             (Some(nl), Some(bl)) => {
@@ -2240,10 +2310,79 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         message: Cow::Owned(msg),
                     });
                     ret = Err(XMLError::XSDError(XSDError::MaxLengthValidRestriction));
+                } else if nl.value != bl.value && new.facets.length.is_some() {
+                    // [length-minLength-maxLength] clause 2.2
+                    // maxLength    length
+                    // A            None
+                    // B            C       << Now (Bad)
+                    // D            C       << Now (Bad)
+                    let msg = format!(
+                        "'maxLength' cannot be applied to '{}' because it is constrained by 'length'.",
+                        new.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::LengthMinLengthMaxLength),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::LengthMinLengthMaxLength));
+                } else if new
+                    .facets
+                    .length
+                    .is_some_and(|length| nl.value < length.value)
+                {
+                    // [length-minLength-maxLength] clause 2.1
+                    let msg = format!(
+                        "The value 'minLength' of '{}' is larger than its 'length'.",
+                        new.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::LengthMinLengthMaxLength),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::LengthMinLengthMaxLength));
                 }
             }
             (None, Some(l)) => new.facets.max_length = Some(l),
-            (Some(_), None) | (None, None) => {}
+            (Some(_), None) => {
+                if new.facets.length.is_some() {
+                    // [length-minLength-maxLength] clause 1.2
+                    // maxLength    length
+                    // None         A
+                    // B            A       << Now (Bad)
+                    //
+                    // minLength    length
+                    // None         None
+                    // A            B       << Now (Bad)
+                    let msg = format!(
+                        "'maxLength' cannot be applied to '{}' because it is constrained by 'length'.",
+                        new.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::LengthMinLengthMaxLength),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::LengthMinLengthMaxLength));
+                }
+            }
+            (None, None) => {}
         }
         match (new.facets.whitespace, base.facets.whitespace) {
             (Some(nw), Some(bw)) => {
@@ -2375,6 +2514,411 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             (None, Some(l)) => new.facets.fraction_digits = Some(l),
             (Some(_), None) | (None, None) => {}
         }
+        let new_name = new.display_name().into_owned();
+        for enumeration in new.facets.enumeration.iter_mut() {
+            match self.schema.parse_simple_type(
+                &enumeration.value.raw_value,
+                base.target_namespace.as_deref(),
+                &base.name,
+                &enumeration.ns_context,
+            ) {
+                Ok(value) => enumeration.value = value,
+                Err(error) => {
+                    // [enumeration-valid-restriction]
+                    let msg = format!(
+                        "The enumerated value '{}' of '{}' is invalid value of the base type '{}' because of '{}'.",
+                        enumeration.value.raw_value,
+                        new_name,
+                        base.display_name(),
+                        error
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::EnumerationValidRestriction),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::EnumerationValidRestriction));
+                }
+            }
+        }
+
+        if new.facets.max_inclusive.is_some() && new.facets.max_exclusive.is_some() {
+            // [maxInclusive-maxExclusive]
+            let msg = format!(
+                "'{}' has both 'maxInclusive' and 'maxExclusive'.",
+                new.display_name()
+            );
+            self.error(SAXParseError {
+                error: XMLError::XSDError(XSDError::MaxInclusiveMaxExclusive),
+                level: XMLErrorLevel::Error,
+                domain: XMLErrorDomain::XSDParser,
+                line: self.locator.line(),
+                column: self.locator.column(),
+                system_id: self.locator.system_id(),
+                public_id: self.locator.public_id(),
+                message: Cow::Owned(msg),
+            });
+            ret = Err(XMLError::XSDError(XSDError::MaxInclusiveMaxExclusive));
+        }
+        if new.facets.min_inclusive.is_some() && new.facets.min_exclusive.is_some() {
+            // [minInclusive-minExclusive]
+            let msg = format!(
+                "'{}' has both 'minInclusive' and 'minExclusive'.",
+                new.display_name()
+            );
+            self.error(SAXParseError {
+                error: XMLError::XSDError(XSDError::MinInclusiveMinExclusive),
+                level: XMLErrorLevel::Error,
+                domain: XMLErrorDomain::XSDParser,
+                line: self.locator.line(),
+                column: self.locator.column(),
+                system_id: self.locator.system_id(),
+                public_id: self.locator.public_id(),
+                message: Cow::Owned(msg),
+            });
+            ret = Err(XMLError::XSDError(XSDError::MinInclusiveMinExclusive));
+        }
+
+        macro_rules! parse_or_derive_boundary {
+            ( $field:ident, $facet:literal ) => {
+                if let Some(n) = new.facets.$field.as_mut() {
+                    match self.schema.parse_simple_type(
+                        &n.value.raw_value,
+                        base.target_namespace.as_deref(),
+                        &base.name,
+                        &n.ns_context,
+                    ) {
+                        Ok(value) => {
+                            n.value = value;
+                            if let Some(b) = base.facets.$field.as_ref() && b.fixed && b.value != n.value {
+                                let msg = format!(
+                                    "'{}' of the base type '{}' is fixed, but that of '{}' has different value.",
+                                    $facet,
+                                    base.display_name(),
+                                    new.display_name()
+                                );
+                                self.error(SAXParseError {
+                                    error: XMLError::XSDError(XSDError::StRestrictFacets),
+                                    level: XMLErrorLevel::Error,
+                                    domain: XMLErrorDomain::XSDParser,
+                                    line: self.locator.line(),
+                                    column: self.locator.column(),
+                                    system_id: self.locator.system_id(),
+                                    public_id: self.locator.public_id(),
+                                    message: Cow::Owned(msg),
+                                });
+                                ret = Err(XMLError::XSDError(XSDError::StRestrictFacets));
+                            }
+                        },
+                        Err(error) => {
+                            ret = Err(error.clone());
+                            let msg = format!(
+                                "The {} boundary '{}' of '{}' is invalid.",
+                                $facet, n.value.raw_value, new_name
+                            );
+                            self.error(SAXParseError {
+                                error,
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Owned(msg),
+                            });
+                        }
+                    }
+
+                } else {
+                    new.facets.$field = base.facets.$field.clone();
+                }
+            };
+        }
+        parse_or_derive_boundary!(max_inclusive, "maxInclusive");
+        parse_or_derive_boundary!(max_exclusive, "maxExclusive");
+        parse_or_derive_boundary!(min_exclusive, "minExclusive");
+        parse_or_derive_boundary!(min_inclusive, "minInclusive");
+
+        macro_rules! verify_facet_relation {
+            ( $min:ident, $max:ident, $error:ident, $op:tt, $min_facet:literal, $max_facet:literal, $cmp:literal) => {
+                if new
+                    .facets
+                    .$min
+                    .as_ref()
+                    .zip(new.facets.$max.as_ref())
+                    .is_some_and(|(min, max)| min.value $op max.value)
+                {
+                    let msg = format!(
+                        "'{}' of '{}' is {} its '{}'.",
+                        $min_facet,
+                        new.display_name(),
+                        $cmp,
+                        $max_facet,
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::$error),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::$error));
+                }
+            };
+        }
+        // [minLength-less-than-equal-to-maxLength]
+        verify_facet_relation!(
+            min_length,
+            max_length,
+            MinLengthLessThanEqualToMaxLength,
+            >,
+            "minLength",
+            "maxLength",
+            "greater than"
+        );
+        // [minInclusive-less-than-equal-to-maxInclusive]
+        verify_facet_relation!(
+            min_inclusive,
+            max_inclusive,
+            MinInclusiveLessThanEqualToMaxInclusive,
+            >,
+            "minInclusive",
+            "maxInclusive",
+            "greater than"
+        );
+        // [minExclusive-less-than-equal-to-maxExclusive]
+        verify_facet_relation!(
+            min_exclusive,
+            max_exclusive,
+            MinExclusiveLessThanEqualToMaxExclusive,
+            >,
+            "minExclusive",
+            "maxExclusive",
+            "greater than"
+        );
+        // [minExclusive-less-than-maxInclusive]
+        verify_facet_relation!(
+            min_exclusive,
+            max_inclusive,
+            MinExclusiveLessThanMaxInclusive,
+            >=,
+            "minExclusive",
+            "maxInclusive",
+            "greater than or equal to"
+        );
+        // [minInclusive-less-than-maxExclusive]
+        verify_facet_relation!(
+            min_inclusive,
+            max_exclusive,
+            MinInclusiveLessThanMaxExclusive,
+            >=,
+            "minInclusive",
+            "maxExclusive",
+            "greater than or equal to"
+        );
+
+        macro_rules! verify_boundary_valid_restriction {
+            ( $nfield:ident, $bfield:ident, $error:ident, $op:tt, $nfacet:literal, $bfacet:literal, $cmp:literal ) => {
+                if new
+                    .facets
+                    .$nfield
+                    .as_ref().zip(base.facets.$bfield.as_ref())
+                    .is_some_and(|(n, b)| n.value $op b.value)
+                {
+                    // [maxExclusive-valid-restriction]
+                    // [maxInclusive-valid-restriction]
+                    // [minExclusive-valid-restriction]
+                    // [minInclusive-valid-restriction]
+                    let msg = format!(
+                        "'{}' of '{}' is {} '{}' of the base type '{}'.",
+                        $nfacet,
+                        new.display_name(),
+                        $cmp,
+                        $bfacet,
+                        base.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::$error),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::$error));
+                }
+            };
+        }
+        // [maxInclusive-valid-restriction] clause 1
+        verify_boundary_valid_restriction!(
+            max_inclusive,
+            max_inclusive,
+            MaxInclusiveValidRestriction,
+            >,
+            "maxInclusive",
+            "maxInclusive",
+            "greather than"
+        );
+        // [maxInclusive-valid-restriction] clause 2
+        verify_boundary_valid_restriction!(
+            max_inclusive,
+            max_exclusive,
+            MaxInclusiveValidRestriction,
+            >=,
+            "maxInclusive",
+            "maxExclusive",
+            "greater than or equal to"
+        );
+        // [maxInclusive-valid-restriction] clause 3
+        verify_boundary_valid_restriction!(
+            max_inclusive,
+            min_inclusive,
+            MaxInclusiveValidRestriction,
+            <,
+            "maxInclusive",
+            "minInclusive",
+            "less than"
+        );
+        // [maxInclusive-valid-restriction] clause 4
+        verify_boundary_valid_restriction!(
+            max_inclusive,
+            min_exclusive,
+            MaxInclusiveValidRestriction,
+            <=,
+            "maxInclusive",
+            "minExclusive",
+            "less than or equal to"
+        );
+        // [maxExclusive-valid-restriction] clause 1
+        verify_boundary_valid_restriction!(
+            max_exclusive,
+            max_exclusive,
+            MaxExclusiveValidRestriction,
+            >,
+            "maxExclusive",
+            "maxExclusive",
+            "greather than"
+        );
+        // [maxExclusive-valid-restriction] clause 2
+        verify_boundary_valid_restriction!(
+            max_exclusive,
+            max_inclusive,
+            MaxExclusiveValidRestriction,
+            >,
+            "maxExclusive",
+            "maxInclusive",
+            "greather than"
+        );
+        // [maxExclusive-valid-restriction] clause 3
+        verify_boundary_valid_restriction!(
+            max_exclusive,
+            min_inclusive,
+            MaxExclusiveValidRestriction,
+            <=,
+            "maxExclusive",
+            "minInclusive",
+            "less than or equal to"
+        );
+        // [maxExclusive-valid-restriction] clause 4
+        verify_boundary_valid_restriction!(
+            max_exclusive,
+            min_exclusive,
+            MaxExclusiveValidRestriction,
+            <=,
+            "maxExclusive",
+            "minExclusive",
+            "less than or equal to"
+        );
+        // [minExclusive-valid-restriction] clause 1
+        verify_boundary_valid_restriction!(
+            min_exclusive,
+            min_exclusive,
+            MinExclusiveValidRestriction,
+            <,
+            "minExclusive",
+            "minExclusive",
+            "less than"
+        );
+        // [minExclusive-valid-restriction] clause 2
+        verify_boundary_valid_restriction!(
+            min_exclusive,
+            max_inclusive,
+            MinExclusiveValidRestriction,
+            >,
+            "minExclusive",
+            "maxInclusive",
+            "greather than"
+        );
+        // [minExclusive-valid-restriction] clause 3
+        verify_boundary_valid_restriction!(
+            min_exclusive,
+            min_inclusive,
+            MinExclusiveValidRestriction,
+            <,
+            "minExclusive",
+            "minInclusive",
+            "less than"
+        );
+        // [minExclusive-valid-restriction] clause 4
+        verify_boundary_valid_restriction!(
+            min_exclusive,
+            max_exclusive,
+            MinExclusiveValidRestriction,
+            >=,
+            "minExclusive",
+            "maxExclusive",
+            "greater than or equal to"
+        );
+        // [minInclusive-valid-restriction] clause 1
+        verify_boundary_valid_restriction!(
+            min_inclusive,
+            min_inclusive,
+            MinInclusiveValidRestriction,
+            <,
+            "minInclusive",
+            "minInclusive",
+            "less than"
+        );
+        // [minInclusive-valid-restriction] clause 2
+        verify_boundary_valid_restriction!(
+            min_inclusive,
+            max_inclusive,
+            MinInclusiveValidRestriction,
+            >,
+            "minInclusive",
+            "maxInclusive",
+            "greater than"
+        );
+        // [minInclusive-valid-restriction] clause 3
+        verify_boundary_valid_restriction!(
+            min_inclusive,
+            min_exclusive,
+            MinInclusiveValidRestriction,
+            <=,
+            "minInclusive",
+            "minExclusive",
+            "less than or equal to"
+        );
+        // [minInclusive-valid-restriction] clause 4
+        verify_boundary_valid_restriction!(
+            min_inclusive,
+            max_exclusive,
+            MinInclusiveValidRestriction,
+            >=,
+            "minInclusive",
+            "maxExclusive",
+            "greater than or equal to"
+        );
 
         // Now that the values for all facets have been determined,
         // determine the value for fundamental facets as well.
@@ -2902,7 +3446,13 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 };
                 if let Some(st) = self.st_stack.last_mut() {
                     st.facets.enumeration.push(Enumeration {
-                        value: value.into(),
+                        value: SchemaValue {
+                            r#type: SchemaValueType::String,
+                            list: false,
+                            raw_value: value.into(),
+                            canonic_value: value.into(),
+                        },
+                        ns_context: self.ns_stack.clone(),
                     });
                 }
                 self.element_stack.push(SCHEMA_ENUMERATION_NAME);
@@ -2935,8 +3485,14 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 if let Some(st) = self.st_stack.last_mut() {
                     let fixed = get_boolean(atts, "fixed").unwrap_or_default();
                     st.facets.max_inclusive = Some(Boundary {
-                        value: value.into(),
+                        value: SchemaValue {
+                            r#type: SchemaValueType::String,
+                            list: false,
+                            raw_value: value.into(),
+                            canonic_value: value.into(),
+                        },
                         fixed,
+                        ns_context: self.ns_stack.clone(),
                     });
                 }
                 self.element_stack.push(SCHEMA_MAXINCLUSIVE_NAME);
@@ -2949,8 +3505,14 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 if let Some(st) = self.st_stack.last_mut() {
                     let fixed = get_boolean(atts, "fixed").unwrap_or_default();
                     st.facets.max_exclusive = Some(Boundary {
-                        value: value.into(),
+                        value: SchemaValue {
+                            r#type: SchemaValueType::String,
+                            list: false,
+                            raw_value: value.into(),
+                            canonic_value: value.into(),
+                        },
                         fixed,
+                        ns_context: self.ns_stack.clone(),
                     });
                 }
                 self.element_stack.push(SCHEMA_MAXEXCLUSIVE_NAME);
@@ -2963,8 +3525,14 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 if let Some(st) = self.st_stack.last_mut() {
                     let fixed = get_boolean(atts, "fixed").unwrap_or_default();
                     st.facets.min_exclusive = Some(Boundary {
-                        value: value.into(),
+                        value: SchemaValue {
+                            r#type: SchemaValueType::String,
+                            list: false,
+                            raw_value: value.into(),
+                            canonic_value: value.into(),
+                        },
                         fixed,
+                        ns_context: self.ns_stack.clone(),
                     });
                 }
                 self.element_stack.push(SCHEMA_MINEXCLUSIVE_NAME);
@@ -2977,8 +3545,14 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 if let Some(st) = self.st_stack.last_mut() {
                     let fixed = get_boolean(atts, "fixed").unwrap_or_default();
                     st.facets.min_inclusive = Some(Boundary {
-                        value: value.into(),
+                        value: SchemaValue {
+                            r#type: SchemaValueType::String,
+                            list: false,
+                            raw_value: value.into(),
+                            canonic_value: value.into(),
+                        },
                         fixed,
+                        ns_context: self.ns_stack.clone(),
                     });
                 }
                 self.element_stack.push(SCHEMA_MININCLUSIVE_NAME);
@@ -5134,59 +5708,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
             return Ok(None);
         };
 
-        match SCHEMA_BUILTIN_QNAME.parse_with_elem(&name, elem.clone()) {
-            Ok(SchemaValue::QName(nsname, local)) => Ok(Some((nsname, local))),
-            Ok(_) => internal_error!(self.handler, elem),
-            Err(err) => {
-                error!(
-                    self.handler,
-                    SrcQname,
-                    elem,
-                    "The attribute '{}' of '{}' is failed to parse as QName because {}.",
-                    name,
-                    elem.local_name(),
-                    err
-                );
-                Err(XSDError::SrcQname)
-            }
-        }
-    }
-
-    fn extract_ncname(
-        &mut self,
-        mut elem: Element,
-        name: &str,
-        error: XSDError,
-    ) -> Result<Option<Arc<str>>, XSDError> {
-        let Some(ncname) = elem.remove_attribute(name, None) else {
-            return Ok(None);
-        };
-        self.parse_ncname(elem, name, &ncname, error)
-    }
-
-    fn parse_ncname(
-        &mut self,
-        elem: Element,
-        name: &str,
-        value: &str,
-        error: XSDError,
-    ) -> Result<Option<Arc<str>>, XSDError> {
-        match SCHEMA_BUILTIN_NCNAME.parse_with_elem(value, elem.clone()) {
-            Ok(SchemaValue::String(ret)) => Ok(Some(ret)),
-            Ok(_) => internal_error!(self.handler, elem),
-            Err(err) => {
-                error!(
-                    self.handler,
-                    error,
-                    elem,
-                    "The attribute '{}' of '{}' is failed to parse as NCName because {}.",
-                    name,
-                    elem.local_name(),
-                    err
-                );
-                Err(error)
-            }
-        }
+        todo!()
     }
 
     /// Raise an errors for attributes whose namespace is NULL or is the XSD namespace.

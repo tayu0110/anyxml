@@ -1,6 +1,5 @@
 use std::{
     borrow::Cow,
-    num::NonZeroUsize,
     sync::{Arc, LazyLock},
 };
 
@@ -27,321 +26,6 @@ pub struct SimpleTypeDefinition {
 }
 
 impl SimpleTypeDefinition {
-    pub fn length(&self) -> Option<usize> {
-        self.facets.length.map(|l| l.value)
-    }
-
-    pub fn set_length(&mut self, length: usize, fixed: bool) -> Result<(), XSDError> {
-        if self.facets.length.is_some() {
-            return Err(XSDError::SrcSingleFacetValue);
-        }
-        match self.variety.as_ref() {
-            Some(Variety::Union(_)) => return Err(XSDError::CosApplicableFacets),
-            Some(Variety::Atomic(n))
-                if !matches!(
-                    n.as_ref(),
-                    "string" | "hexBinary" | "base64Binary" | "anyURI" | "QName" | "NOTATION"
-                ) =>
-            {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            _ => {}
-        }
-        self.facets.length = Some(Length {
-            value: length,
-            fixed,
-        });
-        Ok(())
-    }
-
-    pub fn min_length(&self) -> Option<usize> {
-        self.facets.min_length.map(|l| l.value)
-    }
-
-    pub fn set_min_length(&mut self, length: usize, fixed: bool) -> Result<(), XSDError> {
-        if self.facets.min_length.is_some() {
-            return Err(XSDError::SrcSingleFacetValue);
-        }
-        match self.variety.as_ref() {
-            Some(Variety::Union(_)) => return Err(XSDError::CosApplicableFacets),
-            Some(Variety::Atomic(n))
-                if !matches!(
-                    n.as_ref(),
-                    "string" | "hexBinary" | "base64Binary" | "anyURI" | "QName" | "NOTATION"
-                ) =>
-            {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            _ => {}
-        }
-        self.facets.min_length = Some(Length {
-            value: length,
-            fixed,
-        });
-        Ok(())
-    }
-
-    pub fn max_length(&self) -> Option<usize> {
-        self.facets.max_length.map(|l| l.value)
-    }
-
-    pub fn set_max_length(&mut self, length: usize, fixed: bool) -> Result<(), XSDError> {
-        if self.facets.max_length.is_some() {
-            return Err(XSDError::SrcSingleFacetValue);
-        }
-        match self.variety.as_ref() {
-            Some(Variety::Union(_)) => return Err(XSDError::CosApplicableFacets),
-            Some(Variety::Atomic(n))
-                if !matches!(
-                    n.as_ref(),
-                    "string" | "hexBinary" | "base64Binary" | "anyURI" | "QName" | "NOTATION"
-                ) =>
-            {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            _ => {}
-        }
-        self.facets.max_length = Some(Length {
-            value: length,
-            fixed,
-        });
-        Ok(())
-    }
-
-    pub fn set_pattern(&mut self, pattern: impl Into<String>) -> Result<(), XSDError> {
-        let pattern: String = pattern.into();
-        if let Err(err) = XSRegexp::compile(&pattern) {
-            return Err(XSDError::RegexpError(err));
-        }
-        self.facets.pattern.push(Pattern { value: pattern });
-        Ok(())
-    }
-
-    pub fn set_enumeration(&mut self, value: impl Into<String>) -> Result<(), XSDError> {
-        match self.variety.as_ref() {
-            Some(Variety::Atomic(n)) if n.as_ref() == "boolean" => {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            _ => {}
-        }
-        self.facets.enumeration.push(Enumeration {
-            value: value.into(),
-        });
-        Ok(())
-    }
-
-    pub fn whitespace(&self) -> Option<Whitespace> {
-        self.facets.whitespace.map(|w| w.value)
-    }
-
-    pub fn set_whitespace(&mut self, value: Whitespace, fixed: bool) -> Result<(), XSDError> {
-        if self.facets.whitespace.is_some() {
-            return Err(XSDError::SrcSingleFacetValue);
-        }
-        if matches!(self.variety, Some(Variety::Union(_))) {
-            return Err(XSDError::CosApplicableFacets);
-        }
-        self.facets.whitespace = Some(WhitespaceConstraint { value, fixed });
-        Ok(())
-    }
-
-    pub fn set_max_inclusive(
-        &mut self,
-        value: impl Into<String>,
-        fixed: bool,
-    ) -> Result<(), XSDError> {
-        if self.facets.max_inclusive.is_some() {
-            return Err(XSDError::SrcSingleFacetValue);
-        }
-        match self.variety.as_ref() {
-            Some(Variety::List(_, _) | Variety::Union(_)) => {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            Some(Variety::Atomic(n))
-                if !matches!(
-                    n.as_ref(),
-                    "float"
-                        | "double"
-                        | "decimal"
-                        | "duration"
-                        | "dateTime"
-                        | "time"
-                        | "date"
-                        | "gYearMonth"
-                        | "gYear"
-                        | "gMonthDay"
-                        | "gDay"
-                        | "gMonth"
-                ) =>
-            {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            _ => {}
-        }
-        self.facets.max_inclusive = Some(Boundary {
-            value: value.into(),
-            fixed,
-        });
-        Ok(())
-    }
-
-    pub fn set_max_exclusive(
-        &mut self,
-        value: impl Into<String>,
-        fixed: bool,
-    ) -> Result<(), XSDError> {
-        if self.facets.max_exclusive.is_some() {
-            return Err(XSDError::SrcSingleFacetValue);
-        }
-        match self.variety.as_ref() {
-            Some(Variety::List(_, _) | Variety::Union(_)) => {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            Some(Variety::Atomic(n))
-                if !matches!(
-                    n.as_ref(),
-                    "float"
-                        | "double"
-                        | "decimal"
-                        | "duration"
-                        | "dateTime"
-                        | "time"
-                        | "date"
-                        | "gYearMonth"
-                        | "gYear"
-                        | "gMonthDay"
-                        | "gDay"
-                        | "gMonth"
-                ) =>
-            {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            _ => {}
-        }
-        self.facets.max_exclusive = Some(Boundary {
-            value: value.into(),
-            fixed,
-        });
-        Ok(())
-    }
-
-    pub fn set_min_exclusive(
-        &mut self,
-        value: impl Into<String>,
-        fixed: bool,
-    ) -> Result<(), XSDError> {
-        if self.facets.min_exclusive.is_some() {
-            return Err(XSDError::SrcSingleFacetValue);
-        }
-        match self.variety.as_ref() {
-            Some(Variety::List(_, _) | Variety::Union(_)) => {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            Some(Variety::Atomic(n))
-                if !matches!(
-                    n.as_ref(),
-                    "float"
-                        | "double"
-                        | "decimal"
-                        | "duration"
-                        | "dateTime"
-                        | "time"
-                        | "date"
-                        | "gYearMonth"
-                        | "gYear"
-                        | "gMonthDay"
-                        | "gDay"
-                        | "gMonth"
-                ) =>
-            {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            _ => {}
-        }
-        self.facets.min_exclusive = Some(Boundary {
-            value: value.into(),
-            fixed,
-        });
-        Ok(())
-    }
-
-    pub fn set_min_inclusive(
-        &mut self,
-        value: impl Into<String>,
-        fixed: bool,
-    ) -> Result<(), XSDError> {
-        if self.facets.min_inclusive.is_some() {
-            return Err(XSDError::SrcSingleFacetValue);
-        }
-        match self.variety.as_ref() {
-            Some(Variety::List(_, _) | Variety::Union(_)) => {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            Some(Variety::Atomic(n))
-                if !matches!(
-                    n.as_ref(),
-                    "float"
-                        | "double"
-                        | "decimal"
-                        | "duration"
-                        | "dateTime"
-                        | "time"
-                        | "date"
-                        | "gYearMonth"
-                        | "gYear"
-                        | "gMonthDay"
-                        | "gDay"
-                        | "gMonth"
-                ) =>
-            {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            _ => {}
-        }
-        self.facets.min_inclusive = Some(Boundary {
-            value: value.into(),
-            fixed,
-        });
-        Ok(())
-    }
-
-    pub fn set_total_digits(&mut self, value: NonZeroUsize, fixed: bool) -> Result<(), XSDError> {
-        if self.facets.total_digits.is_some() {
-            return Err(XSDError::SrcSingleFacetValue);
-        }
-        match self.variety.as_ref() {
-            Some(Variety::List(_, _) | Variety::Union(_)) => {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            Some(Variety::Atomic(n)) if !matches!(n.as_ref(), "decimal") => {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            _ => {}
-        }
-        self.facets.total_digits = Some(Length {
-            value: value.get(),
-            fixed,
-        });
-        Ok(())
-    }
-
-    pub fn set_fraction_digits(&mut self, value: usize, fixed: bool) -> Result<(), XSDError> {
-        if self.facets.fraction_digits.is_some() {
-            return Err(XSDError::SrcSingleFacetValue);
-        }
-        match self.variety.as_ref() {
-            Some(Variety::List(_, _) | Variety::Union(_)) => {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            Some(Variety::Atomic(n)) if !matches!(n.as_ref(), "decimal") => {
-                return Err(XSDError::CosApplicableFacets);
-            }
-            _ => {}
-        }
-        self.facets.fraction_digits = Some(Length { value, fixed });
-        Ok(())
-    }
-
     pub fn display_name(&self) -> Cow<'_, str> {
         if let Some(ns) = self.target_namespace.as_deref() {
             Cow::Owned(format!("{{{}}}{}", ns, self.name))
@@ -437,7 +121,9 @@ pub(super) struct Pattern {
 
 #[derive(Clone)]
 pub(super) struct Enumeration {
-    pub(super) value: String,
+    pub(super) value: SchemaValue,
+    // used for parsing enumerated values.
+    pub(super) ns_context: NamespaceStack,
 }
 
 #[derive(Clone, Copy)]
@@ -472,8 +158,11 @@ impl std::fmt::Display for Whitespace {
 
 #[derive(Clone, Default)]
 pub(super) struct Boundary {
-    pub(super) value: String,
+    pub(super) value: SchemaValue,
     pub(super) fixed: bool,
+    // used for parsing boundary facets
+    // (minInclusive, minExclusive, maxInclusive and maxExclusive)
+    pub(super) ns_context: NamespaceStack,
 }
 
 #[derive(Clone, Default)]
@@ -2451,13 +2140,7 @@ impl Schema {
             // [cvc-enumeration-valid]
             let mut valid = false;
             for enumeration in &t.facets.enumeration {
-                let e = self.parse_simple_type(
-                    &enumeration.value,
-                    t.target_namespace.as_deref(),
-                    &t.name,
-                    ns_context,
-                )?;
-                if e.canonic_value == value.canonic_value {
+                if enumeration.value.canonic_value == value.canonic_value {
                     valid = true;
                     break;
                 }
@@ -2468,49 +2151,25 @@ impl Schema {
         }
         if let Some(max) = t.facets.max_inclusive.as_ref() {
             // [cvc-maxInclusive-valid]
-            let max = self.parse_simple_type(
-                &max.value,
-                t.target_namespace.as_deref(),
-                &t.name,
-                ns_context,
-            )?;
-            if value > max {
+            if value > max.value {
                 return Err(XMLError::XSDError(XSDError::CvcMaxInclusiveValid));
             }
         }
         if let Some(max) = t.facets.max_exclusive.as_ref() {
             // [cvc-maxExclusive-valid]
-            let max = self.parse_simple_type(
-                &max.value,
-                t.target_namespace.as_deref(),
-                &t.name,
-                ns_context,
-            )?;
-            if value >= max {
+            if value >= max.value {
                 return Err(XMLError::XSDError(XSDError::CvcMaxExclusiveValid));
             }
         }
         if let Some(min) = t.facets.min_exclusive.as_ref() {
             // [cvc-minExclusive-valid]
-            let min = self.parse_simple_type(
-                &min.value,
-                t.target_namespace.as_deref(),
-                &t.name,
-                ns_context,
-            )?;
-            if value <= min {
+            if value <= min.value {
                 return Err(XMLError::XSDError(XSDError::CvcMinExclusiveValid));
             }
         }
         if let Some(min) = t.facets.min_inclusive.as_ref() {
             // [cvc-minInclusive-valid]
-            let min = self.parse_simple_type(
-                &min.value,
-                t.target_namespace.as_deref(),
-                &t.name,
-                ns_context,
-            )?;
-            if value < min {
+            if value < min.value {
                 return Err(XMLError::XSDError(XSDError::CvcMinInclusiveValid));
             }
         }
@@ -2689,6 +2348,17 @@ impl PartialOrd for SchemaValue {
                 .ok()?
                 .partial_cmp(&other.canonic_value.parse::<GMonth>().ok()?),
             _ => None,
+        }
+    }
+}
+
+impl Default for SchemaValue {
+    fn default() -> Self {
+        Self {
+            r#type: SchemaValueType::String,
+            list: false,
+            raw_value: Default::default(),
+            canonic_value: Default::default(),
         }
     }
 }
