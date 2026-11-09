@@ -19,9 +19,9 @@ use crate::{
     xsd::{
         XML_SCHEMA_INSTANCE_NAMESPACE, XML_SCHEMA_NAMESPACE, XSDSchema,
         typedef::{
-            Block, BlockSet, Boundary, Enumeration, Final, FinalSet, Length, Pattern,
-            SimpleTypeDefinition, Variety, Whitespace, WhitespaceConstraint, XSD_ANY_SIMPLE_TYPE,
-            get_builtin_simple_type,
+            Block, BlockSet, Boundary, Cardinality, Enumeration, Facets, Final, FinalSet, Length,
+            Ordered, Pattern, SimpleTypeDefinition, Variety, Whitespace, WhitespaceConstraint,
+            XSD_ANY_SIMPLE_TYPE, get_builtin_simple_type,
         },
     },
     xsdtypes::{SCHEMA_BUILTIN_NCNAME, SCHEMA_BUILTIN_QNAME, SchemaValue},
@@ -1680,17 +1680,9 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         macro_rules! prohibited_derivation {
             ( $type:literal, $error:ident ) => {
                 let msg = format!(
-                    "'{}{}' cannot be derived from '{}{}' because '{}' is prohibited.",
-                    ty.target_namespace
-                        .as_deref()
-                        .map(|ns| format!("{{{ns}}}"))
-                        .unwrap_or_default(),
-                    ty.name,
-                    base.target_namespace
-                        .as_deref()
-                        .map(|ns| format!("{{{ns}}}"))
-                        .unwrap_or_default(),
-                    base.name,
+                    "'{}' cannot be derived from '{}' because '{}' is prohibited.",
+                    ty.display_name(),
+                    base.display_name(),
                     $type
                 );
                 self.error(SAXParseError {
@@ -1708,13 +1700,8 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         }
 
         let mut ret = Ok(());
-        let ty_ns = ty
-            .target_namespace
-            .as_deref()
-            .map(|ns| format!("{{{ns}}}"))
-            .unwrap_or_default();
         let mut new = SimpleTypeDefinition::clone(&ty);
-        if matches!(new.variety, None | Some(Variety::Atomic(_, _))) {
+        if matches!(new.variety, None | Some(Variety::Atomic(_))) {
             new.variety = base.variety.clone();
         }
 
@@ -1722,8 +1709,9 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             ( $field:ident, $facet:literal, $check_method:ident ) => {
                 if !new.facets.$field.$check_method() {
                     let msg = format!(
-                        "The simple type '{}{}' must not have the facet '{}'.",
-                        ty_ns, ty.name, $facet
+                        "The simple type '{}' must not have the facet '{}'.",
+                        ty.display_name(),
+                        $facet
                     );
                     // [cos-applicable-facets]
                     self.error(SAXParseError {
@@ -1742,7 +1730,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         }
 
         match new.variety.as_ref() {
-            Some(Variety::Atomic(_, name)) => {
+            Some(Variety::Atomic(name)) => {
                 match name.as_ref() {
                     "string" | "hexBinary" | "base64Binary" | "anyURI" | "QName" | "NOTATION" => {
                         unapplicable_facet!(max_inclusive, "maxInclusive", is_none);
@@ -1779,20 +1767,12 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     }
                     _ => unreachable!(),
                 }
-                if !matches!(base.variety, None | Some(Variety::Atomic(_, _))) {
+                if !matches!(base.variety, None | Some(Variety::Atomic(_))) {
                     // [cos-st-restricts] clause 1.1
                     let msg = format!(
-                        "The base type of the atomic simple type '{}{}' must be atomic, but '{}{}' is not.",
-                        new.target_namespace
-                            .as_deref()
-                            .map(|ns| format!("{{{ns}}}"))
-                            .unwrap_or_default(),
-                        new.name,
-                        base.target_namespace
-                            .as_deref()
-                            .map(|ns| format!("{{{ns}}}"))
-                            .unwrap_or_default(),
-                        base.name
+                        "The base type of the atomic simple type '{}' must be atomic, but '{}' is not.",
+                        new.display_name(),
+                        base.display_name()
                     );
                     self.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::CosStRestricts),
@@ -1844,17 +1824,12 @@ impl<H: SAXHandler> XSDParseHandler<H> {
 
                 if !matches!(
                     item_type.variety,
-                    Some(Variety::Atomic(_, _) | Variety::Union(_))
+                    Some(Variety::Atomic(_) | Variety::Union(_))
                 ) {
                     // [cos-st-restricts] clause 2.1
                     let msg = format!(
-                        "The list itemType must be either atomic or union, but '{}{}' is not.",
-                        item_type
-                            .target_namespace
-                            .as_deref()
-                            .map(|ns| format!("{{{ns}}}"))
-                            .unwrap_or_default(),
-                        item_type.name
+                        "The list itemType must be either atomic or union, but '{}' is not.",
+                        item_type.display_name(),
                     );
                     self.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::CosStRestricts),
@@ -1887,13 +1862,9 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     let Some(Variety::List(bns, bname)) = base.variety.as_ref() else {
                         // clause 2.3.2.1
                         let msg = format!(
-                            "The base type of list type '{}{}' must be list, but is not.",
-                            item_type
-                                .target_namespace
-                                .as_deref()
-                                .map(|ns| format!("{{{ns}}}"))
-                                .unwrap_or_default(),
-                            item_type.name
+                            "The base type '{}' of '{}' must be list, but is not.",
+                            base.display_name(),
+                            new.display_name()
                         );
                         self.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::CosStRestricts),
@@ -1939,6 +1910,106 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 unapplicable_facet!(fraction_digits, "fractionDigits", is_none);
             }
             Some(Variety::Union(members)) => {
+                // [cos-st-restricts] clause 3.1
+                // According to Part 2, Section 4.1.2.3, since a member type for which
+                // {variety} is "union" is replaced with that member type, this requirement
+                // is automatically satisfied.
+                // As an exception, since the simple ur-type have {variety} set to "absent",
+                // the simple ur-type cannot be included as a member type.
+                if members.iter().any(|t| {
+                    t.0 == XSD_ANY_SIMPLE_TYPE.target_namespace()
+                        && t.1 == XSD_ANY_SIMPLE_TYPE.name()
+                }) {
+                    let msg = format!(
+                        "The simple ur-type cannot be contained in the memberTypes of union simple type, but the memberTypes of '{}' contains.",
+                        new.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::CosStRestricts),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    return Err(XMLError::XSDError(XSDError::CosStRestricts));
+                }
+
+                let members = members
+                    .iter()
+                    .map(|t| {
+                        self.schema
+                            .type_defs
+                            .get(t)
+                            .ok_or(XSDError::MissingSubComponent)
+                    })
+                    .collect::<Result<Vec<_>, XSDError>>()?
+                    .into_iter()
+                    .map(|t| t.as_simple_type().ok_or(XSDError::MissingSubComponent))
+                    .collect::<Result<Vec<_>, XSDError>>()?;
+
+                // [cos-st-restricts] clause 3.3
+                if base.is_simple_ur_type() {
+                    // clause 3.3.1
+                    if members.iter().any(|t| t.r#final.union()) {
+                        // clause 3.3.1.1
+                        prohibited_derivation!("union", CosStRestricts);
+                    }
+                    // clause 3.3.1.2
+                    unapplicable_facet!(pattern, "pattern", is_empty);
+                    unapplicable_facet!(enumeration, "enumeration", is_empty);
+                } else {
+                    // clause 3.3.2
+                    let Some(Variety::Union(bmembers)) = base.variety.as_ref() else {
+                        // clause 3.3.2.1
+                        let msg = format!(
+                            "The base type '{}' of '{}' must be union, but is not.",
+                            base.display_name(),
+                            new.display_name()
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::CosStRestricts),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                        return Err(XMLError::XSDError(XSDError::CosStRestricts));
+                    };
+
+                    // clause 3.3.2.2
+                    if base.r#final.restriction() {
+                        prohibited_derivation!("restriction", CosStRestricts);
+                    }
+
+                    // clause 3.3.2.3
+                    // Although the intended meaning of this constraint is unclear,
+                    // if the base type is not a simple ur-type, the type is derived
+                    // by restrictions from a union type; since the {variety} of such
+                    // a type inherits the {variety} of the base type, this constraint
+                    // should generally be satisfied automatically.
+                    if members.len() != bmembers.len() {
+                        return Err(XMLError::XSDError(XSDError::CosStRestricts));
+                    }
+                    for (m, bm) in members.iter().zip(bmembers.iter()) {
+                        let bm = self
+                            .schema
+                            .type_defs
+                            .get(bm)
+                            .and_then(|t| t.as_simple_type())
+                            .ok_or(XSDError::MissingSubComponent)?;
+                        self.check_cos_st_derived_ok(m, &bm, FinalSet::default())?;
+                    }
+
+                    // clause 3.3.2.4
+                    // This is identical with [cos-applicable-facets].
+                }
+
                 unapplicable_facet!(length, "length", is_none);
                 unapplicable_facet!(min_length, "minLength", is_none);
                 unapplicable_facet!(max_length, "maxLength", is_none);
@@ -1952,7 +2023,10 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             }
             None => {}
         }
-        ret.map(|_| new.into())
+
+        ret?;
+        self.process_st_restrict_facets(&mut new, &base)?;
+        Ok(new.into())
     }
 
     /// # Reference
@@ -2004,6 +2078,392 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             return Ok(());
         }
         Err(XMLError::XSDError(XSDError::CosStDerivedOk))
+    }
+
+    /// # Reference
+    /// - [Schema Component Constraint: Simple Type Restriction (Facets)](https://www.w3.org/TR/xmlschema-1/#st-restrict-facets)
+    fn process_st_restrict_facets(
+        &mut self,
+        new: &mut SimpleTypeDefinition,
+        base: &SimpleTypeDefinition,
+    ) -> Result<(), XMLError> {
+        match (new.variety.as_ref(), base.variety.as_ref()) {
+            (Some(Variety::Atomic(lname)), Some(Variety::Atomic(rname))) => {
+                if lname != rname {
+                    // [st-restrict-facets] clause 2
+                    let msg = format!(
+                        "Base primitive types do not match between '{}' and '{}'",
+                        new.display_name(),
+                        base.display_name(),
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::StRestrictFacets),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    return Err(XMLError::XSDError(XSDError::StRestrictFacets));
+                }
+            }
+            (Some(Variety::List(_, _)), Some(Variety::List(_, _)))
+            | (Some(Variety::Union(_)), Some(Variety::Union(_))) => {}
+            _ => {
+                // [st-restrict-facets] clause 1
+                let msg = format!(
+                    "Derivation type does not match between '{}' and '{}'",
+                    new.display_name(),
+                    base.display_name()
+                );
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::StRestrictFacets),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+                return Err(XMLError::XSDError(XSDError::StRestrictFacets));
+            }
+        }
+
+        let mut ret = Ok(());
+        match (new.facets.length, base.facets.length) {
+            (Some(nl), Some(bl)) => {
+                if nl.value != bl.value {
+                    // [length-valid-restriction]
+                    // Due to this constraint, the value "fixed" is not considered.
+                    let msg = format!(
+                        "'length' of '{}' does not match that of the base type '{}'.",
+                        new.display_name(),
+                        base.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::LengthValidRestriction),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::LengthValidRestriction));
+                }
+            }
+            (None, Some(l)) => new.facets.length = Some(l),
+            (Some(_), None) | (None, None) => {}
+        }
+        match (new.facets.min_length, base.facets.min_length) {
+            (Some(nl), Some(bl)) => {
+                if bl.fixed && nl.value != bl.value {
+                    // Part 2, Section 4.3.2.1 The minLength Schema Component
+                    let msg = format!(
+                        "'minLength' of the base type '{}' is fixed, but that of '{}' has different value.",
+                        base.display_name(),
+                        new.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::StRestrictFacets),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::StRestrictFacets));
+                } else if nl.value < bl.value {
+                    // [minLength-valid-restriction]
+                    let msg = format!(
+                        "'minLength' of '{}' is less than that of the base type '{}'.",
+                        new.display_name(),
+                        base.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::MinLengthValidRestriction),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::MinLengthValidRestriction));
+                }
+            }
+            (None, Some(l)) => new.facets.min_length = Some(l),
+            (Some(_), None) | (None, None) => {}
+        }
+        match (new.facets.max_length, base.facets.max_length) {
+            (Some(nl), Some(bl)) => {
+                if bl.fixed && nl.value != bl.value {
+                    // Part 2, Section 4.3.3.1 The maxLength Schema Component
+                    let msg = format!(
+                        "'maxLength' of the base type '{}' is fixed, but that of '{}' has different value.",
+                        base.display_name(),
+                        new.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::StRestrictFacets),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::StRestrictFacets));
+                } else if bl.value < nl.value {
+                    // [maxLength-valid-restriction]
+                    let msg = format!(
+                        "'maxLength' of '{}' is greater than that of the base type '{}'.",
+                        new.display_name(),
+                        base.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::MaxLengthValidRestriction),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::MaxLengthValidRestriction));
+                }
+            }
+            (None, Some(l)) => new.facets.max_length = Some(l),
+            (Some(_), None) | (None, None) => {}
+        }
+        match (new.facets.whitespace, base.facets.whitespace) {
+            (Some(nw), Some(bw)) => {
+                if bw.fixed && nw.value != bw.value {
+                    // Part 2, Section 4.3.6.1 The whiteSpace Schema Component
+                    let msg = format!(
+                        "'whiteSpace' of the base type '{}' is fixed, but that of '{}' has different value.",
+                        base.display_name(),
+                        new.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::StRestrictFacets),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::StRestrictFacets));
+                } else if nw.value < bw.value {
+                    // [whiteSpace-valid-restriction]
+                    let msg = format!(
+                        "'whiteSpace' of the base type '{}' is '{}', but that of '{}' is '{}'.",
+                        base.display_name(),
+                        bw.value,
+                        new.display_name(),
+                        nw.value
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::WhiteSpaceValidRestriction),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                }
+            }
+            (None, Some(bw)) => new.facets.whitespace = Some(bw),
+            (Some(_), None) | (None, None) => {}
+        }
+        match (new.facets.total_digits, base.facets.total_digits) {
+            (Some(nl), Some(bl)) => {
+                if bl.fixed && nl.value != bl.value {
+                    // Part 2, Section 4.3.11.1 The totalDigits Schema Component
+                    let msg = format!(
+                        "'totalDigits' of the base type '{}' is fixed, but that of '{}' has different value.",
+                        base.display_name(),
+                        new.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::StRestrictFacets),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::StRestrictFacets));
+                } else if bl.value < nl.value {
+                    // [totalDigits-valid-restriction]
+                    let msg = format!(
+                        "'totalDigits' of '{}' is greater than that of the base type '{}'.",
+                        new.display_name(),
+                        base.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::TotalDigitsValidRestriction),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::TotalDigitsValidRestriction));
+                }
+            }
+            (None, Some(l)) => new.facets.total_digits = Some(l),
+            (Some(_), None) | (None, None) => {}
+        }
+        match (new.facets.fraction_digits, base.facets.fraction_digits) {
+            (Some(nl), Some(bl)) => {
+                if bl.fixed && nl.value != bl.value {
+                    // Part 2, Section 4.3.12.1 The fractionDigits Schema Component
+                    let msg = format!(
+                        "'fractionDigits' of the base type '{}' is fixed, but that of '{}' has different value.",
+                        base.display_name(),
+                        new.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::StRestrictFacets),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::StRestrictFacets));
+                } else if bl.value < nl.value {
+                    // [fractionDigits-valid-restriction]
+                    let msg = format!(
+                        "'fractionDigits' of '{}' is greater than that of the base type '{}'.",
+                        new.display_name(),
+                        base.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::FractionDigitsValidRestriction),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::FractionDigitsValidRestriction));
+                }
+            }
+            (None, Some(l)) => new.facets.fraction_digits = Some(l),
+            (Some(_), None) | (None, None) => {}
+        }
+
+        // Now that the values for all facets have been determined,
+        // determine the value for fundamental facets as well.
+        match new.variety.as_ref() {
+            Some(Variety::Atomic(name)) => {
+                let prim = get_builtin_simple_type(Some(XML_SCHEMA_NAMESPACE), name).unwrap();
+                new.fundamental_facets.ordered = prim.fundamental_facets.ordered;
+                new.fundamental_facets.bounded = (new.facets.min_inclusive.is_some()
+                    || new.facets.min_exclusive.is_some())
+                    && (new.facets.max_inclusive.is_some() || new.facets.max_exclusive.is_some());
+                new.fundamental_facets.cardinality =
+                    (|facets: &Facets, base: &SimpleTypeDefinition| -> Cardinality {
+                        if matches!(base.fundamental_facets.cardinality, Cardinality::Finite) {
+                            return Cardinality::Finite;
+                        }
+                        if facets.length.is_some()
+                            || facets.max_length.is_some()
+                            || facets.total_digits.is_some()
+                        {
+                            return Cardinality::Finite;
+                        }
+                        if (facets.min_inclusive.is_none() && facets.min_exclusive.is_none())
+                            || (facets.max_inclusive.is_none() && facets.max_exclusive.is_none())
+                        {
+                            return Cardinality::CountablyInfinite;
+                        }
+                        if facets.fraction_digits.is_some() {
+                            return Cardinality::Finite;
+                        }
+                        if matches!(
+                            prim.name.as_ref(),
+                            "date" | "gYearMonth" | "gYear" | "gMonthDay" | "gDay" | "gMonth"
+                        ) {
+                            Cardinality::Finite
+                        } else {
+                            Cardinality::CountablyInfinite
+                        }
+                    })(&new.facets, base);
+                new.fundamental_facets.numeric = base.fundamental_facets.numeric;
+            }
+            Some(Variety::List(_, _)) => {
+                new.fundamental_facets.ordered = Ordered::False;
+                new.fundamental_facets.bounded = new.facets.length.is_some()
+                    || (new.facets.min_length.is_some() && new.facets.max_length.is_some());
+                new.fundamental_facets.cardinality = if new.facets.length.is_some()
+                    || (new.facets.min_length.is_some() && new.facets.max_length.is_some())
+                {
+                    Cardinality::Finite
+                } else {
+                    Cardinality::CountablyInfinite
+                };
+                new.fundamental_facets.numeric = false;
+            }
+            Some(Variety::Union(members)) => {
+                let members = members
+                    .iter()
+                    .filter_map(|t| self.schema.type_defs.get(t))
+                    .filter_map(|t| t.as_simple_type())
+                    .collect::<Vec<_>>();
+                let common_ancestor = self.schema.common_ancestor_of_simple_types(&members);
+
+                new.fundamental_facets.ordered = if members
+                    .iter()
+                    .all(|t| matches!(t.fundamental_facets.ordered, Ordered::False))
+                {
+                    Ordered::False
+                } else if !common_ancestor.is_simple_ur_type() {
+                    common_ancestor.fundamental_facets.ordered
+                } else {
+                    Ordered::Partial
+                };
+                new.fundamental_facets.bounded =
+                    members.iter().all(|t| t.fundamental_facets.bounded)
+                        && !common_ancestor.is_simple_ur_type();
+                new.fundamental_facets.cardinality = if members
+                    .iter()
+                    .all(|t| matches!(t.fundamental_facets.cardinality, Cardinality::Finite))
+                {
+                    Cardinality::Finite
+                } else {
+                    Cardinality::CountablyInfinite
+                };
+                new.fundamental_facets.numeric =
+                    members.iter().all(|t| t.fundamental_facets.numeric);
+            }
+            None => {}
+        }
+
+        ret
     }
 }
 
@@ -4141,289 +4601,6 @@ struct XSDParseContext<'a, H: SAXHandler + ?Sized> {
 }
 
 impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
-    fn parse_local_element(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-        scope: Option<Scope>,
-    ) -> Result<Particle, XSDError> {
-        // "substitutionGroup", "final" and "abstract" are prohibited explicitly in schema of schema.
-        let block = Some(FinalSet::default());
-        let default = elem.remove_attribute("default", None);
-        let fixed = elem.remove_attribute("fixed", None);
-        let _id = elem.remove_attribute("id", None);
-        let name = self.extract_ncname(elem.clone(), "name", XSDError::SrcElement)?;
-        let r#ref = self.extract_qname(elem.clone(), "ref")?;
-
-        let mut children = elem.first_child();
-
-        let mut type_definition = None;
-        while let Some(child) = children {
-            children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    match elem.local_name().as_ref() {
-                        SCHEMA_COMPLEXTYPE_NAME => {
-                            type_definition = Some(TypeDefinition::Complex(
-                                self.parse_complex_type_definitions(
-                                    elem,
-                                    target_namespace.clone(),
-                                    &mut vec![],
-                                    false,
-                                )?,
-                            ));
-                        }
-                        _ => children = Some(child),
-                    }
-                    break;
-                }
-                NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                _ => {}
-            }
-        }
-
-        self.check_unexpected_schema_elements(children)?;
-
-        match (name, r#ref) {
-            (Some(_), Some(_)) | (None, None) => {
-                // [src-element] clause 2.1
-                error!(
-                    self.handler,
-                    SrcElement,
-                    elem,
-                    "One of 'ref' or 'name' must be present, but not both for local 'element'."
-                );
-                Err(XSDError::SrcElement)
-            }
-            (Some(name), None) => {
-                self.check_attribute(elem.clone())?;
-
-                todo!()
-            }
-            (None, Some(r#ref)) => {
-                let form = elem.remove_attribute("form", None);
-                let nillable = elem.remove_attribute("nillable", None);
-                let r#type = elem.remove_attribute("type", None);
-
-                macro_rules! unallowed_schema_attribute {
-                    ($name:literal, $cond:expr) => {
-                        if $cond {
-                            error!(
-                                self.handler,
-                                SrcElement,
-                                elem,
-                                "The attribute '{}' is not allowed on the local element declaration when 'ref' is present.",
-                                $name
-                            );
-                        }
-                    };
-                }
-                macro_rules! unallowed_schema_element {
-                    ($cond:expr, $name:literal) => {
-                        if $cond {
-                            error!(
-                                self.handler,
-                                SrcElement,
-                                elem,
-                                "The element {} are not allowed on the local element declaration when 'ref' is present.",
-                                $name
-                            );
-                        }
-                    };
-                }
-                // [src-element] clause 2.2
-                unallowed_schema_attribute!("nillable", nillable.is_some());
-                unallowed_schema_attribute!("default", default.is_some());
-                unallowed_schema_attribute!("fixed", fixed.is_some());
-                unallowed_schema_attribute!("form", form.is_some());
-                unallowed_schema_attribute!("block", block.is_some());
-                unallowed_schema_attribute!("type", r#type.is_some());
-                unallowed_schema_element!(
-                    type_definition.is_some(),
-                    "'simpleType' and 'complexType'"
-                );
-                // unallowed_schema_element!(
-                //     idc_definitions.is_empty(),
-                //     "'key', 'keyref' and 'unique'"
-                // );
-
-                todo!()
-            }
-        }
-    }
-
-    fn parse_complex_type_definitions(
-        &mut self,
-        mut elem: Element,
-        target_namespace: Option<Arc<str>>,
-        loop_guard: &mut Vec<(Option<Arc<str>>, Arc<str>)>,
-        global: bool,
-    ) -> Result<Arc<ComplexTypeDefinition>, XSDError> {
-        assert_eq!(elem.namespace_name().as_deref(), Some(XML_SCHEMA_NAMESPACE));
-        assert_eq!(elem.local_name().as_ref(), SCHEMA_COMPLEXTYPE_NAME);
-
-        let r#abstract = false;
-        let block = BlockSet::default();
-        let r#final = self.final_default;
-        let _id = elem.remove_attribute("id", None);
-        let mixed = false;
-        let name = Arc::<str>::default();
-
-        let mut children = elem.first_child();
-        // simpleContent
-        // | complexContent
-        // | ((group | all | choice | sequence)?, (attribute | attributeGroup)*, anyAttribute?)
-        // extract content model
-        let mut def = None;
-        while let Some(child) = children {
-            children = child.next_sibling();
-
-            match child.downcast() {
-                NodeKind::Element(elem) => {
-                    if elem.namespace_name().as_deref() != Some(XML_SCHEMA_NAMESPACE) {
-                        continue;
-                    }
-
-                    def = match elem.local_name().as_ref() {
-                        SCHEMA_SIMPLECONT_NAME => {
-                            let (
-                                base_type_definition,
-                                derivation_method,
-                                content_type,
-                                attribute_uses,
-                                attribute_wildcard,
-                            ) = self.parse_simple_content(
-                                elem,
-                                target_namespace.clone(),
-                                loop_guard,
-                            )?;
-
-                            Some(Arc::new(ComplexTypeDefinition {
-                                name: name.clone(),
-                                target_namespace: target_namespace.clone(),
-                                base_type_definition: Default::default(),
-                                derivation_method,
-                                r#final,
-                                r#abstract,
-                                attribute_uses,
-                                attribute_group_refs: vec![],
-                                attribute_wildcard,
-                                content_type,
-                                prohibited_substitutions: block,
-                            }))
-                        }
-                        SCHEMA_COMPLEXCONT_NAME => {
-                            let (
-                                base_type_definition,
-                                derivation_method,
-                                content_type,
-                                attribute_uses,
-                                attribute_wildcard,
-                            ) = self.parse_complex_content(
-                                elem,
-                                target_namespace.clone(),
-                                loop_guard,
-                                mixed,
-                            )?;
-
-                            Some(Arc::new(ComplexTypeDefinition {
-                                name: name.clone(),
-                                target_namespace: target_namespace.clone(),
-                                base_type_definition: Default::default(),
-                                derivation_method,
-                                r#final,
-                                r#abstract,
-                                attribute_uses,
-                                attribute_group_refs: vec![],
-                                attribute_wildcard,
-                                content_type,
-                                prohibited_substitutions: block,
-                            }))
-                        }
-                        _ => {
-                            // Reference: 3.4.2 XML Representation of Complex Type Definitions
-                            // > The property mappings below are also used in the case where the
-                            // > third alternative (neither <simpleContent> nor <complexContent>)
-                            // > is chosen. This case is understood as shorthand for complex
-                            // > content restricting the ·ur-type definition·, and the details
-                            // > of the mappings should be modified as necessary.
-                            children = Some(child);
-                            let particle = None;
-
-                            let effective_content =
-                                self.effective_content(particle, elem, mixed)?;
-                            let content_type = effective_content
-                                .map(|c| {
-                                    if mixed {
-                                        ContentType::Mixed(c)
-                                    } else {
-                                        ContentType::ElementOnly(c)
-                                    }
-                                })
-                                .unwrap_or(ContentType::Empty);
-
-                            Some(Arc::new(ComplexTypeDefinition {
-                                name: name.clone(),
-                                target_namespace: target_namespace.clone(),
-                                base_type_definition: SCHEMA_BUILTIN_ANY_TYPE
-                                    .base_type_definition
-                                    .clone(),
-                                derivation_method: DerivationMethod::Restriction,
-                                r#final,
-                                r#abstract,
-                                attribute_uses: vec![],
-                                attribute_group_refs: vec![],
-                                attribute_wildcard: None,
-                                content_type,
-                                prohibited_substitutions: block,
-                            }))
-                        }
-                    };
-                    break;
-                }
-                NodeKind::Text(_) => unallowed_text!(self.handler, elem),
-                _ => {}
-            }
-        }
-        self.check_unexpected_schema_elements(children)?;
-
-        loop_guard.pop();
-
-        let def = if let Some(def) = def {
-            def
-        } else {
-            // This is a model definition that omits `complexContent` and is
-            // treated as having an empty model and an empty set of attributes.
-            Arc::new(ComplexTypeDefinition {
-                name: name.clone(),
-                target_namespace: target_namespace.clone(),
-                base_type_definition: SCHEMA_BUILTIN_ANY_TYPE.base_type_definition.clone(),
-                derivation_method: DerivationMethod::Restriction,
-                r#final,
-                r#abstract,
-                attribute_uses: vec![],
-                attribute_group_refs: vec![],
-                attribute_wildcard: None,
-                content_type: ContentType::Empty,
-                prohibited_substitutions: block,
-            })
-        };
-
-        if global {
-            self.schema.type_defs.insert(
-                (target_namespace, name),
-                TypeDefinition::Complex(def.clone()),
-            );
-        }
-
-        Ok(def)
-    }
-
     fn parse_simple_content(
         &mut self,
         mut elem: Element,
@@ -4502,12 +4679,12 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                                 return Err(XSDError::SrcCt);
                             };
                             if let Some(elem) = self.complex_types.remove(&key) {
-                                self.parse_complex_type_definitions(
-                                    elem,
-                                    key.0.clone(),
-                                    loop_guard,
-                                    true,
-                                )?;
+                                // self.parse_complex_type_definitions(
+                                //     elem,
+                                //     key.0.clone(),
+                                //     loop_guard,
+                                //     true,
+                                // )?;
                             }
                             let base = if let Some(def) = self.schema.type_defs.get(&key) {
                                 base_type_definition = def.clone();
@@ -4600,12 +4777,12 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                                 return Err(XSDError::SrcCt);
                             };
                             if let Some(elem) = self.complex_types.remove(&key) {
-                                self.parse_complex_type_definitions(
-                                    elem,
-                                    key.0.clone(),
-                                    loop_guard,
-                                    true,
-                                )?;
+                                // self.parse_complex_type_definitions(
+                                //     elem,
+                                //     key.0.clone(),
+                                //     loop_guard,
+                                //     true,
+                                // )?;
                             }
                             let base = if let Some(def) = self.schema.type_defs.get(&key) {
                                 base_type_definition = def.clone();
@@ -4730,12 +4907,12 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
                     self.check_attribute(elem.clone())?;
 
                     if let Some(elem) = self.complex_types.remove(&base) {
-                        self.parse_complex_type_definitions(
-                            elem,
-                            target_namespace.clone(),
-                            loop_guard,
-                            true,
-                        )?;
+                        // self.parse_complex_type_definitions(
+                        //     elem,
+                        //     target_namespace.clone(),
+                        //     loop_guard,
+                        //     true,
+                        // )?;
                     }
 
                     let base = if let Some(def) = self.schema.type_defs.get(&base) {
