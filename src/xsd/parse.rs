@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     io::Read,
     sync::{Arc, LazyLock},
 };
@@ -1529,6 +1529,13 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             .type_defs
             .extract_if(|_, ty| matches!(*ty, TypeDefinition::Simple(_)))
             .collect::<HashMap<_, _>>();
+        self.schema.type_defs.insert(
+            (
+                XSD_ANY_SIMPLE_TYPE.target_namespace(),
+                XSD_ANY_SIMPLE_TYPE.name(),
+            ),
+            XSD_ANY_SIMPLE_TYPE.clone(),
+        );
         while let Some(key) = ret.keys().next().cloned() {
             let value = ret.remove(&key).and_then(|st| st.as_simple_type()).unwrap();
             let mut stack = vec![(key, value)];
@@ -1553,13 +1560,8 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         } else if stack.iter().any(|entry| entry.0 == ikey) {
                             // [st-props-correct] clause 2
                             let msg = format!(
-                                "A circluar definition is found in the simple type '{}{}'",
-                                value
-                                    .target_namespace
-                                    .as_deref()
-                                    .map(|ns| format!("{{{ns}}}"))
-                                    .unwrap_or_default(),
-                                value.name
+                                "A circluar definition is found in the simple type '{}'",
+                                value.display_name()
                             );
                             self.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::StPropsCorrect),
@@ -1588,13 +1590,8 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         {
                             // [st-props-correct] clause 2
                             let msg = format!(
-                                "A circluar definition is found in the simple type '{}{}'",
-                                value
-                                    .target_namespace
-                                    .as_deref()
-                                    .map(|ns| format!("{{{ns}}}"))
-                                    .unwrap_or_default(),
-                                value.name
+                                "A circluar definition is found in the simple type '{}'.",
+                                value.display_name()
                             );
                             self.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::StPropsCorrect),
@@ -1641,16 +1638,33 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         stack.clear();
                         break;
                     }
+                } else if stack.iter().any(|e| e.0 == base) {
+                    // [st-props-correct] clause 2
+                    let msg = format!(
+                        "A circluar definition is found in the simple type '{}'.",
+                        value.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::StPropsCorrect),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    stack.clear();
+                    break;
                 } else {
-                    let self_ns = value
-                        .target_namespace
-                        .as_deref()
-                        .map(|ns| format!("{{{ns}}}"))
-                        .unwrap_or_default();
                     let base_ns = base.0.map(|ns| format!("{{{ns}}}")).unwrap_or_default();
                     let msg = format!(
-                        "The simple type '{}{}' is derived from '{}{}', but '{}{}' is not found in this schema.",
-                        self_ns, value.name, base_ns, base.1, base_ns, base.1
+                        "The simple type '{}' is derived from '{}{}', but '{}{}' is not found in this schema.",
+                        value.display_name(),
+                        base_ns,
+                        base.1,
+                        base_ns,
+                        base.1
                     );
                     // [st-props-correct] clause 2 ?
                     self.error(SAXParseError {
@@ -1671,6 +1685,8 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         Ok(())
     }
 
+    /// # Reference
+    /// - [Schema Component Constraint: Derivation Valid (Restriction, Simple)](https://www.w3.org/TR/xmlschema-1/#cos-st-restricts)
     fn check_simple_type_derivation(
         &mut self,
         base: Arc<SimpleTypeDefinition>,
@@ -1696,6 +1712,11 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 });
                 return Err(XMLError::XSDError(XSDError::$error));
             };
+        }
+
+        if base.r#final.restriction() {
+            // [st-props-correct] clause 3
+            prohibited_derivation!("restriction", StPropsCorrect);
         }
 
         let mut ret = Ok(());
@@ -2025,6 +2046,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
 
         ret?;
         self.process_st_restrict_facets(&mut new, &base)?;
+        self.determine_fundamental_facets(&mut new, &base);
         Ok(new.into())
     }
 
@@ -2515,11 +2537,14 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             (Some(_), None) | (None, None) => {}
         }
         let new_name = new.display_name().into_owned();
+        // Because the actual name of the base type may not match the key due to the effects
+        // of the <redefine> process, we must use the `new.base_type_definition`.
+        let base_name = new.base_type_definition.clone();
         for enumeration in new.facets.enumeration.iter_mut() {
             match self.schema.parse_simple_type(
                 &enumeration.value.raw_value,
-                base.target_namespace.as_deref(),
-                &base.name,
+                base_name.0.as_deref(),
+                &base_name.1,
                 &enumeration.ns_context,
             ) {
                 Ok(value) => enumeration.value = value,
@@ -2589,8 +2614,8 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 if let Some(n) = new.facets.$field.as_mut() {
                     match self.schema.parse_simple_type(
                         &n.value.raw_value,
-                        base.target_namespace.as_deref(),
-                        &base.name,
+                        base_name.0.as_deref(),
+                        &base_name.1,
                         &n.ns_context,
                     ) {
                         Ok(value) => {
@@ -2920,16 +2945,22 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             "greater than or equal to"
         );
 
-        // Now that the values for all facets have been determined,
-        // determine the value for fundamental facets as well.
-        match new.variety.as_ref() {
+        ret
+    }
+
+    fn determine_fundamental_facets(
+        &self,
+        ty: &mut SimpleTypeDefinition,
+        base: &SimpleTypeDefinition,
+    ) {
+        match ty.variety.as_ref() {
             Some(Variety::Atomic(name)) => {
                 let prim = get_builtin_simple_type(Some(XML_SCHEMA_NAMESPACE), name).unwrap();
-                new.fundamental_facets.ordered = prim.fundamental_facets.ordered;
-                new.fundamental_facets.bounded = (new.facets.min_inclusive.is_some()
-                    || new.facets.min_exclusive.is_some())
-                    && (new.facets.max_inclusive.is_some() || new.facets.max_exclusive.is_some());
-                new.fundamental_facets.cardinality =
+                ty.fundamental_facets.ordered = prim.fundamental_facets.ordered;
+                ty.fundamental_facets.bounded = (ty.facets.min_inclusive.is_some()
+                    || ty.facets.min_exclusive.is_some())
+                    && (ty.facets.max_inclusive.is_some() || ty.facets.max_exclusive.is_some());
+                ty.fundamental_facets.cardinality =
                     (|facets: &Facets, base: &SimpleTypeDefinition| -> Cardinality {
                         if matches!(base.fundamental_facets.cardinality, Cardinality::Finite) {
                             return Cardinality::Finite;
@@ -2956,21 +2987,21 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         } else {
                             Cardinality::CountablyInfinite
                         }
-                    })(&new.facets, base);
-                new.fundamental_facets.numeric = base.fundamental_facets.numeric;
+                    })(&ty.facets, base);
+                ty.fundamental_facets.numeric = base.fundamental_facets.numeric;
             }
             Some(Variety::List(_, _)) => {
-                new.fundamental_facets.ordered = Ordered::False;
-                new.fundamental_facets.bounded = new.facets.length.is_some()
-                    || (new.facets.min_length.is_some() && new.facets.max_length.is_some());
-                new.fundamental_facets.cardinality = if new.facets.length.is_some()
-                    || (new.facets.min_length.is_some() && new.facets.max_length.is_some())
+                ty.fundamental_facets.ordered = Ordered::False;
+                ty.fundamental_facets.bounded = ty.facets.length.is_some()
+                    || (ty.facets.min_length.is_some() && ty.facets.max_length.is_some());
+                ty.fundamental_facets.cardinality = if ty.facets.length.is_some()
+                    || (ty.facets.min_length.is_some() && ty.facets.max_length.is_some())
                 {
                     Cardinality::Finite
                 } else {
                     Cardinality::CountablyInfinite
                 };
-                new.fundamental_facets.numeric = false;
+                ty.fundamental_facets.numeric = false;
             }
             Some(Variety::Union(members)) => {
                 let members = members
@@ -2980,7 +3011,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     .collect::<Vec<_>>();
                 let common_ancestor = self.schema.common_ancestor_of_simple_types(&members);
 
-                new.fundamental_facets.ordered = if members
+                ty.fundamental_facets.ordered = if members
                     .iter()
                     .all(|t| matches!(t.fundamental_facets.ordered, Ordered::False))
                 {
@@ -2990,10 +3021,10 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 } else {
                     Ordered::Partial
                 };
-                new.fundamental_facets.bounded =
+                ty.fundamental_facets.bounded =
                     members.iter().all(|t| t.fundamental_facets.bounded)
                         && !common_ancestor.is_simple_ur_type();
-                new.fundamental_facets.cardinality = if members
+                ty.fundamental_facets.cardinality = if members
                     .iter()
                     .all(|t| matches!(t.fundamental_facets.cardinality, Cardinality::Finite))
                 {
@@ -3001,13 +3032,426 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 } else {
                     Cardinality::CountablyInfinite
                 };
-                new.fundamental_facets.numeric =
+                ty.fundamental_facets.numeric =
                     members.iter().all(|t| t.fundamental_facets.numeric);
             }
             None => {}
         }
+    }
 
+    /// # Reference
+    /// - [3.4.6 Constraints on Complex Type Definition Schema Components](https://www.w3.org/TR/xmlschema-1/#coss-ct)
+    fn check_all_complex_type_derivation(&mut self) -> Result<(), XMLError> {
+        let mut ret = self
+            .schema
+            .type_defs
+            .extract_if(|_, ty| matches!(*ty, TypeDefinition::Complex(_)))
+            .filter_map(|(key, value)| value.as_complex_type().map(|v| (key, v)))
+            .collect::<BTreeMap<_, _>>();
+        self.schema.type_defs.insert(
+            XSD_ANY_TYPE.base_type_definition.clone(),
+            TypeDefinition::Complex(XSD_ANY_TYPE.clone()),
+        );
+        while let Some((key, value)) = ret.pop_first() {
+            let mut stack = vec![(key, value)];
+            while let Some((key, value)) = stack.pop() {
+                let base = value.base_type_definition.clone();
+                if let Some(base_type) = ret.remove(&base) {
+                    stack.push((key, value));
+                    stack.push((base, base_type));
+                    continue;
+                }
+
+                if !self.schema.type_defs.contains_key(&base.clone())
+                    && let Some(builtin) = get_builtin_simple_type(base.0.as_deref(), &base.1)
+                {
+                    self.schema
+                        .type_defs
+                        .insert(base.clone(), TypeDefinition::Simple(builtin));
+                }
+
+                if let Some(base) = self.schema.type_defs.get(&base) {
+                    if matches!(base, TypeDefinition::Simple(_))
+                        && !matches!(value.derivation_method, DerivationMethod::Extension)
+                    {
+                        // [ct-props-correct] clause 2
+                        let msg = format!(
+                            "The complex type '{}' cannot be derived by restriction from simple type '{}'.",
+                            value.display_name(),
+                            base.display_name()
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::CtPropsCorrect),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                        stack.clear();
+                        break;
+                    }
+                    let mut new = ComplexTypeDefinition::clone(&value);
+                    if self.check_ct_props_correct_4_5(&mut new).is_err() {
+                        // [ct-props-correct] clause 4, 5
+                        // The error is considered to have already been reported.
+                        stack.clear();
+                        break;
+                    }
+
+                    self.schema
+                        .type_defs
+                        .insert(key, TypeDefinition::Complex(new.into()));
+                } else if stack.iter().any(|e| e.0 == base) {
+                    // [ct-props-correct] clause 3
+                    let msg = format!(
+                        "A circluar definition is found in the complex type '{}'.",
+                        value.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::CtPropsCorrect),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    stack.clear();
+                    break;
+                } else {
+                    let base_ns = base.0.map(|ns| format!("{{{ns}}}")).unwrap_or_default();
+                    let msg = format!(
+                        "The complex type '{}' is derived from '{}{}', but '{}{}' is not found in this schema.",
+                        value.display_name(),
+                        base_ns,
+                        base.1,
+                        base_ns,
+                        base.1
+                    );
+                    // [ct-props-correct] clause 3 ?
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::CtPropsCorrect),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    stack.clear();
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Check a part of "ct-props-correct" related to {attribute uses}. (clause 4 and 5)
+    ///
+    /// # Reference
+    /// - [ct-props-correct](https://www.w3.org/TR/xmlschema-1/#ct-props-correct)
+    fn check_ct_props_correct_4_5(
+        &mut self,
+        new: &mut ComplexTypeDefinition,
+    ) -> Result<(), XMLError> {
+        let mut used = HashSet::new();
+        while let Some(gref) = new.attribute_group_refs.pop() {
+            let Some(attgroup) = self.schema.attgroup_defs.get(&gref) else {
+                // Since the verification cannot continue,
+                // it will be reported as an error and terminated.
+                let msg = format!(
+                    "The attribute group '{}{}' is not found in schema.",
+                    gref.0
+                        .as_deref()
+                        .map(|ns| format!("{{{ns}}}"))
+                        .unwrap_or_default(),
+                    gref.1
+                );
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::MissingSubComponent),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+                return Err(XMLError::XSDError(XSDError::MissingSubComponent));
+            };
+            new.attribute_uses
+                .extend(attgroup.attribute_uses.iter().cloned());
+            new.attribute_group_refs
+                .extend(attgroup.attribute_group_refs.iter().cloned());
+            if !used.insert(gref) {
+                // [src-attribute_group] clause 3
+                let msg = format!(
+                    "The attribute group definition '{}' contains a circular reference.",
+                    attgroup.display_name()
+                );
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::SrcAttributeGroup),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+                return Err(XMLError::XSDError(XSDError::SrcAttributeGroup));
+            }
+        }
+
+        used.clear();
+        let mut ret = Ok(());
+        let mut idcnt = 0;
+        for attuse in &new.attribute_uses {
+            if !used.insert(attuse.attribute_declaration.clone()) {
+                // [ct-props-correct] clause 4
+                let msg = format!(
+                    "The attribute '{}' for the complex type '{}' is duplicated.",
+                    attuse.display_name(),
+                    new.display_name()
+                );
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::CtPropsCorrect),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+                ret = Err(XMLError::XSDError(XSDError::CtPropsCorrect));
+            } else if idcnt <= 1 {
+                // [ct-props-correct] clause 5
+                // It is unclear whether derivations by list or union are also prohibited.
+                // While the constraint on list seems unnatural, the one on union seems natural,
+                // so I think derivations using both list and union are likely prohibited.
+                let Some(att) = self.schema.att_decls.get(&attuse.attribute_declaration) else {
+                    let msg = format!(
+                        "The attribute declaration '{}{}' is not found in schema.",
+                        attuse
+                            .attribute_declaration
+                            .0
+                            .as_deref()
+                            .map(|ns| format!("{{{ns}}}"))
+                            .unwrap_or_default(),
+                        attuse.attribute_declaration.1
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::MissingSubComponent),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    return Err(XMLError::XSDError(XSDError::MissingSubComponent));
+                };
+                let Some(t) = self
+                    .schema
+                    .type_defs
+                    .get(&att.type_definition)
+                    .and_then(|t| t.as_simple_type())
+                else {
+                    let msg = format!(
+                        "The simple type '{}{}' is not found in schema.",
+                        att.type_definition
+                            .0
+                            .as_deref()
+                            .map(|ns| format!("{{{ns}}}"))
+                            .unwrap_or_default(),
+                        att.type_definition.1
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::MissingSubComponent),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    return Err(XMLError::XSDError(XSDError::MissingSubComponent));
+                };
+                if t.is_derived_from(Some(XML_SCHEMA_NAMESPACE), "ID", &self.schema) {
+                    if idcnt == 1 {
+                        let msg = format!(
+                            "The complex type '{}' has multiple types which are or are derived from ID.",
+                            new.display_name()
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::CtPropsCorrect),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                        ret = Err(XMLError::XSDError(XSDError::CtPropsCorrect));
+                    }
+                    idcnt += 1;
+                }
+            }
+        }
         ret
+    }
+
+    /// # Reference
+    /// - [a-props-correct](https://www.w3.org/TR/xmlschema-1/#a-props-correct)
+    fn check_all_attdecl(&mut self) -> Result<(), XMLError> {
+        let decls = std::mem::take(&mut self.schema.att_decls);
+        let mut ret = Ok(());
+        for (key, mut decl) in decls {
+            let t = decl.type_definition.clone();
+            let Some(t) = self
+                .schema
+                .type_defs
+                .get(&t)
+                .and_then(|t| t.as_simple_type())
+            else {
+                let msg = format!(
+                    "The simple type '{}{}' specified for the attribute declaration '{}' is not found in schema.",
+                    t.0.as_deref()
+                        .map(|ns| format!("{{{ns}}}"))
+                        .unwrap_or_default(),
+                    t.1,
+                    decl.display_name()
+                );
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::MissingSubComponent),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+                ret = Err(XMLError::XSDError(XSDError::MissingSubComponent));
+                continue;
+            };
+
+            if decl.name.as_ref() == "xmlns" {
+                // [no-xmlns]
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::NoXmlns),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Borrowed("The attribute declaration must not be named 'xmlns'."),
+                });
+                ret = Err(XMLError::XSDError(XSDError::NoXmlns));
+                continue;
+            } else if decl.target_namespace.as_deref() == Some(XML_SCHEMA_INSTANCE_NAMESPACE) {
+                // [no-xsi]
+                let msg = format!(
+                    "The attribute declaration must not have the target namespace named '{}'.",
+                    XML_SCHEMA_INSTANCE_NAMESPACE
+                );
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::NoXmlns),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+                ret = Err(XMLError::XSDError(XSDError::NoXmlns));
+                continue;
+            }
+
+            if let Some(value) = decl.value_constraint.take() {
+                if t.is_derived_from(Some(XML_SCHEMA_NAMESPACE), "ID", &self.schema) {
+                    let msg = format!(
+                        "The attribute declaration '{}' must not have a default value because this is derived from 'ID'.",
+                        decl.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::APropsCorrect),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::APropsCorrect));
+                    continue;
+                }
+                let raw_value = match value.clone() {
+                    ValueConstraint::Default(value) => value,
+                    ValueConstraint::Fixed(value) => value,
+                };
+                match self.schema.parse_simple_type(
+                    &raw_value,
+                    t.target_namespace.as_deref(),
+                    &t.name,
+                    &decl.ns_context,
+                ) {
+                    Ok(ret) => {
+                        decl.value_constraint = match value {
+                            ValueConstraint::Default(_) => {
+                                Some(ValueConstraint::Default(ret.canonic_value.into()))
+                            }
+                            ValueConstraint::Fixed(_) => {
+                                Some(ValueConstraint::Fixed(ret.canonic_value.into()))
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        // [a-props-correct] clause 2
+                        let msg = format!(
+                            "The default value '{}' of attribute declaration '{}' is not valid with respect to the simple type '{}' because of {}.",
+                            raw_value,
+                            decl.display_name(),
+                            t.display_name(),
+                            err
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::APropsCorrect),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                        ret = Err(XMLError::XSDError(XSDError::APropsCorrect));
+                        continue;
+                    }
+                }
+            }
+
+            self.schema.att_decls.insert(key, decl);
+        }
+        ret
+    }
+
+    /// # Reference
+    /// - [ag-props-correct](https://www.w3.org/TR/xmlschema-1/#ag-props-correct)
+    fn check_all_attgroup(&mut self) -> Result<(), XMLError> {
+        Ok(())
     }
 }
 
@@ -3928,6 +4372,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     }
                     self.attribute_decl.scope = Some(Scope::Global);
                     self.attribute_decl.value_constraint = value_constraint;
+                    self.attribute_decl.ns_context = self.ns_stack.clone();
                 } else {
                     let r#use = get_occurrence(atts, "use").unwrap_or(Occurrence::Optional);
                     if matches!(value_constraint, Some(ValueConstraint::Default(_)))
@@ -4348,7 +4793,15 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 }
             }
             SCHEMA_COMPLEXTYPE_NAME => {
-                if let Some(ct) = self.ct_stack.pop() {
+                if let Some(mut ct) = self.ct_stack.pop() {
+                    if ct.base_type_definition.0.is_none() && ct.base_type_definition.1.is_empty() {
+                        // Treat this as a case where neither <simpleContent> nor
+                        // <complexContent> was selected, and consider it as if
+                        // <complexContent> with the ur-type definition as its base
+                        // type had been selected.
+                        ct.base_type_definition.0 = XSD_ANY_TYPE.target_namespace.clone();
+                        ct.base_type_definition.1 = XSD_ANY_TYPE.name.clone();
+                    }
                     let target_namespace = ct.target_namespace.clone();
                     let name = ct.name.clone();
                     if self.element_stack.last() == Some(&SCHEMA_REDEFINE_NAME)
@@ -4540,8 +4993,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                                 // > is chosen. This case is understood as shorthand for complex
                                 // > content restricting the ·ur-type definition·, and the details
                                 // > of the mappings should be modified as necessary.
-                                ct.base_type_definition =
-                                    SCHEMA_BUILTIN_ANY_TYPE.base_type_definition.clone();
+                                ct.base_type_definition = XSD_ANY_TYPE.base_type_definition.clone();
                                 ct.derivation_method = DerivationMethod::Restriction;
                             }
 
@@ -4677,7 +5129,17 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
             self.process_redefine(location, components, meta.as_mut());
         }
         if matches!(self.inclusion_state, InclusionState::TopLevel) {
-            let _ = self.check_all_simple_type_derivation();
+            // In accordance with the module dependencies,
+            // start by checking the modules with no dependencies.
+            // If an error occurs during a previous module check,
+            // subsequent checks are skipped because a component may be missing.
+            // Reference: Part 1 Appendix E Schema Components Diagram (non-normative)
+            self.last_error = self
+                .check_all_simple_type_derivation()
+                .and_then(|_| self.check_all_attdecl())
+                .and_then(|_| self.check_all_attgroup())
+                .and_then(|_| self.check_all_complex_type_derivation())
+                .and_then(|_| self.last_error.clone());
         }
         if let Some(meta) = meta {
             META_SCHEMA_HOLDER_V1_0.with_borrow_mut(|holder| holder.push(meta));
@@ -5202,7 +5664,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
         let attribute_uses = vec![];
         let attribute_wildcard = None;
         let mut derivation_method = DerivationMethod::Restriction;
-        let mut base_type_definition = TypeDefinition::Complex(SCHEMA_BUILTIN_ANY_TYPE.clone());
+        let mut base_type_definition = TypeDefinition::Complex(XSD_ANY_TYPE.clone());
         while let Some(child) = children {
             children = child.next_sibling();
 
@@ -5450,7 +5912,7 @@ impl<'a, H: SAXHandler + ?Sized> XSDParseContext<'a, H> {
         let mut attribute_uses: Vec<AttributeUse> = vec![];
         let attribute_wildcard = None::<Wildcard>;
         let mut derivation_method = DerivationMethod::Restriction;
-        let mut base_type_defintion = TypeDefinition::Complex(SCHEMA_BUILTIN_ANY_TYPE.clone());
+        let mut base_type_defintion = TypeDefinition::Complex(XSD_ANY_TYPE.clone());
         while let Some(child) = children {
             children = child.next_sibling();
 
@@ -5894,6 +6356,18 @@ pub(super) struct AttributeDeclaration {
     type_definition: (Option<Arc<str>>, Arc<str>),
     scope: Option<Scope>,
     value_constraint: Option<ValueConstraint>,
+    // used for parsing default value constraint.
+    ns_context: NamespaceStack,
+}
+
+impl AttributeDeclaration {
+    fn display_name(&self) -> Cow<'_, str> {
+        if let Some(ns) = self.target_namespace.as_deref() {
+            Cow::Owned(format!("{{{}}}{}", ns, self.name))
+        } else {
+            Cow::Borrowed(&self.name)
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -5911,7 +6385,7 @@ pub(super) struct ElementDeclaration {
     r#abstract: bool,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(super) enum TypeDefinition {
     Simple(Arc<SimpleTypeDefinition>),
     Complex(Arc<ComplexTypeDefinition>),
@@ -5947,8 +6421,16 @@ impl TypeDefinition {
             None
         }
     }
+
+    pub fn display_name(&self) -> Cow<'_, str> {
+        match self {
+            TypeDefinition::Simple(simple) => simple.display_name(),
+            TypeDefinition::Complex(complex) => complex.display_name(),
+        }
+    }
 }
 
+#[allow(clippy::large_enum_variant)]
 enum OwnedTypeDefinition {
     Simple(SimpleTypeDefinition),
     Complex(ComplexTypeDefinition),
@@ -5961,7 +6443,7 @@ enum DerivationMethod {
     Extension,
 }
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 enum ContentType {
     #[default]
     Empty,
@@ -5975,7 +6457,7 @@ enum ContentType {
     Pending(Option<Particle>),
 }
 
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub(super) struct ComplexTypeDefinition {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
@@ -5990,8 +6472,18 @@ pub(super) struct ComplexTypeDefinition {
     prohibited_substitutions: BlockSet,
 }
 
+impl ComplexTypeDefinition {
+    pub fn display_name(&self) -> Cow<'_, str> {
+        if let Some(ns) = self.target_namespace.as_deref() {
+            Cow::Owned(format!("{{{}}}{}", ns, self.name))
+        } else {
+            Cow::Borrowed(&self.name)
+        }
+    }
+}
+
 /// [3.4.7 Built-in Complex Type Definition](https://www.w3.org/TR/xmlschema-1/#d0e9252).
-static SCHEMA_BUILTIN_ANY_TYPE: LazyLock<Arc<ComplexTypeDefinition>> = LazyLock::new(|| {
+static XSD_ANY_TYPE: LazyLock<Arc<ComplexTypeDefinition>> = LazyLock::new(|| {
     let target_namespace = Arc::<str>::from(XML_SCHEMA_NAMESPACE);
     let name = Arc::<str>::from("anyType");
     Arc::new(ComplexTypeDefinition {
@@ -6055,7 +6547,17 @@ pub(super) struct AttributeUse {
     value_constraint: Option<ValueConstraint>,
 }
 
-#[derive(Default)]
+impl AttributeUse {
+    fn display_name(&self) -> Cow<'_, str> {
+        if let Some(ns) = self.attribute_declaration.0.as_deref() {
+            Cow::Owned(format!("{{{}}}{}", ns, self.attribute_declaration.1))
+        } else {
+            Cow::Borrowed(&self.attribute_declaration.1)
+        }
+    }
+}
+
+#[derive(Debug, Default)]
 pub(super) struct AttributeGroupDefinition {
     name: Arc<str>,
     target_namespace: Option<Arc<str>>,
@@ -6063,6 +6565,16 @@ pub(super) struct AttributeGroupDefinition {
     // references to attribute group definitions
     attribute_group_refs: Vec<(Option<Arc<str>>, Arc<str>)>,
     attribute_wildcard: Option<Wildcard>,
+}
+
+impl AttributeGroupDefinition {
+    fn display_name(&self) -> Cow<'_, str> {
+        if let Some(ns) = self.target_namespace.as_deref() {
+            Cow::Owned(format!("{{{}}}{}", ns, self.name))
+        } else {
+            Cow::Borrowed(&self.name)
+        }
+    }
 }
 
 #[derive(Default)]

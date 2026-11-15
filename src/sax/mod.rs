@@ -587,7 +587,7 @@ pub struct Namespace {
 }
 
 /// Namespace declaration stack.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct NamespaceStack {
     // (namespace, before overwrite)
     // Namespaces declared closer to the document element appear earlier in the list.

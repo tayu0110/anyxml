@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    collections::HashSet,
     sync::{Arc, LazyLock},
 };
 
@@ -14,7 +15,7 @@ use crate::{
     xsd::{Schema, XML_SCHEMA_NAMESPACE, XSDError, parse::TypeDefinition},
 };
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SimpleTypeDefinition {
     pub(super) name: Arc<str>,
     pub(super) target_namespace: Option<Arc<str>>,
@@ -90,9 +91,51 @@ impl SimpleTypeDefinition {
                     | "positiveInteger"
             )
     }
+
+    pub(super) fn is_derived_from(
+        &self,
+        target_namespace: Option<&str>,
+        name: &str,
+        schema: &Schema,
+    ) -> bool {
+        if self.target_namespace.as_deref() == target_namespace && self.name.as_ref() == name {
+            return true;
+        }
+        let mut used = HashSet::new();
+        let mut stack = vec![(self.target_namespace.clone(), self.name.clone())];
+        while let Some(t) = stack.pop() {
+            if get_builtin_simple_type(t.0.as_deref(), &t.1).is_some() {
+                if t.0.as_deref() == target_namespace && t.1.as_ref() == name {
+                    return true;
+                }
+                if target_namespace == Some(XML_SCHEMA_NAMESPACE) && name == "anySimpleType" {
+                    return true;
+                }
+                // Since there's no benefit in tracing the embedded type any further,
+                // it won't be pushed onto the stack.
+            } else if let Some(t) = schema.type_defs.get(&t).and_then(|t| t.as_simple_type()) {
+                if t.target_namespace.as_deref() == target_namespace && t.name.as_ref() == name {
+                    return true;
+                }
+                match t.variety.as_ref() {
+                    Some(Variety::Atomic(_)) if used.insert(t.base_type_definition.clone()) => {
+                        stack.push(t.base_type_definition.clone())
+                    }
+                    Some(Variety::List(ns, name)) if used.insert((ns.clone(), name.clone())) => {
+                        stack.push((ns.clone(), name.clone()))
+                    }
+                    Some(Variety::Union(members)) => {
+                        stack.extend(members.iter().filter(|&m| used.insert(m.clone())).cloned())
+                    }
+                    _ => {}
+                }
+            }
+        }
+        false
+    }
 }
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub(super) struct Facets {
     pub(super) length: Option<Length>,
     pub(super) min_length: Option<Length>,
@@ -108,25 +151,25 @@ pub(super) struct Facets {
     pub(super) fraction_digits: Option<Length>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub(super) struct Length {
     pub(super) value: usize,
     pub(super) fixed: bool,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(super) struct Pattern {
     pub(super) value: String,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(super) struct Enumeration {
     pub(super) value: SchemaValue,
     // used for parsing enumerated values.
     pub(super) ns_context: NamespaceStack,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub(super) struct WhitespaceConstraint {
     pub(super) value: Whitespace,
     pub(super) fixed: bool,
@@ -136,7 +179,7 @@ pub(super) struct WhitespaceConstraint {
 ///
 /// # Reference
 /// - [4.3.6 whiteSpace](https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/#rf-whiteSpace)
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Whitespace {
     /// 'preserve'
     Preserve = 0,
@@ -156,7 +199,7 @@ impl std::fmt::Display for Whitespace {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub(super) struct Boundary {
     pub(super) value: SchemaValue,
     pub(super) fixed: bool,
@@ -165,7 +208,7 @@ pub(super) struct Boundary {
     pub(super) ns_context: NamespaceStack,
 }
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub(super) struct FundamentalFacets {
     pub(super) ordered: Ordered,
     pub(super) bounded: bool,
@@ -173,7 +216,7 @@ pub(super) struct FundamentalFacets {
     pub(super) numeric: bool,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub(super) enum Ordered {
     #[default]
     False,
@@ -181,7 +224,7 @@ pub(super) enum Ordered {
     Total,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub(super) enum Cardinality {
     #[default]
     CountablyInfinite,
@@ -195,7 +238,7 @@ pub(super) enum Variety {
     Union(Arc<[(Option<Arc<str>>, Arc<str>)]>),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Final {
     /// 'extension'
     Extension = 1,
@@ -221,7 +264,7 @@ impl std::ops::BitOr<FinalSet> for Final {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct FinalSet(u8);
 
 impl FinalSet {
