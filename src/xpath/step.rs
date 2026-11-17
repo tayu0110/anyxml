@@ -2,15 +2,15 @@ use std::collections::HashMap;
 
 use crate::{
     XML_XML_NAMESPACE,
-    tree::{NodeType, namespace::Namespace},
-    xpath::{Axis, NodeTest, XPathContext, XPathNodeSet},
+    tree::{Node, NodeType, namespace::Namespace, node::NodeSpec},
+    xpath::{Axis, NodeTest, XPathContext},
 };
 
 pub(super) fn location_step(
     context: &XPathContext,
     axis: Axis,
     node_test: &NodeTest,
-    node_set: &mut XPathNodeSet,
+    node_set: &mut Vec<Node<dyn NodeSpec>>,
 ) {
     let Some(context_node) = context.node.clone() else {
         return;
@@ -20,14 +20,14 @@ pub(super) fn location_step(
             if matches!(axis, Axis::AncestorOrSelf)
                 && node_test.match_node(&context_node, NodeType::Element, &context.namespaces)
             {
-                node_set.push(&context_node);
+                node_set.push(context_node.clone());
             }
             let mut parent = context_node.parent_node();
             while let Some(now) = parent {
                 parent = now.parent_node();
                 if node_test.match_node(&now.clone().into(), NodeType::Element, &context.namespaces)
                 {
-                    node_set.push(now);
+                    node_set.push(now.into());
                 }
             }
         }
@@ -35,7 +35,7 @@ pub(super) fn location_step(
             if let Some(element) = context_node.as_element() {
                 for att in element.attributes() {
                     if node_test.match_attribute(&att, true, &context.namespaces) {
-                        node_set.push(att);
+                        node_set.push(att.into());
                     }
                 }
             }
@@ -53,7 +53,7 @@ pub(super) fn location_step(
             if matches!(axis, Axis::DescendantOrSelf)
                 && node_test.match_node(&context_node, NodeType::Element, &context.namespaces)
             {
-                node_set.push(&context_node);
+                node_set.push(context_node.clone());
             }
             let mut children = context_node.first_child();
             while let Some(child) = children {
@@ -144,7 +144,7 @@ pub(super) fn location_step(
                 for namespace in element.namespaces() {
                     namespace_map.insert(namespace.prefix().unwrap_or_default(), namespace.clone());
                     if node_test.match_namespace(&namespace, true) {
-                        node_set.push(namespace);
+                        node_set.push(namespace.into());
                     }
                 }
 
@@ -166,7 +166,7 @@ pub(super) fn location_step(
                                     namespace.namespace_name(),
                                     element.clone(),
                                 );
-                                node_set.push(new);
+                                node_set.push(new.into());
                             }
                         }
                     }
@@ -178,7 +178,7 @@ pub(super) fn location_step(
                         XML_XML_NAMESPACE.into(),
                         element.clone(),
                     );
-                    node_set.push(new);
+                    node_set.push(new.into());
                 }
 
                 // Since only explicit declarations are collected,

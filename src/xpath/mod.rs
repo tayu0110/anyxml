@@ -307,10 +307,9 @@ impl XPathExpression {
                         .ok_or(XPathError::InternalError)?
                         .as_nodeset()
                         .map_err(|_| XPathError::IncorrectOperandType)?
+                        .into()
                 } else {
-                    let mut node_set = XPathNodeSet::default();
-                    node_set.push(self.context.node.clone().unwrap());
-                    node_set
+                    vec![self.context.node.clone().unwrap()]
                 };
 
                 let node_test = node_test.clone();
@@ -320,13 +319,14 @@ impl XPathExpression {
                 let old_context_size = self.context.size;
 
                 self.context.size = current_node_set.len();
-                let mut new_node_set = XPathNodeSet::default();
-                for (i, node) in current_node_set.iter().enumerate() {
+                let mut new_node_set = vec![];
+                for (i, node) in current_node_set.into_iter().enumerate() {
                     self.context.position = i + 1;
                     self.context.node = Some(node);
                     if predicate < usize::MAX {
-                        let mut node_set = XPathNodeSet::default();
+                        let mut node_set = vec![];
                         location_step(&self.context, axis, &node_test, &mut node_set);
+                        let mut node_set = node_set.into_iter().collect::<XPathNodeSet>();
                         if matches!(
                             axis,
                             Axis::Ancestor
@@ -334,15 +334,13 @@ impl XPathExpression {
                                 | Axis::Preceding
                                 | Axis::PrecedingSibling
                         ) {
-                            node_set.reverse_sort();
-                        } else {
-                            node_set.sort();
+                            node_set.nodes.reverse();
                         }
                         self.context.push_object(node_set.into());
                         self.do_evaluate(predicate)?;
                         let node_set = self.context.pop_object().unwrap().as_nodeset()?;
                         for node in &node_set {
-                            new_node_set.push(node);
+                            new_node_set.push(node.clone());
                         }
                     } else {
                         location_step(&self.context, axis, &node_test, &mut new_node_set);
@@ -353,6 +351,7 @@ impl XPathExpression {
                 self.context.position = old_context_position;
                 self.context.size = old_context_size;
 
+                let mut new_node_set = new_node_set.into_iter().collect::<XPathNodeSet>();
                 if matches!(
                     axis,
                     Axis::Ancestor
@@ -360,9 +359,7 @@ impl XPathExpression {
                         | Axis::Preceding
                         | Axis::PrecedingSibling
                 ) {
-                    new_node_set.reverse_sort();
-                } else {
-                    new_node_set.sort();
+                    new_node_set.nodes.reverse();
                 }
 
                 self.context.push_object(new_node_set.into());
@@ -920,11 +917,6 @@ impl XPathNodeSet {
             .sort_unstable_by(|l, r| l.compare_document_order(r));
     }
 
-    pub(crate) fn reverse_sort(&mut self) {
-        self.nodes
-            .sort_unstable_by(|l, r| r.compare_document_order(l));
-    }
-
     /// Returns the union of node-sets.
     ///
     /// Node duplication checks are based on identity, not equality.
@@ -968,6 +960,12 @@ impl XPathNodeSet {
         }
         ret.sort();
         ret
+    }
+}
+
+impl From<XPathNodeSet> for Vec<Node<dyn NodeSpec>> {
+    fn from(value: XPathNodeSet) -> Self {
+        value.nodes
     }
 }
 
