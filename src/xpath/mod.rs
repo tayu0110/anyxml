@@ -1172,8 +1172,8 @@ impl NodeTest {
         match self {
             NodeTest::Any => principal,
             NodeTest::Node => true,
-            NodeTest::AnyLocalName(local) => namespace_set
-                .get(Some(local))
+            NodeTest::AnyLocalName(prefix) => namespace_set
+                .get(Some(prefix))
                 .is_some_and(|ns| Some(ns) == element.namespace_name().as_deref()),
             NodeTest::QName(qname) => {
                 if let Some((prefix, local_name)) = qname.split_once(':') {
