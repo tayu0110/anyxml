@@ -2991,6 +2991,13 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         break;
                     }
 
+                    match &mut new.content_type {
+                        ContentType::ElementOnly(pt) | ContentType::Mixed(pt) => {
+                            pt.remove_pointless();
+                        }
+                        _ => {}
+                    }
+
                     let ret = match new.derivation_method {
                         DerivationMethod::Restriction => {
                             // verify [derivation-ok-restriction]
@@ -3684,52 +3691,38 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     });
                     return Err(XMLError::XSDError(XSDError::DerivationOkRestriction));
                 }
-                match &base.content_type {
+                let valid_restricted = match &base.content_type {
                     ContentType::ElementOnly(bpt) | ContentType::Mixed(bpt) => {
-                        if !self.is_valid_restriction(pt, bpt) {
-                            // clause 5.4.2
-                            let msg = format!(
-                                "The content type of the complex type '{}' is not a valid restriction of that of the base type '{}'.",
-                                new.display_name(),
-                                base.display_name()
-                            );
-                            self.error(SAXParseError {
-                                error: XMLError::XSDError(XSDError::DerivationOkRestriction),
-                                level: XMLErrorLevel::Error,
-                                domain: XMLErrorDomain::XSDParser,
-                                line: self.locator.line(),
-                                column: self.locator.column(),
-                                system_id: self.locator.system_id(),
-                                public_id: self.locator.public_id(),
-                                message: Cow::Owned(msg),
-                            });
-                            ret = Err(XMLError::XSDError(XSDError::DerivationOkRestriction));
-                        }
+                        // clause 5.4.2
+                        self.is_valid_restriction(pt, bpt)
                     }
                     ContentType::Empty => {
                         // clause 5.4.2 Note
-                        todo!()
+                        pt.is_pointless()
                     }
                     _ => {
                         // It's unclear how to handle cases where the type is simple,
                         // but since there's no specific mention of it, treat it as an error.
-                        let msg = format!(
-                            "The content type of the complex type '{}' is not a valid restriction of that of the base type '{}'.",
-                            new.display_name(),
-                            base.display_name()
-                        );
-                        self.error(SAXParseError {
-                            error: XMLError::XSDError(XSDError::DerivationOkRestriction),
-                            level: XMLErrorLevel::Error,
-                            domain: XMLErrorDomain::XSDParser,
-                            line: self.locator.line(),
-                            column: self.locator.column(),
-                            system_id: self.locator.system_id(),
-                            public_id: self.locator.public_id(),
-                            message: Cow::Owned(msg),
-                        });
-                        ret = Err(XMLError::XSDError(XSDError::DerivationOkRestriction));
+                        false
                     }
+                };
+                if !valid_restricted {
+                    let msg = format!(
+                        "The content type of the complex type '{}' is not a valid restriction of that of the base type '{}'.",
+                        new.display_name(),
+                        base.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::DerivationOkRestriction),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::DerivationOkRestriction));
                 }
             }
             _ => unreachable!(),
@@ -6546,7 +6539,7 @@ pub(super) struct ModelGroupDefinition {
     model_group: ModelGroup,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 enum Compositor {
     #[default]
     All,
@@ -6689,6 +6682,187 @@ impl Particle {
             return false;
         }
         true
+    }
+
+    /// Remove pointless particles as mentioned in "cos-particle-restrict" clause 2.2.
+    ///
+    /// # Reference
+    /// - [cos-particle-restrict](https://www.w3.org/TR/xmlschema-1/#cos-particle-restrict)
+    fn remove_pointless(&mut self) -> bool {
+        let mg = match &mut self.term {
+            Term::ModelGroup(mg) => mg,
+            Term::ModelGroupRef(_, _) => {
+                // Do nothing with the reference to the model group definition.
+                // Since it is unclear what kind of particle this reference refers to,
+                // return `false` to prevent it from being deleted.
+                return false;
+            }
+            Term::ElementDecl(_, _) | Term::Wildcard(_) => return false,
+        };
+        mg.particles.retain_mut(|t| !t.remove_pointless());
+
+        // process clause 2.2.2
+        // Flatten a <sequence>, <all> and <choice> where minOccurs and maxOccurs are both 1.
+        if mg.particles.len() == 1
+            && (matches!(mg.compositor, Compositor::All)
+                || (self.min_occurs == 1 && self.max_occurs == 1))
+        {
+            // clause 2.2.2.2.1 <sequence>|<choice>|<all>:
+            //      Particle {  <<< self
+            //          minOccurs: 1, maxOccurs: 1,
+            //          term: ModelGroup {
+            //              compositor: Sequence | Choice | All,
+            //              particles: vec![pt0], << replace self to this particle
+            //          }
+            //      }
+            //
+            // For <all>, there are no constraints on the parent particle's minOccurs and maxOccurs.
+            // Flattening when minOccurs is 0 should cause the behavior to become erratic, but for
+            // now, implement it as specified.
+            *self = mg.particles.pop().unwrap();
+            return false;
+        }
+        // clause 2.2.2.2.2 <sequence>|<choice>:
+        //      Particle {  <<< parent
+        //          minOccurs: n, maxOccurs: m,
+        //          term: ModelGroup {
+        //              compositor: Sequence | Choice,
+        //              particles: vec![
+        //                  pt0, pt1, ...,
+        //                  Particle {  <<< self
+        //                      minOccurs: 1, maxOccurs: 1,
+        //                      term: ModelGroup {
+        //                          compositor: Sequence | Choice,
+        //                          particles: vec![pt0, pt1, ..., ptn] << insert this to parent's {particles}
+        //                      }
+        //                  },
+        //                  ptn, ptn+1, ...
+        //              ]
+        //          }
+        //      }
+        if matches!(mg.compositor, Compositor::Sequence | Compositor::Choice)
+            && mg
+                .particles
+                .iter()
+                .any(|pt| pt.min_occurs == 1 && pt.max_occurs == 1)
+        {
+            let mut particles = Vec::with_capacity(mg.particles.len());
+            for pt in mg.particles.drain(..) {
+                if pt.min_occurs == 1 && pt.max_occurs == 1 {
+                    match pt.term {
+                        Term::ModelGroup(cmg) if mg.compositor == cmg.compositor => {
+                            particles.extend(cmg.particles)
+                        }
+                        _ => particles.push(pt),
+                    }
+                } else {
+                    particles.push(pt);
+                }
+            }
+            mg.particles = particles;
+        }
+
+        match mg.compositor {
+            Compositor::Sequence | Compositor::All => {
+                if mg.particles.is_empty() {
+                    // clause 2.2.1 of <sequence> and <all>
+                    true
+                } else {
+                    // clause 2.2.2 of <sequence> and <all> is handled by the parent particle.
+                    // Since deletion occurs only when the parent is a <sequence> and <all>,
+                    // it returns `false`.
+                    false
+                }
+            }
+            Compositor::Choice => {
+                if mg.particles.is_empty() && self.min_occurs == 0 {
+                    // clause 2.2.1 of <choice>
+                    true
+                } else {
+                    // clause 2.2.2 of <choice> is handled by the parent particle.
+                    // Since deletion occurs only when the parent is a <choice>,
+                    // it returns `false`.
+                    false
+                }
+            }
+        }
+    }
+
+    /// # Reference
+    /// - [cos-particle-restrict](https://www.w3.org/TR/xmlschema-1/#cos-particle-restrict)
+    fn is_pointless(&self) -> bool {
+        fn is_pointless_with_parent(now: &Particle, parent: Option<&Particle>) -> bool {
+            match &now.term {
+                Term::ModelGroup(mg) => {
+                    match mg.compositor {
+                        Compositor::Sequence => {
+                            if mg.particles.is_empty() {
+                                // clause 2.2.1 <sequence>
+                                true
+                            } else if now.min_occurs != 1 || now.max_occurs != 1 {
+                                // clause 2.2.2.1
+                                false
+                            } else if mg
+                                .particles
+                                .iter()
+                                .any(|pt| !is_pointless_with_parent(pt, Some(now)))
+                            {
+                                false
+                            } else {
+                                // clause 2.2.2.2
+                                mg.particles.len() == 1
+                                    || parent.is_some_and(|pt| match &pt.term {
+                                        Term::ModelGroup(mg) => {
+                                            matches!(mg.compositor, Compositor::Sequence)
+                                        }
+                                        Term::ModelGroupRef(ns, name) => todo!(),
+                                        _ => false,
+                                    })
+                            }
+                        }
+                        Compositor::All => {
+                            if mg.particles.is_empty() {
+                                // clause 2.2.1
+                                true
+                            } else {
+                                mg.particles.len() == 1
+                                    && is_pointless_with_parent(&mg.particles[0], Some(now))
+                            }
+                        }
+                        Compositor::Choice => {
+                            if mg.particles.is_empty() && now.min_occurs == 0 {
+                                // clause 2.2.1
+                                true
+                            } else if now.min_occurs != 1 || now.max_occurs != 1 {
+                                // clause 2.2.2.1
+                                false
+                            } else if mg.particles.len() == 1
+                                && is_pointless_with_parent(&mg.particles[0], Some(now))
+                            {
+                                // clause 2.2.2.2
+                                true
+                            } else {
+                                mg.particles
+                                    .iter()
+                                    .all(|pt| is_pointless_with_parent(pt, Some(now)))
+                                    && parent.is_some_and(|pt| match &pt.term {
+                                        Term::ModelGroup(mg) => {
+                                            matches!(mg.compositor, Compositor::Choice)
+                                        }
+                                        Term::ModelGroupRef(ns, name) => todo!(),
+                                        _ => false,
+                                    })
+                            }
+                        }
+                    }
+                }
+                Term::ModelGroupRef(ns, name) => {
+                    todo!()
+                }
+                Term::ElementDecl(_, _) | Term::Wildcard(_) => false,
+            }
+        }
+        is_pointless_with_parent(self, None)
     }
 }
 
