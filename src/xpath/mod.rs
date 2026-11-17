@@ -971,6 +971,16 @@ impl XPathNodeSet {
     }
 }
 
+impl FromIterator<Node<dyn NodeSpec>> for XPathNodeSet {
+    fn from_iter<T: IntoIterator<Item = Node<dyn NodeSpec>>>(iter: T) -> Self {
+        let mut nodes = iter.into_iter().collect::<Vec<_>>();
+        nodes.sort_unstable_by_key(|n| n.generate_id());
+        nodes.dedup_by_key(|n| n.generate_id());
+        nodes.sort_unstable_by(|l, r| l.compare_document_order(r));
+        Self { nodes }
+    }
+}
+
 impl IntoIterator for XPathNodeSet {
     type Item = Node<dyn NodeSpec>;
     type IntoIter = std::vec::IntoIter<Self::Item>;
