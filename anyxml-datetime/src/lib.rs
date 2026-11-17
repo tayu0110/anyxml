@@ -110,7 +110,7 @@ impl std::fmt::Display for TimeZone {
         } else {
             let h = self.0 / 60;
             let m = self.0 % 60;
-            write!(f, "{:+02}:{:02}", h, m.abs())
+            write!(f, "{:+03}:{:02}", h, m.abs())
         }
     }
 }
@@ -179,7 +179,10 @@ impl NaiveYear {
 
 impl std::fmt::Display for NaiveYear {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:04}", self.0)
+        if self.0 < 0 {
+            write!(f, "-")?;
+        }
+        write!(f, "{:04}", self.0.unsigned_abs())
     }
 }
 
@@ -2069,5 +2072,11 @@ mod tests {
         assert!(p5m.partial_cmp(&"P151D".parse().unwrap()).is_none());
         assert!(p5m.partial_cmp(&"P152D".parse().unwrap()).is_none());
         assert!(p5m.partial_cmp(&"P153D".parse().unwrap()).is_none());
+    }
+
+    #[test]
+    fn timezone_to_string_tests() {
+        let tz = "-04:00".parse::<TimeZone>().unwrap();
+        assert_eq!(tz.to_string(), "-04:00");
     }
 }
