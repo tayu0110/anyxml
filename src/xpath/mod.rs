@@ -1172,7 +1172,9 @@ impl NodeTest {
         match self {
             NodeTest::Any => principal,
             NodeTest::Node => true,
-            NodeTest::AnyLocalName(local) => local.as_ref() == element.local_name().as_ref(),
+            NodeTest::AnyLocalName(local) => namespace_set
+                .get(Some(local))
+                .is_some_and(|ns| Some(ns) == element.namespace_name().as_deref()),
             NodeTest::QName(qname) => {
                 if let Some((prefix, local_name)) = qname.split_once(':') {
                     element
@@ -1502,5 +1504,40 @@ mod tests {
             .unwrap()[0]
             .clone();
         assert_eq!(ch2_1.text_content(), "gch3");
+    }
+
+    #[test]
+    fn namespace_binding_tests() {
+        const XML: &str = r#"<bookstore xmlns="http://myother.com"><book xmlns:my="http://my.com"><my:title>t</my:title></book></bookstore>"#;
+
+        fn execute(expr: &str, ctx: &Node<dyn NodeSpec>, find: &Node<dyn NodeSpec>) {
+            eprintln!("expr: {expr}, ctx: {}", ctx.as_element().unwrap().name());
+            let mut exp = compile(expr).unwrap();
+            exp.add_namespace("my", "http://my.com").unwrap();
+            let obj = exp.evaluate(ctx).unwrap().as_nodeset().unwrap();
+            assert!(obj.contains(find));
+        }
+
+        let mut reader = XMLReader::builder()
+            .set_handler(TreeBuildHandler::default())
+            .build();
+        reader.parse_str(XML, None).unwrap();
+        let doc = reader.handler.document;
+        let root = doc.document_element().unwrap();
+
+        let book = root.first_child().unwrap(); // my:book
+        assert_eq!(book.node_type(), NodeType::Element);
+        assert_eq!(&*book.as_element().unwrap().local_name(), "book");
+        let title = book.first_child().unwrap(); // my:title
+        assert_eq!(title.node_type(), NodeType::Element);
+        assert_eq!(&*title.as_element().unwrap().local_name(), "title");
+
+        execute("my:*", &book, &title);
+        execute("self::*", &book, &book);
+        execute("*", &book, &title);
+
+        execute("self::my:title", &title, &title);
+        execute("self::my:*", &title, &title);
+        execute("self::*[namespace-uri()='http://my.com']", &title, &title);
     }
 }
