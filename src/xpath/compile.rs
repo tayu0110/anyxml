@@ -25,6 +25,8 @@ pub fn compile(mut xpath: &str) -> Result<XPathExpression, XPathCompileError> {
     // For now, the priority is correct operation over performance.
 
     let mut context = XPathContext::default();
+    assert_eq!(context.size, 1);
+    assert_eq!(context.position, 1);
     register_xslt_functions(&mut context.functions);
     Ok(XPathExpression {
         root,

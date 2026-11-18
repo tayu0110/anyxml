@@ -17,6 +17,7 @@ use crate::{
     },
 };
 
+/// XSLT namespace.
 pub const XML_XSLT_NAMESPACE: &str = "http://www.w3.org/1999/XSL/Transform";
 
 /// The context required to execute an XSLT extension function.
@@ -64,9 +65,14 @@ impl Default for XSLTContext {
     }
 }
 
+/// XSLT key definition.
+///
+/// An instance of this type corresponds to an `<xsl:key>`.
 #[derive(Clone, Default)]
 pub struct KeyDef {
+    /// "match" attribute.
     pub r#match: Box<str>,
+    /// "use" attribute.
     pub r#use: Box<str>,
 }
 
@@ -830,17 +836,30 @@ struct FormatNumberInfo {
     is_negative_pattern: bool, // Flag for processing -ve prefix/suffix
 }
 
+/// XSLT decimal-format definition.
+///
+/// An instance of this type corresponds to an `<xsl:decimal-format>`.
 #[derive(Clone)]
 pub struct DecimalFormat {
+    /// "decimal-separator" attribute.
     pub decimal_separator: char,
+    /// "grouping-separator" attribute.
     pub grouping_separator: char,
+    /// "infinity" attribute.
     pub infinity: String,
+    /// "minus-sign" attribute.
     pub minus_sign: char,
+    /// "NaN" attribute.
     pub nan: String,
+    /// "percent" attribute.
     pub percent: char,
+    /// "per-mille" attribute.
     pub permille: char,
+    /// "zero-digit" attribute.
     pub zero_digit: char,
+    /// "digit" attribute.
     pub digit: char,
+    /// "pattern-separator" attribute.
     pub pattern_separator: char,
 }
 

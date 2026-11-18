@@ -59,7 +59,7 @@ mod ops;
 mod step;
 mod xslt;
 
-use std::{borrow::Cow, collections::HashMap, io::Read, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, io::Read, num::NonZeroUsize, sync::Arc};
 
 pub use compile::*;
 pub use xslt::{DecimalFormat, KeyDef, XML_XSLT_NAMESPACE, XSLTContext, compile_pattern};
@@ -90,6 +90,7 @@ pub enum XPathError {
     UnresolvableKey,
     UnresolvableNumberFormat,
     InvalidNamespacePrefix,
+    InvalidContextPosition,
     InvalidXSLTContext,
     UnsupportedNodeType,
     NumberFormatApplicationFailure,
@@ -242,7 +243,13 @@ impl XPathExpression {
             .xslt
             .doc_cache
             .insert(doc.document_base_uri().as_ref().into(), doc);
-        self.evaluate_node(context_node)
+        let ret = self.evaluate_node(context_node);
+
+        // reset for next execution
+        self.context.position = 1;
+        self.context.size = 1;
+
+        ret
     }
 
     fn evaluate_node(
@@ -262,13 +269,10 @@ impl XPathExpression {
             return Err(XPathError::UnsupportedNodeType);
         }
 
-        // clear context
+        // clear context stack
         self.context.stack.clear();
-
-        // initialize context
+        // initialize context node
         self.context.node = Some(context_node);
-        self.context.position = 1;
-        self.context.size = 1;
 
         // start evaluation
         self.do_evaluate(self.root)?;
@@ -584,6 +588,22 @@ impl XPathExpression {
         Ok(())
     }
 
+    /// Get current context position.
+    ///
+    /// Unless [`set_context_position_and_size`](XPathExpression::set_context_position_and_size)
+    /// is called beforehand, this method returns `1`.
+    pub fn context_position(&self) -> usize {
+        self.context.position
+    }
+
+    /// Get current context size.
+    ///
+    /// Unless [`set_context_position_and_size`](XPathExpression::set_context_position_and_size)
+    /// is called beforehand, this method returns `1`.
+    pub fn context_size(&self) -> usize {
+        self.context.size
+    }
+
     /// Add a variable binding.
     ///
     /// If a variable with the same name already exists, return the existing value and
@@ -606,6 +626,56 @@ impl XPathExpression {
         self.context.namespaces.insert(prefix, namespace_name)
     }
 
+    /// Set context position and size for the next execution and return old position and size.
+    ///
+    /// If `position` is greater than `size`, return [`Err`].
+    ///
+    /// # Example
+    /// ```rust
+    /// use std::num::NonZeroUsize;
+    /// use anyxml::{tree::Document, xpath::compile};
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut exp = compile("position()")?;
+    /// let mut doc = Document::new();
+    /// let elem = doc.create_element("doc", None)?;
+    /// doc.append_child(elem)?;
+    ///
+    /// // Default position is '1'.
+    /// let ret = exp.evaluate(&doc)?.as_number()?;
+    /// assert_eq!(ret, 1.0);
+    ///
+    /// exp.set_context_position_and_size(
+    ///     NonZeroUsize::new(5).unwrap(),
+    ///     NonZeroUsize::new(5).unwrap(),
+    /// )?;
+    ///
+    /// let ret = exp.evaluate(&doc)?.as_number()?;
+    /// assert_eq!(ret, 5.0);
+    ///
+    /// // context position and size are reset per execution.
+    /// let ret = exp.evaluate(&doc)?.as_number()?;
+    /// assert_eq!(ret, 1.0);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn set_context_position_and_size(
+        &mut self,
+        position: NonZeroUsize,
+        size: NonZeroUsize,
+    ) -> Result<(usize, usize), XPathError> {
+        let old_position = self.context.position;
+        let old_size = self.context.size;
+        let position = position.get();
+        let size = size.get();
+        if position > size {
+            return Err(XPathError::InvalidContextPosition);
+        }
+        self.context.position = position;
+        self.context.size = size;
+        Ok((old_position, old_size))
+    }
+
     /// Get the mutable XSLT context.
     pub fn xslt_context(&mut self) -> &mut XSLTContext {
         &mut self.context.xslt
@@ -623,7 +693,7 @@ impl XPathExpression {
 /// >   - a set of variable bindings
 /// >   - a function library
 /// >   - the set of namespace declarations in scope for the expression
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct XPathContext {
     node: Option<Node<dyn NodeSpec>>,
     position: usize,
@@ -642,6 +712,21 @@ impl XPathContext {
 
     pub(super) fn pop_object(&mut self) -> Option<XPathObject> {
         self.stack.pop()
+    }
+}
+
+impl Default for XPathContext {
+    fn default() -> Self {
+        Self {
+            node: None,
+            position: 1,
+            size: 1,
+            variables: VariableSet::default(),
+            functions: FunctionLibrary::default(),
+            namespaces: NamespaceSet::default(),
+            stack: vec![],
+            xslt: XSLTContext::default(),
+        }
     }
 }
 
