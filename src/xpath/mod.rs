@@ -59,7 +59,7 @@ mod ops;
 mod step;
 mod xslt;
 
-use std::{borrow::Cow, collections::HashMap, io::Read, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, io::Read, num::NonZeroUsize, sync::Arc};
 
 pub use compile::*;
 pub use xslt::{DecimalFormat, KeyDef, XML_XSLT_NAMESPACE, XSLTContext, compile_pattern};
@@ -90,6 +90,7 @@ pub enum XPathError {
     UnresolvableKey,
     UnresolvableNumberFormat,
     InvalidNamespacePrefix,
+    InvalidContextPosition,
     InvalidXSLTContext,
     UnsupportedNodeType,
     NumberFormatApplicationFailure,
@@ -242,7 +243,13 @@ impl XPathExpression {
             .xslt
             .doc_cache
             .insert(doc.document_base_uri().as_ref().into(), doc);
-        self.evaluate_node(context_node)
+        let ret = self.evaluate_node(context_node);
+
+        // reset for next execution
+        self.context.position = 1;
+        self.context.size = 1;
+
+        ret
     }
 
     fn evaluate_node(
@@ -262,13 +269,10 @@ impl XPathExpression {
             return Err(XPathError::UnsupportedNodeType);
         }
 
-        // clear context
+        // clear context stack
         self.context.stack.clear();
-
-        // initialize context
+        // initialize context node
         self.context.node = Some(context_node);
-        self.context.position = 1;
-        self.context.size = 1;
 
         // start evaluation
         self.do_evaluate(self.root)?;
@@ -307,10 +311,9 @@ impl XPathExpression {
                         .ok_or(XPathError::InternalError)?
                         .as_nodeset()
                         .map_err(|_| XPathError::IncorrectOperandType)?
+                        .into()
                 } else {
-                    let mut node_set = XPathNodeSet::default();
-                    node_set.push(self.context.node.clone().unwrap());
-                    node_set
+                    vec![self.context.node.clone().unwrap()]
                 };
 
                 let node_test = node_test.clone();
@@ -320,13 +323,14 @@ impl XPathExpression {
                 let old_context_size = self.context.size;
 
                 self.context.size = current_node_set.len();
-                let mut new_node_set = XPathNodeSet::default();
-                for (i, node) in current_node_set.iter().enumerate() {
+                let mut new_node_set = vec![];
+                for (i, node) in current_node_set.into_iter().enumerate() {
                     self.context.position = i + 1;
                     self.context.node = Some(node);
                     if predicate < usize::MAX {
-                        let mut node_set = XPathNodeSet::default();
+                        let mut node_set = vec![];
                         location_step(&self.context, axis, &node_test, &mut node_set);
+                        let mut node_set = node_set.into_iter().collect::<XPathNodeSet>();
                         if matches!(
                             axis,
                             Axis::Ancestor
@@ -334,15 +338,13 @@ impl XPathExpression {
                                 | Axis::Preceding
                                 | Axis::PrecedingSibling
                         ) {
-                            node_set.reverse_sort();
-                        } else {
-                            node_set.sort();
+                            node_set.nodes.reverse();
                         }
                         self.context.push_object(node_set.into());
                         self.do_evaluate(predicate)?;
                         let node_set = self.context.pop_object().unwrap().as_nodeset()?;
                         for node in &node_set {
-                            new_node_set.push(node);
+                            new_node_set.push(node.clone());
                         }
                     } else {
                         location_step(&self.context, axis, &node_test, &mut new_node_set);
@@ -353,6 +355,7 @@ impl XPathExpression {
                 self.context.position = old_context_position;
                 self.context.size = old_context_size;
 
+                let mut new_node_set = new_node_set.into_iter().collect::<XPathNodeSet>();
                 if matches!(
                     axis,
                     Axis::Ancestor
@@ -360,9 +363,7 @@ impl XPathExpression {
                         | Axis::Preceding
                         | Axis::PrecedingSibling
                 ) {
-                    new_node_set.reverse_sort();
-                } else {
-                    new_node_set.sort();
+                    new_node_set.nodes.reverse();
                 }
 
                 self.context.push_object(new_node_set.into());
@@ -587,6 +588,22 @@ impl XPathExpression {
         Ok(())
     }
 
+    /// Get current context position.
+    ///
+    /// Unless [`set_context_position_and_size`](XPathExpression::set_context_position_and_size)
+    /// is called beforehand, this method returns `1`.
+    pub fn context_position(&self) -> usize {
+        self.context.position
+    }
+
+    /// Get current context size.
+    ///
+    /// Unless [`set_context_position_and_size`](XPathExpression::set_context_position_and_size)
+    /// is called beforehand, this method returns `1`.
+    pub fn context_size(&self) -> usize {
+        self.context.size
+    }
+
     /// Add a variable binding.
     ///
     /// If a variable with the same name already exists, return the existing value and
@@ -609,6 +626,56 @@ impl XPathExpression {
         self.context.namespaces.insert(prefix, namespace_name)
     }
 
+    /// Set context position and size for the next execution and return old position and size.
+    ///
+    /// If `position` is greater than `size`, return [`Err`].
+    ///
+    /// # Example
+    /// ```rust
+    /// use std::num::NonZeroUsize;
+    /// use anyxml::{tree::Document, xpath::compile};
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut exp = compile("position()")?;
+    /// let mut doc = Document::new();
+    /// let elem = doc.create_element("doc", None)?;
+    /// doc.append_child(elem)?;
+    ///
+    /// // Default position is '1'.
+    /// let ret = exp.evaluate(&doc)?.as_number()?;
+    /// assert_eq!(ret, 1.0);
+    ///
+    /// exp.set_context_position_and_size(
+    ///     NonZeroUsize::new(5).unwrap(),
+    ///     NonZeroUsize::new(5).unwrap(),
+    /// )?;
+    ///
+    /// let ret = exp.evaluate(&doc)?.as_number()?;
+    /// assert_eq!(ret, 5.0);
+    ///
+    /// // context position and size are reset per execution.
+    /// let ret = exp.evaluate(&doc)?.as_number()?;
+    /// assert_eq!(ret, 1.0);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn set_context_position_and_size(
+        &mut self,
+        position: NonZeroUsize,
+        size: NonZeroUsize,
+    ) -> Result<(usize, usize), XPathError> {
+        let old_position = self.context.position;
+        let old_size = self.context.size;
+        let position = position.get();
+        let size = size.get();
+        if position > size {
+            return Err(XPathError::InvalidContextPosition);
+        }
+        self.context.position = position;
+        self.context.size = size;
+        Ok((old_position, old_size))
+    }
+
     /// Get the mutable XSLT context.
     pub fn xslt_context(&mut self) -> &mut XSLTContext {
         &mut self.context.xslt
@@ -626,7 +693,7 @@ impl XPathExpression {
 /// >   - a set of variable bindings
 /// >   - a function library
 /// >   - the set of namespace declarations in scope for the expression
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct XPathContext {
     node: Option<Node<dyn NodeSpec>>,
     position: usize,
@@ -645,6 +712,21 @@ impl XPathContext {
 
     pub(super) fn pop_object(&mut self) -> Option<XPathObject> {
         self.stack.pop()
+    }
+}
+
+impl Default for XPathContext {
+    fn default() -> Self {
+        Self {
+            node: None,
+            position: 1,
+            size: 1,
+            variables: VariableSet::default(),
+            functions: FunctionLibrary::default(),
+            namespaces: NamespaceSet::default(),
+            stack: vec![],
+            xslt: XSLTContext::default(),
+        }
     }
 }
 
@@ -920,11 +1002,6 @@ impl XPathNodeSet {
             .sort_unstable_by(|l, r| l.compare_document_order(r));
     }
 
-    pub(crate) fn reverse_sort(&mut self) {
-        self.nodes
-            .sort_unstable_by(|l, r| r.compare_document_order(l));
-    }
-
     /// Returns the union of node-sets.
     ///
     /// Node duplication checks are based on identity, not equality.
@@ -968,6 +1045,22 @@ impl XPathNodeSet {
         }
         ret.sort();
         ret
+    }
+}
+
+impl From<XPathNodeSet> for Vec<Node<dyn NodeSpec>> {
+    fn from(value: XPathNodeSet) -> Self {
+        value.nodes
+    }
+}
+
+impl FromIterator<Node<dyn NodeSpec>> for XPathNodeSet {
+    fn from_iter<T: IntoIterator<Item = Node<dyn NodeSpec>>>(iter: T) -> Self {
+        let mut nodes = iter.into_iter().collect::<Vec<_>>();
+        nodes.sort_unstable_by_key(|n| n.generate_id());
+        nodes.dedup_by_key(|n| n.generate_id());
+        nodes.sort_unstable_by(|l, r| l.compare_document_order(r));
+        Self { nodes }
     }
 }
 
@@ -1172,7 +1265,9 @@ impl NodeTest {
         match self {
             NodeTest::Any => principal,
             NodeTest::Node => true,
-            NodeTest::AnyLocalName(local) => local.as_ref() == element.local_name().as_ref(),
+            NodeTest::AnyLocalName(prefix) => namespace_set
+                .get(Some(prefix))
+                .is_some_and(|ns| Some(ns) == element.namespace_name().as_deref()),
             NodeTest::QName(qname) => {
                 if let Some((prefix, local_name)) = qname.split_once(':') {
                     element
@@ -1502,5 +1597,40 @@ mod tests {
             .unwrap()[0]
             .clone();
         assert_eq!(ch2_1.text_content(), "gch3");
+    }
+
+    #[test]
+    fn namespace_binding_tests() {
+        const XML: &str = r#"<bookstore xmlns="http://myother.com"><book xmlns:my="http://my.com"><my:title>t</my:title></book></bookstore>"#;
+
+        fn execute(expr: &str, ctx: &Node<dyn NodeSpec>, find: &Node<dyn NodeSpec>) {
+            eprintln!("expr: {expr}, ctx: {}", ctx.as_element().unwrap().name());
+            let mut exp = compile(expr).unwrap();
+            exp.add_namespace("my", "http://my.com").unwrap();
+            let obj = exp.evaluate(ctx).unwrap().as_nodeset().unwrap();
+            assert!(obj.contains(find));
+        }
+
+        let mut reader = XMLReader::builder()
+            .set_handler(TreeBuildHandler::default())
+            .build();
+        reader.parse_str(XML, None).unwrap();
+        let doc = reader.handler.document;
+        let root = doc.document_element().unwrap();
+
+        let book = root.first_child().unwrap(); // my:book
+        assert_eq!(book.node_type(), NodeType::Element);
+        assert_eq!(&*book.as_element().unwrap().local_name(), "book");
+        let title = book.first_child().unwrap(); // my:title
+        assert_eq!(title.node_type(), NodeType::Element);
+        assert_eq!(&*title.as_element().unwrap().local_name(), "title");
+
+        execute("my:*", &book, &title);
+        execute("self::*", &book, &book);
+        execute("*", &book, &title);
+
+        execute("self::my:title", &title, &title);
+        execute("self::my:*", &title, &title);
+        execute("self::*[namespace-uri()='http://my.com']", &title, &title);
     }
 }
