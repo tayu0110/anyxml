@@ -2984,9 +2984,20 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         break;
                     }
                     let mut new = ComplexTypeDefinition::clone(&value);
-                    if self.check_ct_props_correct_4_5(&mut new).is_err() {
+                    if self
+                        .compute_attributes_of_complex_type(&mut new, &base)
+                        .is_err()
+                        || self.check_ct_props_correct_4_5(&mut new).is_err()
+                    {
                         // [ct-props-correct] clause 4, 5
                         // The error is considered to have already been reported.
+                        stack.clear();
+                        break;
+                    }
+                    if self
+                        .determine_content_type_of_complex_type(&mut new, &base)
+                        .is_err()
+                    {
                         stack.clear();
                         break;
                     }
@@ -3065,15 +3076,13 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         Ok(())
     }
 
-    /// Check a part of "ct-props-correct" related to {attribute uses}. (clause 4 and 5)
-    ///
-    /// # Reference
-    /// - [ct-props-correct](https://www.w3.org/TR/xmlschema-1/#ct-props-correct)
-    fn check_ct_props_correct_4_5(
+    /// Expand attributeGroup, derive attributes from base type and resolve the attribute wildcard.
+    fn compute_attributes_of_complex_type(
         &mut self,
         new: &mut ComplexTypeDefinition,
+        base: &TypeDefinition,
     ) -> Result<(), XMLError> {
-        let mut used = HashSet::new();
+        let mut wildcards = vec![];
         while let Some(gref) = new.attribute_group_refs.pop() {
             let Some(attgroup) = self.schema.attgroup_defs.get(&gref) else {
                 // Since the verification cannot continue,
@@ -3100,11 +3109,232 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             };
             new.attribute_uses
                 .extend(attgroup.attribute_uses.iter().cloned());
+            if let Some(wc) = attgroup.attribute_wildcard.as_ref() {
+                wildcards.push(wc.clone());
+            }
             // At this point, it is assumed that all attribute groups have been expanded.
             assert!(attgroup.attribute_group_refs.is_empty());
         }
 
-        used.clear();
+        // {attribute uses} of complexType clause 3
+        let prohibited = new
+            .attribute_uses
+            .extract_if(.., |au| matches!(au.required, Occurrence::Prohibited))
+            .filter_map(|au| self.schema.att_decls.get(&au.attribute_declaration))
+            .map(|att| (att.target_namespace.clone(), att.name.clone()))
+            .collect::<HashSet<_>>();
+        if let Some(ct) = base.as_complex_type() {
+            match new.derivation_method {
+                DerivationMethod::Extension => {
+                    // In this case, clause 3.1 and 3.2 is not applied.
+                    // Therefore, all attribute uses are taken over.
+                    new.attribute_uses.extend_from_slice(&ct.attribute_uses);
+                }
+                DerivationMethod::Restriction => {
+                    for attuse in &ct.attribute_uses {
+                        let Some(att) = self.schema.att_decls.get(&attuse.attribute_declaration)
+                        else {
+                            // If the base {attribute uses} contains an unresolvable attribute use,
+                            // an error should already have been reported, so no error is raised here.
+                            continue;
+                        };
+                        if new
+                            .attribute_uses
+                            .iter()
+                            .filter_map(|au| self.schema.att_decls.get(&au.attribute_declaration))
+                            .any(|a| {
+                                att.target_namespace == a.target_namespace && att.name == a.name
+                            })
+                        {
+                            // clause 3.1
+                            continue;
+                        }
+                        if prohibited.contains(&(att.target_namespace.clone(), att.name.clone())) {
+                            // clause 3.2
+                            continue;
+                        }
+                        new.attribute_uses.push(attuse.clone());
+                    }
+                }
+            }
+        }
+
+        // {attribute wildcard} of complexType clause 3
+        let complete_wildcard =
+            attribute_complete_wildcard(&wildcards, new.attribute_wildcard.take())?;
+        if matches!(new.derivation_method, DerivationMethod::Restriction) {
+            // clause 3.1
+            new.attribute_wildcard = complete_wildcard;
+        } else {
+            // clause 3.2
+            let base = new.base_type_definition.clone();
+            if let Some(ct) = self
+                .schema
+                .type_defs
+                .get(&base)
+                .and_then(|t| t.as_complex_type())
+                && let Some(base_wildcard) = ct.attribute_wildcard.as_ref()
+            {
+                if let Some(complete_wildcard) = complete_wildcard {
+                    // clause 3.2.2.1.2
+                    new.attribute_wildcard = complete_wildcard.union(base_wildcard.clone());
+                } else {
+                    // clause 3.2.2.1.1
+                    new.attribute_wildcard = Some(base_wildcard.clone());
+                }
+            } else {
+                // clause 3.2.2.2
+                new.attribute_wildcard = complete_wildcard;
+            }
+        }
+        Ok(())
+    }
+
+    /// Finalize the content type that could not be resolved during component creation.
+    fn determine_content_type_of_complex_type(
+        &mut self,
+        new: &mut ComplexTypeDefinition,
+        base: &TypeDefinition,
+    ) -> Result<(), XMLError> {
+        match &mut new.content_type {
+            ContentType::Simple(ns, name) => {
+                // In the case of <restriction>, since it has already been finalized,
+                // there is nothing to do.
+                if matches!(new.derivation_method, DerivationMethod::Extension) {
+                    assert!(ns.is_none());
+                    assert!(name.is_empty());
+
+                    // In this case, <simpleContent> alternative is selected.
+                    match base {
+                        TypeDefinition::Simple(st) => {
+                            // {content type} of complexType clause 4
+                            *ns = st.target_namespace.clone();
+                            *name = st.name.clone();
+                        }
+                        TypeDefinition::Complex(ct) => {
+                            // {content type} of complexType clause 3
+                            if !matches!(ct.content_type, ContentType::Simple(_, _)) {
+                                // [src-ct] clause 2.1, 2.2.1, 2.1.3
+                                let msg = format!(
+                                    "<simpleContent> and <extension> is chosen for '{}' and its base type is complex, but the content type of the base type '{}' is not simple.",
+                                    new.display_name(),
+                                    ct.display_name()
+                                );
+                                self.error(SAXParseError {
+                                    error: XMLError::XSDError(XSDError::SrcCt),
+                                    level: XMLErrorLevel::Error,
+                                    domain: XMLErrorDomain::XSDParser,
+                                    line: self.locator.line(),
+                                    column: self.locator.column(),
+                                    system_id: self.locator.system_id(),
+                                    public_id: self.locator.public_id(),
+                                    message: Cow::Owned(msg),
+                                });
+                                return Err(XMLError::XSDError(XSDError::SrcCt));
+                            }
+                            new.content_type = ct.content_type.clone();
+                        }
+                    }
+                }
+            }
+            ContentType::Empty | ContentType::ElementOnly(_) | ContentType::Mixed(_) => {}
+            ContentType::Pending(pt, mixed) => {
+                // In the case of <restriction>,
+                // at least which kind of content type it will be should be determined.
+                assert!(matches!(new.derivation_method, DerivationMethod::Extension));
+
+                let Some(ct) = base.as_complex_type() else {
+                    let msg = format!(
+                        "The base type resolved by the 'base' attribute of <complexContent> for '{}' must be a complex type, but '{}' is not.",
+                        new.display_name(),
+                        base.display_name()
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::SrcCt),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    return Err(XMLError::XSDError(XSDError::SrcCt));
+                };
+                // {content type} of complexType clause 3.2 (<complexContent> alternative)
+                if let Some(effective_content) = pt.take() {
+                    match &ct.content_type {
+                        ContentType::Empty => {
+                            // clause 3.2.2
+                            new.content_type = if *mixed {
+                                ContentType::Mixed(effective_content)
+                            } else {
+                                ContentType::ElementOnly(effective_content)
+                            }
+                        }
+                        ContentType::ElementOnly(bpt) | ContentType::Mixed(bpt) => {
+                            // clause 3.2.3
+                            let pt = Particle {
+                                min_occurs: 1,
+                                max_occurs: 1,
+                                term: Term::ModelGroup(ModelGroup {
+                                    compositor: Compositor::Sequence,
+                                    particles: vec![bpt.clone(), effective_content],
+                                }),
+                            };
+                            new.content_type = if *mixed {
+                                ContentType::Mixed(pt)
+                            } else {
+                                ContentType::ElementOnly(pt)
+                            }
+                        }
+                        _ => {
+                            // The case that {content type} is a simple type.
+                            // Although not explicitly stated, according to the provisions
+                            // of [cos-ct-extends] clause 1.4, a combination where the
+                            // {content type} of the base type is a simple type and the
+                            // {content type} of the type itself is anything other than a
+                            // simple type is not permitted.
+                            //
+                            // [src-ct] clause 3
+                            // [cos-ct-extends] clause 1.4
+                            let msg = format!(
+                                "The content type of the base complex type '{}' is a simple type, but that of extended complex type '{}' is not.",
+                                ct.display_name(),
+                                new.display_name()
+                            );
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::CosCtExtends),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Owned(msg),
+                            });
+                            return Err(XMLError::XSDError(XSDError::CosCtExtends));
+                        }
+                    }
+                } else {
+                    // clause 3.2.1
+                    new.content_type = ct.content_type.clone();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Check a part of "ct-props-correct" related to {attribute uses}. (clause 4 and 5)
+    ///
+    /// # Reference
+    /// - [ct-props-correct](https://www.w3.org/TR/xmlschema-1/#ct-props-correct)
+    fn check_ct_props_correct_4_5(
+        &mut self,
+        new: &mut ComplexTypeDefinition,
+    ) -> Result<(), XMLError> {
+        assert!(new.attribute_group_refs.is_empty());
+        let mut used = HashSet::new();
         let mut ret = Ok(());
         let mut idcnt = 0;
         for attuse in &new.attribute_uses {
@@ -3738,17 +3968,18 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         base: &TypeDefinition,
     ) -> Result<(), XMLError> {
         match base {
-            TypeDefinition::Simple(base) => {}
-            TypeDefinition::Complex(base) => {
+            TypeDefinition::Simple(base) => {
+                // [cos-ct-extends] clause 2
+
                 if base.r#final.extension() {
-                    // [cos-ct-extends] clause 1.1
+                    // [cos-ct-extends] clause 2.2
                     let msg = format!(
-                        "'{}' cannot be derived from '{}' because 'restriction' is prohibited.",
+                        "'{}' cannot be derived from '{}' because 'extension' is prohibited.",
                         new.display_name(),
                         base.display_name(),
                     );
                     self.error(SAXParseError {
-                        error: XMLError::XSDError(XSDError::DerivationOkRestriction),
+                        error: XMLError::XSDError(XSDError::CosCtExtends),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
                         line: self.locator.line(),
@@ -3757,7 +3988,170 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         public_id: self.locator.public_id(),
                         message: Cow::Owned(msg),
                     });
-                    return Err(XMLError::XSDError(XSDError::DerivationOkRestriction));
+                    return Err(XMLError::XSDError(XSDError::CosCtExtends));
+                }
+
+                if let ContentType::Simple(ns, name) = &new.content_type
+                    && let Some(t) = self.schema.type_defs.get(&(ns.clone(), name.clone()))
+                    && let Some(st) = t.as_simple_type()
+                    && st.target_namespace == base.target_namespace
+                    && st.name == base.name
+                {
+                    // no op
+                } else {
+                    // [cos-ct-extends] clause 2.1
+                    let msg = format!(
+                        "The content simple type of the complex type '{}' is not same as that of the base type '{}'.",
+                        new.display_name(),
+                        base.display_name(),
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::CosCtExtends),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    return Err(XMLError::XSDError(XSDError::CosCtExtends));
+                }
+            }
+            TypeDefinition::Complex(base) => {
+                // [cos-ct-extends] clause 1
+
+                if base.r#final.extension() {
+                    // [cos-ct-extends] clause 1.1
+                    let msg = format!(
+                        "'{}' cannot be derived from '{}' because 'restriction' is prohibited.",
+                        new.display_name(),
+                        base.display_name(),
+                    );
+                    self.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::CosCtExtends),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    return Err(XMLError::XSDError(XSDError::CosCtExtends));
+                }
+
+                // [cos-ct-extends] clause 1.2
+                for battuse in &base.attribute_uses {
+                    let Some(batt) = self.schema.att_decls.get(&battuse.attribute_declaration)
+                    else {
+                        continue;
+                    };
+                    if !new
+                        .attribute_uses
+                        .iter()
+                        .filter_map(|au| self.schema.att_decls.get(&au.attribute_declaration))
+                        .any(|att| {
+                            batt.target_namespace == att.target_namespace && batt.name == att.name
+                        })
+                    {
+                        let msg = format!(
+                            "The attribute uses of the complex type '{}' is not a subset of that of the base type '{}'.",
+                            new.display_name(),
+                            base.display_name()
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::CosCtExtends),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                        return Err(XMLError::XSDError(XSDError::CosCtExtends));
+                    }
+                }
+
+                if let Some(bwc) = base.attribute_wildcard.as_ref() {
+                    // [cos-ct-extends] clause 1.3
+                    if let Some(wc) = new.attribute_wildcard.as_ref() {
+                        if !bwc.is_subset_of(wc) {
+                            let msg = format!(
+                                "The attribute wildcard of the base complex type '{}' is not a subset of the extended complex type '{}'.",
+                                base.display_name(),
+                                new.display_name()
+                            );
+                            self.error(SAXParseError {
+                                error: XMLError::XSDError(XSDError::CosCtExtends),
+                                level: XMLErrorLevel::Error,
+                                domain: XMLErrorDomain::XSDParser,
+                                line: self.locator.line(),
+                                column: self.locator.column(),
+                                system_id: self.locator.system_id(),
+                                public_id: self.locator.public_id(),
+                                message: Cow::Owned(msg),
+                            });
+                            return Err(XMLError::XSDError(XSDError::CosCtExtends));
+                        }
+                    } else {
+                        let msg = format!(
+                            "The base complex type '{}' has an attribute wildcard, but extended complex type '{}' does not.",
+                            base.display_name(),
+                            new.display_name()
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::CosCtExtends),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                        return Err(XMLError::XSDError(XSDError::CosCtExtends));
+                    }
+                }
+
+                // [cos-ct-extends] clause 1.4
+                match (&new.content_type, &base.content_type) {
+                    (ContentType::Simple(ns, name), ContentType::Simple(bns, bname))
+                        if ns == bns && name == bname =>
+                    {
+                        // [cos-ct-extends] clause 1.4.1
+                    }
+                    (ContentType::Empty, ContentType::Empty) => {
+                        // [cos-ct-extends] clause 1.4.2
+                    }
+                    (ContentType::ElementOnly(_) | ContentType::Mixed(_), ContentType::Empty) => {
+                        // [cos-ct-extends] clause 1.4.3.1 and 1.4.3.2.1
+                    }
+                    (ContentType::ElementOnly(pt), ContentType::ElementOnly(bpt))
+                    | (ContentType::Mixed(pt), ContentType::Mixed(bpt))
+                        if pt.is_valid_extension_of(bpt, &self.schema) =>
+                    {
+                        // [cos-ct-extends] clause 1.4.3.1 and 1.4.3.2.2
+                    }
+                    _ => {
+                        let msg = format!(
+                            "The content type of the complex type '{}' is not a valid extension of the base type '{}'.",
+                            new.display_name(),
+                            base.display_name(),
+                        );
+                        self.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::CosCtExtends),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                        return Err(XMLError::XSDError(XSDError::CosCtExtends));
+                    }
                 }
             }
         }
@@ -3907,69 +4301,15 @@ impl<H: SAXHandler> XSDParseHandler<H> {
     fn check_all_attgroup(&mut self) -> Result<(), XMLError> {
         // Resolve references to other attribute groups.
         let mut attgroups = std::mem::take(&mut self.schema.attgroup_defs);
-        let mut ret = Ok(());
+        let mut seen = HashSet::new();
         while let Some(key) = attgroups.keys().next().cloned() {
             let attgroup = attgroups.remove(&key).unwrap();
-            let mut stack = vec![(key, attgroup)];
-            'b: while let Some((key, mut attgroup)) = stack.pop() {
-                while let Some(reference) = attgroup.attribute_group_refs.pop() {
-                    if let Some(par) = self.schema.attgroup_defs.get(&reference) {
-                        attgroup
-                            .attribute_uses
-                            .extend_from_slice(&par.attribute_uses);
-                    } else if let Some(par) = attgroups.remove(&reference) {
-                        attgroup.attribute_group_refs.push(reference.clone());
-                        stack.push((key, attgroup));
-                        stack.push((reference, par));
-                        continue 'b;
-                    } else if stack.iter().any(|t| t.0 == reference) {
-                        // [src-attribute_group] clause 3
-                        let msg = format!(
-                            "The attribute group definition '{}' contains a circular reference.",
-                            attgroup.display_name()
-                        );
-                        self.error(SAXParseError {
-                            error: XMLError::XSDError(XSDError::SrcAttributeGroup),
-                            level: XMLErrorLevel::Error,
-                            domain: XMLErrorDomain::XSDParser,
-                            line: self.locator.line(),
-                            column: self.locator.column(),
-                            system_id: self.locator.system_id(),
-                            public_id: self.locator.public_id(),
-                            message: Cow::Owned(msg),
-                        });
-                        ret = Err(XMLError::XSDError(XSDError::SrcAttributeGroup));
-                    } else {
-                        let msg = format!(
-                            "The attribute group declaration '{}{}' is not found in schema.",
-                            reference
-                                .0
-                                .as_deref()
-                                .map(|ns| format!("{{{ns}}}"))
-                                .unwrap_or_default(),
-                            reference.1,
-                        );
-                        self.error(SAXParseError {
-                            error: XMLError::XSDError(XSDError::MissingSubComponent),
-                            level: XMLErrorLevel::Error,
-                            domain: XMLErrorDomain::XSDParser,
-                            line: self.locator.line(),
-                            column: self.locator.column(),
-                            system_id: self.locator.system_id(),
-                            public_id: self.locator.public_id(),
-                            message: Cow::Owned(msg),
-                        });
-                        ret = Err(XMLError::XSDError(XSDError::MissingSubComponent));
-                    }
-                }
-                if attgroup.attribute_group_refs.is_empty() {
-                    self.schema.attgroup_defs.insert(key, attgroup);
-                }
-            }
+            seen.clear();
+            seen.insert(key.clone());
+            self.expand_attgroup(key, attgroup, &mut attgroups, &mut seen)?;
         }
 
-        ret.clone()?;
-
+        let mut ret = Ok(());
         let attgroups = std::mem::take(&mut self.schema.attgroup_defs);
         for attgroup in attgroups.values() {
             let mut used = HashSet::new();
@@ -4071,6 +4411,100 @@ impl<H: SAXHandler> XSDParseHandler<H> {
 
         self.schema.attgroup_defs = attgroups;
         ret
+    }
+
+    fn expand_attgroup(
+        &mut self,
+        key: (Option<Arc<str>>, Arc<str>),
+        mut attgroup: AttributeGroupDefinition,
+        attgroups: &mut HashMap<(Option<Arc<str>>, Arc<str>), AttributeGroupDefinition>,
+        seen: &mut HashSet<(Option<Arc<str>>, Arc<str>)>,
+    ) -> Result<(), XMLError> {
+        let mut wildcards = vec![];
+        while let Some(reference) = attgroup.attribute_group_refs.pop() {
+            if !seen.insert(reference.clone()) {
+                // [src-attribute_group] clause 3
+                let msg = format!(
+                    "The attribute group definition '{}' contains a circular reference.",
+                    attgroup.display_name()
+                );
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::SrcAttributeGroup),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+                return Err(XMLError::XSDError(XSDError::SrcAttributeGroup));
+            }
+
+            if let Some(parent) = attgroups.remove(&reference) {
+                if let Some(wc) = parent.attribute_wildcard.as_ref() {
+                    wildcards.push(wc.clone());
+                }
+                self.expand_attgroup(reference.clone(), parent, attgroups, seen)?;
+            }
+
+            if let Some(parent) = self.schema.attgroup_defs.get(&reference) {
+                if let Some(wc) = parent.attribute_wildcard.as_ref() {
+                    wildcards.push(wc.clone());
+                }
+                attgroup
+                    .attribute_uses
+                    .extend_from_slice(&parent.attribute_uses);
+            } else {
+                let msg = format!(
+                    "The attribute group declaration '{}{}' is not found in schema.",
+                    reference
+                        .0
+                        .as_deref()
+                        .map(|ns| format!("{{{ns}}}"))
+                        .unwrap_or_default(),
+                    reference.1,
+                );
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::MissingSubComponent),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+                return Err(XMLError::XSDError(XSDError::MissingSubComponent));
+            }
+
+            seen.remove(&reference);
+        }
+
+        let complete_wildcard =
+            attribute_complete_wildcard(&wildcards, attgroup.attribute_wildcard.take());
+        match complete_wildcard {
+            Ok(attribute_wildcard) => attgroup.attribute_wildcard = attribute_wildcard,
+            Err(error) => {
+                let msg = format!(
+                    "The attribute wildcard of the attribute group '{}' cannot be computed.",
+                    attgroup.display_name()
+                );
+                self.error(SAXParseError {
+                    error: XMLError::XSDError(error),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+                return Err(XMLError::XSDError(error));
+            }
+        }
+        self.schema.attgroup_defs.insert(key, attgroup);
+        Ok(())
     }
 }
 
@@ -5639,17 +6073,17 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                                             }),
                                         })
                                     } else {
-                                        // clause 2.1.5
+                                        // clause 2.2
                                         Some(pt)
                                     }
                                 }
                                 Term::ModelGroupRef(_, _) => {
                                     // <group ref=...>
-                                    // clause 2.1.5
+                                    // clause 2.2
                                     Some(pt)
                                 }
                                 Term::ElementDecl(_, _) | Term::Wildcard(_) => {
-                                    // forbidden. simply ignore
+                                    // forbidden. simply ignore (treat as empty)
                                     None
                                 }
                             };
@@ -5676,7 +6110,8 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                                     // clause 3.2
                                     // Since the base type must be clear,
                                     // this cannot be resolved at this point.
-                                    ct.content_type = ContentType::Pending(effective_content);
+                                    ct.content_type =
+                                        ContentType::Pending(effective_content, effective_mixed);
                                 }
                             }
                         }
@@ -6398,14 +6833,15 @@ enum DerivationMethod {
 enum ContentType {
     #[default]
     Empty,
+    /// The reference to the simple type that constrains the content text.
     Simple(Option<Arc<str>>, Arc<str>),
     Mixed(Particle),
     ElementOnly(Particle),
     // component property mapping of {content type} clause 3.2
     // Although a complex type extension requires a base type,
     // specify this value if the base type is unknown at that point.
-    // Store the effective content (clause 2).
-    Pending(Option<Particle>),
+    // Store the effective content and effective mixed (clause 2).
+    Pending(Option<Particle>, bool),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -6629,6 +7065,17 @@ pub(super) struct Particle {
 }
 
 impl Particle {
+    fn model_group<'a>(&'a self, schema: &'a Schema) -> Option<&'a ModelGroup> {
+        match &self.term {
+            Term::ModelGroup(mg) => Some(mg),
+            Term::ModelGroupRef(ns, name) => {
+                let mg = schema.modelgroup_defs.get(&(ns.clone(), name.clone()))?;
+                Some(&mg.model_group)
+            }
+            _ => None,
+        }
+    }
+
     /// Compute the effective total range.
     ///
     /// If `term` is not a group, return [`None`].
@@ -6864,6 +7311,55 @@ impl Particle {
         }
         is_pointless_with_parent(self, None)
     }
+
+    /// # Reference
+    /// - [cos-particle-extend](https://www.w3.org/TR/xmlschema-1/#cos-particle-extend)
+    fn is_valid_extension_of(&self, base: &Particle, schema: &Schema) -> bool {
+        if std::ptr::eq(self, base) {
+            // clause 1
+            return true;
+        }
+
+        // clause 2
+        if self.min_occurs != 1 || self.max_occurs != 1 {
+            return false;
+        }
+
+        self.model_group(schema)
+            .filter(|mg| matches!(mg.compositor, Compositor::Sequence))
+            .filter(|mg| !mg.particles.is_empty())
+            .is_some_and(|mg| mg.particles[0].is_identical_to(base, schema))
+    }
+
+    fn is_identical_to(&self, other: &Particle, schema: &Schema) -> bool {
+        if self.min_occurs != other.min_occurs || self.max_occurs != other.max_occurs {
+            return false;
+        }
+        let (mg, omg) = match (&self.term, &other.term) {
+            (Term::ElementDecl(ns, name), Term::ElementDecl(ons, oname)) => {
+                return ns == ons && name == oname;
+            }
+            (Term::Wildcard(wc), Term::Wildcard(owc)) => return wc == owc,
+            (
+                Term::ModelGroup(_) | Term::ModelGroupRef(_, _),
+                Term::ModelGroup(_) | Term::ModelGroupRef(_, _),
+            ) => {
+                if let Some(mgs) = self.model_group(schema).zip(other.model_group(schema)) {
+                    mgs
+                } else {
+                    return false;
+                }
+            }
+            _ => return false,
+        };
+        mg.compositor == omg.compositor
+            && mg.particles.len() == omg.particles.len()
+            && mg
+                .particles
+                .iter()
+                .zip(&omg.particles)
+                .all(|(pt, opt)| pt.is_identical_to(opt, schema))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -6873,14 +7369,14 @@ enum ProcessContent {
     Strict = 3,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum NamespaceConstraint {
     Any,
     Not(Option<Arc<str>>),
     List(Vec<Option<Arc<str>>>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct Wildcard {
     ns_constraint: NamespaceConstraint,
     process_contents: ProcessContent,
@@ -6951,6 +7447,62 @@ impl Wildcard {
                 }
             }
         }
+    }
+
+    /// Compute "union" as follows [cos-aw-union](https://www.w3.org/TR/xmlschema-1/#cos-aw-union).
+    ///
+    /// The value of {processContent} inherits the value from `self`.
+    ///
+    /// If the union is not expressible, return [`None`].
+    ///
+    /// # Reference
+    /// - [Schema Component Constraint: Attribute Wildcard Union](https://www.w3.org/TR/xmlschema-1/#cos-aw-union)
+    fn union(self, other: Self) -> Option<Self> {
+        if self.ns_constraint == other.ns_constraint {
+            // clause 1
+            return Some(self);
+        }
+
+        let ns_constraint = match (self.ns_constraint, other.ns_constraint) {
+            (NamespaceConstraint::Any, _) | (_, NamespaceConstraint::Any) => {
+                NamespaceConstraint::Any // clause 2
+            }
+            (NamespaceConstraint::List(l), NamespaceConstraint::List(r)) => {
+                // clause 3
+                let mut l = [l, r].concat();
+                l.sort_unstable();
+                l.dedup();
+                NamespaceConstraint::List(l)
+            }
+            (NamespaceConstraint::Not(_), NamespaceConstraint::Not(_)) => {
+                NamespaceConstraint::Not(None) // clause 4
+            }
+            (NamespaceConstraint::Not(Some(l)), NamespaceConstraint::List(r))
+            | (NamespaceConstraint::List(r), NamespaceConstraint::Not(Some(l))) => {
+                // clause 5
+                let f0 = r.contains(&Some(l.clone()));
+                let f1 = r.contains(&None);
+                match (f0, f1) {
+                    (true, true) => NamespaceConstraint::Any, // clause 5.1
+                    (true, false) => NamespaceConstraint::Not(None), // clause 5.2
+                    (false, true) => return None,             // clause 5.3
+                    (false, false) => NamespaceConstraint::Not(Some(l)), // clause 5.4
+                }
+            }
+            (NamespaceConstraint::Not(None), NamespaceConstraint::List(l))
+            | (NamespaceConstraint::List(l), NamespaceConstraint::Not(None)) => {
+                // clause 6
+                if l.contains(&None) {
+                    NamespaceConstraint::Any // clause 6.1
+                } else {
+                    NamespaceConstraint::Not(None) // clause 6.2
+                }
+            }
+        };
+        Some(Self {
+            ns_constraint,
+            process_contents: self.process_contents,
+        })
     }
 
     /// Check if `self` is a subset of `other`.
