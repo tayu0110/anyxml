@@ -1286,42 +1286,21 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 };
                 self.is_valid_restriction(&restricted, base)
             }
-            (Term::ModelGroup(base_mg), Term::ModelGroup(restricted_mg)) => {
+            _ => {
+                let Some((bmg, rmg)) = base
+                    .model_group(&self.schema)
+                    .zip(restricted.model_group(&self.schema))
+                else {
+                    return false;
+                };
                 // model group specific constraint
                 //
                 // all-all:             "Recurse" [rcase-Recurse]
                 // choice-choice:       "RecurseLax" [rcase-RecurseLax]
                 // sequence-sequence:   "Recurse" [rcase-Recurse]
                 // other:               Forbidden
-                self.is_valid_restriction_model_group(restricted, restricted_mg, base, base_mg)
+                self.is_valid_restriction_model_group(restricted, rmg, base, bmg)
             }
-            (Term::ModelGroup(mg), Term::ModelGroupRef(ns, loc)) => {
-                let Some(def) = self.schema.modelgroups.get(&(ns.clone(), loc.clone())) else {
-                    return false;
-                };
-                self.is_valid_restriction_model_group(restricted, &def.model_group, base, mg)
-            }
-            (Term::ModelGroupRef(ns, loc), Term::ModelGroup(mg)) => {
-                let Some(def) = self.schema.modelgroups.get(&(ns.clone(), loc.clone())) else {
-                    return false;
-                };
-                self.is_valid_restriction_model_group(restricted, mg, base, &def.model_group)
-            }
-            (Term::ModelGroupRef(lns, lloc), Term::ModelGroupRef(rns, rloc)) => {
-                let Some(bdef) = self.schema.modelgroups.get(&(lns.clone(), lloc.clone())) else {
-                    return false;
-                };
-                let Some(rdef) = self.schema.modelgroups.get(&(rns.clone(), rloc.clone())) else {
-                    return false;
-                };
-                self.is_valid_restriction_model_group(
-                    restricted,
-                    &rdef.model_group,
-                    base,
-                    &bdef.model_group,
-                )
-            }
-            _ => false, // Forbidden
         }
     }
 
@@ -3032,13 +3011,6 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         break;
                     }
 
-                    match &mut new.content_type {
-                        ContentType::ElementOnly(pt) | ContentType::Mixed(pt) => {
-                            pt.remove_pointless();
-                        }
-                        _ => {}
-                    }
-
                     let ret = match new.derivation_method {
                         DerivationMethod::Restriction => {
                             // verify [derivation-ok-restriction]
@@ -3269,72 +3241,16 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             }
             ContentType::Empty | ContentType::ElementOnly(_) | ContentType::Mixed(_) => {}
             ContentType::Pending(pt, mixed) => {
-                // In the case of <restriction>,
-                // at least which kind of content type it will be should be determined.
-                assert!(matches!(new.derivation_method, DerivationMethod::Extension));
-
-                let Some(ct) = base.as_complex_type() else {
-                    let msg = format!(
-                        "The base type resolved by the 'base' attribute of <complexContent> for '{}' must be a complex type, but '{}' is not.",
-                        new.display_name(),
-                        base.display_name()
-                    );
-                    self.holder.error(SAXParseError {
-                        error: XMLError::XSDError(XSDError::SrcCt),
-                        level: XMLErrorLevel::Error,
-                        domain: XMLErrorDomain::XSDParser,
-                        line: self.locator.line(),
-                        column: self.locator.column(),
-                        system_id: self.locator.system_id(),
-                        public_id: self.locator.public_id(),
-                        message: Cow::Owned(msg),
-                    });
-                    return Err(XMLError::XSDError(XSDError::SrcCt));
-                };
-                // {content type} of complexType clause 3.2 (<complexContent> alternative)
-                if let Some(effective_content) = pt.take() {
-                    match &ct.content_type {
-                        ContentType::Empty => {
-                            // clause 3.2.2
-                            new.content_type = if *mixed {
-                                ContentType::Mixed(effective_content)
-                            } else {
-                                ContentType::ElementOnly(effective_content)
-                            }
-                        }
-                        ContentType::ElementOnly(bpt) | ContentType::Mixed(bpt) => {
-                            // clause 3.2.3
-                            let pt = Particle {
-                                min_occurs: 1,
-                                max_occurs: 1,
-                                term: Term::ModelGroup(ModelGroup {
-                                    compositor: Compositor::Sequence,
-                                    particles: vec![bpt.clone(), effective_content],
-                                }),
-                            };
-                            new.content_type = if *mixed {
-                                ContentType::Mixed(pt)
-                            } else {
-                                ContentType::ElementOnly(pt)
-                            }
-                        }
-                        _ => {
-                            // The case that {content type} is a simple type.
-                            // Although not explicitly stated, according to the provisions
-                            // of [cos-ct-extends] clause 1.4, a combination where the
-                            // {content type} of the base type is a simple type and the
-                            // {content type} of the type itself is anything other than a
-                            // simple type is not permitted.
-                            //
-                            // [src-ct] clause 3
-                            // [cos-ct-extends] clause 1.4
+                match new.derivation_method {
+                    DerivationMethod::Extension => {
+                        let Some(ct) = base.as_complex_type() else {
                             let msg = format!(
-                                "The content type of the base complex type '{}' is a simple type, but that of extended complex type '{}' is not.",
-                                ct.display_name(),
-                                new.display_name()
+                                "The base type resolved by the 'base' attribute of <complexContent> for '{}' must be a complex type, but '{}' is not.",
+                                new.display_name(),
+                                base.display_name()
                             );
                             self.holder.error(SAXParseError {
-                                error: XMLError::XSDError(XSDError::CosCtExtends),
+                                error: XMLError::XSDError(XSDError::SrcCt),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
                                 line: self.locator.line(),
@@ -3343,12 +3259,82 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                 public_id: self.locator.public_id(),
                                 message: Cow::Owned(msg),
                             });
-                            return Err(XMLError::XSDError(XSDError::CosCtExtends));
+                            return Err(XMLError::XSDError(XSDError::SrcCt));
+                        };
+                        // {content type} of complexType clause 3.2 (<complexContent> alternative)
+                        if let Some(effective_content) = pt.take() {
+                            match &ct.content_type {
+                                ContentType::Empty => {
+                                    // clause 3.2.2
+                                    new.content_type = if *mixed {
+                                        ContentType::Mixed(effective_content)
+                                    } else {
+                                        ContentType::ElementOnly(effective_content)
+                                    }
+                                }
+                                ContentType::ElementOnly(bpt) | ContentType::Mixed(bpt) => {
+                                    // clause 3.2.3
+                                    let pt = Particle {
+                                        min_occurs: 1,
+                                        max_occurs: 1,
+                                        term: Term::ModelGroup(ModelGroup {
+                                            compositor: Compositor::Sequence,
+                                            particles: vec![bpt.clone(), effective_content],
+                                        }),
+                                    };
+                                    new.content_type = if *mixed {
+                                        ContentType::Mixed(pt)
+                                    } else {
+                                        ContentType::ElementOnly(pt)
+                                    }
+                                }
+                                _ => {
+                                    // The case that {content type} is a simple type.
+                                    // Although not explicitly stated, according to the provisions
+                                    // of [cos-ct-extends] clause 1.4, a combination where the
+                                    // {content type} of the base type is a simple type and the
+                                    // {content type} of the type itself is anything other than a
+                                    // simple type is not permitted.
+                                    //
+                                    // [src-ct] clause 3
+                                    // [cos-ct-extends] clause 1.4
+                                    let msg = format!(
+                                        "The content type of the base complex type '{}' is a simple type, but that of extended complex type '{}' is not.",
+                                        ct.display_name(),
+                                        new.display_name()
+                                    );
+                                    self.holder.error(SAXParseError {
+                                        error: XMLError::XSDError(XSDError::CosCtExtends),
+                                        level: XMLErrorLevel::Error,
+                                        domain: XMLErrorDomain::XSDParser,
+                                        line: self.locator.line(),
+                                        column: self.locator.column(),
+                                        system_id: self.locator.system_id(),
+                                        public_id: self.locator.public_id(),
+                                        message: Cow::Owned(msg),
+                                    });
+                                    return Err(XMLError::XSDError(XSDError::CosCtExtends));
+                                }
+                            }
+                        } else {
+                            // clause 3.2.1
+                            new.content_type = ct.content_type.clone();
                         }
                     }
-                } else {
-                    // clause 3.2.1
-                    new.content_type = ct.content_type.clone();
+                    DerivationMethod::Restriction => {
+                        // {content type} of complexType clause 3.1
+                        if let Some(effective_content) = pt.take() {
+                            // clause 3.1.2
+                            if *mixed {
+                                new.content_type = ContentType::Mixed(effective_content);
+                            } else {
+                                new.content_type = ContentType::ElementOnly(effective_content);
+                            }
+                        } else {
+                            // clause 3.1.1
+                            new.content_type = ContentType::Empty;
+                        }
+                    }
                 }
             }
         }
@@ -3545,10 +3531,10 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 self.schema
                     .att_decls
                     .get(&a.attribute_declaration)
+                    .filter(|batt| batt.target_namespace == att.target_namespace)
+                    .filter(|batt| batt.name == att.name)
                     .zip(Some(a))
-            }) && batt.target_namespace == att.target_namespace
-                && batt.name == att.name
-            {
+            }) {
                 // [derivation-ok-restriction] clause 2.1
 
                 if matches!(attuse.required, Occurrence::Optional)
@@ -3958,7 +3944,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     }
                     ContentType::Empty => {
                         // clause 5.4.2 Note
-                        pt.is_pointless()
+                        todo!("check all particles are pointless")
                     }
                     _ => {
                         // It's unclear how to handle cases where the type is simple,
@@ -5621,7 +5607,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 let mixed = get_boolean(atts, "mixed");
                 if let Some(ct) = self.ct_stack.last_mut() {
                     // component property mapping of {content type} (<complexType> alternative)
-                    // - clause 1.1 (effective mixed)
+                    // - clause 1 (effective mixed)
                     let effective_mixed =
                         mixed.unwrap_or(matches!(ct.content_type, ContentType::Mixed(_)));
                     // - clause 2.1.1 (effective content in case no children appear)
@@ -5633,15 +5619,9 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                             particles: vec![],
                         }),
                     };
-                    // Set a value in case {content type} is not updated.
-                    // component property mapping of {content type} (<complexType> alternative)
-                    // - clause 3.1.1
-                    // - clause 3.1.2
-                    if effective_mixed {
-                        ct.content_type = ContentType::Mixed(effective_content);
-                    } else {
-                        ct.content_type = ContentType::ElementOnly(effective_content);
-                    }
+                    // Set dummy value
+                    ct.content_type =
+                        ContentType::Pending(Some(effective_content), effective_mixed);
                 }
                 self.element_stack.push(SCHEMA_COMPLEXCONT_NAME);
             }
@@ -6530,7 +6510,11 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
 
                             // component property mapping of {content type}
                             // clause 2 (effective content)
-                            let effective_mixed = matches!(ct.content_type, ContentType::Mixed(_));
+                            let effective_mixed = match &ct.content_type {
+                                ContentType::Pending(_, mixed) => *mixed,
+                                ContentType::Mixed(_) => true,
+                                _ => false,
+                            };
                             let effective_content = match &pt.term {
                                 Term::ModelGroup(model) => {
                                     // <all>, <choice> or <sequence>
@@ -7659,187 +7643,6 @@ impl Particle {
             return false;
         }
         true
-    }
-
-    /// Remove pointless particles as mentioned in "cos-particle-restrict" clause 2.2.
-    ///
-    /// # Reference
-    /// - [cos-particle-restrict](https://www.w3.org/TR/xmlschema-1/#cos-particle-restrict)
-    fn remove_pointless(&mut self) -> bool {
-        let mg = match &mut self.term {
-            Term::ModelGroup(mg) => mg,
-            Term::ModelGroupRef(_, _) => {
-                // Do nothing with the reference to the model group definition.
-                // Since it is unclear what kind of particle this reference refers to,
-                // return `false` to prevent it from being deleted.
-                return false;
-            }
-            Term::ElementDecl(_, _) | Term::Wildcard(_) => return false,
-        };
-        mg.particles.retain_mut(|t| !t.remove_pointless());
-
-        // process clause 2.2.2
-        // Flatten a <sequence>, <all> and <choice> where minOccurs and maxOccurs are both 1.
-        if mg.particles.len() == 1
-            && (matches!(mg.compositor, Compositor::All)
-                || (self.min_occurs == 1 && self.max_occurs == 1))
-        {
-            // clause 2.2.2.2.1 <sequence>|<choice>|<all>:
-            //      Particle {  <<< self
-            //          minOccurs: 1, maxOccurs: 1,
-            //          term: ModelGroup {
-            //              compositor: Sequence | Choice | All,
-            //              particles: vec![pt0], << replace self to this particle
-            //          }
-            //      }
-            //
-            // For <all>, there are no constraints on the parent particle's minOccurs and maxOccurs.
-            // Flattening when minOccurs is 0 should cause the behavior to become erratic, but for
-            // now, implement it as specified.
-            *self = mg.particles.pop().unwrap();
-            return false;
-        }
-        // clause 2.2.2.2.2 <sequence>|<choice>:
-        //      Particle {  <<< parent
-        //          minOccurs: n, maxOccurs: m,
-        //          term: ModelGroup {
-        //              compositor: Sequence | Choice,
-        //              particles: vec![
-        //                  pt0, pt1, ...,
-        //                  Particle {  <<< self
-        //                      minOccurs: 1, maxOccurs: 1,
-        //                      term: ModelGroup {
-        //                          compositor: Sequence | Choice,
-        //                          particles: vec![pt0, pt1, ..., ptn] << insert this to parent's {particles}
-        //                      }
-        //                  },
-        //                  ptn, ptn+1, ...
-        //              ]
-        //          }
-        //      }
-        if matches!(mg.compositor, Compositor::Sequence | Compositor::Choice)
-            && mg
-                .particles
-                .iter()
-                .any(|pt| pt.min_occurs == 1 && pt.max_occurs == 1)
-        {
-            let mut particles = Vec::with_capacity(mg.particles.len());
-            for pt in mg.particles.drain(..) {
-                if pt.min_occurs == 1 && pt.max_occurs == 1 {
-                    match pt.term {
-                        Term::ModelGroup(cmg) if mg.compositor == cmg.compositor => {
-                            particles.extend(cmg.particles)
-                        }
-                        _ => particles.push(pt),
-                    }
-                } else {
-                    particles.push(pt);
-                }
-            }
-            mg.particles = particles;
-        }
-
-        match mg.compositor {
-            Compositor::Sequence | Compositor::All => {
-                if mg.particles.is_empty() {
-                    // clause 2.2.1 of <sequence> and <all>
-                    true
-                } else {
-                    // clause 2.2.2 of <sequence> and <all> is handled by the parent particle.
-                    // Since deletion occurs only when the parent is a <sequence> and <all>,
-                    // it returns `false`.
-                    false
-                }
-            }
-            Compositor::Choice => {
-                if mg.particles.is_empty() && self.min_occurs == 0 {
-                    // clause 2.2.1 of <choice>
-                    true
-                } else {
-                    // clause 2.2.2 of <choice> is handled by the parent particle.
-                    // Since deletion occurs only when the parent is a <choice>,
-                    // it returns `false`.
-                    false
-                }
-            }
-        }
-    }
-
-    /// # Reference
-    /// - [cos-particle-restrict](https://www.w3.org/TR/xmlschema-1/#cos-particle-restrict)
-    fn is_pointless(&self) -> bool {
-        fn is_pointless_with_parent(now: &Particle, parent: Option<&Particle>) -> bool {
-            match &now.term {
-                Term::ModelGroup(mg) => {
-                    match mg.compositor {
-                        Compositor::Sequence => {
-                            if mg.particles.is_empty() {
-                                // clause 2.2.1 <sequence>
-                                true
-                            } else if now.min_occurs != 1 || now.max_occurs != 1 {
-                                // clause 2.2.2.1
-                                false
-                            } else if mg
-                                .particles
-                                .iter()
-                                .any(|pt| !is_pointless_with_parent(pt, Some(now)))
-                            {
-                                false
-                            } else {
-                                // clause 2.2.2.2
-                                mg.particles.len() == 1
-                                    || parent.is_some_and(|pt| match &pt.term {
-                                        Term::ModelGroup(mg) => {
-                                            matches!(mg.compositor, Compositor::Sequence)
-                                        }
-                                        Term::ModelGroupRef(ns, name) => todo!(),
-                                        _ => false,
-                                    })
-                            }
-                        }
-                        Compositor::All => {
-                            if mg.particles.is_empty() {
-                                // clause 2.2.1
-                                true
-                            } else {
-                                mg.particles.len() == 1
-                                    && is_pointless_with_parent(&mg.particles[0], Some(now))
-                            }
-                        }
-                        Compositor::Choice => {
-                            if mg.particles.is_empty() && now.min_occurs == 0 {
-                                // clause 2.2.1
-                                true
-                            } else if now.min_occurs != 1 || now.max_occurs != 1 {
-                                // clause 2.2.2.1
-                                false
-                            } else if mg.particles.len() == 1
-                                && is_pointless_with_parent(&mg.particles[0], Some(now))
-                            {
-                                // clause 2.2.2.2
-                                true
-                            } else {
-                                mg.particles
-                                    .iter()
-                                    .all(|pt| is_pointless_with_parent(pt, Some(now)))
-                                    && parent.is_some_and(|pt| match &pt.term {
-                                        Term::ModelGroup(mg) => {
-                                            matches!(mg.compositor, Compositor::Choice)
-                                        }
-                                        Term::ModelGroupRef(ns, name) => todo!(),
-                                        _ => false,
-                                    })
-                            }
-                        }
-                    }
-                }
-                Term::ModelGroupRef(ns, name) => {
-                    todo!()
-                }
-                Term::ElementDecl(_, _) | Term::Wildcard(_) => false,
-            }
-        }
-        is_pointless_with_parent(self, None)
     }
 
     /// # Reference
