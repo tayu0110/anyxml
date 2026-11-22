@@ -78,9 +78,9 @@ pub struct Schema {
     pub(super) type_defs: HashMap<(Option<Arc<str>>, Arc<str>), TypeDefinition>,
     pub(super) att_decls: HashMap<(Option<Arc<str>>, Arc<str>), AttributeDeclaration>,
     pub(super) elem_decls: HashMap<(Option<Arc<str>>, Arc<str>), ElementDeclaration>,
-    pub(super) attgroup_defs: HashMap<(Option<Arc<str>>, Arc<str>), AttributeGroupDefinition>,
-    pub(super) modelgroup_defs: HashMap<(Option<Arc<str>>, Arc<str>), ModelGroupDefinition>,
-    pub(super) notation_decls: HashMap<(Option<Arc<str>>, Arc<str>), Notation>,
+    pub(super) attgroups: HashMap<(Option<Arc<str>>, Arc<str>), AttributeGroupDefinition>,
+    pub(super) modelgroups: HashMap<(Option<Arc<str>>, Arc<str>), ModelGroupDefinition>,
+    pub(super) notations: HashMap<(Option<Arc<str>>, Arc<str>), Notation>,
 }
 
 impl Schema {
@@ -94,14 +94,14 @@ impl Schema {
         for (key, value) in other.elem_decls {
             self.elem_decls.entry(key).or_insert(value);
         }
-        for (key, value) in other.attgroup_defs {
-            self.attgroup_defs.entry(key).or_insert(value);
+        for (key, value) in other.attgroups {
+            self.attgroups.entry(key).or_insert(value);
         }
-        for (key, value) in other.modelgroup_defs {
-            self.modelgroup_defs.entry(key).or_insert(value);
+        for (key, value) in other.modelgroups {
+            self.modelgroups.entry(key).or_insert(value);
         }
-        for (key, value) in other.notation_decls {
-            self.notation_decls.entry(key).or_insert(value);
+        for (key, value) in other.notations {
+            self.notations.entry(key).or_insert(value);
         }
     }
 }
@@ -218,9 +218,7 @@ struct RedefinedComponents {
 
 /// SAX handler for parsing XSD schema documents.
 pub struct XSDParseHandler<H: SAXHandler = DefaultSAXHandler> {
-    child: H,
     schema: Schema,
-    last_error: Result<(), XMLError>,
     locator: Arc<Locator>,
     // if true, this handler is in used for meta-schema parsing.
     meta: bool,
@@ -258,14 +256,50 @@ pub struct XSDParseHandler<H: SAXHandler = DefaultSAXHandler> {
     attr_group_def: Box<AttributeGroupDefinition>,
     model_group_def: Box<ModelGroupDefinition>,
     idc: Box<IDCDefinition>,
+
+    // handler and last error
+    // By passing the handler and the last error to a separate structure,
+    // there is no longer a need to acquire exclusive locks on all fields
+    // solely for the purpose of reporting errors, thereby alleviating the
+    // burden of ownership.
+    holder: ErrorHolder<H>,
+}
+
+struct ErrorHolder<H: SAXHandler = DefaultSAXHandler> {
+    last_error: Result<(), XMLError>,
+    child: H,
+}
+
+impl<H: SAXHandler> ErrorHandler for ErrorHolder<H> {
+    fn error(&mut self, mut error: SAXParseError) {
+        if matches!(
+            error.domain,
+            XMLErrorDomain::XSDParser | XMLErrorDomain::XSDValid
+        ) {
+            error.domain = XMLErrorDomain::XSDParser;
+            self.last_error = Err(error.error.clone());
+        }
+        self.child.error(error);
+    }
+    fn fatal_error(&mut self, mut error: SAXParseError) {
+        self.last_error = Err(error.error.clone());
+        if matches!(error.domain, XMLErrorDomain::XSDValid) {
+            error.domain = XMLErrorDomain::XSDParser;
+        }
+        self.child.fatal_error(error);
+    }
+    fn warning(&mut self, mut error: SAXParseError) {
+        if matches!(error.domain, XMLErrorDomain::XSDValid) {
+            error.domain = XMLErrorDomain::XSDParser;
+        }
+        self.child.warning(error);
+    }
 }
 
 impl<H: SAXHandler> XSDParseHandler<H> {
     fn with_handler(handler: H) -> Self {
         Self {
-            child: handler,
             schema: Schema::default(),
-            last_error: Ok(()),
             locator: Arc::new(Locator::default()),
             meta: false,
             skip_depth: 0,
@@ -291,6 +325,10 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             attr_group_def: Box::default(),
             model_group_def: Box::default(),
             idc: Box::default(),
+            holder: ErrorHolder {
+                last_error: Ok(()),
+                child: handler,
+            },
         }
     }
 
@@ -335,7 +373,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             (Some(_), Some(_)) => {
                 let msg =
                     "The attribute 'default' and 'fixed' of <element> must not both be present.";
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::SrcElement),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -367,7 +405,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 // default and fixed must not both be present.
                 let msg =
                     "The attribute 'default' and 'fixed' of <attribute> must not both be present.";
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::SrcAttribute),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -453,15 +491,17 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         }
         let target_namespace = self.target_namespace.clone();
         let state = self.inclusion_state;
-        match self
-            .child
-            .resolve_entity(DOCUMENT_ENTITY_NAME, None, &locator.system_id(), &include)
-        {
+        match self.holder.child.resolve_entity(
+            DOCUMENT_ENTITY_NAME,
+            None,
+            &locator.system_id(),
+            &include,
+        ) {
             Ok(source) => {
                 self.parent_target_namespace = target_namespace.clone();
                 self.target_namespace = None;
                 self.inclusion_state = InclusionState::InInclude;
-                let last_error = std::mem::replace(&mut self.last_error, Ok(()));
+                let last_error = std::mem::replace(&mut self.holder.last_error, Ok(()));
                 let ret = if let Some(meta) = meta {
                     let validator = meta.new_validate_handler(&mut *self);
                     let mut parser = XMLReader::builder().set_handler(validator).build();
@@ -472,13 +512,13 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 };
                 match ret {
                     Ok(()) => {
-                        if let Err(err) = std::mem::replace(&mut self.last_error, Ok(())) {
+                        if let Err(err) = std::mem::replace(&mut self.holder.last_error, Ok(())) {
                             // [src-include] clause 1
                             let msg = format!(
                                 "Included schema '{}' cannot be parsed because '{}'.",
                                 include, err
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::SrcInclude),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -500,7 +540,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             "Included schema '{}' cannot be parsed because '{}'.",
                             include, err
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::SrcInclude),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -512,7 +552,8 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         });
                     }
                 }
-                self.last_error = std::mem::replace(&mut self.last_error, Ok(())).and(last_error);
+                self.holder.last_error =
+                    std::mem::replace(&mut self.holder.last_error, Ok(())).and(last_error);
             }
             Err(err) => {
                 // A resource resolution failure is not an error. However, since it
@@ -557,10 +598,12 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         }
         let target_namespace = self.target_namespace.clone();
         let state = self.inclusion_state;
-        match self
-            .child
-            .resolve_entity(DOCUMENT_ENTITY_NAME, None, &locator.system_id(), &import)
-        {
+        match self.holder.child.resolve_entity(
+            DOCUMENT_ENTITY_NAME,
+            None,
+            &locator.system_id(),
+            &import,
+        ) {
             Ok(source) => {
                 // Since cases where the `namespace` attribute and the target namespace are the
                 // same are ignored as errors during parsing, `parent_target_namespace` is used
@@ -568,7 +611,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 self.parent_target_namespace = namespace;
                 self.target_namespace = None;
                 self.inclusion_state = InclusionState::InImport;
-                let last_error = std::mem::replace(&mut self.last_error, Ok(()));
+                let last_error = std::mem::replace(&mut self.holder.last_error, Ok(()));
                 let ret = if let Some(meta) = meta {
                     let validator = meta.new_validate_handler(&mut *self);
                     let mut parser = XMLReader::builder().set_handler(validator).build();
@@ -579,13 +622,13 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 };
                 match ret {
                     Ok(()) => {
-                        if let Err(err) = std::mem::replace(&mut self.last_error, Ok(())) {
+                        if let Err(err) = std::mem::replace(&mut self.holder.last_error, Ok(())) {
                             // [src-import] clause 2
                             let msg = format!(
                                 "Imported schema '{}' cannot be parsed because '{}'.",
                                 import, err
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::SrcImport),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -607,7 +650,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             "Imported schema '{}' cannot be parsed because '{}'.",
                             import, err
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::SrcImport),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -619,7 +662,8 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         });
                     }
                 }
-                self.last_error = std::mem::replace(&mut self.last_error, Ok(())).and(last_error);
+                self.holder.last_error =
+                    std::mem::replace(&mut self.holder.last_error, Ok(())).and(last_error);
             }
             Err(_) => {
                 // A resource resolution failure is not an error. However, since it
@@ -657,7 +701,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         if !self.schema.merged_uris.contains(location_abs.as_ref()) {
             let target_namespace = self.target_namespace.clone();
             let state = self.inclusion_state;
-            match self.child.resolve_entity(
+            match self.holder.child.resolve_entity(
                 DOCUMENT_ENTITY_NAME,
                 None,
                 &locator.system_id(),
@@ -667,7 +711,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     self.parent_target_namespace = target_namespace.clone();
                     self.target_namespace = None;
                     self.inclusion_state = InclusionState::InRedefine;
-                    let last_error = std::mem::replace(&mut self.last_error, Ok(()));
+                    let last_error = std::mem::replace(&mut self.holder.last_error, Ok(()));
                     let ret = if let Some(meta) = meta {
                         let validator = meta.new_validate_handler(&mut *self);
                         let mut parser = XMLReader::builder().set_handler(validator).build();
@@ -676,14 +720,14 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         let mut parser = XMLReader::builder().set_handler(&mut *self).build();
                         parser.parse_source(Box::new(source), None)
                     };
-                    let ret = ret.and(std::mem::replace(&mut self.last_error, Ok(())));
+                    let ret = ret.and(std::mem::replace(&mut self.holder.last_error, Ok(())));
                     if let Err(err) = ret {
                         // [src-redefine] clause 2
                         let msg = format!(
                             "Redefined schema '{}' cannot be parsed because '{}'.",
                             location, err
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::SrcRedefine),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -693,10 +737,10 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             public_id: locator.public_id(),
                             message: Cow::Owned(msg),
                         });
-                        self.last_error = Err(err);
+                        self.holder.last_error = Err(err);
                     }
-                    self.last_error =
-                        std::mem::replace(&mut self.last_error, Ok(())).and(last_error);
+                    self.holder.last_error =
+                        std::mem::replace(&mut self.holder.last_error, Ok(())).and(last_error);
                 }
                 Err(err) => {
                     // If one or more components are redefined, unlike with <include>
@@ -727,7 +771,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             message: Cow::Owned(msg),
                         });
                     } else {
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::SrcRedefine),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -790,7 +834,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         name,
                         location
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::SrcExpredef),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -806,14 +850,10 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         for ((ns, name), mut def) in components.modelgroup_defs {
             if name.starts_with('#') {
                 // This definition is a local definition, so just insert it as is.
-                self.schema.modelgroup_defs.insert((ns, name), def);
+                self.schema.modelgroups.insert((ns, name), def);
                 continue;
             }
-            match self
-                .schema
-                .modelgroup_defs
-                .remove(&(ns.clone(), name.clone()))
-            {
+            match self.schema.modelgroups.remove(&(ns.clone(), name.clone())) {
                 Some(redefined) => {
                     self.unnamed += 1;
                     let redefined_name =
@@ -830,7 +870,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             "<group> referring to redefined <group> must not appear more than once, but appears {} times.",
                             cnt
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::SrcRedefine),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -864,7 +904,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                     .unwrap_or_default(),
                                 name
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::SrcRedefine),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -877,9 +917,9 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         }
                     }
                     self.schema
-                        .modelgroup_defs
+                        .modelgroups
                         .insert((ns.clone(), redefined_name), redefined);
-                    self.schema.modelgroup_defs.insert((ns, name), def);
+                    self.schema.modelgroups.insert((ns, name), def);
                 }
                 None => {
                     // [src-expredef]
@@ -891,7 +931,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         name,
                         location
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::SrcExpredef),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -907,14 +947,10 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         for ((ns, name), mut def) in components.attgroup_defs {
             if name.starts_with('#') {
                 // This definition is a local definition, so just insert it as is.
-                self.schema.attgroup_defs.insert((ns, name), def);
+                self.schema.attgroups.insert((ns, name), def);
                 continue;
             }
-            match self
-                .schema
-                .attgroup_defs
-                .remove(&(ns.clone(), name.clone()))
-            {
+            match self.schema.attgroups.remove(&(ns.clone(), name.clone())) {
                 Some(redefined) => {
                     self.unnamed += 1;
                     let redefined_name =
@@ -931,7 +967,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             "<attributeGroup> referring to redefined <attributeGroup> must not appear more than once, but appears {} times.",
                             cnt
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::SrcRedefine),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -945,9 +981,9 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         // todo!("[src-redefine] clause 7.2")
                     }
                     self.schema
-                        .attgroup_defs
+                        .attgroups
                         .insert((ns.clone(), redefined_name), redefined);
-                    self.schema.attgroup_defs.insert((ns, name), def);
+                    self.schema.attgroups.insert((ns, name), def);
                 }
                 None => {
                     // [src-expredef]
@@ -959,7 +995,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         name,
                         location
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::SrcExpredef),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -1002,7 +1038,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             "'minOccurs' of <group> referring to redefined <group> must have '1' or be absent, but has '{}'.",
                             particle.min_occurs
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::SrcRedefine),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -1018,7 +1054,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             "'maxOccurs' of <group> referring to redefined <group> must have '1' or be absent, but has '{}'.",
                             particle.max_occurs
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::SrcRedefine),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -1188,7 +1224,8 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             (Term::Wildcard(_), Term::ModelGroup(mg)) => {
                 // "NSRecurse- CheckCardinality" [rcase-NSRecurseCheckCardinality]
 
-                let Some((min, max)) = restricted.effective_total_range(&self.schema) else {
+                let Some((min, max)) = restricted.effective_total_range(&self.schema.modelgroups)
+                else {
                     return false;
                 };
                 mg.particles
@@ -1201,10 +1238,12 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             (Term::Wildcard(_), Term::ModelGroupRef(ns, loc)) => {
                 // "NSRecurse- CheckCardinality" [rcase-NSRecurseCheckCardinality]
 
-                let Some(mg) = self.schema.modelgroup_defs.get(&(ns.clone(), loc.clone())) else {
+                let Some(mg) = self.schema.modelgroups.get(&(ns.clone(), loc.clone())) else {
                     return false;
                 };
-                let Some((min, max)) = mg.model_group.effective_total_range(&self.schema, 1, 1)
+                let Some((min, max)) =
+                    mg.model_group
+                        .effective_total_range(&self.schema.modelgroups, 1, 1)
                 else {
                     return false;
                 };
@@ -1233,7 +1272,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             (Term::ModelGroupRef(ns, loc), Term::ElementDecl(_, _)) => {
                 // "Recurse- AsIfGroup" [rcase-RecurseAsIfGroup]
 
-                let Some(def) = self.schema.modelgroup_defs.get(&(ns.clone(), loc.clone())) else {
+                let Some(def) = self.schema.modelgroups.get(&(ns.clone(), loc.clone())) else {
                     return false;
                 };
                 let compositor = def.model_group.compositor;
@@ -1257,30 +1296,22 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 self.is_valid_restriction_model_group(restricted, restricted_mg, base, base_mg)
             }
             (Term::ModelGroup(mg), Term::ModelGroupRef(ns, loc)) => {
-                let Some(def) = self.schema.modelgroup_defs.get(&(ns.clone(), loc.clone())) else {
+                let Some(def) = self.schema.modelgroups.get(&(ns.clone(), loc.clone())) else {
                     return false;
                 };
                 self.is_valid_restriction_model_group(restricted, &def.model_group, base, mg)
             }
             (Term::ModelGroupRef(ns, loc), Term::ModelGroup(mg)) => {
-                let Some(def) = self.schema.modelgroup_defs.get(&(ns.clone(), loc.clone())) else {
+                let Some(def) = self.schema.modelgroups.get(&(ns.clone(), loc.clone())) else {
                     return false;
                 };
                 self.is_valid_restriction_model_group(restricted, mg, base, &def.model_group)
             }
             (Term::ModelGroupRef(lns, lloc), Term::ModelGroupRef(rns, rloc)) => {
-                let Some(bdef) = self
-                    .schema
-                    .modelgroup_defs
-                    .get(&(lns.clone(), lloc.clone()))
-                else {
+                let Some(bdef) = self.schema.modelgroups.get(&(lns.clone(), lloc.clone())) else {
                     return false;
                 };
-                let Some(rdef) = self
-                    .schema
-                    .modelgroup_defs
-                    .get(&(rns.clone(), rloc.clone()))
-                else {
+                let Some(rdef) = self.schema.modelgroups.get(&(rns.clone(), rloc.clone())) else {
                     return false;
                 };
                 self.is_valid_restriction_model_group(
@@ -1319,7 +1350,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                 // [rcase-Recurse] clause 2.1
                                 break;
                             }
-                            if !base_particle.is_emptiable(&self.schema) {
+                            if !base_particle.is_emptiable(&self.schema.modelgroups) {
                                 // [rcase-Recurse] clause 2.2
                                 ret = false;
                             }
@@ -1378,7 +1409,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     }
 
                     // [rcase-RecurseUnordered] clause 2.3
-                    ret &= base.is_emptiable(&self.schema);
+                    ret &= base.is_emptiable(&self.schema.modelgroups);
                 }
                 ret
             }
@@ -1421,10 +1452,10 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             .collect::<HashMap<_, _>>();
         self.schema.type_defs.insert(
             (
-                XSD_ANY_SIMPLE_TYPE.target_namespace(),
-                XSD_ANY_SIMPLE_TYPE.name(),
+                XSD_ANY_SIMPLE_TYPE.target_namespace.clone(),
+                XSD_ANY_SIMPLE_TYPE.name.clone(),
             ),
-            XSD_ANY_SIMPLE_TYPE.clone(),
+            TypeDefinition::Simple(XSD_ANY_SIMPLE_TYPE.clone()),
         );
         while let Some(key) = ret.keys().next().cloned() {
             let value = ret.remove(&key).and_then(|st| st.as_simple_type()).unwrap();
@@ -1453,7 +1484,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                 "A circluar definition is found in the simple type '{}'",
                                 value.display_name()
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::StPropsCorrect),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -1483,7 +1514,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                 "A circluar definition is found in the simple type '{}'.",
                                 value.display_name()
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::StPropsCorrect),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -1534,7 +1565,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         "A circluar definition is found in the simple type '{}'.",
                         value.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::StPropsCorrect),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -1557,7 +1588,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         base.1
                     );
                     // [st-props-correct] clause 2 ?
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::StPropsCorrect),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -1590,7 +1621,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     base.display_name(),
                     $type
                 );
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::$error),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -1624,7 +1655,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         $facet
                     );
                     // [cos-applicable-facets]
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::CosApplicableFacets),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -1684,7 +1715,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::CosStRestricts),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -1719,7 +1750,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             .unwrap_or_default(),
                         name
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::CosStRestricts),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -1741,7 +1772,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         "The list itemType must be either atomic or union, but '{}' is not.",
                         item_type.display_name(),
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::CosStRestricts),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -1776,7 +1807,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             base.display_name(),
                             new.display_name()
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::CosStRestricts),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -1827,14 +1858,13 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 // As an exception, since the simple ur-type have {variety} set to "absent",
                 // the simple ur-type cannot be included as a member type.
                 if members.iter().any(|t| {
-                    t.0 == XSD_ANY_SIMPLE_TYPE.target_namespace()
-                        && t.1 == XSD_ANY_SIMPLE_TYPE.name()
+                    t.0 == XSD_ANY_SIMPLE_TYPE.target_namespace && t.1 == XSD_ANY_SIMPLE_TYPE.name
                 }) {
                     let msg = format!(
                         "The simple ur-type cannot be contained in the memberTypes of union simple type, but the memberTypes of '{}' contains.",
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::CosStRestricts),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -1879,7 +1909,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             base.display_name(),
                             new.display_name()
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::CosStRestricts),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -2007,7 +2037,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name(),
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::StRestrictFacets),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2030,7 +2060,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::StRestrictFacets),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2056,7 +2086,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::LengthValidRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2081,7 +2111,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         base.display_name(),
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::StRestrictFacets),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2099,7 +2129,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::MinLengthValidRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2120,7 +2150,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         "'minLength' cannot be applied to '{}' because it is constrained by 'length'.",
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::LengthMinLengthMaxLength),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2141,7 +2171,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         "The value 'minLength' of '{}' is larger than its 'length'.",
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::LengthMinLengthMaxLength),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2169,7 +2199,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         "'minLength' cannot be applied to '{}' because it is constrained by 'length'.",
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::LengthMinLengthMaxLength),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2193,7 +2223,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         base.display_name(),
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::StRestrictFacets),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2211,7 +2241,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::MaxLengthValidRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2232,7 +2262,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         "'maxLength' cannot be applied to '{}' because it is constrained by 'length'.",
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::LengthMinLengthMaxLength),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2253,7 +2283,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         "The value 'minLength' of '{}' is larger than its 'length'.",
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::LengthMinLengthMaxLength),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2281,7 +2311,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         "'maxLength' cannot be applied to '{}' because it is constrained by 'length'.",
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::LengthMinLengthMaxLength),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2305,7 +2335,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         base.display_name(),
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::StRestrictFacets),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2325,7 +2355,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         nw.value
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::WhiteSpaceValidRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2349,7 +2379,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         base.display_name(),
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::StRestrictFacets),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2367,7 +2397,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::TotalDigitsValidRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2392,7 +2422,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         base.display_name(),
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::StRestrictFacets),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2410,7 +2440,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::FractionDigitsValidRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2447,7 +2477,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         base.display_name(),
                         error
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::EnumerationValidRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2468,7 +2498,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 "'{}' has both 'maxInclusive' and 'maxExclusive'.",
                 new.display_name()
             );
-            self.error(SAXParseError {
+            self.holder.error(SAXParseError {
                 error: XMLError::XSDError(XSDError::MaxInclusiveMaxExclusive),
                 level: XMLErrorLevel::Error,
                 domain: XMLErrorDomain::XSDParser,
@@ -2486,7 +2516,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 "'{}' has both 'minInclusive' and 'minExclusive'.",
                 new.display_name()
             );
-            self.error(SAXParseError {
+            self.holder.error(SAXParseError {
                 error: XMLError::XSDError(XSDError::MinInclusiveMinExclusive),
                 level: XMLErrorLevel::Error,
                 domain: XMLErrorDomain::XSDParser,
@@ -2517,7 +2547,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                     base.display_name(),
                                     new.display_name()
                                 );
-                                self.error(SAXParseError {
+                                self.holder.error(SAXParseError {
                                     error: XMLError::XSDError(XSDError::StRestrictFacets),
                                     level: XMLErrorLevel::Error,
                                     domain: XMLErrorDomain::XSDParser,
@@ -2536,7 +2566,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                 "The {} boundary '{}' of '{}' is invalid.",
                                 $facet, n.value.raw_value, new_name
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error,
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -2575,7 +2605,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         $cmp,
                         $max_facet,
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::$error),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2660,7 +2690,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         $bfacet,
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::$error),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -2970,7 +3000,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             value.display_name(),
                             base.display_name()
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::CtPropsCorrect),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -3035,7 +3065,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         "A circluar definition is found in the complex type '{}'.",
                         value.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::CtPropsCorrect),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -3058,7 +3088,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         base.1
                     );
                     // [ct-props-correct] clause 3 ?
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::CtPropsCorrect),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -3084,7 +3114,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
     ) -> Result<(), XMLError> {
         let mut wildcards = vec![];
         while let Some(gref) = new.attribute_group_refs.pop() {
-            let Some(attgroup) = self.schema.attgroup_defs.get(&gref) else {
+            let Some(attgroup) = self.schema.attgroups.get(&gref) else {
                 // Since the verification cannot continue,
                 // it will be reported as an error and terminated.
                 let msg = format!(
@@ -3095,7 +3125,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         .unwrap_or_default(),
                     gref.1
                 );
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::MissingSubComponent),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -3220,7 +3250,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                     new.display_name(),
                                     ct.display_name()
                                 );
-                                self.error(SAXParseError {
+                                self.holder.error(SAXParseError {
                                     error: XMLError::XSDError(XSDError::SrcCt),
                                     level: XMLErrorLevel::Error,
                                     domain: XMLErrorDomain::XSDParser,
@@ -3249,7 +3279,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::SrcCt),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -3303,7 +3333,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                 ct.display_name(),
                                 new.display_name()
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::CosCtExtends),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -3345,7 +3375,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     attuse.display_name(),
                     new.display_name()
                 );
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::CtPropsCorrect),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -3372,7 +3402,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             .unwrap_or_default(),
                         attuse.attribute_declaration.1
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::MissingSubComponent),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -3399,7 +3429,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             .unwrap_or_default(),
                         att.type_definition.1
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::MissingSubComponent),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -3411,13 +3441,13 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     });
                     return Err(XMLError::XSDError(XSDError::MissingSubComponent));
                 };
-                if t.is_derived_from(Some(XML_SCHEMA_NAMESPACE), "ID", &self.schema) {
+                if t.is_derived_from(Some(XML_SCHEMA_NAMESPACE), "ID", &self.schema.type_defs) {
                     if idcnt == 1 {
                         let msg = format!(
                             "The complex type '{}' has multiple types which are or are derived from ID.",
                             new.display_name()
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::CtPropsCorrect),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -3450,7 +3480,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 base.display_name(),
                 new.display_name()
             );
-            self.error(SAXParseError {
+            self.holder.error(SAXParseError {
                 error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                 level: XMLErrorLevel::Error,
                 domain: XMLErrorDomain::XSDParser,
@@ -3469,7 +3499,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 new.display_name(),
                 base.display_name(),
             );
-            self.error(SAXParseError {
+            self.holder.error(SAXParseError {
                 error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                 level: XMLErrorLevel::Error,
                 domain: XMLErrorDomain::XSDParser,
@@ -3490,7 +3520,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     attuse.display_name(),
                     new.display_name()
                 );
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::MissingSubComponent),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -3531,7 +3561,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -3562,7 +3592,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         bty.display_name(),
                         batt.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -3589,7 +3619,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             base.display_name(),
                             new.display_name()
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -3613,7 +3643,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                 new.display_name(),
                                 v,
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -3643,7 +3673,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         att.display_name(),
                         new.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -3681,7 +3711,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     batt.display_name(),
                     new.display_name()
                 );
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -3705,7 +3735,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -3723,7 +3753,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -3742,7 +3772,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     new.display_name(),
                     base.display_name()
                 );
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -3781,7 +3811,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                     .unwrap_or_default(),
                                 name
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -3806,7 +3836,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                     .unwrap_or_default(),
                                 bname
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -3829,7 +3859,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                 new.display_name(),
                                 base.display_name()
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -3842,7 +3872,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             ret = Err(XMLError::XSDError(XSDError::DerivationOkRestriction));
                         }
                     }
-                    ContentType::Mixed(pt) if pt.is_emptiable(&self.schema) => {
+                    ContentType::Mixed(pt) if pt.is_emptiable(&self.schema.modelgroups) => {
                         // clause 5.2.2.2
                         // no op
                     }
@@ -3853,7 +3883,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             new.display_name(),
                             base.display_name()
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -3874,7 +3904,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         // clause 5.3.2.1
                     }
                     ContentType::ElementOnly(pt) | ContentType::Mixed(pt)
-                        if pt.is_emptiable(&self.schema) =>
+                        if pt.is_emptiable(&self.schema.modelgroups) =>
                     {
                         // clause 5.3.2.2
                     }
@@ -3884,7 +3914,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             new.display_name(),
                             base.display_name()
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -3909,7 +3939,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -3942,7 +3972,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::DerivationOkRestriction),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -3978,7 +4008,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name(),
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::CosCtExtends),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -4005,7 +4035,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name(),
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::CosCtExtends),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -4028,7 +4058,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         new.display_name(),
                         base.display_name(),
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::CosCtExtends),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -4060,7 +4090,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             new.display_name(),
                             base.display_name()
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::CosCtExtends),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -4083,7 +4113,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                 base.display_name(),
                                 new.display_name()
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::CosCtExtends),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -4101,7 +4131,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             base.display_name(),
                             new.display_name()
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::CosCtExtends),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -4140,7 +4170,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             new.display_name(),
                             base.display_name(),
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::CosCtExtends),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -4156,6 +4186,56 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             }
         }
         Ok(())
+    }
+
+    /// # Reference
+    /// - [cos-ct-derived-ok](https://www.w3.org/TR/xmlschema-1/#cos-ct-derived-ok)
+    fn check_cos_ct_derived_ok(
+        &self,
+        d: &ComplexTypeDefinition,
+        b: &TypeDefinition,
+        subset: FinalSet,
+    ) -> Result<(), XMLError> {
+        if d.target_namespace == b.target_namespace() && d.name == b.name() {
+            // [cos-ct-derived-ok] clause 2.1
+            return Ok(());
+        }
+
+        if (matches!(d.derivation_method, DerivationMethod::Restriction) && subset.restriction())
+            || (matches!(d.derivation_method, DerivationMethod::Extension) && subset.extension())
+        {
+            // [cos-ct-derived-ok] clause 1
+            return Err(XMLError::XSDError(XSDError::CosCtDerivedOk));
+        }
+
+        if d.base_type_definition == (b.target_namespace(), b.name()) {
+            // [cos-ct-derived-ok] clause 2.2
+            return Ok(());
+        }
+
+        // [cos-ct-derived-ok] clause 2.3
+
+        if d.base_type_definition == XSD_ANY_TYPE.base_type_definition {
+            // [cos-ct-derived-ok] clause 2.3.1
+            return Err(XMLError::XSDError(XSDError::CosCtDerivedOk));
+        }
+
+        let ds_base = self
+            .schema
+            .type_defs
+            .get(&d.base_type_definition)
+            .ok_or(XSDError::MissingSubComponent)?;
+        match ds_base {
+            TypeDefinition::Complex(ds_base) => {
+                // [cos-ct-derived-ok] clause 2.3.2.1
+                self.check_cos_ct_derived_ok(ds_base, b, subset)
+            }
+            TypeDefinition::Simple(ds_base) => {
+                // [cos-ct-derived-ok] clause 2.3.2.2
+                let st = b.as_simple_type().ok_or(XSDError::CosCtDerivedOk)?;
+                self.check_cos_st_derived_ok(ds_base, &st, subset)
+            }
+        }
     }
 
     /// # Reference
@@ -4179,7 +4259,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     t.1,
                     decl.display_name()
                 );
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::MissingSubComponent),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -4195,7 +4275,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
 
             if decl.name.as_ref() == "xmlns" {
                 // [no-xmlns]
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::NoXmlns),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -4213,7 +4293,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     "The attribute declaration must not have the target namespace named '{}'.",
                     XML_SCHEMA_INSTANCE_NAMESPACE
                 );
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::NoXmlns),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -4228,12 +4308,12 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             }
 
             if let Some(value) = decl.value_constraint.take() {
-                if t.is_derived_from(Some(XML_SCHEMA_NAMESPACE), "ID", &self.schema) {
+                if t.is_derived_from(Some(XML_SCHEMA_NAMESPACE), "ID", &self.schema.type_defs) {
                     let msg = format!(
                         "The attribute declaration '{}' must not have a default value because this is derived from 'ID'.",
                         decl.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::APropsCorrect),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -4275,7 +4355,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                             t.display_name(),
                             err
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::APropsCorrect),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -4300,7 +4380,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
     /// - [ag-props-correct](https://www.w3.org/TR/xmlschema-1/#ag-props-correct)
     fn check_all_attgroup(&mut self) -> Result<(), XMLError> {
         // Resolve references to other attribute groups.
-        let mut attgroups = std::mem::take(&mut self.schema.attgroup_defs);
+        let mut attgroups = std::mem::take(&mut self.schema.attgroups);
         let mut seen = HashSet::new();
         while let Some(key) = attgroups.keys().next().cloned() {
             let attgroup = attgroups.remove(&key).unwrap();
@@ -4310,7 +4390,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         }
 
         let mut ret = Ok(());
-        let attgroups = std::mem::take(&mut self.schema.attgroup_defs);
+        let attgroups = std::mem::take(&mut self.schema.attgroups);
         for attgroup in attgroups.values() {
             let mut used = HashSet::new();
             let mut idcnt = 0;
@@ -4322,7 +4402,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         attuse.display_name(),
                         attgroup.display_name()
                     );
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::AgPropsCorrect),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -4346,7 +4426,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                 .unwrap_or_default(),
                             attuse.attribute_declaration.1
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::MissingSubComponent),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -4373,7 +4453,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                                 .unwrap_or_default(),
                             att.type_definition.1
                         );
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::MissingSubComponent),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -4385,13 +4465,13 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         });
                         return Err(XMLError::XSDError(XSDError::MissingSubComponent));
                     };
-                    if t.is_derived_from(Some(XML_SCHEMA_NAMESPACE), "ID", &self.schema) {
+                    if t.is_derived_from(Some(XML_SCHEMA_NAMESPACE), "ID", &self.schema.type_defs) {
                         if idcnt == 1 {
                             let msg = format!(
                                 "The attribute group '{}' has multiple types which are or are derived from ID.",
                                 attgroup.display_name()
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::AgPropsCorrect),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -4409,7 +4489,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
             }
         }
 
-        self.schema.attgroup_defs = attgroups;
+        self.schema.attgroups = attgroups;
         ret
     }
 
@@ -4428,7 +4508,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     "The attribute group definition '{}' contains a circular reference.",
                     attgroup.display_name()
                 );
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::SrcAttributeGroup),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -4448,7 +4528,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 self.expand_attgroup(reference.clone(), parent, attgroups, seen)?;
             }
 
-            if let Some(parent) = self.schema.attgroup_defs.get(&reference) {
+            if let Some(parent) = self.schema.attgroups.get(&reference) {
                 if let Some(wc) = parent.attribute_wildcard.as_ref() {
                     wildcards.push(wc.clone());
                 }
@@ -4465,7 +4545,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         .unwrap_or_default(),
                     reference.1,
                 );
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(XSDError::MissingSubComponent),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -4490,7 +4570,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     "The attribute wildcard of the attribute group '{}' cannot be computed.",
                     attgroup.display_name()
                 );
-                self.error(SAXParseError {
+                self.holder.error(SAXParseError {
                     error: XMLError::XSDError(error),
                     level: XMLErrorLevel::Error,
                     domain: XMLErrorDomain::XSDParser,
@@ -4503,8 +4583,308 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                 return Err(XMLError::XSDError(error));
             }
         }
-        self.schema.attgroup_defs.insert(key, attgroup);
+        self.schema.attgroups.insert(key, attgroup);
         Ok(())
+    }
+
+    /// # Reference
+    /// - [e-props-correct](https://www.w3.org/TR/xmlschema-1/#e-props-correct)
+    fn check_all_elemdecl(&mut self) -> Result<(), XMLError> {
+        let mut ret = Ok(());
+        // [e-props-correct] clause 2, 3
+        for decl in self.schema.elem_decls.values_mut() {
+            // [e-props-correct] clause 2, 5
+            if let Some(mut vc) = decl.value_constraint.take() {
+                let value = match &mut vc {
+                    ValueConstraint::Default(value) => value,
+                    ValueConstraint::Fixed(value) => value,
+                };
+                let Some(t) = self.schema.type_defs.get(&decl.type_definition) else {
+                    let msg = format!(
+                        "The type definition '{}{}' for the element declaration '{}' is not found in schema.",
+                        decl.type_definition
+                            .0
+                            .as_deref()
+                            .map(|ns| format!("{{{ns}}}"))
+                            .unwrap_or_default(),
+                        decl.type_definition.1,
+                        decl.display_name()
+                    );
+                    self.holder.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::MissingSubComponent),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::MissingSubComponent));
+                    continue;
+                };
+
+                // [e-props-correct] clause 5
+                if t.is_derived_from(Some(XML_SCHEMA_NAMESPACE), "ID", &self.schema.type_defs) {
+                    let msg = format!(
+                        "The element declaration '{}' has a default value, but its content type is derived from 'xs:ID'.",
+                        decl.display_name()
+                    );
+                    self.holder.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::EPropsCorrect),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::EPropsCorrect));
+                    continue;
+                }
+
+                // [e-props-correct] clause 2
+                // [cos-valid-default]
+                match t {
+                    TypeDefinition::Simple(st) => {
+                        // [cos-valid-default] clause 1
+                        match st.parse(value, &decl.ns_context, &self.schema.type_defs) {
+                            Ok(sv) => {
+                                *value = sv.canonic_value.into();
+                                decl.value_constraint = Some(vc);
+                            }
+                            Err(error) => {
+                                let msg = format!(
+                                    "The default value '{}' of the element declaration '{}' is not valid as the simple type '{}' because of '{}'.",
+                                    value,
+                                    decl.display_name(),
+                                    st.display_name(),
+                                    error,
+                                );
+                                self.holder.error(SAXParseError {
+                                    error: XMLError::XSDError(XSDError::CosValidDefault),
+                                    level: XMLErrorLevel::Error,
+                                    domain: XMLErrorDomain::XSDParser,
+                                    line: self.locator.line(),
+                                    column: self.locator.column(),
+                                    system_id: self.locator.system_id(),
+                                    public_id: self.locator.public_id(),
+                                    message: Cow::Owned(msg),
+                                });
+                                ret = Err(XMLError::XSDError(XSDError::CosValidDefault));
+                            }
+                        }
+                    }
+                    TypeDefinition::Complex(ct) => {
+                        // [cos-valid-default] clause 2
+                        match &ct.content_type {
+                            ContentType::Simple(ns, name) => {
+                                let Some(st) = self
+                                    .schema
+                                    .type_defs
+                                    .get(&(ns.clone(), name.clone()))
+                                    .and_then(|t| t.as_simple_type())
+                                else {
+                                    ret = Err(XMLError::XSDError(XSDError::MissingSubComponent));
+                                    continue;
+                                };
+                                match st.parse(value, &decl.ns_context, &self.schema.type_defs) {
+                                    Ok(sv) => {
+                                        *value = sv.canonic_value.into();
+                                        decl.value_constraint = Some(vc);
+                                    }
+                                    Err(error) => {
+                                        let msg = format!(
+                                            "The default value '{}' of the element declaration '{}' is not valid as the content simple type '{}' of the complex type '{}' because of '{}'.",
+                                            value,
+                                            decl.display_name(),
+                                            st.display_name(),
+                                            ct.display_name(),
+                                            error,
+                                        );
+                                        self.holder.error(SAXParseError {
+                                            error: XMLError::XSDError(XSDError::CosValidDefault),
+                                            level: XMLErrorLevel::Error,
+                                            domain: XMLErrorDomain::XSDParser,
+                                            line: self.locator.line(),
+                                            column: self.locator.column(),
+                                            system_id: self.locator.system_id(),
+                                            public_id: self.locator.public_id(),
+                                            message: Cow::Owned(msg),
+                                        });
+                                        ret = Err(XMLError::XSDError(XSDError::CosValidDefault));
+                                    }
+                                }
+                            }
+                            ContentType::Mixed(pt) if pt.is_emptiable(&self.schema.modelgroups) => {
+                                // clause 2.2.2
+                                decl.value_constraint = Some(vc);
+                            }
+                            _ => {
+                                let msg = format!(
+                                    "The default value '{}' of the element declaration '{}' is not valid as the content type of the complex type '{}'.",
+                                    value,
+                                    decl.display_name(),
+                                    ct.display_name()
+                                );
+                                self.holder.error(SAXParseError {
+                                    error: XMLError::XSDError(XSDError::CosValidDefault),
+                                    level: XMLErrorLevel::Error,
+                                    domain: XMLErrorDomain::XSDParser,
+                                    line: self.locator.line(),
+                                    column: self.locator.column(),
+                                    system_id: self.locator.system_id(),
+                                    public_id: self.locator.public_id(),
+                                    message: Cow::Owned(msg),
+                                });
+                                ret = Err(XMLError::XSDError(XSDError::CosValidDefault));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // [e-props-correct] clause 3
+            if decl.substitution_group_affiliation.is_some()
+                && !matches!(decl.scope, Some(Scope::Global))
+            {
+                let msg = format!(
+                    "Non-global element declaration '{}' must not have 'substitutionGroup' attribute.",
+                    decl.display_name()
+                );
+                self.holder.error(SAXParseError {
+                    error: XMLError::XSDError(XSDError::EPropsCorrect),
+                    level: XMLErrorLevel::Error,
+                    domain: XMLErrorDomain::XSDParser,
+                    line: self.locator.line(),
+                    column: self.locator.column(),
+                    system_id: self.locator.system_id(),
+                    public_id: self.locator.public_id(),
+                    message: Cow::Owned(msg),
+                });
+                ret = Err(XMLError::XSDError(XSDError::EPropsCorrect));
+            }
+        }
+        ret.clone()?;
+
+        // [e-props-correct] clause 4, 6
+        let mut decls = std::mem::take(&mut self.schema.elem_decls);
+        let mut stack = vec![];
+        while let Some(key) = decls.keys().next().cloned() {
+            let decl = decls.remove(&key).unwrap();
+            stack.push((key, decl));
+            while let Some((key, decl)) = stack.pop() {
+                let Some(subst) = decl.substitution_group_affiliation.clone() else {
+                    self.schema.elem_decls.insert(key, decl);
+                    continue;
+                };
+                if let Some(par) = decls.remove(&subst) {
+                    stack.push((key, decl));
+                    stack.push((subst, par));
+                    continue;
+                }
+                if let Some(par) = self.schema.elem_decls.get(&subst) {
+                    // clause 4
+                    if self.check_e_props_correct_4(&decl, par).is_err() {
+                        let msg = format!(
+                            "The type definition of the element declaration '{}' is not validly derived from that of '{}'.",
+                            decl.display_name(),
+                            par.display_name()
+                        );
+                        self.holder.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::EPropsCorrect),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                        ret = Err(XMLError::XSDError(XSDError::EPropsCorrect));
+                    }
+                    self.schema.elem_decls.insert(key, decl);
+                } else if stack.iter().any(|prev| prev.0 == subst) {
+                    // clause 6 (circular substitution group)
+                    let msg = format!(
+                        "A circular substitution group is found at '{}'.",
+                        decl.display_name()
+                    );
+                    self.holder.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::EPropsCorrect),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::EPropsCorrect));
+                    stack.clear();
+                    break;
+                } else {
+                    // missing subcomponent
+                    let msg = format!(
+                        "'{}{}' that is specified as the substition group at the element declaration '{}' is not found in schema.",
+                        subst
+                            .0
+                            .as_deref()
+                            .map(|ns| format!("{{{ns}}}"))
+                            .unwrap_or_default(),
+                        subst.1,
+                        decl.display_name()
+                    );
+                    self.holder.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::EPropsCorrect),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::EPropsCorrect));
+                    self.schema.elem_decls.insert(key, decl);
+                }
+            }
+        }
+        ret
+    }
+
+    /// # Reference
+    /// - [e-props-correct](https://www.w3.org/TR/xmlschema-1/#e-props-correct)
+    fn check_e_props_correct_4(
+        &self,
+        decl: &ElementDeclaration,
+        par: &ElementDeclaration,
+    ) -> Result<(), XMLError> {
+        let t = self
+            .schema
+            .type_defs
+            .get(&decl.type_definition)
+            .ok_or(XSDError::MissingSubComponent)?;
+        let pt = self
+            .schema
+            .type_defs
+            .get(&par.type_definition)
+            .ok_or(XSDError::MissingSubComponent)?;
+        match (t, pt) {
+            (TypeDefinition::Simple(_), TypeDefinition::Complex(_)) => {
+                // The simple type cannot be derived from a complex type.
+                Err(XMLError::XSDError(XSDError::EPropsCorrect))
+            }
+            (TypeDefinition::Simple(d), TypeDefinition::Simple(b)) => {
+                // check by [cos-st-derived-ok]
+                self.check_cos_st_derived_ok(d, b, decl.substitution_group_exclusions)
+            }
+            (TypeDefinition::Complex(d), _) => {
+                // check by [cos-ct-derived-ok]
+                self.check_cos_ct_derived_ok(d, pt, decl.substitution_group_exclusions)
+            }
+        }
     }
 }
 
@@ -4516,7 +4896,8 @@ impl<H: SAXHandler> EntityResolver for XSDParseHandler<H> {
         base_uri: &URIStr,
         system_id: &URIStr,
     ) -> Result<InputSource<'static>, XMLError> {
-        self.child
+        self.holder
+            .child
             .resolve_entity(name, public_id, base_uri, system_id)
     }
 
@@ -4525,42 +4906,28 @@ impl<H: SAXHandler> EntityResolver for XSDParseHandler<H> {
         name: &str,
         base_uri: Option<&URIStr>,
     ) -> Result<InputSource<'static>, XMLError> {
-        self.child.get_external_subset(name, base_uri)
+        self.holder.child.get_external_subset(name, base_uri)
     }
 }
 
 impl<H: SAXHandler> ErrorHandler for XSDParseHandler<H> {
-    fn fatal_error(&mut self, mut error: SAXParseError) {
-        self.last_error = Err(error.error.clone());
-        if matches!(error.domain, XMLErrorDomain::XSDValid) {
-            error.domain = XMLErrorDomain::XSDParser;
-        }
-        self.child.fatal_error(error);
+    fn fatal_error(&mut self, error: SAXParseError) {
+        self.holder.fatal_error(error);
     }
 
-    fn error(&mut self, mut error: SAXParseError) {
-        if matches!(
-            error.domain,
-            XMLErrorDomain::XSDParser | XMLErrorDomain::XSDValid
-        ) {
-            error.domain = XMLErrorDomain::XSDParser;
-            self.last_error = Err(error.error.clone());
-        }
-        self.child.error(error);
+    fn error(&mut self, error: SAXParseError) {
+        self.holder.error(error);
     }
 
-    fn warning(&mut self, mut error: SAXParseError) {
-        if matches!(error.domain, XMLErrorDomain::XSDValid) {
-            error.domain = XMLErrorDomain::XSDParser;
-        }
-        self.child.warning(error);
+    fn warning(&mut self, error: SAXParseError) {
+        self.holder.warning(error);
     }
 }
 
 impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
     fn set_document_locator(&mut self, locator: Arc<Locator>) {
         self.locator = locator.clone();
-        self.child.set_document_locator(locator);
+        self.holder.child.set_document_locator(locator);
     }
 
     fn start_element(
@@ -4570,7 +4937,8 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
         qname: &str,
         atts: &Attributes,
     ) {
-        self.child
+        self.holder
+            .child
             .start_element(namespace_name, local_name, qname, atts);
 
         // skip non-schema elements
@@ -4591,7 +4959,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
             // 3.1.2 XML Representations of Components
             // [Definition:]  A document in this form (i.e. a <schema> element information
             // item) is a schema document.
-            self.error(SAXParseError {
+            self.holder.error(SAXParseError {
                 error: XMLError::XSDError(XSDError::UnallowedElement),
                 level: XMLErrorLevel::Error,
                 domain: XMLErrorDomain::XSDParser,
@@ -4635,7 +5003,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                                     "Included schema's target namespace is '{}', but parent's is '{}'.",
                                     tn, parent_target_namespace
                                 );
-                                self.error(SAXParseError {
+                                self.holder.error(SAXParseError {
                                     error: XMLError::XSDError(etype),
                                     level: XMLErrorLevel::Error,
                                     domain: XMLErrorDomain::XSDParser,
@@ -4654,7 +5022,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                                 "Included schema's target namespace is '{}', but parent's is absent.",
                                 tn
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(etype),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -4684,7 +5052,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                                     .as_deref()
                                     .unwrap_or("absent"),
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::SrcImport),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -4737,7 +5105,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                 let namespace = atts.get_value_by_qname("namespace").map(Arc::<str>::from);
                 if self.target_namespace.as_deref() == namespace.as_deref() {
                     // [src-import] clause 1
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::SrcImport),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -4766,7 +5134,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     // If the "base" attribute is present in <restriction>,
                     // <simpleType> must not exist under <restriction>.
                     let msg = "The attribute 'base' and the child <simpleType> of <restriction> must not both be present.";
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::SrcRestrictionBaseOrSimpleType),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -4785,7 +5153,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     // If the `itemType` attribute is present,
                     // the child must not have a `simpleType`.
                     let msg = "The attribute 'itemType' and the child <simpleType> of <list> must not both be present.";
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::SrcListItemTypeOrSimpleType),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -4836,8 +5204,8 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         st.variety = Some(Variety::List(pre, loc));
                     }
                     st.base_type_definition = (
-                        XSD_ANY_SIMPLE_TYPE.target_namespace(),
-                        XSD_ANY_SIMPLE_TYPE.name(),
+                        XSD_ANY_SIMPLE_TYPE.target_namespace.clone(),
+                        XSD_ANY_SIMPLE_TYPE.name.clone(),
                     );
                 }
                 self.element_stack.push(SCHEMA_LIST_NAME);
@@ -4860,8 +5228,8 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         st.variety = Some(Variety::Union(buf.into()));
                     }
                     st.base_type_definition = (
-                        XSD_ANY_SIMPLE_TYPE.target_namespace(),
-                        XSD_ANY_SIMPLE_TYPE.name(),
+                        XSD_ANY_SIMPLE_TYPE.target_namespace.clone(),
+                        XSD_ANY_SIMPLE_TYPE.name.clone(),
                     );
                 }
                 self.element_stack.push(SCHEMA_UNION_NAME);
@@ -4914,7 +5282,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     return;
                 };
                 if let Err(err) = XSRegexp::compile(regex) {
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::RegexpError(err)),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -5286,6 +5654,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         substitution_group_exclusions: r#final,
                         disallowed_substitutions: block,
                         r#abstract,
+                        ns_context: self.ns_stack.clone(),
                     });
                 } else {
                     // local element declaration.
@@ -5294,7 +5663,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         (Some(_), Some(_)) | (None, None) => {
                             // [src-element] clause 2.1
                             let msg = "One of 'ref' or 'name' must be present, but not both for local <element>.";
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::SrcElement),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -5335,6 +5704,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                                 substitution_group_exclusions: r#final,
                                 disallowed_substitutions: block,
                                 r#abstract,
+                                ns_context: self.ns_stack.clone(),
                             });
                             if let Some(pt) = self.pt_stack.last_mut()
                                 && let Term::ModelGroup(mg) = &mut pt.term
@@ -5365,7 +5735,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     ($name:expr) => {
                         if $name == "xmlns" {
                             // [no-xmlns]
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::NoXmlns),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -5390,7 +5760,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                                 "The attribute declaration whose target name space is '{}' is not allowed.",
                                 XML_SCHEMA_INSTANCE_NAMESPACE
                             );
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::NoXsi),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -5432,7 +5802,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         && !matches!(r#use, Occurrence::Optional)
                     {
                         let msg = "If <attribute> has both 'default' and 'use', 'use' must have \"optional\".";
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::SrcElement),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -5485,7 +5855,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         // 3 If the item's parent is not <schema>, then all of the following must be true:
                         //   3.1 One of ref or name must be present, but not both.
                         let msg = "A local attribute declaration must have one of the attribute 'name' or 'ref'.";
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::SrcAttribute),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -5511,7 +5881,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     .get_value_by_qname("system")
                     .and_then(|sys| URIString::parse(sys).ok())
                     .map(From::from);
-                self.schema.notation_decls.insert(
+                self.schema.notations.insert(
                     (self.target_namespace.clone(), name.clone()),
                     Notation {
                         name,
@@ -5674,7 +6044,9 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
     }
 
     fn end_element(&mut self, namespace_name: Option<&str>, local_name: Option<&str>, qname: &str) {
-        self.child.end_element(namespace_name, local_name, qname);
+        self.holder
+            .child
+            .end_element(namespace_name, local_name, qname);
 
         if self.skip_depth > 0 {
             self.skip_depth -= 1;
@@ -5714,7 +6086,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                             // [src-attribute] clause 4
                             // 4 type and <simpleType> must not both be present.
                             let msg = "'type' and <simpleType> must not both be present under <attribute>.";
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::SrcAttribute),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -5728,7 +6100,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                             // [src-attribute]
                             // 3.2 If ref is present, then all of <simpleType>, form and type must be absent.
                             let msg = "If <attribute> has 'ref', then <simpleType> must be absent.";
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::SrcAttribute),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -5758,7 +6130,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         if st.base_type_definition != (target_namespace, name) {
                             // [src-redefine] clause 5
                             let msg = "The base type of redefined simple type definition must match to its own name.";
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::SrcRedefine),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -5797,7 +6169,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     // If there is no "base" attribute, there
                     // must be a child of type <simpleType>.
                     let msg = "<restriction> must have either the attribute 'base' or the child <simpleType>.";
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::SrcRestrictionBaseOrSimpleType),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -5815,7 +6187,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     // If there is no "itemType" attribute, there
                     // must be a child of type <simpleType>.
                     let msg = "<list> must have either the attribute 'itemType' or the child <simpleType>.";
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::SrcListItemTypeOrSimpleType),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -5833,7 +6205,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     // If there is no `memberType` attribute, there
                     // must be children of type `simpleType`.
                     let msg = "<union> must have either the non-empty attribute 'memberType' or the child <simpleType>s.";
-                    self.error(SAXParseError {
+                    self.holder.error(SAXParseError {
                         error: XMLError::XSDError(XSDError::SrcUnionMemberTypesOrSimpleTypes),
                         level: XMLErrorLevel::Error,
                         domain: XMLErrorDomain::XSDParser,
@@ -5863,7 +6235,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                     {
                         // [src-redefine] clause 5
                         let msg = "The base type of redefined complex type definition must match to its own name.";
-                        self.error(SAXParseError {
+                        self.holder.error(SAXParseError {
                             error: XMLError::XSDError(XSDError::SrcRedefine),
                             level: XMLErrorLevel::Error,
                             domain: XMLErrorDomain::XSDParser,
@@ -5936,7 +6308,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                         }
                     } else {
                         self.schema
-                            .modelgroup_defs
+                            .modelgroups
                             .insert((target_namespace, name), def);
                     }
                 }
@@ -5961,7 +6333,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                             .count();
                         if count > 1 {
                             // [src-redefine] clause 7.1
-                            self.error(SAXParseError {
+                            self.holder.error(SAXParseError {
                                 error: XMLError::XSDError(XSDError::SrcRedefine),
                                 level: XMLErrorLevel::Error,
                                 domain: XMLErrorDomain::XSDParser,
@@ -5985,7 +6357,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
                                 .insert(key, def);
                         }
                     } else {
-                        self.schema.attgroup_defs.insert(key, def);
+                        self.schema.attgroups.insert(key, def);
                     }
                 }
             }
@@ -6128,17 +6500,19 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
     }
 
     fn characters(&mut self, data: &str) {
-        self.child.characters(data);
+        self.holder.child.characters(data);
     }
 
     fn start_prefix_mapping(&mut self, prefix: Option<&str>, namespace_name: &str) {
-        self.child.start_prefix_mapping(prefix, namespace_name);
+        self.holder
+            .child
+            .start_prefix_mapping(prefix, namespace_name);
         self.ns_stack
             .push(prefix.unwrap_or_default(), namespace_name);
     }
 
     fn end_prefix_mapping(&mut self, prefix: Option<&str>) {
-        self.child.end_prefix_mapping(prefix);
+        self.holder.child.end_prefix_mapping(prefix);
         // Although the namespace that is actually popped may not bind the specified prefix,
         // it doesn't matter because everything works out by the time the other callbacks are
         // invoked.
@@ -6154,7 +6528,7 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
 
         // Before processing <include>, <redefine>, or <import>, notify the
         // handler that the current schema document has been fully parsed.
-        self.child.end_document();
+        self.holder.child.end_document();
 
         let base_uri = self.locator.system_id();
         self.schema.merged_uris.insert(base_uri.clone());
@@ -6188,12 +6562,13 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
             // If an error occurs during a previous module check,
             // subsequent checks are skipped because a component may be missing.
             // Reference: Part 1 Appendix E Schema Components Diagram (non-normative)
-            self.last_error = self
+            self.holder.last_error = self
                 .check_all_simple_type_derivation()
                 .and_then(|_| self.check_all_attdecl())
                 .and_then(|_| self.check_all_attgroup())
                 .and_then(|_| self.check_all_complex_type_derivation())
-                .and_then(|_| self.last_error.clone());
+                .and_then(|_| self.check_all_elemdecl())
+                .and_then(|_| self.holder.last_error.clone());
         }
         if let Some(meta) = meta {
             META_SCHEMA_HOLDER_V1_0.with_borrow_mut(|holder| holder.push(meta));
@@ -6209,56 +6584,62 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
         attribute_type: &AttributeType,
         default_decl: &DefaultDecl,
     ) {
-        self.child
-            .attribute_decl(element_name, attribute_name, attribute_type, default_decl);
+        self.holder.child.attribute_decl(
+            element_name,
+            attribute_name,
+            attribute_type,
+            default_decl,
+        );
     }
     fn comment(&mut self, data: &str) {
-        self.child.comment(data);
+        self.holder.child.comment(data);
     }
     fn declaration(&mut self, version: &str, encoding: Option<&str>, standalone: Option<bool>) {
-        self.child.declaration(version, encoding, standalone);
+        self.holder.child.declaration(version, encoding, standalone);
     }
     fn element_decl(&mut self, name: &str, contentspec: &crate::sax::ContentSpec) {
-        self.child.element_decl(name, contentspec);
+        self.holder.child.element_decl(name, contentspec);
     }
     fn start_cdata(&mut self) {
-        self.child.start_cdata();
+        self.holder.child.start_cdata();
     }
     fn end_cdata(&mut self) {
-        self.child.end_cdata();
+        self.holder.child.end_cdata();
     }
     fn start_document(&mut self) {
-        self.child.start_document();
+        self.holder.child.start_document();
     }
     fn start_dtd(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
-        self.child.start_dtd(name, public_id, system_id);
+        self.holder.child.start_dtd(name, public_id, system_id);
     }
     fn end_dtd(&mut self) {
-        self.child.end_dtd();
+        self.holder.child.end_dtd();
     }
     fn start_entity(&mut self, name: &str) {
-        self.child.start_entity(name);
+        self.holder.child.start_entity(name);
     }
     fn end_entity(&mut self) {
-        self.child.end_entity();
+        self.holder.child.end_entity();
     }
     fn external_entity_decl(&mut self, name: &str, public_id: Option<&str>, system_id: &URIStr) {
-        self.child.external_entity_decl(name, public_id, system_id);
+        self.holder
+            .child
+            .external_entity_decl(name, public_id, system_id);
     }
     fn ignorable_whitespace(&mut self, data: &str) {
-        self.child.ignorable_whitespace(data);
+        self.holder.child.ignorable_whitespace(data);
     }
     fn internal_entity_decl(&mut self, name: &str, value: &str) {
-        self.child.internal_entity_decl(name, value);
+        self.holder.child.internal_entity_decl(name, value);
     }
     fn notation_decl(&mut self, name: &str, public_id: Option<&str>, system_id: Option<&URIStr>) {
-        self.child.notation_decl(name, public_id, system_id);
+        self.holder.child.notation_decl(name, public_id, system_id);
     }
     fn processing_instruction(&mut self, target: &str, data: Option<&str>) {
-        self.child.processing_instruction(target, data);
+        self.holder.child.processing_instruction(target, data);
     }
     fn skipped_entity(&mut self, name: &str) {
-        self.child.skipped_entity(name);
+        self.holder.child.skipped_entity(name);
     }
     fn unparsed_entity_decl(
         &mut self,
@@ -6267,7 +6648,8 @@ impl<H: SAXHandler> SAXHandler for XSDParseHandler<H> {
         system_id: &URIStr,
         notation_name: &str,
     ) {
-        self.child
+        self.holder
+            .child
             .unparsed_entity_decl(name, public_id, system_id, notation_name);
     }
 }
@@ -6769,6 +7151,18 @@ pub(super) struct ElementDeclaration {
     substitution_group_exclusions: FinalSet,
     disallowed_substitutions: BlockSet,
     r#abstract: bool,
+    // used for parsing default value constraint.
+    ns_context: NamespaceStack,
+}
+
+impl ElementDeclaration {
+    fn display_name(&self) -> Cow<'_, str> {
+        if let Some(ns) = self.target_namespace.as_deref() {
+            Cow::Owned(format!("{{{}}}{}", ns, self.name))
+        } else {
+            Cow::Borrowed(&self.name)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -6812,6 +7206,26 @@ impl TypeDefinition {
         match self {
             TypeDefinition::Simple(simple) => simple.display_name(),
             TypeDefinition::Complex(complex) => complex.display_name(),
+        }
+    }
+
+    fn is_derived_from(
+        &self,
+        target_namespace: Option<&str>,
+        name: &str,
+        types: &HashMap<(Option<Arc<str>>, Arc<str>), TypeDefinition>,
+    ) -> bool {
+        match self {
+            TypeDefinition::Simple(st) => st.is_derived_from(target_namespace, name, types),
+            TypeDefinition::Complex(ct) => {
+                if ct.target_namespace.as_deref() == target_namespace && ct.name.as_ref() == name {
+                    return true;
+                }
+                !ct.is_ur_type()
+                    && types
+                        .get(&ct.base_type_definition)
+                        .is_some_and(|t| t.is_derived_from(target_namespace, name, types))
+            }
         }
     }
 }
@@ -6992,7 +7406,7 @@ struct ModelGroup {
 impl ModelGroup {
     fn effective_total_range(
         &self,
-        schema: &Schema,
+        model_groups: &HashMap<(Option<Arc<str>>, Arc<str>), ModelGroupDefinition>,
         min_occurs: usize,
         max_occurs: usize,
     ) -> Option<(usize, usize)> {
@@ -7001,10 +7415,10 @@ impl ModelGroup {
             let mut ret = None::<(usize, usize)>;
             for p in &self.particles {
                 let m = match &p.term {
-                    Term::ModelGroup(_) => p.effective_total_range(schema)?,
+                    Term::ModelGroup(_) => p.effective_total_range(model_groups)?,
                     Term::ModelGroupRef(ns, loc) => {
-                        let def = schema.modelgroup_defs.get(&(ns.clone(), loc.clone()))?;
-                        def.model_group.effective_total_range(schema, 1, 1)?
+                        let def = model_groups.get(&(ns.clone(), loc.clone()))?;
+                        def.model_group.effective_total_range(model_groups, 1, 1)?
                     }
                     _ => (p.min_occurs, p.max_occurs),
                 };
@@ -7022,10 +7436,10 @@ impl ModelGroup {
             let mut sum = None::<(usize, usize)>;
             for p in &self.particles {
                 let m = match &p.term {
-                    Term::ModelGroup(_) => p.effective_total_range(schema)?,
+                    Term::ModelGroup(_) => p.effective_total_range(model_groups)?,
                     Term::ModelGroupRef(ns, loc) => {
-                        let def = schema.modelgroup_defs.get(&(ns.clone(), loc.clone()))?;
-                        def.model_group.effective_total_range(schema, 1, 1)?
+                        let def = model_groups.get(&(ns.clone(), loc.clone()))?;
+                        def.model_group.effective_total_range(model_groups, 1, 1)?
                     }
                     _ => (p.min_occurs, p.max_occurs),
                 };
@@ -7069,7 +7483,7 @@ impl Particle {
         match &self.term {
             Term::ModelGroup(mg) => Some(mg),
             Term::ModelGroupRef(ns, name) => {
-                let mg = schema.modelgroup_defs.get(&(ns.clone(), name.clone()))?;
+                let mg = schema.modelgroups.get(&(ns.clone(), name.clone()))?;
                 Some(&mg.model_group)
             }
             _ => None,
@@ -7085,15 +7499,21 @@ impl Particle {
     /// # Reference
     /// - [cos-seq-range](https://www.w3.org/TR/xmlschema-1/#cos-seq-range)
     /// - [cos-choice-range](https://www.w3.org/TR/xmlschema-1/#cos-choice-range)
-    fn effective_total_range(&self, schema: &Schema) -> Option<(usize, usize)> {
+    fn effective_total_range(
+        &self,
+        model_groups: &HashMap<(Option<Arc<str>>, Arc<str>), ModelGroupDefinition>,
+    ) -> Option<(usize, usize)> {
         match &self.term {
             Term::ModelGroup(group) => {
-                group.effective_total_range(schema, self.min_occurs, self.max_occurs)
+                group.effective_total_range(model_groups, self.min_occurs, self.max_occurs)
             }
             Term::ModelGroupRef(ns, loc) => {
-                let def = schema.modelgroup_defs.get(&(ns.clone(), loc.clone()))?;
-                def.model_group
-                    .effective_total_range(schema, self.min_occurs, self.max_occurs)
+                let def = model_groups.get(&(ns.clone(), loc.clone()))?;
+                def.model_group.effective_total_range(
+                    model_groups,
+                    self.min_occurs,
+                    self.max_occurs,
+                )
             }
             _ => None,
         }
@@ -7103,7 +7523,10 @@ impl Particle {
     ///
     /// # Reference
     /// - [cos-group-emptiable](https://www.w3.org/TR/xmlschema-1/#cos-group-emptiable)
-    fn is_emptiable(&self, schema: &Schema) -> bool {
+    fn is_emptiable(
+        &self,
+        model_groups: &HashMap<(Option<Arc<str>>, Arc<str>), ModelGroupDefinition>,
+    ) -> bool {
         // clause 1
         // Its {min occurs} is 0.
         if self.min_occurs == 0 {
@@ -7114,7 +7537,8 @@ impl Particle {
         // Its {term} is a group and the minimum part of the effective total range of that group,
         // as defined by Effective Total Range (all and sequence) (§3.8.6) (if the group is all
         // or sequence) or Effective Total Range (choice) (§3.8.6) (if it is choice), is 0.
-        self.effective_total_range(schema).is_some_and(|m| m.0 == 0)
+        self.effective_total_range(model_groups)
+            .is_some_and(|m| m.0 == 0)
     }
 
     /// # Reference
