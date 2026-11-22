@@ -4769,14 +4769,48 @@ impl<H: SAXHandler> XSDParseHandler<H> {
         ret.clone()?;
 
         // [e-props-correct] clause 4, 6
+        // [cos-equiv-class]
+        // [cos-equiv-derived-ok-rec]
         let mut decls = std::mem::take(&mut self.schema.elem_decls);
         let mut stack = vec![];
+        // A set of derivation methods for the type up to the
+        // HEAD of the substitution group for each declaration
+        // [cos-equiv-derived-ok-rec] clause 2.3
+        // > The set of all {derivation method}s involved in the derivation
+        // > of D's {type definition} from C's {type definition}
+        let mut derivation_methods = HashMap::new();
+        // The union of {prohibited substitution}s of complex types
+        // up to the HEAD of each declaration's substitution group
+        // [cos-equiv-derived-ok-rec] clause 2.3
+        // > C's {prohibited substitutions} (if C is complex, otherwise the empty set)
+        // > and the {prohibited substitutions} (respectively the empty set) of any
+        // > intermediate {type definition}s in the derivation of D's {type definition}
+        // > from C's {type definition}
+        let mut block_constraints = HashMap::new();
         while let Some(key) = decls.keys().next().cloned() {
             let decl = decls.remove(&key).unwrap();
             stack.push((key, decl));
             while let Some((key, decl)) = stack.pop() {
                 let Some(subst) = decl.substitution_group_affiliation.clone() else {
-                    self.schema.elem_decls.insert(key, decl);
+                    // "blocking constraint" described at [cos-equiv-derived-ok-rec]
+                    //      > a blocking constraint (a subset of {substitution, extension,
+                    //      > restriction}, the value of a {disallowed substitutions})
+                    // and [cos-equiv-class] clause 2
+                    //      > HEAD's {disallowed substitutions} as the blocking constraint
+                    let blocking_constraint = decl.disallowed_substitutions;
+                    block_constraints.insert(
+                        key.clone(),
+                        blocking_constraint
+                            | self
+                                .schema
+                                .type_defs
+                                .get(&decl.type_definition)
+                                .and_then(|t| t.as_complex_type())
+                                .map(|ct| ct.prohibited_substitutions)
+                                .unwrap_or_default(),
+                    );
+                    self.schema.elem_decls.insert(key.clone(), decl);
+                    derivation_methods.insert(key.clone(), BlockSet::default());
                     continue;
                 };
                 if let Some(par) = decls.remove(&subst) {
@@ -4785,7 +4819,7 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     continue;
                 }
                 if let Some(par) = self.schema.elem_decls.get(&subst) {
-                    // clause 4
+                    // [e-props-correct] clause 4
                     if self.check_e_props_correct_4(&decl, par).is_err() {
                         let msg = format!(
                             "The type definition of the element declaration '{}' is not validly derived from that of '{}'.",
@@ -4804,9 +4838,51 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                         });
                         ret = Err(XMLError::XSDError(XSDError::EPropsCorrect));
                     }
+                    if par.disallowed_substitutions.substitution() {
+                        // [cos-equiv-derived-ok-rec] clause 2.1
+                        // `par` and `decl` can form a substitution group with `par` as HEAD,
+                        // but substitution of `par` is prohibited.
+                        let msg = format!(
+                            "The element declaration '{}' is not substitutable for '{}'.",
+                            decl.display_name(),
+                            par.display_name()
+                        );
+                        self.holder.error(SAXParseError {
+                            error: XMLError::XSDError(XSDError::CosEquivDerivedOkRec),
+                            level: XMLErrorLevel::Error,
+                            domain: XMLErrorDomain::XSDParser,
+                            line: self.locator.line(),
+                            column: self.locator.column(),
+                            system_id: self.locator.system_id(),
+                            public_id: self.locator.public_id(),
+                            message: Cow::Owned(msg),
+                        });
+                        ret = Err(XMLError::XSDError(XSDError::CosEquivDerivedOkRec));
+                    }
+                    if let Some(t) = self.schema.type_defs.get(&decl.type_definition) {
+                        block_constraints.insert(
+                            key.clone(),
+                            t.as_complex_type()
+                                .map(|ct| ct.prohibited_substitutions)
+                                .unwrap_or_default()
+                                | block_constraints.get(&subst).copied().unwrap_or_default(),
+                        );
+                        let deriv = derivation_methods.get(&subst).copied().unwrap_or_default();
+                        if let Some(ct) = t.as_complex_type() {
+                            let new =
+                                if matches!(ct.derivation_method, DerivationMethod::Restriction) {
+                                    deriv | Block::Restriction
+                                } else {
+                                    deriv | Block::Extension
+                                };
+                            derivation_methods.insert(key.clone(), new);
+                        } else {
+                            derivation_methods.insert(key.clone(), deriv);
+                        }
+                    }
                     self.schema.elem_decls.insert(key, decl);
                 } else if stack.iter().any(|prev| prev.0 == subst) {
-                    // clause 6 (circular substitution group)
+                    // [e-props-correct] clause 6 (circular substitution group)
                     let msg = format!(
                         "A circular substitution group is found at '{}'.",
                         decl.display_name()
@@ -4848,6 +4924,36 @@ impl<H: SAXHandler> XSDParseHandler<H> {
                     });
                     ret = Err(XMLError::XSDError(XSDError::EPropsCorrect));
                     self.schema.elem_decls.insert(key, decl);
+                }
+            }
+        }
+
+        for (key, decl) in &self.schema.elem_decls {
+            if let Some(subst) = decl.substitution_group_affiliation.as_ref() {
+                let derivation_methods = derivation_methods.get(key).copied().unwrap_or_default();
+                // Since it states, "the {prohibited substitutions} (respectively, the empty set)
+                // of any intermediate {type definitions} in the derivation of D's {type definition}
+                // from C's {type definition}", the value of the substitution parent is invoked
+                // so that it does not include the {prohibited substitutions} of its own {type definition}.
+                let blocks = block_constraints.get(subst).copied().unwrap_or_default();
+                let intersection = derivation_methods.intersection(&blocks);
+                if intersection.extension() || intersection.restriction() {
+                    // [cos-equiv-derived-ok-rec] clause 2.3
+                    let msg = format!(
+                        "The element declaration '{}' is not substitutable for HEAD of its substitution group.",
+                        decl.display_name()
+                    );
+                    self.holder.error(SAXParseError {
+                        error: XMLError::XSDError(XSDError::CosEquivDerivedOkRec),
+                        level: XMLErrorLevel::Error,
+                        domain: XMLErrorDomain::XSDParser,
+                        line: self.locator.line(),
+                        column: self.locator.column(),
+                        system_id: self.locator.system_id(),
+                        public_id: self.locator.public_id(),
+                        message: Cow::Owned(msg),
+                    });
+                    ret = Err(XMLError::XSDError(XSDError::CosEquivDerivedOkRec));
                 }
             }
         }

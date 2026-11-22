@@ -695,7 +695,7 @@ impl SimpleTypeDefinition {
         }
 
         let t = types
-            .get(&(target_namespace.map(From::from), name.into()))
+            .get(&(target_namespace, name))
             .and_then(|t| t.as_simple_type())
             .ok_or(XSDError::MissingSubComponent)?;
         assert!(!t.is_builtin_type());
@@ -1074,6 +1074,10 @@ impl BlockSet {
     pub fn is_subset_of(&self, base: &Self) -> bool {
         self.0 & base.0 == self.0
     }
+
+    pub fn intersection(&self, other: &Self) -> Self {
+        Self(self.0 & other.0)
+    }
 }
 
 impl std::ops::BitOr<Block> for BlockSet {
@@ -1086,6 +1090,14 @@ impl std::ops::BitOr<Block> for BlockSet {
 impl std::ops::BitOrAssign<Block> for BlockSet {
     fn bitor_assign(&mut self, rhs: Block) {
         *self = *self | rhs;
+    }
+}
+
+impl std::ops::BitOr<BlockSet> for BlockSet {
+    type Output = BlockSet;
+
+    fn bitor(self, rhs: BlockSet) -> Self::Output {
+        Self(self.0 | rhs.0)
     }
 }
 
